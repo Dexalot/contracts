@@ -17,7 +17,7 @@ yarn hh-test-prtf
 
 ### Run the trading simulation tests on the Hardhat environment on Terminal 2
 ```
-yarn hh-test-prtf
+yarn hh-test-dex
 ```
 
 ### Customize configuration
