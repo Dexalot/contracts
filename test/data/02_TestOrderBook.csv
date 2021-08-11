@@ -1,0 +1,6 @@
+clientOrderId,owner,tradePair,baseSymbol,quoteSymbol,price,quantity,side,type1,type2,action,status,quantityFilled,totalQuantityFilled,makerTaker
+
+# buy order, matching sell order
+3,0,AVAX/USDT,AVAX,USDT,10,10,BUY,LIMIT,GTC,ADD,NEW,0,0,MAKER
+4,1,AVAX/USDT,AVAX,USDT,10,10,SELL,LIMIT,GTC,ADD,FILLED,10,10,TAKER
+3,0,AVAX/USDT,AVAX,USDT,10,10,BUY,LIMIT,GTC,CHECK,FILLED,10,10,MAKER

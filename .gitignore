@@ -1,0 +1,10 @@
+# dependencies
+/node_modules
+
+# Hardhat artifacts directory
+/.openzeppelin
+/artifacts
+/cache
+
+# Environment files
+.env

@@ -1,0 +1,8 @@
+clientOrderId,owner,tradePair,baseSymbol,quoteSymbol,price,quantity,side,type1,type2,action,status,quantityFilled,totalQuantityFilled,makerTaker
+
+
+# multiple LIMIT buy orders, first filled, second partial filled with a sell order that gets CANCELED
+23,0,AVAX/USDT,AVAX,USDT,10.135,10.135,BUY,LIMIT,GTC,ADD,NEW,0,0,MAKER
+24,1,AVAX/USDT,AVAX,USDT,9.232,10.135,BUY,LIMIT,GTC,ADD,NEW,0,0,MAKER
+25,2,AVAX/USDT,AVAX,USDT,9.232,15.567,SELL,LIMIT,GTC,ADD,FILLED,15.567,15.567,TAKER
+23,0,AVAX/USDT,AVAX,USDT,9.232,10.0,BUY,LIMIT,GTC,CHECK,FILLED,10.0,10.0,MAKER
