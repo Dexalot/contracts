@@ -25,7 +25,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.1');
+    bytes32 constant public VERSION = bytes32('0.9.2');
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -79,7 +79,6 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     }
 
     function matchTrade(bytes32 _orderBookID, uint price, uint takerOrderRemainingQuantity, uint makerOrderRemainingQuantity)  public onlyOwner returns (uint) {
-        // require(msg.sender == orderBookMap[_orderBookID].owner, "O20");
         uint quantity;
         quantity = min(takerOrderRemainingQuantity, makerOrderRemainingQuantity);
         if ((makerOrderRemainingQuantity - quantity) == 0) {
