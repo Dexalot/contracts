@@ -27,7 +27,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20 for IERC20;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.2');
+    bytes32 constant public VERSION = bytes32('0.9.3');
 
     // denominator for rate calculations
     uint public constant TENK = 10000;
@@ -105,9 +105,9 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         _unpause();
     }
 
-    function pauseDeposit(bool _allowDeposit) public override {
+    function pauseDeposit(bool _paused) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-05");
-        allowDeposit = _allowDeposit;
+        allowDeposit = !_paused;
     }
 
     function setFee(Fee _fee) public {

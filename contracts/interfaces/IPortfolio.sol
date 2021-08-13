@@ -9,7 +9,7 @@ import "./ITradePairs.sol";
 interface IPortfolio {
     function pause() external;
     function unpause() external;
-    function pauseDeposit(bool _allowDeposit) external;
+    function pauseDeposit(bool _paused) external;
     function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) external;
     function addToken(bytes32 _symbol, IERC20 _token) external;
     function adjustAvailable(Tx _transaction, address _trader, bytes32 _symbol, uint _amount) external;
