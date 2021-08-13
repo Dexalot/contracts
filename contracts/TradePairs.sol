@@ -30,7 +30,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.3');
+    bytes32 constant public VERSION = bytes32('0.9.4');
 
     // denominator for rate calculations
     uint public constant TENK = 10000;
@@ -41,7 +41,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     // a dynamic array of trade pairs added to TradePairs contract
     bytes32[] tradePairsArray;
 
-    // orderbook structure defining one sell or buy book
+
     struct TradePair {
         bytes32 baseSymbol;          // symbol for base asset
         bytes32 quoteSymbol;         // symbol for quote asset
@@ -69,7 +69,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     // mapping structure for all orders
     mapping (bytes32 => Order) private orderMap;
 
-    // reference to OrderBooks contract
+    // reference to OrderBooks contract (one sell or buy book)
     OrderBooks orderBooks;
 
     // reference Portfolio contract
@@ -116,7 +116,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             tradePairMap[_tradePairId].sellBookId = _sellBookId;
             tradePairMap[_tradePairId].makerRate = 10; // makerRate=10 (0.10% = 10/10000)
             tradePairMap[_tradePairId].takerRate = 20; // takerRate=20 (0.20% = 20/10000)
-            tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100)
+            tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) Market Order can't be filled worst than 80% of the bestBid/ 120% of BestAsk
+
             // tradePairMap[_tradePairId].addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePairMap[_tradePairId].pairPaused = false;       // pair is not paused by default (EVM initializes to false)
 
@@ -291,14 +292,10 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function emitStatusUpdate(bytes32 _tradePairId, bytes32 _orderId) private {
         Order storage _order = orderMap[_orderId];
         emit OrderStatusChanged(_order.traderaddress, _tradePairId, _order.id,
-                                _order.type1 == Type1.MARKET ? 0 : _order.price,
-                                _order.totalAmount, _order.quantity, _order.side, _order.type1,
-                                _order.status, _order.quantityFilled,  _order.totalFee);
+                                _order.price, _order.totalAmount, _order.quantity, _order.side,
+                                _order.type1, _order.status, _order.quantityFilled,  _order.totalFee);
     }
 
-    function unsolicitedCancel(bytes32 _orderId) private {
-        orderMap[_orderId].status = Status.CANCELED;
-    }
 
     //Used to Round Down the fees to the display decimals to avoid dust
     function floor(uint a, uint m) pure private returns (uint) {
@@ -357,54 +354,50 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function addMarketOrder(bytes32 _tradePairId, uint _quantity, Side _side) private {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         uint marketPrice;
-        uint worstPrice; // worst price in the book
+        uint worstPrice; // Market Orders will be filled up to allowedSlippagePercent from the marketPrice to protect the trader, the remaining qty gets unsolicited cancel
         bytes32 bookId;
         if (_side == Side.BUY) {
             bookId = _tradePair.sellBookId;
             marketPrice = orderBooks.first(bookId);
-            worstPrice = orderBooks.last(bookId);
+            worstPrice = marketPrice * (100 + _tradePair.allowedSlippagePercent) / 100;
         } else {
             bookId = _tradePair.buyBookId;
             marketPrice = orderBooks.last(bookId);
-            worstPrice = orderBooks.first(bookId);
+            worstPrice = marketPrice * (100 - _tradePair.allowedSlippagePercent) / 100;
         }
+
         // don't need digit check here as it is taken from the book
         uint tradeAmnt = (marketPrice * _quantity) / (10 ** _tradePair.baseDecimals);
         // a market order will be rejected here if there is nothing in the book because marketPrice will be 0
         require(tradeAmnt >= _tradePair.minTradeAmount, "T-LTMT-01");
         require(tradeAmnt <= _tradePair.maxTradeAmount, "T-MTMT-01");
-        // FIXME: add require for slippage
 
         bytes32 orderId = getOrderId();
         Order storage _order = orderMap[orderId];
         _order.id = orderId;
         _order.traderaddress= msg.sender;
-        _order.price = worstPrice; // setting the price to the worst price so it can be filled as much as possible
+        _order.price = worstPrice; // setting the price to the worst price so it can be filled up to this price given enough qty
         _order.quantity = _quantity;
         _order.side = _side;
-        //_order.quantityFilled = 0;     // Intentional evm intialized to 0
-        //_order.totalAmount = 0;        // Intentional evm initializated
-        // _order.type1 = _type1;        // Intentional evm initializated
-        //_order.status = Status.NEW;    // Intentional evm initializated
-        //_order.totalFee = 0;           // Intentional evm initializated;
+        //_order.quantityFilled = 0;     // evm intialized
+        //_order.totalAmount = 0;        // evm intialized
+        //_order.type1 = _type1;         // evm intialized
+        //_order.status = Status.NEW;    // evm intialized
+        //_order.totalFee = 0;           // evm intialized;
 
         uint takerRemainingQuantity;
         if (_side == Side.BUY) {
             takerRemainingQuantity= matchSellBook(_tradePairId, _order);
-            if (!orderBooks.orderListExists(bookId, worstPrice)
-                    && takerRemainingQuantity > 0) {
-                // IF the Market Order wipes out the book, the order gets unsoliticted cancel for the remaining amount.
-                unsolicitedCancel(_order.id);
-            }
         } else {  // == Order.Side.SELL
             takerRemainingQuantity= matchBuyBook(_tradePairId, _order);
-            if (!orderBooks.orderListExists(bookId, worstPrice)
-                    && takerRemainingQuantity > 0) {
-                // IF the Market Order wipes out the book, the order gets unsoliticted cancel for the remaining amount.
-                unsolicitedCancel(_order.id);
-            }
         }
 
+        if (!orderBooks.orderListExists(bookId, worstPrice)
+                && takerRemainingQuantity > 0) {
+            // IF the Market Order fills all the way to the worst price, it gets unsoliticted cancel for the remaining amount.
+            orderMap[_order.id].status = Status.CANCELED;
+        }
+        _order.price = 0; //Reset the market order price back to 0
         emitStatusUpdate(_tradePairId, _order.id);  // EMIT taker(potential) order status. if no fills, the status will be NEW, if not status will be either PARTIAL or FILLED
     }
 
@@ -450,7 +443,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint tradeAmnt = (_price * _quantity) / (10 ** _tradePair.baseDecimals);
         require(tradeAmnt >= _tradePair.minTradeAmount, "T-LTMT-02");
         require(tradeAmnt <= _tradePair.maxTradeAmount, "T-MTMT-02");
-        // FIXME: add require for slippage
 
         bytes32 orderId = getOrderId();
         Order storage _order = orderMap[orderId];
@@ -460,10 +452,10 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         _order.quantity = _quantity;
         _order.side = _side;
         _order.type1 = Type1.LIMIT;
-        //_order.totalAmount= 0;         // Intentional evm initializated
-        //_order.quantityFilled= 0;      // Intentional evm initializated
-        //_order.status= Status.NEW;     // Intentional evm initializated
-        //_order.totalFee= 0;            // Intentional evm initializated
+        //_order.totalAmount= 0;         // evm intialized
+        //_order.quantityFilled= 0;      // evm intialized
+        //_order.status= Status.NEW;     // evm intialized
+        //_order.totalFee= 0;            // evm intialized
 
         uint takerRemainingQuantity;
         if (_side == Side.BUY) {
@@ -480,7 +472,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                 portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, _order.traderaddress, _tradePair.baseSymbol, takerRemainingQuantity);
             }
         }
-        emitStatusUpdate(_tradePairId, _order.id);  // EMIT taker(potential) order status. if no fills, the status will be NEW, if not status will be either PARTIAL or FILLED
+        emitStatusUpdate(_tradePairId, _order.id);  // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
     }
 
     function doOrderCancel(bytes32 _tradePairId, bytes32 _orderId) private {

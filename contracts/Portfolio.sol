@@ -27,7 +27,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20 for IERC20;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.1');
+    bytes32 constant public VERSION = bytes32('0.9.2');
 
     // denominator for rate calculations
     uint public constant TENK = 10000;
@@ -84,8 +84,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
         grantRole(DEFAULT_ADMIN_ROLE, _address);
     }
-    // FIXME POSSIBLY SHOULD NOT BE ABLE TO REMOVE HIMSELF WE MAY END UP WITH AN EMPTY GROUP,
-    // OR ADMIN COUNT SHOULD BE >=2 AT ALL TIMES! ALSO MAYBE ONLY SUPERADMIN FUNCTIONS??
+
     function removeAdmin(address _address) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-02");
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE)>1, "P-ALOA-01");
@@ -185,7 +184,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         revert();
     }
 
-    // handle native token deposit and withdrawal
 
     // FRONTEND FUNCTION TO DEPOSIT NATIVE TOKEN WITH WEB3 SENDTRANSACTION
     receive() external payable whenNotPaused nonReentrant {
@@ -266,7 +264,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
                           uint _baseAmount, uint _quoteAmount, uint _makerfeeCharged, uint _takerfeeCharged)
             public override {
         // TRADEPAIRS SHOULD HAVE ADMIN ROLE TO INITIATE PORTFOLIO addExecution
-        //****require (address(tradePairs[ITradePairs(msg.sender).getTradePair()]) == address(ITradePairs(msg.sender)), "E3");
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-10");
         // if _maker.side = BUY then _taker.side = SELL
         if (_maker.side == ITradePairs.Side.BUY) {
@@ -290,7 +287,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
 
     function adjustAvailable(IPortfolio.Tx _transaction, address _trader, bytes32 _symbol, uint _amount) public override  {
         // TRADEPAIRS SHOULD HAVE ADMIN ROLE TO INITIATE PORTFOLIO adjustAvailable
-        //****require (address(tradePairs[ITradePairs(msg.sender).getTradePair()]) == address(ITradePairs(msg.sender)), "E1");
         // console.log("adjustAvailable = ", _amount);
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-09");
         if (_transaction == IPortfolio.Tx.INCREASEAVAIL) {
