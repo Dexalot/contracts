@@ -33,13 +33,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     bytes32 constant public VERSION = bytes32('0.9.4');
 
     // denominator for rate calculations
-    uint public constant TENK = 10000;
+    uint constant public TENK = 10000;
 
     // order counter to build a unique handle for each new order
-    uint orderCounter;
+    uint internal orderCounter;
 
     // a dynamic array of trade pairs added to TradePairs contract
-    bytes32[] tradePairsArray;
+    bytes32[] internal tradePairsArray;
 
 
     struct TradePair {
@@ -64,16 +64,16 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     mapping (bytes32 => TradePair) private tradePairMap;
 
     // mapping  for allowed order types for a TradePair
-    mapping (bytes32 => EnumerableSetUpgradeable.UintSet) allowedOrderTypes;
+    mapping (bytes32 => EnumerableSetUpgradeable.UintSet) private allowedOrderTypes;
 
     // mapping structure for all orders
     mapping (bytes32 => Order) private orderMap;
 
     // reference to OrderBooks contract (one sell or buy book)
-    OrderBooks orderBooks;
+    OrderBooks private orderBooks;
 
     // reference Portfolio contract
-    IPortfolio portfolio;
+    IPortfolio private portfolio;
 
     event NewTradePair(bytes32 pair, uint8 basedisplaydecimals, uint8 quotedisplaydecimals, uint mintradeamount, uint maxtradeamount);
 
