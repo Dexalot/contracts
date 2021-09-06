@@ -66,10 +66,11 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
 
     // used for getting red-black-tree details in debugging
     function getNode(bytes32 _orderBookID, uint _price) public view returns (uint price, uint parent, uint left, uint right, bool red, bytes32 head, uint size) {
-        if (orderBookMap[_orderBookID].orderBook.exists(_price)) {
-            (price, parent, left, right, red) = orderBookMap[_orderBookID].orderBook.getNode(_price);
-            ( , head, ) = orderBookMap[_orderBookID].orderList[_price].getNode('');
-            size = orderBookMap[_orderBookID].orderList[_price].sizeOf();
+        OrderBook storage orderBookStruct = orderBookMap[_orderBookID];
+        if (orderBookStruct.orderBook.exists(_price)) {
+            (price, parent, left, right, red) = orderBookStruct.orderBook.getNode(_price);
+            ( , head, ) = orderBookStruct.orderList[_price].getNode('');
+            size = orderBookStruct.orderList[_price].sizeOf();
             return (price, parent, left, right, red, head, size);
         }
     }
