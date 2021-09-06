@@ -22,31 +22,31 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
     bytes32 constant public VERSION = bytes32('0.9.1');
 
     // Create a new role identifier for the beneficiary role
-    bytes32 public constant BENEFICIARY_ROLE = keccak256("BENEFICIARY_ROLE");
+    bytes32 constant public BENEFICIARY_ROLE = keccak256("BENEFICIARY_ROLE");
 
     // bytes32 variable to hold native token of DEXALOT
     bytes32 constant public native = bytes32('AVAX');
 
     // bytes32 array of all ERC20 tokens traded on DEXALOT
-    EnumerableSetUpgradeable.Bytes32Set tokenList;
+    EnumerableSetUpgradeable.Bytes32Set private tokenList;
 
     // total shares
     uint public totalShare;
 
     // bytes32 symbols to ERC20 token map
-    mapping (bytes32 => IERC20) tokenMap;
+    mapping (bytes32 => IERC20) private tokenMap;
 
     // map for numerator for share percentages
-    mapping (address => uint) share;
+    mapping (address => uint) private share;
 
     // total witdrawn by all users mapped to asset
-    mapping (bytes32 => uint) totalWithdrawn;
+    mapping (bytes32 => uint) private totalWithdrawn;
 
     // starting total for a specific user mapped to user and asset
-    mapping (address => mapping (bytes32 => uint)) userTotalStart;
+    mapping (address => mapping (bytes32 => uint)) private userTotalStart;
 
     // total withdrawn by a specific user mapped to user and asset
-    mapping (address => mapping (bytes32 => uint)) userWithdrawn;
+    mapping (address => mapping (bytes32 => uint)) private userWithdrawn;
 
     event Distributed(address _beneficiary, uint _distribution, uint _share, bytes32 _token);
 
