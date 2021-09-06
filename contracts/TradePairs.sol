@@ -36,10 +36,10 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     uint constant public TENK = 10000;
 
     // order counter to build a unique handle for each new order
-    uint internal orderCounter;
+    uint private orderCounter;
 
     // a dynamic array of trade pairs added to TradePairs contract
-    bytes32[] internal tradePairsArray;
+    bytes32[] private tradePairsArray;
 
 
     struct TradePair {
