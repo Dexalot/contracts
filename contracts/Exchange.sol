@@ -20,7 +20,7 @@ import "./interfaces/ITradePairs.sol";
 *   @dev Start up order:
 *   @dev     1. Deploy contracts: Exchange, Portfolio, OrderBooks, TradePairs and Fee
 *   @dev     2. Call addTradePairs on Exchange
-*   @dev     3. Call setPortfolio, setFee and setTradePairs on Exchange
+*   @dev     3. Call setPortfolio and setTradePairs on Exchange
 *   @dev     4. Change ownership of contracts as per below
 *   @dev     5. Call addToken on Exchange to add supported erc20 tokens to Portfolio and Fee
 *
@@ -43,10 +43,13 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     bytes32 constant public VERSION = bytes32('0.9.3');
 
     // map and array of all trading pairs on DEXALOT
-    ITradePairs tradePairs;
+    ITradePairs private tradePairs;
 
     // portfolio reference
-    IPortfolio portfolio;
+    IPortfolio private portfolio;
+
+    event PortfolioSet(IPortfolio _oldPortfolio, IPortfolio _newPortfolio);
+    event TradePairsSet(ITradePairs _oldTradePairs, ITradePairs _newTradePairs);
 
     function initialize() public initializer {
         __AccessControl_init();
@@ -104,6 +107,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     // DEPLOYMENT ACCOUNT FUNCTION TO SET PORTFOLIO FOR THE EXCHANGE
     function setPortfolio(IPortfolio _portfolio) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-05");
+        emit PortfolioSet(portfolio, _portfolio);
         portfolio = _portfolio;
     }
 
@@ -115,6 +119,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     // DEPLOYMENT ACCOUNT FUNCTION TO SET TRADEPAIRS FOR THE EXCHANGE
     function setTradePairs(ITradePairs _tradePairs) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-06");
+        emit TradePairsSet(tradePairs, _tradePairs);
         tradePairs = _tradePairs;
     }
 
