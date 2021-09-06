@@ -73,8 +73,9 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
     }
 
     function getTokenList() public view returns(bytes32[] memory) {
-        bytes32[] memory tokens = new bytes32[](tokenList.length());
-        for (uint i=0; i<tokenList.length(); i++) {
+        uint tokenCount = tokenList.length();
+        bytes32[] memory tokens = new bytes32[](tokenCount);
+        for (uint i=0; i<tokenCount; i++) {
             tokens[i] = tokenList.at(i);
         }
         return tokens;
@@ -101,7 +102,8 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
         share[_address] = _share;
         totalShare += _share;
         userTotalStart[_address][native] = address(this).balance;
-        for (uint j= 0; j < tokenList.length(); j++) {
+        uint tokenCount = tokenList.length();
+        for (uint j= 0; j < tokenCount; j++) {
             bytes32 _token = tokenList.at(j);
             userTotalStart[_address][_token] = tokenMap[_token].balanceOf(_address);
         }
@@ -142,7 +144,8 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
     }
 
     function withdrawTokens(address _owner) private {
-        for (uint j=0; j<tokenList.length(); j++) {
+        uint tokenCount = tokenList.length();
+        for (uint j=0; j<tokenCount; j++) {
             bytes32 _token = tokenList.at(j);
             uint _payout = tokenMap[_token].balanceOf(address(this)) + totalWithdrawn[_token] - userTotalStart[_owner][_token];
             if (_payout>0) {
