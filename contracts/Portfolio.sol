@@ -30,7 +30,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     bytes32 constant public VERSION = bytes32('0.9.3');
 
     // denominator for rate calculations
-    uint public constant TENK = 10000;
+    uint constant public TENK = 10000;
 
     // reference to fee contract
     Fee public fee;
@@ -39,7 +39,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     bytes32 constant public native = bytes32('AVAX');
 
     // bytes32 array of all ERC20 tokens traded on DEXALOT
-    EnumerableSetUpgradeable.Bytes32Set tokenList;
+    EnumerableSetUpgradeable.Bytes32Set private tokenList;
 
     // structure to track an asset
     struct AssetEntry {
@@ -50,18 +50,19 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     enum AssetType {NATIVE, ERC20, NONE}
 
     // bytes32 symbols to ERC20 token map
-    mapping (bytes32 => IERC20) tokenMap;
+    mapping (bytes32 => IERC20) private tokenMap;
 
     // account address to assets map
     mapping (address => mapping (bytes32 => AssetEntry)) public assets;
 
     // boolean to control deposit functionality
-    bool allowDeposit;
+    bool private allowDeposit;
 
     // numerator for rate % to be used with a denominator of 10000
     uint public depositFeeRate;
     uint public withdrawFeeRate;
 
+    event FeeSet(Fee _oldFee, Fee _newFee);
     event ParameterUpdated(bytes32 indexed pair, string _param, uint _oldValue, uint _newValue);
 
     function initialize() public initializer {
@@ -112,6 +113,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
 
     function setFee(Fee _fee) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-06");
+        emit FeeSet(fee, _fee);
         fee = _fee;
     }
 
