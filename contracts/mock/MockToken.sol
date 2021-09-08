@@ -15,7 +15,7 @@ contract MockToken is ERC20, AccessControlEnumerable {
    using SafeERC20 for IERC20;
 
    // version
-    bytes32 constant public VERSION = bytes32("0.9.2");
+    bytes32 constant public VERSION = bytes32("1.0.0");
 
    // create a role for minters
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");

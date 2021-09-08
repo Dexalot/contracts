@@ -12,7 +12,7 @@ const BigNumber = require('bignumber.js');
 
 const Utils = require('./utils.js');
 
-const MockTokenAbi = require('../artifacts/contracts/library/MockToken.sol/MockToken.json');
+const MockTokenAbi = require('../artifacts/contracts/mock/MockToken.sol/MockToken.json');
 const TradePairsAbi = require('../artifacts/contracts/TradePairs.sol/TradePairs.json');
 const PortfolioAbi = require('../artifacts/contracts/Portfolio.sol/Portfolio.json');
 

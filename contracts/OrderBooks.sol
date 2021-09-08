@@ -25,7 +25,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.2');
+    bytes32 constant public VERSION = bytes32('1.0.0');
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {

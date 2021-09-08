@@ -40,7 +40,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.3');
+    bytes32 constant public VERSION = bytes32('1.0.0');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;

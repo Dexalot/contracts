@@ -30,7 +30,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.4');
+    bytes32 constant public VERSION = bytes32('1.0.0');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;

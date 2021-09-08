@@ -1,6 +1,6 @@
 {
   "name": "dexalot-contracts",
-  "version": "2021.08.11",
+  "version": "2021.09.06",
   "license": "SEE LICENSE IN LICENSE.txt",
   "private": true,
   "engines": {
@@ -13,29 +13,18 @@
     "hh-test-prtf": "npx hardhat test test/TestPortfolio.js --network localhost"
   },
   "dependencies": {
-    "@ethersproject/experimental": "5.2.0",
+    "@ethersproject/experimental": "5.4.0",
     "@nomiclabs/hardhat-ethers": "^2.0.2",
     "@nomiclabs/hardhat-waffle": "^2.0.1",
-    "@openzeppelin/contracts": "^4.1.0",
-    "@openzeppelin/contracts-upgradeable": "^4.1.0",
-    "@openzeppelin/hardhat-upgrades": "^1.8.2",
-    "@types/hdkey": "^0.7.1",
-    "@types/node": "14.14.37",
+    "@openzeppelin/contracts": "^4.3.1",
+    "@openzeppelin/contracts-upgradeable": "^4.3.1",
+    "@openzeppelin/hardhat-upgrades": "^1.10.0",
     "bignumber.js": "^9.0.1",
-    "bip39": "^3.0.4",
     "chai": "4.3.4",
-    "chai-bn": "^0.2.1",
-    "dotenv": "^8.2.0",
     "ethereum-waffle": "3.4.0",
-    "ethers": "5.4.5",
-    "hardhat": "2.6.0",
+    "ethers": "5.4.6",
+    "hardhat": "2.6.2",
     "hardhat-contract-sizer": "^2.0.3",
-    "hdkey": "^2.0.1",
-    "nconf": "^0.11.2",
-    "neat-csv": "^6.0.1",
-    "pg": "8.6.0",
-    "rimraf": "^3.0.2",
-    "ts-node": "~8.3.0",
-    "typescript": "~3.9.3"
+    "neat-csv": "^6.0.1"
   }
 }
