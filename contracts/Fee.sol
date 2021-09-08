@@ -19,7 +19,7 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
     using SafeERC20 for IERC20;
 
     // version
-    bytes32 constant public VERSION = bytes32('0.9.1');
+    bytes32 constant public VERSION = bytes32('1.0.0');
 
     // Create a new role identifier for the beneficiary role
     bytes32 constant public BENEFICIARY_ROLE = keccak256("BENEFICIARY_ROLE");
@@ -103,7 +103,7 @@ contract Fee is Initializable, AccessControlEnumerableUpgradeable, ReentrancyGua
         totalShare += _share;
         userTotalStart[_address][native] = address(this).balance;
         uint tokenCount = tokenList.length();
-        for (uint j= 0; j < tokenCount; j++) {
+        for (uint j= 0; j<tokenCount; j++) {
             bytes32 _token = tokenList.at(j);
             userTotalStart[_address][_token] = tokenMap[_token].balanceOf(_address);
         }
