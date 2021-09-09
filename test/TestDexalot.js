@@ -27,8 +27,8 @@ let Fee;
 numberOfAccounts = 3;
 
 // fee rates
-const makerRate = BigNumber(0.0010);
-const takerRate = BigNumber(0.0020);
+const makerRate = BigNumber(0);
+const takerRate = BigNumber(0.0010);
 
 // initial state
 // do transfers to Portfolio contract as follows before starting tests
@@ -256,7 +256,9 @@ describe("Dexalot", () => {
                                         tokenAddressMap[quoteSymbol],  pair.quotePriceDecimal,
                                         Utils.parseUnits((pair.minTradeAmount).toString(), pair.quoteDecimals),
                                         Utils.parseUnits((pair.maxTradeAmount).toString(), pair.quoteDecimals));
-            console.log(`${pair.pair} added to TradePairs at ${tradePairs.address} with min trade amount of ${pair.minTradeAmount}.`)
+            console.log(`${pair.id} added to TradePairs at ${tradePairs.address} with min trade amount of ${pair.minTradeAmount}.`)
+            await exchange.addOrderType(pairIdAsBytes32, 0)  // 0 = MARKET, 1 = LIMIT
+            console.log(`MARKET order type added to ${pair.id} at ${tradePairs.address}.`)
         }
 
         // get native list at system start-up
