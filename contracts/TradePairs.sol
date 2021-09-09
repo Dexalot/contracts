@@ -98,8 +98,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
         if (tradePairMap[_tradePairId].baseSymbol == '') {
             EnumerableSetUpgradeable.UintSet storage enumSet = allowedOrderTypes[_tradePairId];
-            enumSet.add(uint(Type1.LIMIT));   // LIMIT Orders always allowed
-            enumSet.add(uint(Type1.MARKET));  // FIXME: REMOVE MARKET ORDERS BEFORE PRODUCTION
+            enumSet.add(uint(Type1.LIMIT));   // LIMIT orders always allowed
+            // enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
 
             bytes32 _buyBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-BUYBOOK')).stringToBytes32();
             bytes32 _sellBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-SELLBOOK')).stringToBytes32();
@@ -114,9 +114,9 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             tradePairMap[_tradePairId].maxTradeAmount = _maxTradeAmount;
             tradePairMap[_tradePairId].buyBookId = _buyBookId;
             tradePairMap[_tradePairId].sellBookId = _sellBookId;
-            tradePairMap[_tradePairId].makerRate = 10; // makerRate=10 (0.10% = 10/10000)
-            tradePairMap[_tradePairId].takerRate = 20; // takerRate=20 (0.20% = 20/10000)
-            tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) Market Order can't be filled worst than 80% of the bestBid/ 120% of BestAsk
+            tradePairMap[_tradePairId].makerRate = 0; // makerRate=0 (0% = 0/10000)
+            tradePairMap[_tradePairId].takerRate = 10; // takerRate=10 (0.10% = 10/10000)
+            tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
 
             // tradePairMap[_tradePairId].addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePairMap[_tradePairId].pairPaused = false;       // pair is not paused by default (EVM initializes to false)
