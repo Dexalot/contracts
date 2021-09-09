@@ -9,7 +9,6 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// import "hardhat/console.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
 
@@ -73,7 +72,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         // intitialize the admins
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender); // set deployment account to have DEFAULT_ADMIN_ROLE
         allowDeposit = true;
-        depositFeeRate = 10;   // depositFeeRate=0 (0.10% = 0/10000)
+        depositFeeRate = 0;    // depositFeeRate=0 (0% = 0/10000)
         withdrawFeeRate = 20;  // withdrawFeeRate=20 (0.20% = 20/10000)
     }
 
@@ -167,8 +166,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     // FRONTEND FUNCTION TO GET PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
     function getBalance(address _owner, bytes32 _symbol) public view
         returns(uint total, uint available, AssetType assetType) {
-            // FIXME only account owner can view
-            // require(_owner == msg.sender, "P-OOQB-01");
             assetType = AssetType.NONE;
             if (native == _symbol) {
                 assetType = AssetType.NATIVE;
@@ -347,21 +344,5 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, transaction);
       }
     }
-
-    // FIXME REMOVE the below utility function
-    // utility function
-    // function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
-    //     uint8 i = 0;
-    //     while(i < 32 && _bytes32[i] != 0) {
-    //         i++;
-    //     }
-    //     bytes memory bytesArray = new bytes(i);
-    //     for (i = 0; i < 32 && _bytes32[i] != 0; i++) {
-    //         bytesArray[i] = _bytes32[i];
-    //     }
-    //     return string(bytesArray);
-    // }
-
-
 
 }
