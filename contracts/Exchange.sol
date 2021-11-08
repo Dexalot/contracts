@@ -18,20 +18,19 @@ import "./interfaces/ITradePairs.sol";
 *   @title "The Exchange contract is the main entry point to DEXALOT Decentralized Exchange Trading."
 *
 *   @dev Start up order:
-*   @dev     1. Deploy contracts: Exchange, Portfolio, OrderBooks, TradePairs and Fee
+*   @dev     1. Deploy contracts: Exchange, Portfolio, OrderBooks, TradePairs
 *   @dev     2. Call addTradePairs on Exchange
 *   @dev     3. Call setPortfolio and setTradePairs on Exchange
 *   @dev     4. Change ownership of contracts as per below
-*   @dev     5. Call addToken on Exchange to add supported erc20 tokens to Portfolio and Fee
+*   @dev     5. Call addToken on Exchange to add supported ERC20 tokens to Portfolio
 *
 *   @dev "During deployment the ownerships of contracts are changed so they become as follows once DEXALOT is fully deployed:"
-*   @dev "Exchange is owned by deploymentAccount to adjust operational parameters and add new trade pairs."
+*   @dev "Exchange is owned by proxyAdmin."
 *   @dev "Portfolio contract is owned by exchange contract."
 *   @dev "TradePairs contract is owned by exchange contract."
 *   @dev "OrderBooks contract is owned by TradePairs contract."
 *   @dev "Only tradepairs can internally call addExecution and adjustAvailable functions."
 *   @dev "Only valid trader accounts can call deposit and withdraw functions for their own accounts."
-*   @dev "Fee contract is owned by the deploymentAccount."
 */
 
 contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
