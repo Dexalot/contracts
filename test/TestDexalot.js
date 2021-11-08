@@ -21,14 +21,13 @@ let OrderBooks;
 let TradePairs;
 let Exchange;
 let Portfolio;
-let Fee;
 
 // using the first numberOfAccounts accounts
 numberOfAccounts = 3;
 
 // fee rates
-const makerRate = BigNumber(0);
-const takerRate = BigNumber(0.0010);
+const makerRate = BigNumber(0.0010);
+const takerRate = BigNumber(0.0020);
 
 // initial state
 // do transfers to Portfolio contract as follows before starting tests
@@ -64,6 +63,10 @@ const initial_portfolio_deposits = {AVAX: 1000, USDT: 3000, BUSD: 3000};
 
 var options = { gasLimit: 300000 };
 
+// Gnosis Safe Fuji on OpenZeppelin Defender
+const gnosisSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
+
+
 describe("Dexalot", () => {
 
     before(async () => {
@@ -82,7 +85,6 @@ describe("Dexalot", () => {
         TradePairs = await ethers.getContractFactory("TradePairs");
         Exchange = await ethers.getContractFactory("Exchange");
         Portfolio = await ethers.getContractFactory("Portfolio");
-        Fee = await ethers.getContractFactory("Fee");
 
         deploymentAccount = accounts[0];
         console.log("deploymentAccount =", deploymentAccount);
@@ -99,19 +101,10 @@ describe("Dexalot", () => {
         // get depositFeeRate
         depositFeeRate = parseFloat((await portfolio.getDepositFeeRate()).toString())/10000;
 
-        // initialize Fee contract
-        console.log("=== Set Fee Contract ===");
-        fee = await upgrades.deployProxy(Fee);
-        console.log("Fee address at: ", fee.address);
-
-        await fee.addBeneficiary(deploymentAccount, '10000', options);
-        console.log(deploymentAccount, "added as beneficiary with share of", '10000/10000');
-
-        await portfolio.setFee(fee.address);
-        console.log("Called setFee on Portfolio ");
-
-        await fee.addAdmin(portfolio.address);
-        console.log("portfolio at", portfolio.address, "added as admin to fee");
+        // initialize address collecting fees
+        console.log("=== Set Address Collecting the Fees ===");
+        await portfolio.setFeeAddress(gnosisSafe);
+        console.log("Called setFeeAddress on Portfolio ");
 
         console.log();
         console.log("=== Creating and Minting Mock Tokens ===");
@@ -140,8 +133,6 @@ describe("Dexalot", () => {
             _tokenAddr = await portfolio.getToken(Utils.fromUtf8(_tokenStr));
             _token = await MockToken.attach(_tokenAddr);
             tokenAddressMap[_tokenStr] = _token.address;
-            await fee.addToken(Utils.fromUtf8(await _token.symbol()), _token.address);
-            console.log("Added " + _tokenStr + " to Fee");
         }
         console.log(tokenAddressMap);
 
@@ -259,6 +250,10 @@ describe("Dexalot", () => {
             console.log(`${pair.id} added to TradePairs at ${tradePairs.address} with min trade amount of ${pair.minTradeAmount}.`)
             await exchange.addOrderType(pairIdAsBytes32, 0)  // 0 = MARKET, 1 = LIMIT
             console.log(`MARKET order type added to ${pair.id} at ${tradePairs.address}.`)
+            await exchange.updateRate(pairIdAsBytes32, 10, 0)
+            console.log(`${pair.id} at ${tradePairs.address} has its MAKER fee rate updated to 10/10000.`)
+            await exchange.updateRate(pairIdAsBytes32, 20, 1)
+            console.log(`${pair.id} at ${tradePairs.address} has its TAKER fee rate updated to 20/10000.`)
         }
 
         // get native list at system start-up
@@ -600,15 +595,27 @@ describe("Dexalot", () => {
             _checkValue = portfolioUser[order["owner"]][order["quoteSymbol"]]['available'];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
-            // check fee balances for base symbol
+            // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
-            _contractValue = BigNumber(Utils.formatUnits(await fee.getBalance(Utils.fromUtf8(order["baseSymbol"])), baseDecimals));
+            if (order["baseSymbol"] === "AVAX") {
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+            } else {
+                baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(order["baseSymbol"]));
+                token = await MockToken.attach(baseTokenAddr);
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[order["baseSymbol"]]));
+            }
             _checkValue = feeLumped[order["baseSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
-            // check fee balances for quote symbol
+            // check fee balance for quote symbol
             _checkName = "Fee balance ::: " + order["quoteSymbol"];
-            _contractValue = BigNumber(Utils.formatUnits(await fee.getBalance(Utils.fromUtf8(order["quoteSymbol"])), quoteDecimals));
+            if (order["quoteSymbol"] === "AVAX") {
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+            } else {
+                baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(order["quoteSymbol"]));
+                token = await MockToken.attach(baseTokenAddr);
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[order["quoteSymbol"]]));
+            }
             _checkValue = feeLumped[order["quoteSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
@@ -677,13 +684,17 @@ describe("Dexalot", () => {
         console.log()
         console.log("===== FEE CONTRACT LUMPED END STATE =====")
         for(const _token in feeLumped) {
-            _checkName = "Ending Fee contract balance ::: " + _token;
-            _contractValue = BigNumber(Utils.formatUnits(await fee.getBalance(Utils.fromUtf8(_token)), decimalsMap[_token]));
+            _checkName = "Ending Fee balance ::: " + _token;
+            if (_token === "AVAX") {
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+            } else {
+                baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(_token));
+                token = await MockToken.attach(baseTokenAddr);
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[_token]));
+            }
             _checkValue = feeLumped[_token];
             doNumberAssert(_checkName, _contractValue, _checkValue);
         }
-        console.log()
-
         console.log()
     });
 

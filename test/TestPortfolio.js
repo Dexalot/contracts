@@ -18,6 +18,10 @@ let account;
 
 let native = Utils.fromUtf8("AVAX");
 
+// Gnosis Safe Fuji
+const gnosisSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
+
+
 describe("Portfolio", () => {
 
     before(async () => {
@@ -28,19 +32,12 @@ describe("Portfolio", () => {
 
         MockToken = await ethers.getContractFactory("MockToken");
         Portfolio = await ethers.getContractFactory("Portfolio");
-        Fee = await ethers.getContractFactory("Fee");
-
-        // initialize fee
-        fee = await upgrades.deployProxy(Fee);
 
         // initialize portfolio
         portfolio = await upgrades.deployProxy(Portfolio);
 
-        await portfolio.setFee(fee.address);
-        console.log("Called setFee on Portfolio");
-
-        await fee.addAdmin(portfolio.address);
-        console.log("portfolio at", portfolio.address, "added as admin to fee");
+        await portfolio.setFeeAddress(gnosisSafe);
+        console.log("Called setFeeAddress on Portfolio");
 
         depositFeeRate = parseFloat((await portfolio.getDepositFeeRate()).toString())/10000;
     });

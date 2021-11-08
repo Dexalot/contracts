@@ -7,12 +7,10 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgrad
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
-
-import "./Fee.sol";
 
 /**
 *   @author "DEXALOT TEAM"
@@ -23,16 +21,16 @@ import "./Fee.sol";
 
 contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, IPortfolio {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
-    using SafeERC20 for IERC20;
+    using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.0.0');
+    bytes32 constant public VERSION = bytes32('1.1.0');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
 
-    // reference to fee contract
-    Fee public fee;
+    // account collecting fees
+    address public feeAddress;
 
     // bytes32 variable to hold native token of DEXALOT
     bytes32 constant public native = bytes32('AVAX');
@@ -49,7 +47,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     enum AssetType {NATIVE, ERC20, NONE}
 
     // bytes32 symbols to ERC20 token map
-    mapping (bytes32 => IERC20) private tokenMap;
+    mapping (bytes32 => IERC20Upgradeable) private tokenMap;
 
     // account address to assets map
     mapping (address => mapping (bytes32 => AssetEntry)) public assets;
@@ -61,7 +59,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     uint public depositFeeRate;
     uint public withdrawFeeRate;
 
-    event FeeSet(Fee _oldFee, Fee _newFee);
+    event FeeAddressSet(address _oldFee, address _newFee);
     event ParameterUpdated(bytes32 indexed pair, string _param, uint _oldValue, uint _newValue);
 
     function initialize() public initializer {
@@ -73,7 +71,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender); // set deployment account to have DEFAULT_ADMIN_ROLE
         allowDeposit = true;
         depositFeeRate = 0;    // depositFeeRate=0 (0% = 0/10000)
-        withdrawFeeRate = 20;  // withdrawFeeRate=20 (0.20% = 20/10000)
+        withdrawFeeRate = 0;   // withdrawFeeRate=0 (0% = 0/10000)
     }
 
     function owner() public view returns(address) {
@@ -110,14 +108,14 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         allowDeposit = !_paused;
     }
 
-    function setFee(Fee _fee) public {
+    function setFeeAddress(address _feeAddress) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-06");
-        emit FeeSet(fee, _fee);
-        fee = _fee;
+        emit FeeAddressSet(feeAddress, _feeAddress);
+        feeAddress = _feeAddress;
     }
 
-    function getFee() public view returns(Fee) {
-        return fee;
+    function getFeeAddress() public view returns(address) {
+        return feeAddress;
     }
 
     function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) public override {
@@ -140,12 +138,11 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     // function to add an ERC20 token
-    function addToken(bytes32 _symbol, IERC20 _token) public override {
+    function addToken(bytes32 _symbol, IERC20Upgradeable _token) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-08");
         if (!tokenList.contains(_symbol)) {
             tokenList.add(_symbol);
             tokenMap[_symbol] = _token;
-            fee.addToken(_symbol, _token);
         }
     }
 
@@ -159,7 +156,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     // FRONTEND FUNCTION TO GET AN ERC20 TOKEN
-    function getToken(bytes32 _symbol) public view returns(IERC20) {
+    function getToken(bytes32 _symbol) public view returns(IERC20Upgradeable) {
         return tokenMap[_symbol];
     }
 
@@ -303,10 +300,10 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         // console.log (bytes32ToString(_symbol), "safeTransferFee = Fee ", _feeCharged );
         bool feesuccess = true;
         if (native == _symbol) {
-            (feesuccess, ) = payable(fee).call{value: _feeCharged}('');
+            (feesuccess, ) = payable(feeAddress).call{value: _feeCharged}('');
             require(feesuccess, "P-STFF-01");
         } else {
-            tokenMap[_symbol].safeTransfer(payable(fee), _feeCharged);
+            tokenMap[_symbol].safeTransfer(payable(feeAddress), _feeCharged);
         }
     }
 
