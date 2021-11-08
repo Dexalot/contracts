@@ -30,7 +30,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.0.0');
+    bytes32 constant public VERSION = bytes32('1.1.0');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -114,8 +114,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             tradePairMap[_tradePairId].maxTradeAmount = _maxTradeAmount;
             tradePairMap[_tradePairId].buyBookId = _buyBookId;
             tradePairMap[_tradePairId].sellBookId = _sellBookId;
-            tradePairMap[_tradePairId].makerRate = 0; // makerRate=0 (0% = 0/10000)
-            tradePairMap[_tradePairId].takerRate = 10; // takerRate=10 (0.10% = 10/10000)
+            tradePairMap[_tradePairId].makerRate = 10; // makerRate=10 (0.10% = 10/10000)
+            tradePairMap[_tradePairId].takerRate = 20; // takerRate=20 (0.20% = 20/10000)
             tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
 
             // tradePairMap[_tradePairId].addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)

@@ -4,8 +4,8 @@ pragma solidity ^0.8.3;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 import "./library/Bytes32Library.sol";
 import "./library/StringLibrary.sol";
@@ -35,12 +35,12 @@ import "./interfaces/ITradePairs.sol";
 */
 
 contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
-    using SafeERC20 for IERC20Metadata;
+    using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
     using StringLibrary for string;
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.0.0');
+    bytes32 constant public VERSION = bytes32('1.1.0');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -139,11 +139,11 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         (bytes32 _quoteAssetSymbol, uint8 _quoteAssetDecimals) = getAssetMeta(_quoteAssetAddr);
         // check if base asset is native AVAX, if not it is ERC20 and add it
         if (_baseAssetSymbol != bytes32("AVAX")) {
-            portfolio.addToken(_baseAssetSymbol, IERC20Metadata(_baseAssetAddr));
+            portfolio.addToken(_baseAssetSymbol, IERC20MetadataUpgradeable(_baseAssetAddr));
         }
         // check if quote asset is native AVAX, if not it is ERC20 and add it
         if (_quoteAssetSymbol != bytes32("AVAX")) {
-            portfolio.addToken(_quoteAssetSymbol, IERC20Metadata(_quoteAssetAddr));
+            portfolio.addToken(_quoteAssetSymbol, IERC20MetadataUpgradeable(_quoteAssetAddr));
         }
         tradePairs.addTradePair(_tradePairId,
                                 _baseAssetSymbol, _baseAssetDecimals, _baseDisplayDecimals,
@@ -155,7 +155,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         if (_assetAddr == address(0)) {
             return (bytes32("AVAX"), 18);
         } else {
-            IERC20Metadata _asset = IERC20Metadata(_assetAddr);
+            IERC20MetadataUpgradeable _asset = IERC20MetadataUpgradeable(_assetAddr);
             return (StringLibrary.stringToBytes32(_asset.symbol()), _asset.decimals());
         }
     }
@@ -268,7 +268,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // DEPLOYMENT ACCOUNT FUNCTION TO ADD A NEW TOKEN
     // NEEDS TO BE CALLED ONLY AFTER PORTFOLIO IS SET FOR EXCHANGE AND PORTFOLIO OWNERSHIP IS CHANGED TO EXCHANGE
-    function addToken(bytes32 _symbol, IERC20 _token) public {
+    function addToken(bytes32 _symbol, IERC20Upgradeable _token) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-19");
         portfolio.addToken(_symbol, _token);
     }

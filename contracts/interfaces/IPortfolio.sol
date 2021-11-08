@@ -2,7 +2,7 @@
 
 pragma solidity ^0.8.3;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "./ITradePairs.sol";
 
@@ -11,7 +11,7 @@ interface IPortfolio {
     function unpause() external;
     function pauseDeposit(bool _paused) external;
     function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) external;
-    function addToken(bytes32 _symbol, IERC20 _token) external;
+    function addToken(bytes32 _symbol, IERC20Upgradeable _token) external;
     function adjustAvailable(Tx _transaction, address _trader, bytes32 _symbol, uint _amount) external;
     function addExecution(ITradePairs.Order memory _maker, address _taker, bytes32 _baseSymbol, bytes32 _quoteSymbol,
                           uint _baseAmount, uint _quoteAmount, uint _makerfeeCharged,
