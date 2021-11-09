@@ -1,7 +1,8 @@
 {
   "name": "dexalot-contracts",
-  "version": "2021.11.08",
-  "license": "SEE LICENSE IN LICENSE.txt",
+  "version": "1.1.0",
+  "license": "BSD-3-Clause",
+  "description": "Smart contracts in Solidity programming language for Dexalot's CLOB exchange",
   "private": true,
   "engines": {
     "node": "14.17.1"
