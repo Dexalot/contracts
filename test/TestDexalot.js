@@ -63,8 +63,8 @@ const initial_portfolio_deposits = {AVAX: 1000, USDT: 3000, BUSD: 3000};
 
 var options = { gasLimit: 300000 };
 
-// Gnosis Safe Fuji on OpenZeppelin Defender
-const gnosisSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
+// address (a multisig in production) that collects the fees
+const foundationSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
 
 
 describe("Dexalot", () => {
@@ -103,7 +103,7 @@ describe("Dexalot", () => {
 
         // initialize address collecting fees
         console.log("=== Set Address Collecting the Fees ===");
-        await portfolio.setFeeAddress(gnosisSafe);
+        await portfolio.setFeeAddress(foundationSafe);
         console.log("Called setFeeAddress on Portfolio ");
 
         console.log();
@@ -598,11 +598,11 @@ describe("Dexalot", () => {
             // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
             if (order["baseSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
             } else {
                 baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(order["baseSymbol"]));
                 token = await MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[order["baseSymbol"]]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[order["baseSymbol"]]));
             }
             _checkValue = feeLumped[order["baseSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
@@ -610,11 +610,11 @@ describe("Dexalot", () => {
             // check fee balance for quote symbol
             _checkName = "Fee balance ::: " + order["quoteSymbol"];
             if (order["quoteSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
             } else {
                 baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(order["quoteSymbol"]));
                 token = await MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[order["quoteSymbol"]]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[order["quoteSymbol"]]));
             }
             _checkValue = feeLumped[order["quoteSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
@@ -682,15 +682,15 @@ describe("Dexalot", () => {
 
         // Fee contract final checks
         console.log()
-        console.log("===== FEE CONTRACT LUMPED END STATE =====")
+        console.log("===== FEE ADDRESS END STATE =====")
         for(const _token in feeLumped) {
             _checkName = "Ending Fee balance ::: " + _token;
             if (_token === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(gnosisSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
             } else {
                 baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(_token));
                 token = await MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(gnosisSafe), decimalsMap[_token]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[_token]));
             }
             _checkValue = feeLumped[_token];
             doNumberAssert(_checkName, _contractValue, _checkValue);

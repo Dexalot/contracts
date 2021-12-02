@@ -6,7 +6,15 @@
 /artifacts
 /cache
 
-# Environment files
+# .env files
 .env
 .env.*
 !.env.example
+
+# .log files
+*-deployment.log
+
+# .json files
+dev-tokensWithAddress.json
+dev-contracts.json
+prod-contracts.json
