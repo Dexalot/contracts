@@ -1,0 +1,16 @@
+[
+    {
+        "symbol": "AVAX",
+        "name": "AVAX",
+        "isnative": true,
+        "address": null,
+        "evmdecimals": 18
+    },
+    {
+        "symbol": "USDT.e",
+        "name": "Tether USD",
+        "isnative": false,
+        "address": "0xc7198437980c041c805a1edcba50c1ce5db95118",
+        "evmdecimals": 6
+    }
+]
