@@ -21,7 +21,7 @@ yarn install
 
 ## Hardhat Environment Deployment
 
-### Compiles and starts the Hardhat environment on Terminal 1
+### Compile and start the Hardhat environment on Terminal 1
 This script creates a Hardhat Development blockchain that you can interact with.
 ```
 yarn hh-start-clean

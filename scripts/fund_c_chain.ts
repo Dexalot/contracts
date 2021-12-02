@@ -27,9 +27,6 @@ async function main(){
     let acct = accounts[i];
     console.log(`Sending ${FUND_AMT} AVAX to account ${acct}`)
 
-    const balance = await provider.getBalance(acct)
-    console.log(`Balance of account ${acct}: ${ethers.utils.formatEther(balance)} AVAX`)
-
     let weiAmt = ethers.utils.parseEther(FUND_AMT)
     const params = {
       to: acct,
