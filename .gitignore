@@ -2,7 +2,9 @@
 /node_modules
 
 # Hardhat artifacts directory
-/.openzeppelin
+unknown-*.json
+!fuji-43113.json
+!prod-43114.json
 /artifacts
 /cache
 
