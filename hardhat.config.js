@@ -65,6 +65,13 @@ module.exports = {
       gasPrice: 225000000000,
       chainId: 43114,
       accounts: [deploymentAccount]
+    },
+
+    subnet_local: {
+      url: chainInstance,
+      gasPrice: 225000000000,
+      chainId: 43214,
+      accounts: [deploymentAccount]
     }
   },
 
