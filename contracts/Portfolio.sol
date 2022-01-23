@@ -59,8 +59,15 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     uint public depositFeeRate;
     uint public withdrawFeeRate;
 
+    // contract address to trust status
+    mapping (address => bool) public trustedContracts;
+    // contract address to integrator organization name
+    mapping (address => string) public trustedContractToIntegrator;
+
     event FeeAddressSet(address _oldFee, address _newFee);
     event ParameterUpdated(bytes32 indexed pair, string _param, uint _oldValue, uint _newValue);
+
+    event ContractTrustStatusChanged(address indexed _contract, string indexed _organization, bool _status);
 
     function initialize() public initializer {
         __AccessControl_init();
@@ -112,6 +119,19 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-06");
         emit FeeAddressSet(feeAddress, _feeAddress);
         feeAddress = _feeAddress;
+    }
+
+    function addTrustedContract(address _contract, string calldata _organization) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-11");
+        trustedContracts[_contract] = true;
+        trustedContractToIntegrator[_contract] = _organization;
+        emit ContractTrustStatusChanged(_contract, _organization, true);
+    }
+
+    function removeTrustedContract(address _contract) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-12");
+        trustedContracts[_contract] = false;
+        emit ContractTrustStatusChanged(_contract, trustedContractToIntegrator[_contract], false);
     }
 
     function getFeeAddress() public view returns(address) {
@@ -180,7 +200,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         revert();
     }
 
-
     // FRONTEND FUNCTION TO DEPOSIT NATIVE TOKEN WITH WEB3 SENDTRANSACTION
     receive() external payable whenNotPaused nonReentrant {
         require(allowDeposit, "P-NTDP-01");
@@ -225,6 +244,25 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         uint _quantityLessFee = _quantity - feeCharged;
         safeIncrease(_from, _symbol, _quantityLessFee, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
+        tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
+        if (depositFeeRate>0) {
+            safeTransferFee(_symbol, feeCharged);
+        }
+        emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
+    }
+
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
+        require(trustedContracts[msg.sender], "P-AOTC-01");
+        require(allowDeposit, "P-ETDP-02");
+        require(_quantity > 0, "P-ZETD-02");
+        require(tokenList.contains(_symbol), "P-ETNS-02");
+        uint feeCharged;
+        if (depositFeeRate>0) {
+            feeCharged = (_quantity * depositFeeRate) / TENK;
+        }
+        uint _quantityLessFee = _quantity - feeCharged;
+        safeIncrease(_from, _symbol, _quantityLessFee, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
+        require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-02");
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
         if (depositFeeRate>0) {
             safeTransferFee(_symbol, feeCharged);
