@@ -256,17 +256,9 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(allowDeposit, "P-ETDP-02");
         require(_quantity > 0, "P-ZETD-02");
         require(tokenList.contains(_symbol), "P-ETNS-02");
-        uint feeCharged;
-        if (depositFeeRate>0) {
-            feeCharged = (_quantity * depositFeeRate) / TENK;
-        }
-        uint _quantityLessFee = _quantity - feeCharged;
-        safeIncrease(_from, _symbol, _quantityLessFee, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
+        safeIncrease(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-02");
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
-        if (depositFeeRate>0) {
-            safeTransferFee(_symbol, feeCharged);
-        }
         emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
     }
 
