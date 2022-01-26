@@ -259,7 +259,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         safeIncrease(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-02");
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
-        emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
+        emitPortfolioEvent(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT);
     }
 
     // FRONTEND FUNCTION TO WITHDRAW A QUANTITY FROM PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
