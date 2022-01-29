@@ -257,8 +257,8 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(_quantity > 0, "P-ZETD-02");
         require(tokenList.contains(_symbol), "P-ETNS-02");
         safeIncrease(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
-        require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-02");
-        tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
+        require(_quantity <= tokenMap[_symbol].balanceOf(msg.sender), "P-NETD-02");
+        tokenMap[_symbol].safeTransferFrom(msg.sender, address(this), _quantity);
         emitPortfolioEvent(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT);
     }
 
