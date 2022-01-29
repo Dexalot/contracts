@@ -252,12 +252,12 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
-        require(trustedContracts[msg.sender], "P-AOTC-01");
+        require(trustedContracts[msg.sender], "P-_-01"); // TODO: Set error message
         require(allowDeposit, "P-ETDP-02");
         require(_quantity > 0, "P-ZETD-02");
         require(tokenList.contains(_symbol), "P-ETNS-02");
         safeIncrease(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT); // reverts if transfer fails
-        require(_quantity <= tokenMap[_symbol].balanceOf(msg.sender), "P-NETD-02");
+        require(_quantity <= tokenMap[_symbol].balanceOf(msg.sender), "P-_-01"); // TODO: Set error message
         tokenMap[_symbol].safeTransferFrom(msg.sender, address(this), _quantity);
         emitPortfolioEvent(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT);
     }
