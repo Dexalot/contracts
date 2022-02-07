@@ -114,7 +114,7 @@ describe("Dexalot", () => {
             _tokenBytes32 = Utils.fromUtf8(_tokenStr);
             _tokenDecimals = decimalsMap[_tokenStr];
             _token = await MockToken.deploy("Mock " + _tokenStr + " Token", _tokenStr, _tokenDecimals);
-            await portfolio.addToken(Utils.fromUtf8(await _token.symbol()), _token.address);
+            await portfolio.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, 0); //AUction mode off
             for (i=0; i<numberOfAccounts; i++) {
                 account = accounts[i];
                 console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
@@ -246,7 +246,7 @@ describe("Dexalot", () => {
                                         tokenAddressMap[baseSymbol], pair.basePriceDecimal,
                                         tokenAddressMap[quoteSymbol],  pair.quotePriceDecimal,
                                         Utils.parseUnits((pair.minTradeAmount).toString(), pair.quoteDecimals),
-                                        Utils.parseUnits((pair.maxTradeAmount).toString(), pair.quoteDecimals));
+                                        Utils.parseUnits((pair.maxTradeAmount).toString(), pair.quoteDecimals), 0);
             console.log(`${pair.id} added to TradePairs at ${tradePairs.address} with min trade amount of ${pair.minTradeAmount}.`)
             await exchange.addOrderType(pairIdAsBytes32, 0)  // 0 = MARKET, 1 = LIMIT
             console.log(`MARKET order type added to ${pair.id} at ${tradePairs.address}.`)
@@ -353,7 +353,9 @@ describe("Dexalot", () => {
 
             type1Map = {"0": "MARKET",        // MARKET = Order.Type1.MARKET = 0
                         "1": "LIMIT",         // LIMIT = Order.Type1.LIMIT = 1
-                        "2": "STOP"}          // STOP = Order.Type1.STOP = 2
+                        "2": "STOP",          // STOP = Order.Type1.STOP = 2
+                        "3":"STOPLIMIT",
+                        "4": "LIMITFOK"}
 
             console.log();
             console.log("+++++++++++++++++++++++++++++++++++++++++++ START :: SIM # ", simNum, "+++++++++++++++++++++++++++++++++++++++++++");
@@ -370,7 +372,17 @@ describe("Dexalot", () => {
 
                 // add order
                 _side = order["side"] === "BUY" ? 0 : 1;
-                _type1 = order["type1"] === "MARKET" ? 0 : (order["type1"]  === "LIMIT" ? 1 : 2);
+
+                if (order["type1"] === "MARKET") {
+                    _type1 =0
+
+                } else if (order["type1"] === "LIMIT") {
+                    _type1 =1
+
+                } else if (order["type1"] === "LIMITFOK") {
+                    _type1 =4
+                }
+
                 baseDecimals = await tradePair.getDecimals(tradePairId, true);
                 quoteDecimals = await tradePair.getDecimals(tradePairId, false);
                 const tx = await tradePair.addOrder(tradePairId,
@@ -682,7 +694,7 @@ describe("Dexalot", () => {
 
         // Fee contract final checks
         console.log()
-        console.log("===== FEE ADDRESS END STATE =====")
+        console.log("===== FEE CONTRACT LUMPED END STATE =====")
         for(const _token in feeLumped) {
             _checkName = "Ending Fee balance ::: " + _token;
             if (_token === "AVAX") {

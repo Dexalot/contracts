@@ -18,6 +18,14 @@ module.exports = {
         return ethers.utils.parseBytes32String(txt);
     },
 
+    fromWei: function (wei) {
+        return ethers.utils.formatEther(wei);
+    },
+
+    toWei: function (wei) {
+        return ethers.utils.parseEther(wei);
+    },
+
     formatUnits: function (bn, decimals) {
       return ethers.utils.formatUnits(bn, decimals);
     },
@@ -47,6 +55,39 @@ module.exports = {
       } else {
         console.log("File does not exist:", filename)
       }
+    },
+
+    saveFile: function (filename, content) {
+      try {
+        fs.writeFileSync(filename, content, undefined, 2);
+        console.log("File saved:", filename);
+      } catch(err) {
+        console.log(err)
+        return
+      }
+    },
+
+    getContractVersionFromSol: function (filename) {
+      if (fs.existsSync(filename)) {
+        try {
+          const content = fs.readFileSync(filename, 'utf8');
+          let lines = content.split('\n');
+          let line = lines.filter(line => /VERSION/.test(line));
+          return line[0].match(/([0-9]{1,}\.)+[0-9]{1,}/g)[0];
+        } catch(err) {
+          console.log(err)
+          return
+        }
+      } else {
+        console.log("File does not exist:", filename)
+      }
+    },
+
+    extractVersion: function (version) {
+      version = version.replace('v', '')
+      version = version.replace('.', '')
+      version = version.replace('.', '')
+      return parseInt(version)
     }
 
 }

@@ -1,6 +1,6 @@
 {
   "name": "dexalot-contracts",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "BSD-3-Clause",
   "description": "Smart contracts in Solidity programming language for Dexalot's CLOB exchange",
   "private": true,
@@ -12,6 +12,8 @@
     "hh-start-clean": "yarn clean-contracts && npx hardhat node",
     "hh-test-dex": "npx hardhat test test/TestDexalot.js --network localhost",
     "hh-test-prtf": "npx hardhat test test/TestPortfolio.js --network localhost",
+    "hh-test-airdrop": "npx hardhat test test/TestAirdrop.js --network localhost",
+    "hh-test-vesting": "npx hardhat test test/TestTokenVesting.js --network localhost",
     "hh-mint": "npx hardhat run scripts/deploy-tokens.js --network localhost",
     "hh-deploy": "npx hardhat run scripts/deploy.js --network localhost",
     "av-fund-local": "ts-node scripts/fund_c_chain.ts",
@@ -34,6 +36,7 @@
     "av-verify-prod": "npx hardhat verify --network prod"
   },
   "dependencies": {
+    "@chainlink/contracts": "0.3.1",
     "@ethersproject/experimental": "5.5.0",
     "@nomiclabs/hardhat-ethers": "2.0.2",
     "@nomiclabs/hardhat-etherscan": "2.1.8",
@@ -48,6 +51,8 @@
     "ethers": "5.5.1",
     "hardhat": "2.6.8",
     "hardhat-contract-sizer": "2.1.1",
+    "keccak256": "1.0.6",
+    "merkletreejs": "0.2.27",
     "neat-csv": "6.0.1",
     "rimraf": "3.0.2"
   },

@@ -1,0 +1,16 @@
+[
+  {
+    "symbol": "AVAX",
+    "name": "AVAX",
+    "isnative": true,
+    "address": null,
+    "evmdecimals": 18
+  },
+  {
+    "symbol": "USDT.e",
+    "name": "Mock USDT.e",
+    "isnative": false,
+    "address": null,
+    "evmdecimals": 6
+  }
+]

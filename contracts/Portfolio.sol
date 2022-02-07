@@ -24,7 +24,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.1.0');
+    bytes32 constant public VERSION = bytes32('1.2.1');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -45,7 +45,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     enum AssetType {NATIVE, ERC20, NONE}
-
     // bytes32 symbols to ERC20 token map
     mapping (bytes32 => IERC20Upgradeable) private tokenMap;
 
@@ -59,14 +58,20 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     uint public depositFeeRate;
     uint public withdrawFeeRate;
 
+    struct TokenDetails {
+        ITradePairs.AuctionMode auctionMode;
+    }
     // contract address to trust status
     mapping (address => bool) public trustedContracts;
     // contract address to integrator organization name
     mapping (address => string) public trustedContractToIntegrator;
+    // auction status of each token
+    mapping (bytes32 => TokenDetails) private tokenDetailsMap;
+    // auction admin role
+    bytes32 constant public AUCTION_ADMIN_ROLE = keccak256("AUCTION_ADMIN_ROLE");
 
     event FeeAddressSet(address _oldFee, address _newFee);
     event ParameterUpdated(bytes32 indexed pair, string _param, uint _oldValue, uint _newValue);
-
     event ContractTrustStatusChanged(address indexed _contract, string indexed _organization, bool _status);
 
     function initialize() public initializer {
@@ -85,19 +90,37 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         return getRoleMember(DEFAULT_ADMIN_ROLE, 0);
     }
 
-    function addAdmin(address _address) public {
+    function addAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
         grantRole(DEFAULT_ADMIN_ROLE, _address);
+        emit ContractTrustStatusChanged(_address, "P-ADMIN", true);
     }
 
-    function removeAdmin(address _address) public {
+    function removeAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-02");
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE)>1, "P-ALOA-01");
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
+        emit ContractTrustStatusChanged(_address, "P-ADMIN", false);
     }
 
     function isAdmin(address _address) public view returns(bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    function addAuctionAdmin(address _address) public override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-11");
+        grantRole(AUCTION_ADMIN_ROLE, _address);
+        emit ContractTrustStatusChanged(_address, "P-AUCTION-ADMIN", true);
+    }
+
+    function removeAuctionAdmin(address _address) public override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-12");
+        revokeRole(AUCTION_ADMIN_ROLE, _address);
+        emit ContractTrustStatusChanged(_address, "P-AUCTION-ADMIN", false);
+    }
+
+    function isAuctionAdmin(address _address) public view returns(bool) {
+        return hasRole(AUCTION_ADMIN_ROLE, _address);
     }
 
     function pause() public override {
@@ -121,21 +144,21 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         feeAddress = _feeAddress;
     }
 
-    function addTrustedContract(address _contract, string calldata _organization) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-11");
+    function getFeeAddress() public view returns(address) {
+        return feeAddress;
+    }
+
+    function addTrustedContract(address _contract, string calldata _organization) external override {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-13");
         trustedContracts[_contract] = true;
         trustedContractToIntegrator[_contract] = _organization;
         emit ContractTrustStatusChanged(_contract, _organization, true);
     }
 
     function removeTrustedContract(address _contract) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-12");
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-12");
         trustedContracts[_contract] = false;
         emit ContractTrustStatusChanged(_contract, trustedContractToIntegrator[_contract], false);
-    }
-
-    function getFeeAddress() public view returns(address) {
-        return feeAddress;
     }
 
     function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) public override {
@@ -158,11 +181,14 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     // function to add an ERC20 token
-    function addToken(bytes32 _symbol, IERC20Upgradeable _token) public override {
+    function addToken(bytes32 _symbol, IERC20Upgradeable _token, ITradePairs.AuctionMode _mode) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-08");
         if (!tokenList.contains(_symbol)) {
             tokenList.add(_symbol);
             tokenMap[_symbol] = _token;
+            TokenDetails storage tokenDetails = tokenDetailsMap[_symbol];
+            tokenDetails.auctionMode = _mode;
+            emit ParameterUpdated(_symbol, "P-ADDTOKEN", 0, uint(_mode));
         }
     }
 
@@ -178,6 +204,13 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     // FRONTEND FUNCTION TO GET AN ERC20 TOKEN
     function getToken(bytes32 _symbol) public view returns(IERC20Upgradeable) {
         return tokenMap[_symbol];
+    }
+
+    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) public override {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-AUCT-01");
+        uint oldValue = uint(tokenDetailsMap[_symbol].auctionMode);
+        tokenDetailsMap[_symbol].auctionMode = _mode;
+        emit ParameterUpdated(_symbol, "P-AUCTION", oldValue, uint(_mode));
     }
 
     // FRONTEND FUNCTION TO GET PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
@@ -251,7 +284,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
     }
 
-    function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant override {
         require(trustedContracts[msg.sender], "P-AOTC-01");
         require(allowDeposit, "P-ETDP-02");
         require(_quantity > 0, "P-ZETD-02");
@@ -261,12 +294,12 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
         emitPortfolioEvent(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT);
     }
-
     // FRONTEND FUNCTION TO WITHDRAW A QUANTITY FROM PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
     function withdrawToken(address _to, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
         require(_to == msg.sender, "P-OOWT-01");
         require(_quantity > 0, "P-ZTQW-01");
         require(tokenList.contains(_symbol), "P-ETNS-02");
+        require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF , "P-AUCT-02");
         safeDecrease(_to, _symbol, _quantity, IPortfolio.Tx.WITHDRAW); // does not decrease if transfer fails
         uint _quantityLessFee = _quantity;
         uint feeCharged;

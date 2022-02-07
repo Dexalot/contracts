@@ -145,8 +145,6 @@ async function main() {
   }
   console.log(`Trade Pair List: ${tradepairs}`)
 
-  const bal_wallet2 = await provider.getBalance(deploymentWallet.address)
-
   console.log(`Deployment account ${deploymentWallet.address} balance: ${Utils.formatUnits(bal_wallet1, 18)} AVAX`)
 }
 

@@ -103,7 +103,7 @@ describe("Portfolio", () => {
     it("... should add ERC20 token to portfolio and fee", async () => {
         console.log();
         USDT = Utils.fromUtf8(await usdt.symbol());
-        await portfolio.addToken(USDT, usdt.address, {from: account});
+        await portfolio.addToken(USDT, usdt.address, 0,  {from: account}); //Auction mode off
         console.log("ERC20 token USDT added to portfolio and fee");
         tokens = await portfolio.getTokenList();
         expect(tokens[0]).to.equal(USDT);

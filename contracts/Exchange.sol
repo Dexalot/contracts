@@ -7,6 +7,8 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgrad
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
+import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+
 import "./library/Bytes32Library.sol";
 import "./library/StringLibrary.sol";
 
@@ -39,7 +41,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.1.0');
+    bytes32 constant public VERSION = bytes32('1.2.2');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -47,14 +49,26 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     // portfolio reference
     IPortfolio private portfolio;
 
+    // auction admin role
+    bytes32 constant public AUCTION_ADMIN_ROLE = keccak256("AUCTION_ADMIN_ROLE");
+
+    // price feed from chainlink oracle
+    AggregatorV3Interface internal priceFeed;
+
     event PortfolioSet(IPortfolio _oldPortfolio, IPortfolio _newPortfolio);
     event TradePairsSet(ITradePairs _oldTradePairs, ITradePairs _newTradePairs);
+    event CoinFlipped(uint80 roundid, int price, bool outcome);
 
     function initialize() public initializer {
         __AccessControl_init();
 
         // intitialize the admins
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender); // set deployment account to have DEFAULT_ADMIN_ROLE
+
+        // initialize AVAX/USD price feed with fuji testnet contract,
+        // for production deployment it needs to be updated with setPriceFeed function
+        // heart-beat = 2m, decimals = 8
+        priceFeed = AggregatorV3Interface(0x5498BB86BC934c8D34FDA08E81D444153d0D06aD);
     }
 
     function owner() public view returns(address) {
@@ -64,16 +78,58 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     function addAdmin(address _address) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-01");
         grantRole(DEFAULT_ADMIN_ROLE, _address);
+        portfolio.addAdmin(_address);
     }
 
     function removeAdmin(address _address) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-02");
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE)>1, "E-ALOA-01");
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
+        portfolio.removeAdmin(_address);
     }
 
     function isAdmin(address _address) public view returns(bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    function addAuctionAdmin(address _address) public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-22");
+        grantRole(AUCTION_ADMIN_ROLE, _address);
+        portfolio.addAuctionAdmin(_address);
+    }
+
+    function removeAuctionAdmin(address _address) public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-23");
+        revokeRole(AUCTION_ADMIN_ROLE, _address);
+        portfolio.removeAuctionAdmin(_address);
+    }
+
+    function isAuctionAdmin(address _address) public view returns(bool) {
+        return hasRole(AUCTION_ADMIN_ROLE, _address);
+    }
+
+    function setPriceFeed(address _address) public {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-24");
+        priceFeed = AggregatorV3Interface(_address);
+    }
+
+    function getPriceFeed() public view returns (AggregatorV3Interface) {
+        return priceFeed;
+    }
+
+    // returns true/false = head/tail based on the latest AVAX/USD price
+    function isHead() public view returns (uint80 r, int p, bool o) {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-28");
+        (r, p, , , ) = priceFeed.latestRoundData();  // example answer: 7530342847
+        int d1 = p % 1000000 / 100000;    // get 6th digit from right, d1=3 for example
+        int d2 = p % 10000000 / 1000000;  // get 7th digit from right, d2=0 for example
+        o = d1>d2;                        // head if d1>d2, 3>0=True=Heads for example
+    }
+
+    // emits coin flip results based on the latest AVAX/USD price
+    function flipCoin() public {
+        (uint80 r, int p, bool o) = isHead();
+        emit CoinFlipped(r, p, o);
     }
 
     // FRONTEND FUNCTION TO GET A LIST OF TRADE PAIRS
@@ -87,10 +143,27 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         portfolio.updateTransferFeeRate(_rate, _rateType);
     }
 
-    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE EXECUTIONS
+    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
     function updateRate(bytes32 _tradePair, uint _rate, ITradePairs.RateType _rateType) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-04");
         tradePairs.updateRate(_tradePair, _rate, _rateType);
+    }
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
+    function updateRates(bytes32 _tradePair, uint _makerRate, uint _takerRate) public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-20");
+        tradePairs.updateRate(_tradePair, _makerRate, ITradePairs.RateType.MAKER);
+        tradePairs.updateRate(_tradePair, _takerRate, ITradePairs.RateType.TAKER);
+    }
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE ALL FEE RATES FOR EXECUTIONS
+    function updateAllRates(uint _makerRate, uint _takerRate) public {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-21");
+        bytes32[] memory pairs = getTradePairs();
+        for (uint i=0; i<pairs.length; i++) {
+            tradePairs.updateRate(pairs[i], _makerRate, ITradePairs.RateType.MAKER);
+            tradePairs.updateRate(pairs[i], _takerRate, ITradePairs.RateType.TAKER);
+        }
     }
 
     // DEPLOYMENT ACCOUNT FUNCTION TO GET MAKER FEE RATE
@@ -131,23 +204,25 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     function addTradePair(bytes32 _tradePairId,
                           address _baseAssetAddr, uint8 _baseDisplayDecimals,
                           address _quoteAssetAddr, uint8 _quoteDisplayDecimals,
-                          uint _minTradeAmount, uint _maxTradeAmount)
+                          uint _minTradeAmount, uint _maxTradeAmount, ITradePairs.AuctionMode _mode)
             public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-07");
+
         (bytes32 _baseAssetSymbol, uint8 _baseAssetDecimals) = getAssetMeta(_baseAssetAddr);
         (bytes32 _quoteAssetSymbol, uint8 _quoteAssetDecimals) = getAssetMeta(_quoteAssetAddr);
         // check if base asset is native AVAX, if not it is ERC20 and add it
         if (_baseAssetSymbol != bytes32("AVAX")) {
-            portfolio.addToken(_baseAssetSymbol, IERC20MetadataUpgradeable(_baseAssetAddr));
+            //Only the base token can be an auction TOKEN
+            portfolio.addToken(_baseAssetSymbol, IERC20MetadataUpgradeable(_baseAssetAddr), _mode);
         }
         // check if quote asset is native AVAX, if not it is ERC20 and add it
         if (_quoteAssetSymbol != bytes32("AVAX")) {
-            portfolio.addToken(_quoteAssetSymbol, IERC20MetadataUpgradeable(_quoteAssetAddr));
+            portfolio.addToken(_quoteAssetSymbol, IERC20MetadataUpgradeable(_quoteAssetAddr), ITradePairs.AuctionMode.OFF);
         }
         tradePairs.addTradePair(_tradePairId,
                                 _baseAssetSymbol, _baseAssetDecimals, _baseDisplayDecimals,
                                 _quoteAssetSymbol, _quoteAssetDecimals, _quoteDisplayDecimals,
-                                _minTradeAmount, _maxTradeAmount);
+                                _minTradeAmount, _maxTradeAmount, _mode);
     }
 
     function getAssetMeta(address _assetAddr) private view returns (bytes32 _symbol, uint8 _decimals) {
@@ -186,10 +261,18 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         }
     }
 
-    // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
+    function pauseForUpgrade(bool _paused) public {
+        pausePortfolio(_paused);
+        pauseTrading(_paused);
+    }
+        // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
     // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
+        if (tradePairs.getAuctionMode(_tradePairId) == 0) { //Auction OFF
+            require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
+        } else {
+            require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-26");
+        }
         tradePairs.pauseTradePair(_tradePairId, _tradePairPaused);
     }
 
@@ -267,9 +350,25 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // DEPLOYMENT ACCOUNT FUNCTION TO ADD A NEW TOKEN
     // NEEDS TO BE CALLED ONLY AFTER PORTFOLIO IS SET FOR EXCHANGE AND PORTFOLIO OWNERSHIP IS CHANGED TO EXCHANGE
-    function addToken(bytes32 _symbol, IERC20Upgradeable _token) public {
+    function addToken(bytes32 _symbol, IERC20Upgradeable _token, ITradePairs.AuctionMode _mode) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-19");
-        portfolio.addToken(_symbol, _token);
+        portfolio.addToken(_symbol, _token, _mode);
+    }
+
+    function setAuctionModeTradePair(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) public {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-25");
+        tradePairs.setAuctionMode(_tradePairId, _mode);
+        // Only Base Token can be in Auction
+        portfolio.setAuctionMode(tradePairs.getSymbol(_tradePairId, true), _mode);
+    }
+
+    function getAuctionModeTradePair(bytes32 _tradePairId) public view returns (uint) {
+        return tradePairs.getAuctionMode(_tradePairId);
+    }
+
+    function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) public {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
+        tradePairs.matchAuctionOrders(_tradePairId, auctionPrice, maxCount);
     }
 
     fallback() external {}
