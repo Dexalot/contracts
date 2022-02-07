@@ -1,8 +1,17 @@
 
 const fs = require("fs")
+require('dotenv').config({path: './.env'});
 const { ethers } = require("hardhat")
 
 const Utils = require('./utils.js')
+
+const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev"
+
+MAX_GAS_PRICE = deployment_mode === "dev" ? 225000000000 : 55000000000
+
+GAS_LIMIT = 1500000
+
+var options = { gasLimit: GAS_LIMIT }
 
 const MINTAMOUNT = '500000'
 
@@ -20,10 +29,12 @@ async function main() {
 
   // add ERC20 Tokens
   // DEVELOPMENT CODE START
-  // add mock tokens from the dev-tokens.json file and write dev-tokensWithAddress.json for dev-deploy.js to use
-  // it will be replaced by code to add actual ERC20 tokens for PRODUCTION
+  // add mock tokens from the deployment_mode-tokens.json file
+  // and write deployment_mode-tokensWithAddress.json for 
+  // deployment_mode-deploy.js to use it will be replaced by code
+  // to add actual ERC20 tokens for PRODUCTION
   // ************
-  const tokens = require("./dev-tokens.json")
+  const tokens = require(`./${deployment_mode}-tokens.json`)
 
   let tokensWithAddress = []
 
@@ -56,7 +67,7 @@ async function main() {
     tokensWithAddress.push(token)
   }
 
-  fs.writeFileSync("./scripts/dev-tokensWithAddress.json", JSON.stringify(tokensWithAddress, 0, 4), "utf8", function(err) {
+  fs.writeFileSync(`./scripts/${deployment_mode}-tokensWithAddress.json`, JSON.stringify(tokensWithAddress, 0, 4), "utf8", function(err) {
     if (err) {
         console.log(err);
     }

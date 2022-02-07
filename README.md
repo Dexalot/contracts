@@ -39,6 +39,18 @@ This script runs a set of simulated trades to test the whole system.  Before run
 yarn hh-test-dex
 ```
 
+### Run the airdrop contract tests on the Hardhat environment on Terminal 2
+This script runs a set of tests for the airdrop contract.  You need to have a running ```yarn hh-start-clean``` process first.
+```
+yarn hh-test-airdrop
+```
+
+### Run the vesting contract tests on the Hardhat environment on Terminal 2
+This script runs a set of tests for the vesting contract.  You need to have a running ```yarn hh-start-clean``` process first.
+```
+yarn hh-test-vesting
+```
+
 ### Deploy mock tokens and exchange on the Hardhat environment on Terminal 2
 Hardhat development environement creates pre-funded accounts when you run ```yarn hh-start-clean```.  After you run that script just deploy your tokens with ```yarn hh-mint``` and then deploy Dexalot smart contracts via ```yarn hh-deploy```.  Here is the list of commands.
 ```

@@ -22,7 +22,7 @@ interface ITradePairs {
     function pauseAddOrder(bytes32 _tradePairId, bool _allowAddOrder) external;
     function addTradePair(bytes32 _tradePairId, bytes32 _baseSymbol, uint8 _baseDecimals, uint8 _baseDisplayDecimals,
                           bytes32 _quoteSymbol, uint8 _quoteDecimals, uint8 _quoteDisplayDecimals,
-                          uint _minTradeAmount, uint _maxTradeAmount) external;
+                          uint _minTradeAmount, uint _maxTradeAmount, AuctionMode _mode) external;
     function getTradePairs() external view returns (bytes32[] memory);
     function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) external;
     function getMinTradeAmount(bytes32 _tradePairId) external view returns (uint);
@@ -45,10 +45,16 @@ interface ITradePairs {
     function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
     function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) external;
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) external;
+    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
+    function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) external;
+    function getNBuyBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
+    function getNSellBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
+    function getAuctionMode(bytes32 _tradePairId) external view returns (uint);
 
     enum Side     {BUY, SELL}
-    enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT}
+    enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}
     enum Status   {NEW, REJECTED, PARTIAL, FILLED, CANCELED, EXPIRED, KILLED}
     enum RateType {MAKER, TAKER}
     enum Type2    {GTC, FOK}
+    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, CLOSINGT2}
 }

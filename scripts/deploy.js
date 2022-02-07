@@ -5,9 +5,9 @@ const { ethers, upgrades } = require("hardhat")
 
 const Utils = require('./utils.js')
 
-const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev"
+const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev-local"
 
-MAX_GAS_PRICE = deployment_mode === "dev" ? 225000000000 : 55000000000
+MAX_GAS_PRICE = deployment_mode === "dev-local" ? 225000000000 : 55000000000
 
 GAS_LIMIT = 1500000
 
@@ -114,30 +114,34 @@ async function main() {
 
   let tx
 
+
   // **********************************************************
   // ADD ADMIN
   // Exchange, Portfolio
   // **********************************************************
 
+  tx = await exchange.setPortfolio(portfolio.address, options)
+  await tx.wait()
+  console.log(`Called setPortfolio on Exchange ${exchange.address} [${tx.hash}]`)
+
+  tx = await portfolio.addAdmin(exchange.address, options)
+  await tx.wait()
+  console.log(`Exchange ${exchange.address} is admin in Portfolio ${portfolio.address} [${tx.hash}]`)
+
   // add Exchange multisig wallet to the DEFAULT_ADMIN_ROLE
   tx = await exchange.addAdmin(exchangeSafe, options)
   console.log(`Exchange multisig wallet ${exchangeSafe} is admin to Exchange ${exchange.address} [${tx.hash}]`)
-  tx = await portfolio.addAdmin(exchangeSafe, options)
   console.log(`Exchange multisig wallet ${exchangeSafe} is admin to Portfolio ${portfolio.address} [${tx.hash}]`)
+
+  tx = await portfolio.addAdmin(tradePairs.address, options)
+  await tx.wait()
+  console.log(`TradePairs ${tradePairs.address} is admin in Portfolio ${portfolio.address} [${tx.hash}]`)
 
 
   // **********************************************************
   // SET CONTRACT HIERARCHY
   // Exchange, Portfolio, OrderBooks, TradePairs
   // **********************************************************
-
-  tx = await portfolio.addAdmin(tradePairs.address, options)
-  await tx.wait()
-  console.log(`TradePairs ${tradePairs.address} is admin in Portfolio ${portfolio.address} [${tx.hash}]`)
-
-  tx = await portfolio.addAdmin(exchange.address, options)
-  await tx.wait()
-  console.log(`Exchange ${exchange.address} is admin in Portfolio ${portfolio.address} [${tx.hash}]`)
 
   tx = await orderBooks.transferOwnership(tradePairs.address, options)
   await tx.wait()
@@ -147,10 +151,6 @@ async function main() {
   await tx.wait()
   console.log(`TradePairs ${tradePairs.address} ownership transferred to Exchange ${await tradePairs.owner()} [${tx.hash}]`)
 
-  tx = await exchange.setPortfolio(portfolio.address, options)
-  await tx.wait()
-  console.log(`Called setPortfolio on Exchange ${exchange.address} [${tx.hash}]`)
-
   tx = await exchange.setTradePairs(tradePairs.address)
   await tx.wait()
   console.log(`Called setTradePairs on Exchange ${exchange.address} [${tx.hash}]`)
@@ -159,9 +159,12 @@ async function main() {
   await tx.wait()
   console.log(`Called setFeeAddress on Portfolio ${portfolio.address} [${tx.hash}]`)
 
+
   // **********************************************************
   // ADD TRADE PAIRS
   // **********************************************************
+
+  const auctionModeOff = 0
 
   for (const pair of pairs) {
     pairIdAsBytes32 = Utils.fromUtf8(pair.pair) // trading pair id needs to be bytes32
@@ -170,7 +173,7 @@ async function main() {
     tx = await exchange.addTradePair(pairIdAsBytes32,
                                      tokenAddressMap[pair.base], pair.basedisplaydecimals,
                                      tokenAddressMap[pair.quote], pair.quotedisplaydecimals,
-                                     mintrade_amnt, maxtrade_amnt, options)
+                                     mintrade_amnt, maxtrade_amnt, auctionModeOff, options)
     await tx.wait()
     console.log(`${pair.pair} added to TradePairs ${tradePairs.address} via Exchange ${exchange.address} [${tx.hash}]`)
     console.log(`${pair.pair} on TradePairs ${tradePairs.address} MIN trade amount: ${await exchange.getMinTradeAmount(pairIdAsBytes32)}`)
@@ -203,9 +206,6 @@ async function main() {
   tx = await exchange.removeAdmin(deploymentWallet.address, options)
   await tx.wait()
   console.log(`Deployment Wallet ${deploymentWallet.address} removed from admin in Exchange ${exchange.address} [${tx.hash}]`)
-
-  tx = await portfolio.removeAdmin(deploymentWallet.address, options)
-  await tx.wait()
   console.log(`Deployment Wallet ${deploymentWallet.address} removed from admin in Portfolio ${portfolio.address} [${tx.hash}]`)
 
   // The owner of the ProxyAdmin can upgrade our contracts

@@ -17,6 +17,10 @@ unknown-*.json
 *-deployment.log
 
 # .json files
-dev-tokensWithAddress.json
-dev-contracts.json
+hh-tokensWithAddress.json
+dev-local-tokensWithAddress.json
+dev-cloud-tokensWithAddress.json
+hh-contracts.json
+dev-local-contracts.json
+dev-cloud-contracts.json
 prod-contracts.json
