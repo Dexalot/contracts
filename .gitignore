@@ -17,10 +17,11 @@ unknown-*.json
 *-deployment.log
 
 # .json files
-hh-tokensWithAddress.json
-dev-local-tokensWithAddress.json
-dev-cloud-tokensWithAddress.json
-hh-contracts.json
-dev-local-contracts.json
-dev-cloud-contracts.json
-prod-contracts.json
+*-*tokensWithAddress.json
+*-contracts.json
+*-*hashes*.json
+*-airdrop.json
+*-DexalotToken.json
+*-0x*.json
+!fuji-*.json
+!prod-*.json

@@ -5,7 +5,7 @@ const { ethers } = require("hardhat")
 
 const Utils = require('./utils.js')
 
-const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev"
+const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev-local"
 
 MAX_GAS_PRICE = deployment_mode === "dev" ? 225000000000 : 55000000000
 
@@ -30,7 +30,7 @@ async function main() {
   // add ERC20 Tokens
   // DEVELOPMENT CODE START
   // add mock tokens from the deployment_mode-tokens.json file
-  // and write deployment_mode-tokensWithAddress.json for 
+  // and write deployment_mode-tokensWithAddress.json for
   // deployment_mode-deploy.js to use it will be replaced by code
   // to add actual ERC20 tokens for PRODUCTION
   // ************

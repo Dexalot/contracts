@@ -6,6 +6,7 @@ const { ethers, upgrades } = require("hardhat")
 const Utils = require('./utils.js')
 
 const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev-local"
+const dexalotToken = require(`./${deployment_mode}-DexalotToken.json`)
 
 MAX_GAS_PRICE = deployment_mode === "dev-local" ? 225000000000 : 55000000000
 
@@ -136,6 +137,28 @@ async function main() {
   tx = await portfolio.addAdmin(tradePairs.address, options)
   await tx.wait()
   console.log(`TradePairs ${tradePairs.address} is admin in Portfolio ${portfolio.address} [${tx.hash}]`)
+
+  tx = await portfolio.addAuctionAdmin(exchangeSafe, options)
+  await tx.wait()
+  console.log(`Exchange safe ${exchangeSafe} added to auction admin on portfolio at ${portfolio.address}.`)
+
+  tx = await portfolio.addAuctionAdmin(deploymentWallet.address, options)
+  await tx.wait()
+  console.log(`Deployment wallet ${deploymentWallet.address} added to auction admin on portfolio at ${portfolio.address}.`)
+
+
+  // **********************************************************
+  // ADD DEXALOT TOKEN ALOT TO EXCHANGE
+  // Exchange, Portfolio, DexalotToken
+  // **********************************************************
+
+  const DexalotToken = await ethers.getContractFactory("DexalotToken")
+  const alot = await DexalotToken.attach(dexalotToken.address)
+  const symbol = await alot.symbol()
+  const symbolBytes32 = Utils.fromUtf8(symbol)
+  tx = await exchange.addToken(symbolBytes32, alot.address, 0)   // auction mode 0
+  await tx.wait()
+  console.log(`Dexalot Token ALOT at ${alot.address} added to exchange at ${exchange.address} and portfolio at ${portfolio.address}.`)
 
 
   // **********************************************************

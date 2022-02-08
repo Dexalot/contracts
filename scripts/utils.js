@@ -34,6 +34,10 @@ module.exports = {
       return ethers.utils.parseUnits(txt, decimals);
     },
 
+    parseEther: function(amount) {
+      return ethers.utils.parseEther(amount);
+    },
+
     bnToStr: function(_bn) {
         return _bn.toString();
     },
