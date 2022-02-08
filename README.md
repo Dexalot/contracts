@@ -51,10 +51,11 @@ This script runs a set of tests for the vesting contract.  You need to have a ru
 yarn hh-test-vesting
 ```
 
-### Deploy mock tokens and exchange on the Hardhat environment on Terminal 2
-Hardhat development environement creates pre-funded accounts when you run ```yarn hh-start-clean```.  After you run that script just deploy your tokens with ```yarn hh-mint``` and then deploy Dexalot smart contracts via ```yarn hh-deploy```.  Here is the list of commands.
+### Deploy mock tokens, Dexalot token and exchange on the Hardhat environment on Terminal 2
+Hardhat development environement creates pre-funded accounts when you run ```yarn hh-start-clean```.  After you run that script just deploy your tokens with ```yarn hh-mint``` and ```yarn hh-deploy-dexalot-token```. Then, deploy Dexalot smart contracts via ```yarn hh-deploy```.  Here is the list of commands.
 ```
 yarn hh-mint
+yarn hh-deploy-dexalot-token
 yarn hh-deploy
 ```
 

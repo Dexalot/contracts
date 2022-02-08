@@ -30,7 +30,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.3');
+    bytes32 constant public VERSION = bytes32('1.2.4');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -59,6 +59,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         bool addOrderPaused;         // boolean to control addOrder functionality per TradePair
         bool pairPaused;             // boolean to control addOrder and cancelOrder functionality per TradePair
         AuctionMode auctionMode;     // control auction states
+        uint auctionMinPrice;
     }
 
     // mapping data structure for all trade pairs
@@ -179,6 +180,14 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             pauseTradePair(_tradePairId, false);
         }
         emit ParameterUpdated(_tradePairId, "T-AUCTION", oldValue, uint(_mode) );
+    }
+
+    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) public override onlyOwner {
+         tradePairMap[_tradePairId].auctionMinPrice=_price;
+    }
+
+    function getAuctionMinPrice (bytes32 _tradePairId) public view override returns (uint) {
+         return tradePairMap[_tradePairId].auctionMinPrice;
     }
 
     function getAuctionMode(bytes32 _tradePairId) public override view returns (uint) {
@@ -472,9 +481,10 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             if (takerRemainingQuantity == 0) {
                 orderBooks.removeFirstOrder(bookId, price);
             }
-            emitStatusUpdate(_tradePairId, takerOrder.id); // EMIT taker order's status update
-            if (startRemainingQuantity == takerRemainingQuantity){
+            if (startRemainingQuantity == takerRemainingQuantity) { 
                 emit ParameterUpdated(_tradePairId, "T-AUCT-MATCH", 1, 0);
+            } else {
+                emitStatusUpdate(_tradePairId, takerOrder.id); // EMIT taker order's status update
             }
         } else {
             emit ParameterUpdated(_tradePairId, "T-AUCT-MATCH", 1, 0);
@@ -601,6 +611,21 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, _order.traderaddress, _tradePair.baseSymbol, getRemainingQuantity(_order));
         }
         emitStatusUpdate(_tradePairId, _order.id);
+    }
+
+    // FRONTEND ENTRY FUNCTION TO CALL TO C/R ORDER DURING AUCTION
+    function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) public override nonReentrant whenNotPaused {
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        require(_tradePair.auctionMode == AuctionMode.CLOSINGT2, "T-AUCT-09");
+        Order storage _order = orderMap[_orderId];
+        require(_order.id != '', "T-EOID-01");
+        require(_order.traderaddress == msg.sender, "T-OOCC-01");
+        require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
+        require(!_tradePair.pairPaused, "T-PPAU-02");
+        require(_price >= _tradePair.auctionMinPrice , "T-AUCT-07");
+        require(_price * _quantity >= _order.price * _order.quantity, "T-AUCT-08");
+        doOrderCancel(_tradePairId, _order.id);
+        addLimitOrder(_tradePairId, _price, _quantity, _order.side, _order.type1);
     }
 
     // FRONTEND ENTRY FUNCTION TO CALL TO CANCEL ONE ORDER
