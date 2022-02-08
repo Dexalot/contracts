@@ -45,11 +45,14 @@ interface ITradePairs {
     function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
     function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) external;
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) external;
+    function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) external;
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
     function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) external;
     function getNBuyBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
     function getNSellBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
     function getAuctionMode(bytes32 _tradePairId) external view returns (uint);
+    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) external;
+    function getAuctionMinPrice (bytes32 _tradePairId) external view returns (uint);
 
     enum Side     {BUY, SELL}
     enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}

@@ -41,7 +41,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.2');
+    bytes32 constant public VERSION = bytes32('1.2.3');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -369,6 +369,15 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) public {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
         tradePairs.matchAuctionOrders(_tradePairId, auctionPrice, maxCount);
+    }
+
+    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) public  {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
+        tradePairs.setAuctionMinPrice(_tradePairId, _price);
+    }
+
+    function getAuctionMinPrice (bytes32 _tradePairId) public view returns (uint) {
+         return  tradePairs.getAuctionMode(_tradePairId);
     }
 
     fallback() external {}
