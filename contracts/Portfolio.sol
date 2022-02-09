@@ -251,7 +251,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
     }
 
-    function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant override {
         require(trustedContracts[msg.sender], "P-_-01"); // TODO: Set error message
         require(allowDeposit, "P-ETDP-02");
         require(_quantity > 0, "P-ZETD-02");
