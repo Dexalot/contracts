@@ -15,7 +15,6 @@ const Utils = require('./utils.js');
 const MockTokenAbi = require('../artifacts/contracts/token/MockToken.sol/MockToken.json');
 const TradePairsAbi = require('../artifacts/contracts/TradePairs.sol/TradePairs.json');
 const PortfolioAbi = require('../artifacts/contracts/Portfolio.sol/Portfolio.json');
-const { key } = require("nconf");
 
 let MockToken;
 let OrderBooks;
