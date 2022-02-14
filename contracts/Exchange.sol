@@ -41,7 +41,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.3');
+    bytes32 constant public VERSION = bytes32('1.2.4');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -268,7 +268,8 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
     // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
-        if (tradePairs.getAuctionMode(_tradePairId) == 0) { //Auction OFF
+        (uint8 mode, , ) = tradePairs.getAuctionData(_tradePairId);
+        if (mode == 0) { //Auction OFF
             require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
         } else {
             require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-26");
@@ -355,29 +356,25 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         portfolio.addToken(_symbol, _token, _mode);
     }
 
-    function setAuctionModeTradePair(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) public {
+    function setAuctionMode(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) public {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-25");
         tradePairs.setAuctionMode(_tradePairId, _mode);
         // Only Base Token can be in Auction
         portfolio.setAuctionMode(tradePairs.getSymbol(_tradePairId, true), _mode);
     }
 
-    function getAuctionModeTradePair(bytes32 _tradePairId) public view returns (uint) {
-        return tradePairs.getAuctionMode(_tradePairId);
+    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price, uint percent) {
+        return tradePairs.getAuctionData(_tradePairId);
     }
 
-    function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) public {
+    function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) public {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
-        tradePairs.matchAuctionOrders(_tradePairId, auctionPrice, maxCount);
+        tradePairs.matchAuctionOrders(_tradePairId, maxCount);
     }
 
-    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) public  {
+    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) public  {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
-        tradePairs.setAuctionMinPrice(_tradePairId, _price);
-    }
-
-    function getAuctionMinPrice (bytes32 _tradePairId) public view returns (uint) {
-         return  tradePairs.getAuctionMode(_tradePairId);
+        tradePairs.setAuctionPrice(_tradePairId, _price, _pct);
     }
 
     fallback() external {}
