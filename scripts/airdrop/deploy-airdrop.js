@@ -1,6 +1,6 @@
 
 const fs = require('fs');
-require('dotenv').config({path: './.env'})
+require('dotenv').config({path: './.env'});
 const { MerkleTree } = require('merkletreejs')
 const keccak256 = require('keccak256');
 const { ethers } = require('hardhat');
