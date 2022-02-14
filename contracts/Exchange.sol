@@ -371,15 +371,6 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         tradePairs.matchAuctionOrders(_tradePairId, auctionPrice, maxCount);
     }
 
-    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) public  {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
-        tradePairs.setAuctionMinPrice(_tradePairId, _price);
-    }
-
-    function getAuctionMinPrice (bytes32 _tradePairId) public view returns (uint) {
-         return  tradePairs.getAuctionMode(_tradePairId);
-    }
-
     fallback() external {}
 
     // utility function to convert string to bytes32
