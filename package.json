@@ -12,6 +12,8 @@
     "hh-start-clean": "yarn clean-contracts && npx hardhat node",
     "hh-test-dex": "npx hardhat test test/TestDexalot.js --network localhost",
     "hh-test-prtf": "npx hardhat test test/TestPortfolio.js --network localhost",
+    "hh-test-obook": "npx hardhat test test/TestOrderBooks.js --network localhost",
+    "hh-test-getNBook": "npx hardhat test test/TestGetNBook.js --network localhost",
     "hh-test-airdrop": "npx hardhat test test/TestAirdrop.js --network localhost",
     "hh-test-vesting": "npx hardhat test test/TestTokenVesting.js --network localhost",
     "hh-mint-dexalot-token": "npx hardhat run scripts/deploy-dexalot-token.js --network localhost",
