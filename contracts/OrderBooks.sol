@@ -23,7 +23,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.0');
+    bytes32 constant public VERSION = bytes32('1.2.1');
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -77,10 +77,11 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     function getQuantitiesAtPrice(bytes32 _orderBookID, uint _price) public view returns (uint[] memory) {
         (, , , , , bytes32 head, uint size) = getNode(_orderBookID, _price);
         uint[] memory quantities = new uint[](size);
+        OrderBook storage orderBook = orderBookMap[_orderBookID];
         for (uint i=0; i<size; i++) {
             ITradePairs.Order memory _order= ITradePairs(owner()).getOrder(head);
             quantities[i] = getRemainingQuantity(_order);
-            ( , head) = orderBookMap[_orderBookID].orderList[_price].getAdjacent(head, false);
+            ( , head) = orderBook.orderList[_price].getAdjacent(head, false);
         }
         return quantities;
     }
@@ -99,10 +100,25 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
         return quantity;
     }
 
+    // get next price from a tree of prices
+    function nextPrice(bytes32 _orderBookID, ITradePairs.Side _side, uint _price) public view returns (uint price) {
+        if (_price == 0) {
+            price = _side == ITradePairs.Side.BUY ? last(_orderBookID) : first(_orderBookID);
+        } else {
+            price = _side == ITradePairs.Side.BUY ? prev(_orderBookID, _price) : next(_orderBookID, _price);
+        }
+    }
+
     // used for getting head of the linked list of orders at a price
-    function getHead(bytes32 _orderBookID, uint price) public view onlyOwner returns (bytes32) {
-        ( , bytes32 head, ) = orderBookMap[_orderBookID].orderList[price].getNode('');
-        return head;
+    function getHead(bytes32 _orderBookID, uint price) public view returns (bytes32 head) {
+        ( , head, ) = orderBookMap[_orderBookID].orderList[price].getNode('');
+        // Same result as this
+        // ( , bytes32 head) = orderBookMap[_orderBookID].orderList[price].getAdjacent('', false);
+    }
+
+    // get next order at a price from linked list of orders
+    function nextOrder(bytes32 _orderBookID, uint _price, bytes32 _orderId) public view returns (bytes32 nextId) {
+        ( , nextId) = orderBookMap[_orderBookID].orderList[_price].getAdjacent(_orderId, false);
     }
 
     // used for getting number of price levels on an order book
@@ -117,7 +133,43 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     }
 
     // FRONTEND FUNCTION TO GET ALL ORDERS AT N PRICE LEVELS
-    function getNOrders(bytes32 _orderBookID, uint n, uint _type) public view returns (uint[] memory, uint[] memory) {
+    function getNOrders(bytes32 _orderBookID, uint nPrice, uint nOrder ,uint lastPrice, bytes32 lastOrder, uint _type)
+              public view returns (uint[] memory prices , uint[] memory quantities , uint , bytes32 ) {
+        if ( (nPrice == 0) || (root(_orderBookID) == 0) ||
+                (lastPrice > 0 && !exists(_orderBookID, lastPrice))
+                            ) { return (new uint[](1), new uint[](1), lastPrice, lastOrder); }
+
+        if (lastPrice == 0 ) {
+            lastPrice = (_type == 0) ? first(_orderBookID) : last(_orderBookID);
+        }
+        prices = new uint[](nPrice);
+        quantities = new uint[](nPrice);
+        OrderBook storage orderBook = orderBookMap[_orderBookID];
+        uint i;
+
+        ITradePairs _tradePair = ITradePairs(owner());
+        while (lastPrice > 0 &&  i < nPrice && nOrder > 0) {
+            prices[i] = lastPrice;
+            ( , lastOrder) = orderBook.orderList[lastPrice].getAdjacent(lastOrder, false);
+            while (lastOrder != '' && nOrder > 0) {
+
+                ITradePairs.Order memory _order= _tradePair.getOrder(lastOrder);
+                quantities[i] += getRemainingQuantity(_order);
+                ( , lastOrder) = orderBook.orderList[lastPrice].getAdjacent(lastOrder, false);
+                nOrder--;
+            }
+            if (nOrder <= 0 && lastOrder != '') {
+                //Last Order not processed, need to revert to last processed order
+                ( , lastOrder) = orderBook.orderList[lastPrice].getAdjacent(lastOrder, true);
+                break;
+            }
+            lastPrice = (_type == 0) ? next(_orderBookID, lastPrice) : prev(_orderBookID, lastPrice);
+            i++;
+        }
+        return (prices, quantities, lastPrice, lastOrder);
+    }
+
+    function getNOrdersOld(bytes32 _orderBookID, uint n, uint _type) public view returns (uint[] memory, uint[] memory) {
         // get lowest (_type=0) or highest (_type=1) n orders as tuples of price, quantity
         if ( (n == 0) || (root(_orderBookID) == 0) ) { return (new uint[](1), new uint[](1)); }
         uint[] memory prices = new uint[](n);
@@ -125,7 +177,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
         OrderBook storage orderBook = orderBookMap[_orderBookID];
         uint price = (_type == 0) ? first(_orderBookID) : last(_orderBookID);
         uint i;
-        while (price>0 && i<n) {
+        while (price >0 && i<n) {
             prices[i] = price;
             (bool ex, bytes32 a) = orderBook.orderList[price].getAdjacent('', true);
             while (a != '') {
@@ -138,33 +190,6 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
             price = (_type == 0) ? next(_orderBookID, price) : prev(_orderBookID, price);
         }
         return (prices, quantities);
-    }
-
-    // FRONTEND FUNCTION TO GET ALL ORDERS AT N PRICE LEVELS
-    function getNOrdersWithTotals(bytes32 _orderBookID, uint n, uint _type) public view returns (uint[] memory, uint[] memory, uint[] memory) {
-        // get lowest (_type=0) or highest (_type=1) n orders as tuples of price, quantity
-        if ( (n == 0) || (root(_orderBookID) == 0) ) { return (new uint[](1), new uint[](1), new uint[](1)); }
-        uint[] memory prices = new uint[](n);
-        uint[] memory quantities = new uint[](n);
-        uint[] memory totals = new uint[](n);
-        OrderBook storage orderBook = orderBookMap[_orderBookID];
-        uint price = (_type == 0) ? first(_orderBookID) : last(_orderBookID);
-        uint i;
-        while (price>0 && i<n ) {
-            prices[i] = price;
-            (bool ex, bytes32 a) = orderBook.orderList[price].getAdjacent('', true);
-            while (a != '') {
-                ITradePairs _tradePair = ITradePairs(owner());
-                ITradePairs.Order memory _order= _tradePair.getOrder(a);
-                quantities[i] += getRemainingQuantity(_order);
-                (ex, a) = orderBook.orderList[price].getAdjacent(a, true);
-            }
-            totals[i]= (i==0 ? 0 : totals[i-1]) + quantities[i];
-            i++;
-            price = (_type == 0) ? next(_orderBookID, price) : prev(_orderBookID, price);
-        }
-
-        return (prices, quantities, totals);
     }
 
     // creates orderbook by adding orders at the same price

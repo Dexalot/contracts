@@ -15,7 +15,6 @@ import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
 
 import "./OrderBooks.sol";
-
 /**
 *   @author "DEXALOT TEAM"
 *   @title "TradePairs: a contract implementing the data structures and functions for trade pairs"
@@ -30,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.4');
+    bytes32 constant public VERSION = bytes32('1.2.5');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -59,7 +58,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         bool addOrderPaused;         // boolean to control addOrder functionality per TradePair
         bool pairPaused;             // boolean to control addOrder and cancelOrder functionality per TradePair
         AuctionMode auctionMode;     // control auction states
-        uint auctionMinPrice;
+        uint auctionPrice;           // Indicative & Final Price
+        uint auctionIntervalPct;     // auctionIntervalPct=500 (5.00% = 500/10000)   Buy Side (10000-500)/10000 = 95%
     }
 
     // mapping data structure for all trade pairs
@@ -119,7 +119,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             tradePairMap[_tradePairId].makerRate = 10; // makerRate=10 (0.10% = 10/10000)
             tradePairMap[_tradePairId].takerRate = 20; // takerRate=20 (0.20% = 20/10000)
             tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
-            // tradePairMap[_tradePairId].isAuction = false;
+            tradePairMap[_tradePairId].auctionIntervalPct = 1000 ;//auctionIntervalPct=1000 (10.00% = 1000/10000)   Buy Side (10000-1000)/10000 = 90%
             // tradePairMap[_tradePairId].addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePairMap[_tradePairId].pairPaused = false;       // pair is not paused by default (EVM initializes to false)
 
@@ -159,10 +159,17 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         return _mode == AuctionMode.OFF || _mode == AuctionMode.LIVETRADING ;
     }
 
-    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) public override onlyOwner {
-        uint oldValue = uint(tradePairMap[_tradePairId].auctionMode);
-        tradePairMap[_tradePairId].auctionMode = _mode;
+    function isAuctionRestricted(AuctionMode _mode) private pure returns(bool) {
+        return _mode == AuctionMode.RESTRICTED || _mode == AuctionMode.CLOSING ;
+    }
 
+    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) public override onlyOwner {
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        if (isAuctionRestricted(_mode)){
+            require(_tradePair.auctionPrice > 0 , "T-AUCT-11");
+        }
+        uint oldValue = uint(_tradePair.auctionMode);
+        _tradePair.auctionMode = _mode;
         if (matchingAllowed(_mode)) {
             addOrderType(_tradePairId, Type1.LIMITFOK);
             pauseTradePair(_tradePairId, false);
@@ -175,23 +182,34 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                             || _mode == AuctionMode.PAUSED) {
             pauseTradePair(_tradePairId, true);
 
-        } else if ( _mode == AuctionMode.CLOSING ||
-                        _mode == AuctionMode.CLOSINGT2) {
+        } else if ( isAuctionRestricted(_mode)) {
             pauseTradePair(_tradePairId, false);
         }
-        emit ParameterUpdated(_tradePairId, "T-AUCTION", oldValue, uint(_mode) );
+        emit ParameterUpdated(_tradePairId, "T-AUCTIONMODE", oldValue, uint(_mode) );
     }
 
-    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) public override onlyOwner {
-         tradePairMap[_tradePairId].auctionMinPrice=_price;
+    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) public override onlyOwner {
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        require(decimalsOk(_price, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-AUCT-02");
+        if (_tradePair.auctionMode != AuctionMode.MATCHING){
+            require(_pct > 0, "T-AUCT-12");
+        }
+        uint oldValue = _tradePair.auctionPrice;
+        uint oldValuePct = _tradePair.auctionIntervalPct;
+        _tradePair.auctionPrice = _price;
+        //Auction Price should be set right after matching status and pct should be equal to 0
+        if (_tradePair.auctionMode == AuctionMode.MATCHING) {
+            _pct = 0;
+        }
+        _tradePair.auctionIntervalPct= _pct;
+        emit ParameterUpdated(_tradePairId, "T-AUCTIONPRICE", oldValue, _price);
+        emit ParameterUpdated(_tradePairId, "T-AUCTIONINTPCT", oldValuePct, _pct);
     }
 
-    function getAuctionMinPrice (bytes32 _tradePairId) public view override returns (uint) {
-         return tradePairMap[_tradePairId].auctionMinPrice;
-    }
-
-    function getAuctionMode(bytes32 _tradePairId) public override view returns (uint) {
-        return uint(tradePairMap[_tradePairId].auctionMode);
+    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price, uint percent) {
+         mode = uint8(tradePairMap[_tradePairId].auctionMode);
+         price = tradePairMap[_tradePairId].auctionPrice;
+         percent = tradePairMap[_tradePairId].auctionIntervalPct;
     }
 
     function tradePairExists(bytes32 _tradePairId) public view returns (bool) {
@@ -307,26 +325,16 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         return tradePairMap[_tradePairId].allowedSlippagePercent;
     }
 
-    function getNSellBookWithTotals(bytes32 _tradePairId) public view override returns (uint[] memory, uint[] memory, uint[] memory) {
+    function getNSellBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder)
+                public view override returns (uint[] memory, uint[] memory, uint , bytes32) {
         // get lowest (_type=0) N orders
-        uint n = orderBooks.getBookSize(tradePairMap[_tradePairId].sellBookId);
-        return orderBooks.getNOrdersWithTotals(tradePairMap[_tradePairId].sellBookId, n, 0);
+        return orderBooks.getNOrders(tradePairMap[_tradePairId].sellBookId, nPrice, nOrder, lastPrice, lastOrder,  0);
     }
 
-    function getNBuyBookWithTotals(bytes32 _tradePairId) public view override returns (uint[] memory, uint[] memory, uint[] memory) {
+    function getNBuyBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder)
+                public view override returns (uint[] memory, uint[] memory, uint , bytes32) {
         // get highest (_type=1) N orders
-        uint n = orderBooks.getBookSize(tradePairMap[_tradePairId].buyBookId);
-        return orderBooks.getNOrdersWithTotals(tradePairMap[_tradePairId].buyBookId, n, 1);
-    }
-
-    function getNSellBook(bytes32 _tradePairId, uint _n) public view override returns (uint[] memory, uint[] memory) {
-        // get lowest (_type=0) N orders
-        return orderBooks.getNOrders(tradePairMap[_tradePairId].sellBookId, _n, 0);
-    }
-
-    function getNBuyBook(bytes32 _tradePairId, uint _n) public view override returns (uint[] memory, uint[] memory) {
-        // get highest (_type=1) N orders
-        return orderBooks.getNOrders(tradePairMap[_tradePairId].buyBookId, _n, 1);
+        return orderBooks.getNOrders(tradePairMap[_tradePairId].buyBookId, nPrice, nOrder, lastPrice, lastOrder, 1);
     }
 
     function getOrder(bytes32 _orderId) public view override returns (Order memory) {
@@ -354,8 +362,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                                 _order.type1, _order.status, _order.quantityFilled,  _order.totalFee);
     }
 
+    //Used to Round Up the auction price interval small restrictions
+    function ceil(uint a, uint m) pure private returns (uint) {
+        return ((a + m - 1) / m) * m;
+    }
 
     //Used to Round Down the fees to the display decimals to avoid dust
+    //Used to Round Down the auction price interval to avoid small restrictions
     function floor(uint a, uint m) pure private returns (uint) {
         return (a / 10 ** m) * 10 ** m;
     }
@@ -463,25 +476,25 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
 
-    function matchAuctionOrders(bytes32 _tradePairId, uint _auctionPrice, uint8 _maxCount) public override onlyOwner {
+    function matchAuctionOrders(bytes32 _tradePairId, uint8 _maxCount) public override onlyOwner {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(_tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
-        require(_auctionPrice > 0 , "T-AUCT-03");
-        require(decimalsOk(_auctionPrice, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-AUCT-02");
+        require(_tradePair.auctionPrice > 0 && _tradePair.auctionIntervalPct==0, "T-AUCT-03");
         Order memory takerOrder;
         uint takerRemainingQuantity;
         bytes32 bookId;
         bookId = _tradePair.sellBookId;
         uint price = orderBooks.first(bookId);
         bytes32 head = orderBooks.getHead(bookId, price);
+        uint auctionPrice = _tradePair.auctionPrice;
         if ( head != '' ) {
             takerOrder = getOrder(head);
             uint startRemainingQuantity = getRemainingQuantity(takerOrder);
-            takerRemainingQuantity= matchBuyBook(_tradePairId, takerOrder, _auctionPrice, _maxCount);
+            takerRemainingQuantity= matchBuyBook(_tradePairId, takerOrder, auctionPrice, _maxCount);
             if (takerRemainingQuantity == 0) {
                 orderBooks.removeFirstOrder(bookId, price);
             }
-            if (startRemainingQuantity == takerRemainingQuantity) { 
+            if (startRemainingQuantity == takerRemainingQuantity) {
                 emit ParameterUpdated(_tradePairId, "T-AUCT-MATCH", 1, 0);
             } else {
                 emitStatusUpdate(_tradePairId, takerOrder.id); // EMIT taker order's status update
@@ -614,16 +627,24 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     // FRONTEND ENTRY FUNCTION TO CALL TO C/R ORDER DURING AUCTION
+    // The original order will lose its Time Priority as it is a new Order that is entered
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) public override nonReentrant whenNotPaused {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(_tradePair.auctionMode == AuctionMode.CLOSINGT2, "T-AUCT-09");
+        require(_tradePair.auctionPrice > 0 && _tradePair.auctionIntervalPct > 0
+                                    && isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-10");
         Order storage _order = orderMap[_orderId];
         require(_order.id != '', "T-EOID-01");
         require(_order.traderaddress == msg.sender, "T-OOCC-01");
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
         require(!_tradePair.pairPaused, "T-PPAU-02");
-        require(_price >= _tradePair.auctionMinPrice , "T-AUCT-07");
-        require(_price * _quantity >= _order.price * _order.quantity, "T-AUCT-08");
+        if (_order.side == Side.BUY){
+            require(_price >= floor(_tradePair.auctionPrice * (10000 - _tradePair.auctionIntervalPct) / TENK,
+                        _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals) , "T-AUCT-07");
+        } else {
+            require(_price <= ceil(_tradePair.auctionPrice * (10000 + _tradePair.auctionIntervalPct) / TENK,
+                        _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals), "T-AUCT-08");
+        }
+        require(getQuoteAmount(_tradePairId, _price, _quantity) >= getQuoteAmount(_tradePairId, _order.price, _order.quantity), "T-AUCT-09");
         doOrderCancel(_tradePairId, _order.id);
         addLimitOrder(_tradePairId, _price, _quantity, _order.side, _order.type1);
     }
@@ -636,7 +657,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(!_tradePair.pairPaused, "T-PPAU-02");
-        require(_tradePair.auctionMode != AuctionMode.CLOSINGT2, "T-AUCT-05");
+        require(!isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-05");
         doOrderCancel(_tradePairId, _order.id);
     }
 
@@ -646,7 +667,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) public override nonReentrant whenNotPaused {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(!_tradePair.pairPaused, "T-PPAU-03");
-        require(_tradePair.auctionMode != AuctionMode.CLOSINGT2, "T-AUCT-06");
+        require(!isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-06");
         for (uint i=0; i<_orderIds.length; i++) {
             Order storage _order = orderMap[_orderIds[i]];
             require(_order.traderaddress == msg.sender, "T-OOCC-02");

@@ -39,25 +39,24 @@ interface ITradePairs {
     function getTakerRate(bytes32 _tradePairId) external view returns (uint);
     function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) external;
     function getAllowedSlippagePercent(bytes32 _tradePairId) external view returns (uint8);
-    function getNSellBook(bytes32 _tradePairId, uint _n) external view returns (uint[] memory, uint[] memory);
-    function getNBuyBook(bytes32 _tradePairId, uint _n) external view returns (uint[] memory, uint[] memory);
+    function getNSellBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder) external view
+                                                                    returns (uint[] memory, uint[] memory, uint , bytes32);
+    function getNBuyBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder) external view
+                                                                    returns (uint[] memory, uint[] memory, uint , bytes32);
     function getOrder(bytes32 _orderUid) external view returns (Order memory);
     function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
     function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) external;
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) external;
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) external;
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
-    function matchAuctionOrders(bytes32 _tradePairId, uint auctionPrice, uint8 maxCount) external;
-    function getNBuyBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
-    function getNSellBookWithTotals(bytes32 _tradePairId) external view returns (uint[] memory, uint[] memory, uint[] memory);
-    function getAuctionMode(bytes32 _tradePairId) external view returns (uint);
-    function setAuctionMinPrice (bytes32 _tradePairId, uint _price) external;
-    function getAuctionMinPrice (bytes32 _tradePairId) external view returns (uint);
+    function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) external;
+    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) external;
+    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint, uint);
 
     enum Side     {BUY, SELL}
     enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}
     enum Status   {NEW, REJECTED, PARTIAL, FILLED, CANCELED, EXPIRED, KILLED}
     enum RateType {MAKER, TAKER}
     enum Type2    {GTC, FOK}
-    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, CLOSINGT2}
+    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, RESTRICTED}
 }
