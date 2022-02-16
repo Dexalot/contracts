@@ -41,7 +41,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.4');
+    bytes32 constant public VERSION = bytes32('1.2.5');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -268,7 +268,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
     // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
-        (uint8 mode, , ) = tradePairs.getAuctionData(_tradePairId);
+        (uint8 mode, , , ,) = tradePairs.getAuctionData(_tradePairId);
         if (mode == 0) { //Auction OFF
             require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
         } else {
@@ -363,7 +363,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         portfolio.setAuctionMode(tradePairs.getSymbol(_tradePairId, true), _mode);
     }
 
-    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price, uint percent) {
+    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price, uint percent, uint lower, uint upper) {
         return tradePairs.getAuctionData(_tradePairId);
     }
 
