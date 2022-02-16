@@ -29,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.5');
+    bytes32 constant public VERSION = bytes32('1.2.6');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -206,10 +206,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         emit ParameterUpdated(_tradePairId, "T-AUCTIONINTPCT", oldValuePct, _pct);
     }
 
-    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price, uint percent) {
-         mode = uint8(tradePairMap[_tradePairId].auctionMode);
-         price = tradePairMap[_tradePairId].auctionPrice;
-         percent = tradePairMap[_tradePairId].auctionIntervalPct;
+    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price, uint percent, uint lower, uint upper) {
+         TradePair storage _tradePair = tradePairMap[_tradePairId];
+         mode = uint8(_tradePair.auctionMode);
+         price = _tradePair.auctionPrice;
+         percent = _tradePair.auctionIntervalPct;
+         lower = _tradePair.auctionPrice * (10000 - _tradePair.auctionIntervalPct) / TENK;
+         upper = _tradePair.auctionPrice * (10000 + _tradePair.auctionIntervalPct) / TENK;
     }
 
     function tradePairExists(bytes32 _tradePairId) public view returns (bool) {
@@ -630,21 +633,12 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     // The original order will lose its Time Priority as it is a new Order that is entered
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) public override nonReentrant whenNotPaused {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(_tradePair.auctionPrice > 0 && _tradePair.auctionIntervalPct > 0
-                                    && isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-10");
+        require(uint8(_tradePair.auctionMode) > 1, "T-AUCT-13");
         Order storage _order = orderMap[_orderId];
         require(_order.id != '', "T-EOID-01");
         require(_order.traderaddress == msg.sender, "T-OOCC-01");
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
         require(!_tradePair.pairPaused, "T-PPAU-02");
-        if (_order.side == Side.BUY){
-            require(_price >= floor(_tradePair.auctionPrice * (10000 - _tradePair.auctionIntervalPct) / TENK,
-                        _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals) , "T-AUCT-07");
-        } else {
-            require(_price <= ceil(_tradePair.auctionPrice * (10000 + _tradePair.auctionIntervalPct) / TENK,
-                        _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals), "T-AUCT-08");
-        }
-        require(getQuoteAmount(_tradePairId, _price, _quantity) >= getQuoteAmount(_tradePairId, _order.price, _order.quantity), "T-AUCT-09");
         doOrderCancel(_tradePairId, _order.id);
         addLimitOrder(_tradePairId, _price, _quantity, _order.side, _order.type1);
     }
@@ -657,7 +651,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(!_tradePair.pairPaused, "T-PPAU-02");
-        require(!isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-05");
         doOrderCancel(_tradePairId, _order.id);
     }
 
@@ -667,7 +660,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) public override nonReentrant whenNotPaused {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(!_tradePair.pairPaused, "T-PPAU-03");
-        require(!isAuctionRestricted(_tradePair.auctionMode), "T-AUCT-06");
         for (uint i=0; i<_orderIds.length; i++) {
             Order storage _order = orderMap[_orderIds[i]];
             require(_order.traderaddress == msg.sender, "T-OOCC-02");

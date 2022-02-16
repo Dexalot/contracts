@@ -51,12 +51,12 @@ interface ITradePairs {
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
     function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) external;
     function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) external;
-    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint, uint);
+    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint, uint, uint, uint);
 
     enum Side     {BUY, SELL}
     enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}
     enum Status   {NEW, REJECTED, PARTIAL, FILLED, CANCELED, EXPIRED, KILLED}
     enum RateType {MAKER, TAKER}
     enum Type2    {GTC, FOK}
-    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, RESTRICTED}
+    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, CLOSINGT2, RESTRICTED}
 }
