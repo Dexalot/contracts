@@ -28,27 +28,22 @@ yarn hh-start-clean
 ```
 
 ### Run the Portfolio tests on the Hardhat environment on Terminal 2
-This script runs tests for the Protfolio contract on the Hardhat Development blockchain.  You need to have a running ```yarn hh-start-clean``` process first.
+These scripts run tests for the each contract on the Hardhat Development blockchain.  You need to have a running ```yarn hh-start-clean``` process first.
 ```
-yarn hh-test-prtf
+yarn hh-test-portfolio
+yarn hh-test-orderbooks
+yarn hh-test-tradepairs
+yarn hh-test-exchange
+yarn hh-test-airdrop
+yarn hh-test-vesting
 ```
 
 ### Run the trading simulation tests on the Hardhat environment on Terminal 2
-This script runs a set of simulated trades to test the whole system.  Before running the simulator a second time you need to stop a running ```yarn hh-start-clean``` script and rerun ```yarn hh-start-clean``` to reset all the counters.
+These scripts run a set of simulated trades to test the whole system.  Before running any simulator a second time you need to stop a running ```yarn hh-start-clean``` script and rerun ```yarn hh-start-clean``` to reset all the counters.
 ```
 yarn hh-test-dex
-```
-
-### Run the airdrop contract tests on the Hardhat environment on Terminal 2
-This script runs a set of tests for the airdrop contract.  You need to have a running ```yarn hh-start-clean``` process first.
-```
-yarn hh-test-airdrop
-```
-
-### Run the vesting contract tests on the Hardhat environment on Terminal 2
-This script runs a set of tests for the vesting contract.  You need to have a running ```yarn hh-start-clean``` process first.
-```
-yarn hh-test-vesting
+yarn hh-test-getNBook
+yarn hh-test-auction
 ```
 
 ### Deploy mock tokens, Dexalot token and exchange on the Hardhat environment on Terminal 2

@@ -1,3 +1,7 @@
+/**
+ * The test runner for Dexalot Airdrops contract
+ */
+
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 const { MerkleTree } = require('merkletreejs')

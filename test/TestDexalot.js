@@ -1,6 +1,6 @@
 
 /**
- * The test runner for trading on Dexalot exchange
+ * The test runner for trading on Dexalot decentralized exchange
  */
 
 const { expect, assert } = require("chai");

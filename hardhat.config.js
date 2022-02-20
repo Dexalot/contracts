@@ -35,7 +35,7 @@ module.exports = {
       chainId: 1337,
       accounts: {
         accountsBalance: '1000000000000000000000000',
-        count: 5
+        count: 10
       }
     },
 
