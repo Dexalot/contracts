@@ -29,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.6');
+    bytes32 constant public VERSION = bytes32('1.2.8');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -165,12 +165,11 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) public override onlyOwner {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
-        if (isAuctionRestricted(_mode)){
-            require(_tradePair.auctionPrice > 0 , "T-AUCT-11");
-        }
         uint oldValue = uint(_tradePair.auctionMode);
         _tradePair.auctionMode = _mode;
         if (matchingAllowed(_mode)) {
+            require(orderBooks.first(_tradePair.sellBookId) == 0
+                            || orderBooks.first(_tradePair.sellBookId) > orderBooks.last(_tradePair.buyBookId), "T-AUCT-11");
             addOrderType(_tradePairId, Type1.LIMITFOK);
             pauseTradePair(_tradePairId, false);
 
@@ -182,7 +181,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                             || _mode == AuctionMode.PAUSED) {
             pauseTradePair(_tradePairId, true);
 
-        } else if ( isAuctionRestricted(_mode)) {
+        } else if (isAuctionRestricted(_mode)) {
             pauseTradePair(_tradePairId, false);
         }
         emit ParameterUpdated(_tradePairId, "T-AUCTIONMODE", oldValue, uint(_mode) );
@@ -489,11 +488,10 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         bookId = _tradePair.sellBookId;
         uint price = orderBooks.first(bookId);
         bytes32 head = orderBooks.getHead(bookId, price);
-        uint auctionPrice = _tradePair.auctionPrice;
         if ( head != '' ) {
             takerOrder = getOrder(head);
             uint startRemainingQuantity = getRemainingQuantity(takerOrder);
-            takerRemainingQuantity= matchBuyBook(_tradePairId, takerOrder, auctionPrice, _maxCount);
+            takerRemainingQuantity= matchBuyBookAuction(_tradePairId, takerOrder, _maxCount);
             if (takerRemainingQuantity == 0) {
                 orderBooks.removeFirstOrder(bookId, price);
             }
@@ -543,8 +541,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         return getRemainingQuantity(takerOrder);
     }
 
-    //Overloaded
-    function matchBuyBook(bytes32 _tradePairId, Order memory takerOrder, uint auctionPrice, uint8 maxCount) private returns (uint) {
+    function matchBuyBookAuction(bytes32 _tradePairId, Order memory takerOrder, uint8 maxCount) private returns (uint) {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         bytes32 buyBookId = _tradePair.buyBookId;
         uint price = orderBooks.last(buyBookId);
@@ -556,7 +553,12 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             makerOrder = getOrder(head);
             quantity = orderBooks.matchTrade(buyBookId, price, getRemainingQuantity(takerOrder), getRemainingQuantity(makerOrder));
             portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, takerOrder.traderaddress, _tradePair.baseSymbol, quantity);
-            addExecution(_tradePairId, makerOrder, takerOrder, auctionPrice , quantity); // this makes a state change to Order Map
+            addExecution(_tradePairId, makerOrder, takerOrder, _tradePair.auctionPrice , quantity); // this makes a state change to Order Map
+            // Increase the available by the difference between the makerOrder & the auction Price
+            if (makerOrder.price > _tradePair.auctionPrice) {
+                portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, makerOrder.traderaddress, _tradePair.quoteSymbol,
+                                    getQuoteAmount(_tradePairId, makerOrder.price -_tradePair.auctionPrice, quantity));
+            }
             takerOrder.quantityFilled += quantity;  // locally keep track of Qty remaining
             price = orderBooks.last(buyBookId);
             head = orderBooks.getHead(buyBookId, price);
@@ -638,7 +640,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_order.id != '', "T-EOID-01");
         require(_order.traderaddress == msg.sender, "T-OOCC-01");
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
-        require(!_tradePair.pairPaused, "T-PPAU-02");
+        require(!_tradePair.pairPaused, "T-PPAU-04");
         doOrderCancel(_tradePairId, _order.id);
         addLimitOrder(_tradePairId, _price, _quantity, _order.side, _order.type1);
     }

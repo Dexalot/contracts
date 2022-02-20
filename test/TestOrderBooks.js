@@ -1,8 +1,7 @@
 /**
- * The test runner for Dexalot Portfolio contract
+ * The test runner for Dexalot OrderBooks contract
  */
 
-// import Chai for its asserting functions
 const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
 
@@ -95,15 +94,10 @@ describe("OrderBooks", accounts => {
     }
   });
 
-
   it("... should get the Book Sizes ", async () => {
-
     const buysize = await orderBooks.getBookSize(buyBook);
     const sellsize = await orderBooks.getBookSize(sellBook);
     console.log(`BuyBookSize: ${buysize}  ::  SellBookSize : ${sellsize}`);
   });
-
-
-
 
 });
