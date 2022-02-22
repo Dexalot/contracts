@@ -23,7 +23,7 @@ let Exchange;
 let Portfolio;
 
 // using the first numberOfAccounts accounts
-numberOfAccounts = 3;
+const numberOfAccounts = 3;
 
 // fee rates
 const makerRate = BigNumber(0.0010);
