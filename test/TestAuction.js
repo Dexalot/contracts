@@ -22,7 +22,7 @@ let Exchange;
 let Portfolio;
 
 // using the first numberOfAccounts accounts
-numberOfAccounts = 10;
+const numberOfAccounts = 10;
 
 // fee rates
 const makerRate = BigNumber(0.0030);
@@ -126,11 +126,11 @@ before(async () => {
       await portfolio.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, startAuctionMode); //Auction mode on
       for (i=0; i<numberOfAccounts; i++) {
           account = accounts[i].address;
-          console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
+          //console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
           _mint_amount = initial_mints[_tokenStr] - Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals);
           if (_mint_amount>0) {
               await _token.mint(account, Utils.parseUnits(_mint_amount.toString(), _tokenDecimals));
-              console.log("Account:", account, "after minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
+              //console.log("Account:", account, "after minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
           }
       }
   }
@@ -161,9 +161,9 @@ before(async () => {
           await wallet.sendTransaction({from: account,
                                         to: portfolio.address,
                                         value: Utils.toWei(_deposit_amount.toString())});
-          console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
+          //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
           _bal = await portfolio.getBalance(account, _nativeBytes32);
-          Utils.printBalances(account, _bal, 18);
+          //Utils.printBalances(account, _bal, 18);
       }
       console.log();
 
@@ -181,11 +181,11 @@ before(async () => {
               _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
               _deposit_amount_bn = Utils.parseUnits(_deposit_amount.toString(), _tokenDecimals);
               await _token.approve(portfolio.address, _deposit_amount_bn, options);
-              console.log("Approve:", account, "to deposit ", _deposit_amount, _tokenStr, "to portfolio.");
+              //console.log("Approve:", account, "to deposit ", _deposit_amount, _tokenStr, "to portfolio.");
               await iportfolio.depositToken(account, Utils.fromUtf8(_tokenStr), _deposit_amount_bn, options);
-              console.log("Deposit:", account, _deposit_amount, _tokenStr, "to portfolio.");
+              //console.log("Deposit:", account, _deposit_amount, _tokenStr, "to portfolio.");
               _bal = await portfolio.getBalance(account, _tokenBytes32);
-              Utils.printBalances(account, _bal, _tokenDecimals);
+              //Utils.printBalances(account, _bal, _tokenDecimals);
           }
           console.log();
       }
