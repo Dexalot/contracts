@@ -5,6 +5,7 @@ require("@nomiclabs/hardhat-waffle")
 require("@nomiclabs/hardhat-etherscan")
 require('@openzeppelin/hardhat-upgrades')
 require('hardhat-contract-sizer')
+require('solidity-coverage')
 
 const deploymentAccount = process.env.DEPLOYMENT_ACCOUNT_KEY
 const chainInstance = process.env.CHAIN_INSTANCE
