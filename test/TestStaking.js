@@ -358,9 +358,9 @@ describe("Staking", function () {
 
 			const rewardsPerToken = await staking.rewardPerToken();
 			expect(rewardsPerToken).to.be.equal(Utils.toWei('0.0007'));     // 100 token will earn 0.0007 per token with daily 0.01% adter 7 days
-			// to avoid integer arithmetic errors confirm calculated rewards is between 0.0006999% - 0.0007001% range
-			expect(rewardsPerToken.mul(stakeAmount).div(10000).toNumber()).to.be.greaterThanOrEqual(totalToStake.mul(6999).div(1e7).div(10000).toNumber());
-			expect(rewardsPerToken.mul(stakeAmount).div(10000).toNumber()).to.be.lessThanOrEqual(totalToStake.mul(7001).div(1e7).div(10000).toNumber());
+			// to avoid integer arithmetic errors confirm calculated rewards is between 0.0006995% - 0.0007005% range
+			expect(rewardsPerToken.mul(stakeAmount).div(10000).toNumber()).to.be.greaterThanOrEqual(totalToStake.mul(6995).div(1e7).div(10000).toNumber());
+			expect(rewardsPerToken.mul(stakeAmount).div(10000).toNumber()).to.be.lessThanOrEqual(totalToStake.mul(7005).div(1e7).div(10000).toNumber());
 
 			const rewardsEarned = await staking.earned(investor1.address);
 			const check = rewardsPerToken.mul(totalToStake).div(Utils.toWei('1'));
