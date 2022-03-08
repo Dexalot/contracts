@@ -90,6 +90,24 @@ describe("Airdrop", function () {
             expect(canClaim).to.be.false;
         });
 
+        it("User can claim rewards but contract does not have enough tokens", async function () {
+            await expect(testToken.transfer(airdropContract.address, 10))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, airdropContract.address, 10);
+            const airdropBalance = await testToken.balanceOf(airdropContract.address);
+            expect(airdropBalance).to.be.equal(10);
+
+            let userItem = userBalanceAndHashes[1];
+            let leaf = userBalanceHashes[1];
+            let proof = merkleTree.getHexProof(leaf);
+
+            let canClaim = await airdropContract.canClaim(1);
+            expect(canClaim).to.be.true;
+
+            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof))
+                .to.revertedWith("Contract doesnt have enough tokens");
+        });
+
         it("User can not claim rewards for twice", async function () {
             await expect(testToken.transfer(airdropContract.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -127,5 +145,52 @@ describe("Airdrop", function () {
             var claimed = await testToken.balanceOf(userItem.address);
             expect(claimed).to.be.equal(0);
         });
+
+        it("Should pause from the admin account", async function () {
+            // fail from non admin accounts
+            await expect(airdropContract.connect(investor1).pause()).to.revertedWith("Ownable: caller is not the owner");
+            // succeed from admin accounts
+            await airdropContract.connect(owner).pause();
+            expect(await airdropContract.paused()).to.be.equal(true);
+        });
+
+        it("Should unpause from the admin account", async function () {
+            // pause first
+            await airdropContract.connect(owner).pause();
+            expect(await airdropContract.paused()).to.be.equal(true);
+            // fail from non admin accounts
+            await expect(airdropContract.connect(investor1).unpause()).to.revertedWith("Ownable: caller is not the owner");
+            // succeed from admin accounts
+            await airdropContract.connect(owner).unpause();
+            expect(await airdropContract.paused()).to.be.equal(false);
+        });
+
+        it("Should retrieve remaining funds from the contract", async function () {
+            await expect(testToken.transfer(airdropContract.address, 1000))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, airdropContract.address, 1000);
+            const airdropBalance = await testToken.balanceOf(airdropContract.address);
+            expect(airdropBalance).to.be.equal(1000);
+
+            let userItem = userBalanceAndHashes[1];
+            let leaf = userBalanceHashes[1];
+            let proof = merkleTree.getHexProof(leaf);
+
+            let canClaim = await airdropContract.canClaim(1);
+            expect(canClaim).to.be.true;
+
+            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof))
+                .to.emit(airdropContract, "Claimed");
+
+            var claimed = await testToken.balanceOf(userItem.address);
+            expect(claimed).to.be.equal(userItem.balance);
+
+            // 100 claimed there shoudl be 900 remaining
+            var bal1 = await testToken.balanceOf(owner.address);
+            await airdropContract.retrieveFund();
+            var bal2 = await testToken.balanceOf(owner.address);
+            expect(bal2.sub(bal1)).to.be.equal(900)
+        });
+
     });
 });

@@ -1,7 +1,7 @@
 /**
  * The test runner for Dexalot TokenVesting contract
  */
- 
+
 const { expect } = require("chai");
 const { ethers, upgrades } = require("hardhat");
 
@@ -65,7 +65,74 @@ describe("TokenVesting", function () {
             expect(await tokenVesting.start()).to.equal(start);
             expect(await tokenVesting.cliff()).to.equal(start + cliff);
             expect(await tokenVesting.duration()).to.equal(duration);
+            expect(await tokenVesting.startPortfolioDeposits()).to.equal(startPortfolioDeposits);
             expect(await tokenVesting.revocable()).to.equal(revocable);
+            expect(await tokenVesting.getPercentage()).to.equal(percentage);
+            expect(await tokenVesting.getPortfolio()).to.equal(portfolio.address);
+        });
+
+        it("Should not accept zero address as beneficiary", async function () {
+            const ZERO = '0x0000000000000000000000000000000000000000';
+            await expect(TokenVesting.deploy(ZERO, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: beneficiary is the zero address");
+        });
+
+        it("Should not accept cliff longer than duration", async function () {
+            cliff = 10000
+            duration = 1000
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: cliff is longer than duration");
+        });
+
+        it("Should not accept zero duration", async function () {
+            duration = 0
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: duration is 0");
+        });
+
+        it("Should not accept final time before current time", async function () {
+            start = start - 10000
+            duration = 1000
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: final time is before current time");
+        });
+
+        it("Should not accept portfolio deposits beginning after start", async function () {
+            startPortfolioDeposits = start + 1000
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: portfolio deposits begins after start");
+        });
+
+        it("Should not accept 0 initial percentage", async function () {
+            percentage = 0
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TokenVesting: percentage is 0");
+        });
+
+        it("Should not accept 0 portfolio address", async function () {
+            const ZERO = '0x0000000000000000000000000000000000000000';
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, ZERO))
+                        .to.revertedWith("TokenVesting: portfolio is the zero address");
+        });
+
+        it("Should not set 0 portfolio address", async function () {
+            const ZERO = '0x0000000000000000000000000000000000000000';
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TokenVesting: portfolio is the zero address");
+        });
+
+        it("Should set and get start date for portfolio deposits", async function () {
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+            await tokenVesting.setStartPortfolioDeposits(start-3000);
+            expect(await tokenVesting.startPortfolioDeposits()).to.be.equal(start-3000);
         });
 
         // TIME PARAMETERS FOR TEST
@@ -220,6 +287,98 @@ describe("TokenVesting", function () {
             expect(released).to.be.equal(0);
             expect(vestedAmount).to.be.equal(850);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
+        });
+
+        it("Should not release vested tokens before start", async function () {
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+
+            await expect(testToken.transfer(tokenVesting.address, amount))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, tokenVesting.address, amount);
+
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TokenVesting: too early");
+        });
+
+        it("Should not release vested tokens if nothing is due", async function () {
+            cliff = 10000
+            duration = 100000
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+
+            await expect(testToken.transfer(tokenVesting.address, amount))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, tokenVesting.address, amount);
+
+            // some time after cliff
+            await ethers.provider.send("evm_increaseTime", [cliff * 2]);
+            await ethers.provider.send("evm_mine")
+            // release first
+            await tokenVesting.connect(investor1).release(testToken.address);
+            // now nothing to release
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TokenVesting: no tokens are due");
+        });
+
+        it("Should release initial percentage only when auction depsoits are enabled", async function () {
+            start = start + 5000;
+            startPortfolioDeposits = start - 3000;
+            cliff = 5000;
+            duration = 120000;
+            let dt = Utils.fromUtf8("ALOT");
+            let am = 0; // auction mode OFF
+
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+
+            await expect(testToken.transfer(tokenVesting.address, amount))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, tokenVesting.address, amount);
+
+            await portfolio.addToken(dt, testToken.address, am);
+            await portfolio.addAuctionAdmin(owner.address);
+            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
+
+            // some time before auction
+            await ethers.provider.send("evm_increaseTime", [1000]);
+            await ethers.provider.send("evm_mine");
+
+            await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
+            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TokenVesting: only possible during auction");
+        });
+
+        it("Should release initial percentage only when auction depsoits are enabled", async function () {
+            start = start + 5000;
+            startPortfolioDeposits = start - 3000;
+            cliff = 5000;
+            duration = 120000;
+            let dt = Utils.fromUtf8("ALOT");
+            let am = 0; // auction mode OFF
+
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+
+            await expect(testToken.transfer(tokenVesting.address, amount))
+                .to.emit(testToken, "Transfer")
+                .withArgs(owner.address, tokenVesting.address, amount);
+
+            await portfolio.addToken(dt, testToken.address, am);
+            await portfolio.addAuctionAdmin(owner.address);
+            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
+
+            // some time during auction
+            await ethers.provider.send("evm_increaseTime", [3000]);
+            await ethers.provider.send("evm_mine");
+
+            // release once
+            await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
+            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
+            await tokenVesting.connect(investor1).releaseToPortfolio(testToken.address);
+
+            // now nothing to release from initial percentage
+            await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
+            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TokenVesting: no tokens are due");
         });
 
         it("Should release vested tokens when duration has passed", async function () {
@@ -390,7 +549,7 @@ describe("TokenVesting", function () {
             await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TokenVesting: no balance on the contract');
         });
 
-        it('Cannot be released before cliff', async function () {
+        it('Can only release initial percentage ampunt before cliff', async function () {
             let now;
             cliff = 60000;
             duration = 120000;
@@ -404,7 +563,6 @@ describe("TokenVesting", function () {
                 .withArgs(owner.address, tokenVesting.address, 1000);
             expect(await testToken.balanceOf(tokenVesting.address)).to.equal(1000);
 
-            //await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TokenVesting: there is still time to cliff');
             await expect(tokenVesting.connect(investor1).release(testToken.address))
                 .to.emit(tokenVesting, "TokensReleased")
                 .withArgs(testToken.address, 200);
@@ -565,11 +723,49 @@ describe("TokenVesting", function () {
             await tokenVesting.connect(investor1).release(testToken.address);
 
             expect(await tokenVesting.released(testToken.address)).to.equal(154);
+            expect(await tokenVesting.releasedPercentageAmount(testToken.address)).to.equal(100);
             expect(await tokenVesting.vestedAmount(testToken.address)).to.equal(54);
             expect(await tokenVesting.vestedPercentageAmount(testToken.address)).to.equal(100);
 
             expect(await testToken.balanceOf(investor1.address)).to.equal(54);
             expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(100);
+        });
+
+        it("Should multiple releaseToPortfolio behave correctly", async function () {
+            start = start + 5000;
+            startPortfolioDeposits = start - 3000;
+            cliff = 5000;
+            duration = 120000;
+            let dt = Utils.fromUtf8("ALOT");
+            let am = 0; // auction mode OFF
+
+            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await tokenVesting.deployed();
+
+            await testToken.transfer(tokenVesting.address, 1000);
+
+            await portfolio.addToken(dt, testToken.address, am);
+            await portfolio.addAuctionAdmin(owner.address);
+            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
+
+            await ethers.provider.send("evm_increaseTime", [2000]);
+            await ethers.provider.send("evm_mine");
+
+            await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
+            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
+            await tokenVesting.connect(investor1).releaseToPortfolio(testToken.address);
+
+            const releasedPercentageAmount = await tokenVesting.connect(investor1).releasedPercentageAmount(testToken.address);
+
+            await testToken.transfer(tokenVesting.address, 1000);
+
+            expect(await tokenVesting.connect(investor1).releasedPercentageAmount(testToken.address)).to.be.equal(releasedPercentageAmount);
+
+            await ethers.provider.send("evm_increaseTime", [2000]);
+            await ethers.provider.send("evm_mine");
+            await tokenVesting.connect(investor1).releaseToPortfolio(testToken.address);
+
+            expect(await tokenVesting.connect(investor1).releasedPercentageAmount(testToken.address)).to.be.equal(releasedPercentageAmount);
         });
 
         it("Release ~50 tokens when cliff has passed", async function () {

@@ -25,3 +25,7 @@ unknown-*.json
 *-0x*.json
 !fuji-*.json
 !prod-*.json
+
+# coverage
+coverage
+coverage.json
