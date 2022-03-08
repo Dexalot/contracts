@@ -29,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.8');
+    bytes32 constant public VERSION = bytes32('1.2.9');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -365,13 +365,15 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     //Used to Round Up the auction price interval small restrictions
-    function ceil(uint a, uint m) pure private returns (uint) {
+    // example: a = 1245, m: 100 ==> 1300
+    function ceil(uint a, uint m) pure public returns (uint) {
         return ((a + m - 1) / m) * m;
     }
 
     //Used to Round Down the fees to the display decimals to avoid dust
     //Used to Round Down the auction price interval to avoid small restrictions
-    function floor(uint a, uint m) pure private returns (uint) {
+    // example: a = 1245, m: 2 ==> 1200
+    function floor(uint a, uint m) pure public returns (uint) {
         return (a / 10 ** m) * 10 ** m;
     }
 
@@ -413,7 +415,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(!_tradePair.pairPaused, "T-PPAU-01");
         require(!_tradePair.addOrderPaused, "T-AOPA-01");
-        require(_side == Side.BUY || _side == Side.SELL, "T-IVSI-01");
         require(allowedOrderTypes[_tradePairId].contains(uint(_type1)), "T-IVOT-01");
 
         require(decimalsOk(_quantity, _tradePair.baseDecimals, _tradePair.baseDisplayDecimals), "T-TMDQ-01");
@@ -424,7 +425,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             addMarketOrder(_tradePairId, _quantity, _side);
         }
     }
-
 
     function addMarketOrder(bytes32 _tradePairId, uint _quantity, Side _side) private {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
@@ -476,7 +476,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         _order.price = 0; //Reset the market order price back to 0
         emitStatusUpdate(_tradePairId, _order.id);  // EMIT taker(potential) order status. if no fills, the status will be NEW, if not status will be either PARTIAL or FILLED
     }
-
 
     function matchAuctionOrders(bytes32 _tradePairId, uint8 _maxCount) public override onlyOwner {
         TradePair storage _tradePair = tradePairMap[_tradePairId];

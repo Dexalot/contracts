@@ -25,6 +25,9 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     // it is recommended to avoid using short time durations (less than a minute). Typical vesting schemes, with a
     // cliff period of a year and a duration of four years, are safe to use.
 
+    // version
+    bytes32 constant public VERSION = bytes32("1.0.1");
+
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
 
@@ -74,7 +77,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         require(__cliffDuration <= __duration, "TokenVesting: cliff is longer than duration");
         require(__duration > 0, "TokenVesting: duration is 0");
         require(__start + __duration > block.timestamp, "TokenVesting: final time is before current time");
-        require(__startPortfolioDeposits < __start, "TokenVesting: ");
+        require(__startPortfolioDeposits < __start, "TokenVesting: portfolio deposits begins after start");
         require(__firstReleasePercentage > 0, "TokenVesting: percentage is 0");
         require(address(__portfolio) != address(0), "TokenVesting: portfolio is the zero address");
 
@@ -213,15 +216,8 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         uint256 unreleased = _releasableAmount(token);
         require(unreleased > 0, "TokenVesting: no tokens are due");
 
-        uint256 percentage = _vestedByPercentage(token);
-        require(percentage > _releasedPercentage[address(token)] || block.timestamp > _cliff, "TokenVesting: there is still time to cliff");
-
-        uint256 isReleased = _released[address(token)];
-
-        if (isReleased == 0) {
-            if (percentage <= unreleased) {
-                _releasedPercentage[address(token)] = percentage;
-            }
+        if (_releasedPercentage[address(token)] == 0) {
+            _releasedPercentage[address(token)] = _vestedByPercentage(token);
         }
 
         _released[address(token)] = _released[address(token)] + unreleased;
@@ -241,16 +237,11 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         uint256 unreleased = _releasableAmount(token);
         require(unreleased > 0, "TokenVesting: no tokens are due");
 
-        uint256 isReleased = _released[address(token)];
-
-        if (isReleased == 0) {
+        if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20Metadata(token).symbol();
             bytes32 symbol = stringToBytes32(symbolStr);
 
-            uint256 percentage = _vestedByPercentage(token);
-            if (percentage <= unreleased) {
-                _releasedPercentage[address(token)] = percentage;
-            }
+            _releasedPercentage[address(token)] = _vestedByPercentage(token);
 
             _released[address(token)] = _released[address(token)] + unreleased;
 

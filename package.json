@@ -9,13 +9,17 @@
   },
   "scripts": {
     "clean-contracts": "rimraf .openzeppelin/unknown-*.json",
+    "hh-coverage": "npx hardhat coverage",
     "hh-start-clean": "yarn clean-contracts && npx hardhat node",
     "hh-test-portfolio": "npx hardhat test test/TestPortfolio.js --network localhost",
     "hh-test-orderbooks": "npx hardhat test test/TestOrderBooks.js --network localhost",
     "hh-test-tradepairs": "npx hardhat test test/TestTradePairs.js --network localhost",
     "hh-test-exchange": "npx hardhat test test/TestExchange.js --network localhost",
+    "hh-test-dexalot-token": "npx hardhat test test/TestDexalotToken.js --network localhost",
+    "hh-test-mock-token": "npx hardhat test test/TestMockToken.js --network localhost",
     "hh-test-airdrop": "npx hardhat test test/TestAirdrop.js --network localhost",
     "hh-test-vesting": "npx hardhat test test/TestTokenVesting.js --network localhost",
+    "hh-test-staking": "npx hardhat test test/TestStaking.js --network localhost",
     "hh-test-dex": "npx hardhat test test/TestDexalot.js --network localhost",
     "hh-test-getNBook": "npx hardhat test test/TestGetNBook.js --network localhost",
     "hh-test-auction": "npx hardhat test test/TestAuction.js --network localhost",
@@ -26,6 +30,7 @@
     "hh-deploy-all": "yarn hh-mint && yarn hh-deploy",
     "hh-deploy-vesting": "npx hardhat run scripts/vesting/deploy-vesting.js --network localhost",
     "hh-deploy-airdrop": "npx hardhat run scripts/airdrop/deploy-airdrop.js --network localhost",
+    "hh-deploy-staking": "npx hardhat run scripts/staking/deploy-staking.js --network localhost",
     "av-fund-local": "ts-node scripts/fund_c_chain.ts",
     "av-mint-local": "yarn clean-contracts && npx hardhat run scripts/deploy-tokens.js --network avash_local",
     "av-deploy-local": "yarn clean-contracts && npx hardhat run scripts/deploy.js --network avash_local",
@@ -67,7 +72,7 @@
     "merkletreejs": "0.2.27",
     "neat-csv": "6.0.1",
     "rimraf": "3.0.2",
-    "solidity-coverage": "^0.7.20"
+    "solidity-coverage": "0.7.20"
   },
   "devDependencies": {
     "ts-node": "8.10.2",
