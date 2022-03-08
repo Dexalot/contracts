@@ -29,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.8');
+    bytes32 constant public VERSION = bytes32('1.2.9');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -365,13 +365,15 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     //Used to Round Up the auction price interval small restrictions
-    function ceil(uint a, uint m) pure private returns (uint) {
+    // example: a = 1245, m: 100 ==> 1300
+    function ceil(uint a, uint m) pure public returns (uint) {
         return ((a + m - 1) / m) * m;
     }
 
     //Used to Round Down the fees to the display decimals to avoid dust
     //Used to Round Down the auction price interval to avoid small restrictions
-    function floor(uint a, uint m) pure private returns (uint) {
+    // example: a = 1245, m: 2 ==> 1200
+    function floor(uint a, uint m) pure public returns (uint) {
         return (a / 10 ** m) * 10 ** m;
     }
 

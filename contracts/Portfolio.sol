@@ -24,7 +24,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.1');
+    bytes32 constant public VERSION = bytes32('1.2.2');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -328,7 +328,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         if (_maker.side == ITradePairs.Side.BUY) {
             // decrease maker quote and incrase taker quote
             safeDecreaseTotal(_maker.traderaddress, _quoteSymbol, _quoteAmount, IPortfolio.Tx.EXECUTION);
-            // console.log(_takerAddr, bytes32ToString(_quoteSymbol), "BUY Increase quoteAmount =", _quoteAmount );
             safeIncrease(_takerAddr, _quoteSymbol, _quoteAmount, _takerfeeCharged, IPortfolio.Tx.EXECUTION);
             // increase maker base and decrase taker base
             safeIncrease(_maker.traderaddress, _baseSymbol, _baseAmount, _makerfeeCharged, IPortfolio.Tx.EXECUTION);
@@ -336,7 +335,6 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         } else {
             // increase maker quote & decrease taker quote
             safeIncrease(_maker.traderaddress, _quoteSymbol, _quoteAmount, _makerfeeCharged, IPortfolio.Tx.EXECUTION);
-            // console.log(_takerAddr, bytes32ToString(_quoteSymbol), "SELL Decrease quoteAmount =", _quoteAmount );
             safeDecrease(_takerAddr, _quoteSymbol, _quoteAmount, IPortfolio.Tx.EXECUTION);
             // decrease maker base and incrase taker base
             safeDecreaseTotal(_maker.traderaddress, _baseSymbol, _baseAmount, IPortfolio.Tx.EXECUTION);
@@ -346,21 +344,17 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
 
     function adjustAvailable(IPortfolio.Tx _transaction, address _trader, bytes32 _symbol, uint _amount) public override  {
         // TRADEPAIRS SHOULD HAVE ADMIN ROLE TO INITIATE PORTFOLIO adjustAvailable
-        // console.log("adjustAvailable = ", _amount);
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-09");
         if (_transaction == IPortfolio.Tx.INCREASEAVAIL) {
-            // console.log(_trader, bytes32ToString(_symbol), "AdjAvailable Increase =", _amount );
             assets[_trader][_symbol].available += _amount;
         } else if (_transaction == IPortfolio.Tx.DECREASEAVAIL)  {
             require(_amount <= assets[_trader][_symbol].available, "P-AFNE-01");
-            // console.log(_trader, bytes32ToString(_symbol), "AdjAvailable Decrease =", _amount );
             assets[_trader][_symbol].available -= _amount;
         } // IGNORE OTHER types of _transactions
         emitPortfolioEvent(_trader, _symbol, _amount, 0, _transaction);
     }
 
     function safeTransferFee(bytes32 _symbol, uint _feeCharged) private {
-        // console.log (bytes32ToString(_symbol), "safeTransferFee = Fee ", _feeCharged );
         bool feesuccess = true;
         if (native == _symbol) {
             (feesuccess, ) = payable(feeAddress).call{value: _feeCharged}('');
@@ -391,11 +385,8 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     // corresponding Deposit/ Withdraw functions to be able to capture the state change in the chain value.
     function safeIncrease(address _trader, bytes32 _symbol, uint _amount, uint _feeCharged, IPortfolio.Tx transaction) private {
       require(_amount > 0 && _amount >= _feeCharged, "P-TNEF-01");
-      // console.log (bytes32ToString(_symbol), "safeIncrease = Amnt/Fee ", _amount, _feeCharged );
-      // console.log (bytes32ToString(_symbol), "safeIncrease Before Total/Avail= ", assets[_trader][_symbol].total, assets[_trader][_symbol].available );
       assets[_trader][_symbol].total += _amount - _feeCharged;
       assets[_trader][_symbol].available += _amount - _feeCharged;
-      // console.log (bytes32ToString(_symbol), "safeIncrease After Total/Avail= ", assets[_trader][_symbol].total, assets[_trader][_symbol].available );
 
       if (_feeCharged > 0 ) {
         safeTransferFee(_symbol, _feeCharged);
