@@ -11,8 +11,11 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 contract Staking is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
-    IERC20 public rewardsToken; // for Dexalot: ALOT
-    IERC20 public stakingToken; // for Dexalot: ALOT
+    // version
+    bytes32 constant public VERSION = bytes32("1.0.0");
+
+    IERC20 public rewardsToken;
+    IERC20 public stakingToken;
 
     // constants
     uint256 constant MULTIPLIER = 1e18;
@@ -135,7 +138,7 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    function exit() public {
+    function exit() external {
         withdraw(_balances[msg.sender]);
         getReward();
     }
