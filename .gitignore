@@ -20,7 +20,7 @@ unknown-*.json
 *-*tokensWithAddress.json
 *-contracts.json
 *-*hashes*.json
-*-airdrop.json
+*-airdrop*.json
 *-DexalotToken.json
 *-0x*.json
 !fuji-*.json
