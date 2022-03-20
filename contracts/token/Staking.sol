@@ -20,7 +20,7 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
     // constants
     uint256 constant MULTIPLIER = 1e18;
     uint256 constant TENK = 1e4;
-    uint256 constant SECONDSINYEAR = 31536000; // 60 * 60 * 24 * 365
+    uint256 constant SECONDSINYEAR = 365 days; // 60 * 60 * 24 * 365
 
     uint256 public periodFinish = 0;
     uint256 public rewardsDuration;

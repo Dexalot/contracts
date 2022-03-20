@@ -368,7 +368,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     }
 
     function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) public {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-28");
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-29");
         tradePairs.matchAuctionOrders(_tradePairId, maxCount);
     }
 

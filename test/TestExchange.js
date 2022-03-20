@@ -733,7 +733,7 @@ describe("Exchange", function () {
             expect(auctionData[1]).to.be.equal(auctionPrice);
             expect(auctionData[2]).to.be.equal(auctionPct);
             // fail matchAuctionOrders() if not auction admin
-            await expect(exchange.connect(admin).matchAuctionOrders(tradePairId, 10)).to.be.revertedWith("E-OACC-28");
+            await expect(exchange.connect(admin).matchAuctionOrders(tradePairId, 10)).to.be.revertedWith("E-OACC-29");
         });
 
         it("Should convert string to bytes32 correctly", async function () {
