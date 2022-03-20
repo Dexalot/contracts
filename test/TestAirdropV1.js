@@ -31,7 +31,7 @@ describe("Airdrop", function () {
 
     before(async function () {
         Token = await ethers.getContractFactory("DexalotToken");
-        Airdrop = await ethers.getContractFactory("Airdrop");
+        Airdrop = await ethers.getContractFactory("AirdropV1");
     });
 
     beforeEach(async function () {

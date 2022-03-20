@@ -12,9 +12,12 @@ import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "../library/StringLibrary.sol";
 import "../interfaces/IPortfolio.sol";
 
-contract AirdropVesting is Pausable, Ownable, ReentrancyGuard {
+contract Airdrop is Pausable, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using StringLibrary for string;
+
+    // version
+    bytes32 constant public VERSION = bytes32("1.1.0");
 
     IERC20 public immutable token;
 
@@ -88,29 +91,27 @@ contract AirdropVesting is Pausable, Ownable, ReentrancyGuard {
     }
 
     /*
-     * @dev Claims tokens.
+     * @dev Claims tokens to user's wallet.
      * @param index value of the position in the list
      * @param amount total value to airdrop, Percentage and Vesting calculated by it
      * @param merkleProof the proof of merkle
-     * @param isFundingPortfolio if true, released amount transferred to the Portfolio contract
      */
     function claim(
         uint256 index,
         uint256 amount,
-        bytes32[] calldata merkleProof,
-        bool isFundingPortfolio
+        bytes32[] calldata merkleProof
     ) external whenNotPaused nonReentrant {
         require(
             token.balanceOf(address(this)) > amount,
-            "AirdropVesting: Contract doesnt have enough tokens"
+            "Airdrop: Contract doesnt have enough tokens"
         );
-        require(block.timestamp > _start, "AirdropVesting: too early");
+        require(block.timestamp > _start, "Airdrop: too early");
 
         bytes32 leaf = keccak256(abi.encodePacked(index, msg.sender, amount));
 
         require(
             MerkleProof.verify(merkleProof, root, leaf),
-            "AirdropVesting: Merkle Proof is not valid"
+            "Airdrop: Merkle Proof is not valid"
         );
 
         uint256 percentage = _vestedByPercentage(amount);
@@ -120,7 +121,47 @@ contract AirdropVesting is Pausable, Ownable, ReentrancyGuard {
         }
 
         uint256 unreleased = _releasableAmount(index, amount);
-        require(unreleased > 0, "AirdropVesting: no tokens are due");
+        require(unreleased > 0, "Airdrop: no tokens are due");
+
+        _released[index] += unreleased;
+
+        emit Claimed(msg.sender, unreleased, block.timestamp);
+
+        token.safeTransfer(msg.sender, unreleased);
+    }
+
+    /*
+     * @dev Claims tokens to user's Dexalot portfolio.
+     * @param index value of the position in the list
+     * @param amount total value to airdrop, Percentage and Vesting calculated by it
+     * @param merkleProof the proof of merkle
+     */
+    function claimToPortfolio(
+        uint256 index,
+        uint256 amount,
+        bytes32[] calldata merkleProof
+    ) external whenNotPaused nonReentrant {
+                require(
+            token.balanceOf(address(this)) > amount,
+            "Airdrop: Contract doesnt have enough tokens"
+        );
+        require(block.timestamp > _start, "Airdrop: too early");
+
+        bytes32 leaf = keccak256(abi.encodePacked(index, msg.sender, amount));
+
+        require(
+            MerkleProof.verify(merkleProof, root, leaf),
+            "Airdrop: Merkle Proof is not valid"
+        );
+
+        uint256 percentage = _vestedByPercentage(amount);
+
+        if (_releasedPercentage[msg.sender] == 0) {
+            _releasedPercentage[msg.sender] = percentage;
+        }
+
+        uint256 unreleased = _releasableAmount(index, amount);
+        require(unreleased > 0, "Airdrop: no tokens are due");
 
         _released[index] += unreleased;
 
@@ -128,12 +169,10 @@ contract AirdropVesting is Pausable, Ownable, ReentrancyGuard {
 
         token.safeTransfer(msg.sender, unreleased);
 
-        if (isFundingPortfolio) {
-            string memory symbolStr = IERC20Metadata(address(token)).symbol();
-            bytes32 symbol = stringToBytes32(symbolStr);
+        string memory symbolStr = IERC20Metadata(address(token)).symbol();
+        bytes32 symbol = stringToBytes32(symbolStr);
 
-            _portfolio.depositTokenFromContract(msg.sender, symbol, unreleased);
-        }
+        _portfolio.depositTokenFromContract(msg.sender, symbol, unreleased);
     }
 
     function released(uint256 index) external view returns (uint256) {
@@ -188,7 +227,7 @@ contract AirdropVesting is Pausable, Ownable, ReentrancyGuard {
     function setPortfolio(IPortfolio portfolio) external onlyOwner {
         require(
             address(portfolio) != address(0),
-            "AirdropVesting: portfolio is the zero address"
+            "Airdrop: portfolio is the zero address"
         );
         _portfolio = portfolio;
     }
