@@ -119,7 +119,7 @@ describe("Airdrop", function () {
         });
 
         it('only owner address can retrieve funds', async () => {
-            await expect(airdropContract.connect(investor1).retrieveFund()).to.revertedWith("Ownable: caller is not the owner");
+            await expect(airdropContract.connect(investor1).retrieveProjectToken()).to.revertedWith("Ownable: caller is not the owner");
         });
 
         it('only owner address can set portfolio', async () => {
@@ -387,6 +387,67 @@ describe("Airdrop", function () {
                 .to.revertedWith("Airdrop: Merkle Proof is not valid");
         });
 
+        it("Can handle releasableAmount", async function () {
+            start = start + 1000;
+            cliff = 500;
+            duration = 1000;
+            percentage = 10;
+
+            await deployAirdrop();
+
+            let validAmount = 100;
+            let invalidAmount = 150;
+
+            // before start, releasable amount is 0
+            expect(await airdropContract
+                .connect(investor1)
+                .releasableAmount(1, validAmount, proof))
+                .to.be.equal(0);
+
+            await ethers.provider.send("evm_increaseTime", [1000]);
+            await ethers.provider.send("evm_mine");
+
+            // at start, revert with invalid amount
+            await expect(airdropContract
+                .connect(investor1)
+                .releasableAmount(1, invalidAmount, proof))
+                .to.revertedWith("Airdrop: Merkle Proof is not valid");
+
+            // at start, releasable amount is just initial percentage
+            expect(await airdropContract
+                .connect(investor1)
+                .releasableAmount(1, validAmount, proof))
+                .to.be.equal(10);
+
+            await ethers.provider.send("evm_increaseTime", [500]);
+            await ethers.provider.send("evm_mine");
+
+            // at cliff, releasable amount is still just initial percentage
+            expect(await airdropContract
+                .connect(investor1)
+                .releasableAmount(1, validAmount, proof))
+                .to.be.equal(10);
+
+            await ethers.provider.send("evm_increaseTime", [250]);
+            await ethers.provider.send("evm_mine");
+
+            // at 75% of duration, releasable amount is initial percentage and half of remaining
+            expect(await airdropContract
+                .connect(investor1)
+                .releasableAmount(1, validAmount, proof))
+                .to.be.equal(55);
+
+            await ethers.provider.send("evm_increaseTime", [250]);
+            await ethers.provider.send("evm_mine");
+
+            // at duration, releasable amount is initial percentage and remaining
+            expect(await airdropContract
+                .connect(investor1)
+                .releasableAmount(1, validAmount, proof))
+                .to.be.equal(100);
+
+        });
+
         it("Cannot claim more after all tokens are claimed", async function () {
             await deployAirdrop();
 
@@ -567,13 +628,25 @@ describe("Airdrop", function () {
         });
     });
 
-    describe("Retrieve Fund", function () {
-        it("Owner can retrieve funds to own address", async function () {
+    describe("Retrieve remaining/excess/accidental tokens", function () {
+        it("Owner can retrieve remaining project tokens to own address", async function () {
             await deployAirdrop(); // contract has 1000 wei token
 
             let beforeRetrieved = await testToken.balanceOf(owner.address);
 
-            await airdropContract.retrieveFund();
+            await airdropContract.retrieveProjectToken();
+
+            let afterRetrieved = await testToken.balanceOf(owner.address);
+
+            expect(afterRetrieved.sub(beforeRetrieved)).to.be.equal(1000);
+        });
+
+        it("Owner can retrieve remaining other tokens to own address", async function () {
+            await deployAirdrop(); // contract has 1000 wei token
+
+            let beforeRetrieved = await testToken.balanceOf(owner.address);
+
+            await airdropContract.retrieveOtherToken(testToken.address);
 
             let afterRetrieved = await testToken.balanceOf(owner.address);
 

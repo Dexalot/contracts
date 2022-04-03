@@ -34,6 +34,10 @@ module.exports = {
       return ethers.utils.parseUnits(txt, decimals);
     },
 
+    formatEther: function(amount) {
+      return ethers.utils.formatEther(amount);
+    },
+
     parseEther: function(amount) {
       return ethers.utils.parseEther(amount);
     },
