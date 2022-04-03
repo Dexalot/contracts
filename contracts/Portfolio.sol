@@ -24,7 +24,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.2');
+    bytes32 constant public VERSION = bytes32('1.2.3');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -294,6 +294,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
         emitPortfolioEvent(_from, _symbol, _quantity, 0, IPortfolio.Tx.DEPOSIT);
     }
+
     // FRONTEND FUNCTION TO WITHDRAW A QUANTITY FROM PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
     function withdrawToken(address _to, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
         require(_to == msg.sender, "P-OOWT-01");

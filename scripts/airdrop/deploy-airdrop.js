@@ -1,4 +1,3 @@
-
 const fs = require('fs');
 require('dotenv').config({path: './.env'});
 const { MerkleTree } = require('merkletreejs')
@@ -7,22 +6,29 @@ const { ethers } = require('hardhat');
 
 const UtilsAsync = require('../utils-async');
 
-const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev-local"
+const deployment_mode = process.env?.DEPLOYMENT_MODE || "dev"
 const contracts_details = require(`../${deployment_mode}-contracts.json`)
 const dexalotToken = require(`../${deployment_mode}-DexalotToken.json`);
 
-const fileBase = 'DD_Battle_TEST-001';
+const fileBase = 'TST';
 const snapshotCSV = `./scripts/airdrop/data/${fileBase}.csv`;
 
 let snapshot = [];
 
-async function deploy_airdropvesting() {
-	let accounts = await ethers.getSigners();
+async function main() {
 
-	const start = parseInt((new Date('February 13, 2022 20:00:00').getTime() / 1000).toFixed(0))  // date and time is local
-	const cliff = 120                           // unix time, 120 for 2 min
-	const duration = 480                        // unix time, 480 for 8 min
-	const firstReleasePercentage = 15           // percentage, 15 for 15%
+	// FOR AMA
+	// const start = parseInt((new Date('April 2, 2022 19:00:00').getTime() / 1000).toFixed(0))  // date and time is local
+	// const start = 1648944000                    // 4/2/2022 7pm CST = 1648944000
+	// const cliff = 2592000                       // unix time, 2592000 for 1 month to 5/2/2022 7pm CST = 1651536000
+	// const duration = 5270400                    // unix time, 5270400 for 2 months to 6/2/2022 7pm CST = 1654214400
+	// const firstReleasePercentage = 50           // percentage, 50 for 50%
+
+	// FOR TST
+	const start = 1648828800                    // 4/1/2022 11am CST = 1648828800
+	const cliff = 21600                         // unix time, 21600 for 6 hours
+	const duration = 86400                      // unix time, 86400 for 24 hours
+	const firstReleasePercentage = 50           // percentage, 50 for 50%
 
 	let userBalanceAndHashes = [];
 	let userBalanceHashes = [];
@@ -33,7 +39,7 @@ async function deploy_airdropvesting() {
 		let rec = snapshotList[i]
 		var obj = {}
 		obj['address'] = rec['address']
-		obj['amount'] = rec['amount']
+		obj['amount'] = `${Utils.parseUnits(rec['amount'], 18)}`
 		snapshot.push(obj)
 	}
 
@@ -74,32 +80,43 @@ async function deploy_airdropvesting() {
 	console.log('tree root:', root);
 
 	const Portfolio = await ethers.getContractFactory("Portfolio")
-	const portfolio = await Portfolio.attach(contracts_details.Portfolio)
+	const portfolio = Portfolio.attach(contracts_details.Portfolio)
 
-	const Airdrop = await ethers.getContractFactory("AirdropVesting");
-	const airdropDeployed = await Airdrop.deploy(dexalotToken.address, root, start, cliff, duration, firstReleasePercentage, portfolio.address);
-	await airdropDeployed.deployed();
+	const Airdrop = await ethers.getContractFactory("Airdrop");
+	const airdrop = await Airdrop.deploy(dexalotToken.address, root, start, cliff, duration, firstReleasePercentage, portfolio.address);
+	await airdrop.deployed();
 
-	console.log("Address = ", airdropDeployed.address);
-	console.log("Start = ", parseInt(await airdropDeployed.start()))
-	console.log("Cliff = ", parseInt(await airdropDeployed.cliff()))
-  	console.log("Duration = ", parseInt(await airdropDeployed.duration()))
+	console.log("Airdrop Contract Address = ", airdrop.address);
+	console.log("Start = ", parseInt(await airdrop.start()))
+	console.log("Cliff = ", parseInt(await airdrop.cliff()))
+  	console.log("Duration = ", parseInt(await airdrop.duration()))
 	console.log("Dexalot Token Address = ", dexalotToken.address)
   	console.log("Portfolio Address = ", portfolio.address)
 
-	fs.writeFileSync(`./scripts/airdrop/${deployment_mode}-airdrop.json`,
-		JSON.stringify({ "address": airdropDeployed.address }, 0, 4),
+	fs.writeFileSync(`./scripts/airdrop/${deployment_mode}-${fileBase}-airdrop.json`,
+		JSON.stringify({ "address": airdrop.address }, 0, 4),
 		"utf8",
 		function (err) {
 			if (err) {
 				console.log(err);
 			}
 		});
+
+	// transfer ownership of airdrop contract to token safe
+	let tx = await airdrop.transferOwnership(contracts_details.TokenSafe)
+	await tx.wait()
+	console.log(`Airdrop ${airdrop.address} ownership transferred to Token Safe ${await airdrop.owner()} [${tx.hash}]`)
 }
 
-deploy_airdropvesting()
-	.then(() => process.exit(0))
-	.catch(error => {
-		console.error(error);
-		process.exit(1);
-	});
+// We recommend this pattern to be able to use async/await everywhere
+// and properly handle errors.
+main()
+  .then(() => {
+    console.log()
+    console.log(`${fileBase} airdrop contract deployed.`)
+    process.exit(0)
+  })
+  .catch(error => {
+    console.error(error)
+    process.exit(1)
+  })
