@@ -1,17 +1,17 @@
+/**
+ * The test runner for Dexalot Airdrop contract
+ */
+
 const { expect } = require("chai");
-const { ethers, upgrades } = require("hardhat");
+const { ethers } = require("hardhat");
 const { MerkleTree } = require('merkletreejs')
 const keccak256 = require('keccak256');
-
-const Utils = require('./utils.js');
 
 describe("Airdrop", function () {
     let Token;
     let testToken;
     let Airdrop;
     let airdropContract;
-    let Portfolio;
-    let portfolio;
     let owner;
     let investor1;
 
@@ -38,10 +38,8 @@ describe("Airdrop", function () {
         { "address": "0x90f79bf6eb2c4f870365e785982e1f101e93b906", "amount": "100" }
     ];
 
-    let dt = Utils.fromUtf8("ALOT");
-
     async function deployAirdrop() {
-        airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
+        airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
 
         await expect(testToken.transfer(airdropContract.address, 1000))
             .to.emit(testToken, "Transfer")
@@ -53,15 +51,12 @@ describe("Airdrop", function () {
     before(async function () {
         Token = await ethers.getContractFactory("DexalotToken");
         Airdrop = await ethers.getContractFactory("Airdrop");
-        Portfolio = await ethers.getContractFactory("Portfolio");
     });
 
     beforeEach(async function () {
         [owner, investor1, investor2] = await ethers.getSigners();
         testToken = await Token.deploy();
         await testToken.deployed();
-
-        portfolio = await upgrades.deployProxy(Portfolio);
 
         currentTime = await latestTime();
         start = currentTime;
@@ -101,14 +96,13 @@ describe("Airdrop", function () {
 
     describe("Settings", function () {
         it("It can deploy", async function () {
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
+            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
             expect(await airdropContract.root()).to.be.equal(root);
 
             expect(await airdropContract.start()).to.equal(start);
             expect(await airdropContract.cliff()).to.equal(start + cliff);
             expect(await airdropContract.duration()).to.equal(duration);
             expect(await airdropContract.getPercentage()).to.equal(percentage);
-            expect(await airdropContract.getPortfolio()).to.equal(portfolio.address);
         });
     });
 
@@ -120,10 +114,6 @@ describe("Airdrop", function () {
 
         it('only owner address can retrieve funds', async () => {
             await expect(airdropContract.connect(investor1).retrieveProjectToken()).to.revertedWith("Ownable: caller is not the owner");
-        });
-
-        it('only owner address can set portfolio', async () => {
-            await expect(airdropContract.connect(investor1).setPortfolio(portfolio.address)).to.revertedWith("Ownable: caller is not the owner");
         });
     });
 
@@ -272,12 +262,12 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: no tokens are due");
+                .to.revertedWith("A-NTAD-01");
 
             await expect(airdropContract
                 .connect(investor2)
                 .claim(2, userItem2.balance, proof2))
-                .to.revertedWith("Airdrop: no tokens are due");
+                .to.revertedWith("A-NTAD-01");
         });
 
         it("Should release amount of percentage when vesting started before the cliff", async function () {
@@ -315,7 +305,7 @@ describe("Airdrop", function () {
             let proof = merkleTree.getHexProof(leaf);
 
             await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: too early");
+                .to.revertedWith("A-TOOE-01");
 
             claimed = await testToken.balanceOf(userItem.address);
             expect(claimed).to.be.equal(0);
@@ -325,12 +315,12 @@ describe("Airdrop", function () {
         });
 
         it("Cannot claim when Airdrop does not have enough balance", async function () {
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
+            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
 
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: Contract doesnt have enough tokens");
+                .to.revertedWith("A-CNET-01");
         });
 
         it("Cannot claim before start date", async function () {
@@ -344,7 +334,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: too early");
+                .to.revertedWith("A-TOOE-01");
         });
 
         it("Can only claim specified percentage after start", async function () {
@@ -364,7 +354,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: no tokens are due");
+                .to.revertedWith("A-NTAD-01");
         });
 
         it("Cannot claim with invalid merkle proof or leaf values", async function () {
@@ -375,7 +365,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, invalidAmount, proof))
-                .to.revertedWith("Airdrop: Merkle Proof is not valid");
+                .to.revertedWith("A-MPNV-01");
 
             userItem = userBalanceAndHashes[1];
             leaf = userBalanceHashes[0]; // SET WRONG LEAF
@@ -384,7 +374,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: Merkle Proof is not valid");
+                .to.revertedWith("A-MPNV-01");
         });
 
         it("Can handle releasableAmount", async function () {
@@ -411,7 +401,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .releasableAmount(1, invalidAmount, proof))
-                .to.revertedWith("Airdrop: Merkle Proof is not valid");
+                .to.revertedWith("A-MPNV-02");
 
             // at start, releasable amount is just initial percentage
             expect(await airdropContract
@@ -468,163 +458,7 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: no tokens are due");
-        });
-    });
-
-    describe("Portfolio", function () {
-        it("Owner can set Portfolio address", async function () {
-            await deployAirdrop();
-
-            await airdropContract.setPortfolio(investor2.address);
-
-            let newPortfolio = await airdropContract.getPortfolio();
-
-            expect(newPortfolio).to.be.equal(investor2.address)
-        });
-
-        it("Cannot set invalid address", async function () {
-            await deployAirdrop();
-
-            await expect(airdropContract
-                .setPortfolio("0x0000000000000000000000000000000000000000"))
-                .to.be.revertedWith("Airdrop: portfolio is the zero address")
-        });
-
-        it("Cannot claim to Portfolio when Airdrop does not have enough balance", async function () {
-            let am = 0; // auction mode OFF
-
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
-
-            let userItem = userBalanceAndHashes[1];
-            let leaf = userBalanceHashes[1];
-            let proof = merkleTree.getHexProof(leaf);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(airdropContract.address, "Dexalot");
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: Contract doesnt have enough tokens");
-        });
-
-        it("Cannot claim to portfolio before start date", async function () {
-            start = start + 10000;
-            cliff = 10000;
-            duration = 100000;
-            percentage = 10;
-            let am = 0; // auction mode OFF
-
-            await deployAirdrop();
-
-            let userItem = userBalanceAndHashes[1];
-            let leaf = userBalanceHashes[1];
-            let proof = merkleTree.getHexProof(leaf);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(airdropContract.address, "Dexalot");
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: too early");
-        });
-
-        it("Cannot claim to portfolio with invalid merkle proof or leaf values", async function () {
-            let am = 0; // auction mode OFF
-            await deployAirdrop();
-
-            let invalidAmount = 150;
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, invalidAmount, proof))
-                .to.revertedWith("Airdrop: Merkle Proof is not valid");
-
-            userItem = userBalanceAndHashes[1];
-            leaf = userBalanceHashes[0]; // SET WRONG LEAF
-            proof = merkleTree.getHexProof(leaf);
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.revertedWith("Airdrop: Merkle Proof is not valid");
-        });
-
-        it("Can claim to Portfolio", async function () {
-            let am = 0; // auction mode OFF
-
-            await deployAirdrop();
-
-            let userItem = userBalanceAndHashes[1];
-            let leaf = userBalanceHashes[1];
-            let proof = merkleTree.getHexProof(leaf);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(airdropContract.address, "Dexalot");
-
-            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.emit(airdropContract, "Claimed");
-            expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(10);
-            expect(await testToken.balanceOf(investor1.address)).to.equal(0);
-        });
-
-        it("Can claim to Portfolio then can claim to own wallet", async function () {
-            let am = 0; // auction mode OFF
-
-            await deployAirdrop();
-
-            let userItem = userBalanceAndHashes[1];
-            let leaf = userBalanceHashes[1];
-            let proof = merkleTree.getHexProof(leaf);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(airdropContract.address, "Dexalot");
-
-            await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.emit(airdropContract, "Claimed");
-            expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(10);
-            expect(await testToken.balanceOf(investor1.address)).to.equal(0);
-
-            let released = await airdropContract.released(1);
-            expect(released).to.be.equal(10);
-
-            await ethers.provider.send("evm_increaseTime", [500]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claim(1, userItem.balance, proof))
-                .to.emit(airdropContract, "Claimed");
-            expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(10);
-            expect(await testToken.balanceOf(investor1.address)).to.equal(45);
-
-            released = await airdropContract.released(1);
-            expect(released).to.be.equal(55);
-
-            await ethers.provider.send("evm_increaseTime", [500]);
-            await ethers.provider.send("evm_mine");
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claim(1, userItem.balance, proof))
-                .to.emit(airdropContract, "Claimed");
-            expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(10);
-            expect(await testToken.balanceOf(investor1.address)).to.equal(90);
-
-            released = await airdropContract.released(1);
-            expect(released).to.be.equal(100);
+                .to.revertedWith("A-NTAD-01");
         });
     });
 
@@ -661,7 +495,7 @@ describe("Airdrop", function () {
             duration = 0;
             percentage = 100;
 
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
+            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
 
             await expect(testToken.transfer(airdropContract.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -688,7 +522,7 @@ describe("Airdrop", function () {
             duration = 0;
             percentage = 10;
 
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
+            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
 
             await expect(testToken.transfer(airdropContract.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -715,13 +549,7 @@ describe("Airdrop", function () {
             duration = 100;
             percentage = 100;
 
-            let am = 0; // auction mode OFF
-
-            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage, portfolio.address);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(airdropContract.address, "Dexalot");
+            airdropContract = await Airdrop.deploy(testToken.address, root, start, cliff, duration, percentage);
 
             await expect(testToken.transfer(airdropContract.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -750,15 +578,10 @@ describe("Airdrop", function () {
             await expect(airdropContract
                 .connect(investor1)
                 .claim(1, userItem.balance, proof))
-                .to.be.revertedWith("Airdrop: no tokens are due");
+                .to.be.revertedWith("A-NTAD-01");
 
             released = await airdropContract.released(1);
             expect(released).to.be.equal(100);
-
-            await expect(airdropContract
-                .connect(investor1)
-                .claimToPortfolio(1, userItem.balance, proof))
-                .to.be.revertedWith("Airdrop: no tokens are due");
         });
     });
 });

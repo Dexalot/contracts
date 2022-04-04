@@ -1,3 +1,4 @@
+
 const fs = require('fs');
 require('dotenv').config({path: './.env'});
 const { MerkleTree } = require('merkletreejs')
@@ -25,7 +26,7 @@ async function main() {
 	// const firstReleasePercentage = 50           // percentage, 50 for 50%
 
 	// FOR TST
-	const start = 1648828800                    // 4/1/2022 11am CST = 1648828800
+	const start = 1649070000                    // 4/4/2022 6am CST = 1649070000
 	const cliff = 21600                         // unix time, 21600 for 6 hours
 	const duration = 86400                      // unix time, 86400 for 24 hours
 	const firstReleasePercentage = 50           // percentage, 50 for 50%
@@ -79,11 +80,8 @@ async function main() {
 	const root = merkleTree.getHexRoot();
 	console.log('tree root:', root);
 
-	const Portfolio = await ethers.getContractFactory("Portfolio")
-	const portfolio = Portfolio.attach(contracts_details.Portfolio)
-
 	const Airdrop = await ethers.getContractFactory("Airdrop");
-	const airdrop = await Airdrop.deploy(dexalotToken.address, root, start, cliff, duration, firstReleasePercentage, portfolio.address);
+	const airdrop = await Airdrop.deploy(dexalotToken.address, root, start, cliff, duration, firstReleasePercentage);
 	await airdrop.deployed();
 
 	console.log("Airdrop Contract Address = ", airdrop.address);
@@ -91,7 +89,6 @@ async function main() {
 	console.log("Cliff = ", parseInt(await airdrop.cliff()))
   	console.log("Duration = ", parseInt(await airdrop.duration()))
 	console.log("Dexalot Token Address = ", dexalotToken.address)
-  	console.log("Portfolio Address = ", portfolio.address)
 
 	fs.writeFileSync(`./scripts/airdrop/${deployment_mode}-${fileBase}-airdrop.json`,
 		JSON.stringify({ "address": airdrop.address }, 0, 4),

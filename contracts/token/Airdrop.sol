@@ -2,7 +2,6 @@
 pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -10,14 +9,13 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "../library/StringLibrary.sol";
-import "../interfaces/IPortfolio.sol";
 
 contract Airdrop is Pausable, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using StringLibrary for string;
 
     // version
-    bytes32 constant public VERSION = bytes32("1.2.0");
+    bytes32 constant public VERSION = bytes32("1.3.0");
 
     IERC20 public immutable token;
 
@@ -30,8 +28,6 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
 
     mapping(uint256 => uint256) private _released;
 
-    IPortfolio private _portfolio;
-
     event Claimed(address claimer, uint256 amount, uint256 timestamp);
 
     constructor(
@@ -40,8 +36,7 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         uint256 __start,
         uint256 __cliffDuration,
         uint256 __duration,
-        uint256 __firstReleasePercentage,
-        IPortfolio __portfolio
+        uint256 __firstReleasePercentage
     ) Pausable() {
         token = _token;
         root = _root;
@@ -50,8 +45,6 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         _cliff = __start + __cliffDuration;
         _start = __start;
         _firstReleasePercentage = __firstReleasePercentage;
-
-        _portfolio = __portfolio;
     }
 
     /**
@@ -83,52 +76,6 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @return the portfolio address for funding.
-     */
-    function getPortfolio() external view returns (address) {
-        return address(_portfolio);
-    }
-
-    /**
-     * @dev Implements claiming of tokens to user's wallet
-     * @param to account to claim to
-     * @param index value of the position in the list
-     * @param amount total value to airdrop, Percentage and Vesting calculated by it
-     * @param merkleProof the proof of merkle
-     * @return the claimed amount
-     */
-    function _doClaim(
-        address to,
-        uint256 index,
-        uint256 amount,
-        bytes32[] calldata merkleProof
-    ) private nonReentrant returns (uint256) {
-        require(
-            token.balanceOf(address(this)) > amount,
-            "Airdrop: Contract doesnt have enough tokens"
-        );
-
-        require(block.timestamp > _start, "Airdrop: too early");
-
-        bytes32 leaf = keccak256(abi.encodePacked(index, to, amount));
-        require(
-            MerkleProof.verify(merkleProof, root, leaf),
-            "Airdrop: Merkle Proof is not valid"
-        );
-
-        uint256 unreleased = _releasableAmount(index, amount);
-        require(unreleased > 0, "Airdrop: no tokens are due");
-
-        _released[index] += unreleased;
-
-        emit Claimed(to, unreleased, block.timestamp);
-
-        token.safeTransfer(to, unreleased);
-
-        return unreleased;
-    }
-
-    /**
      * @dev Claims tokens to user's wallet
      * @param index value of the position in the list
      * @param amount total value to airdrop, Percentage and Vesting calculated by it
@@ -138,30 +85,28 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         uint256 index,
         uint256 amount,
         bytes32[] calldata merkleProof
-    ) external whenNotPaused {
-        // _doClaim is non-reentrant
-        _doClaim(msg.sender, index, amount, merkleProof);
-    }
+    ) external whenNotPaused nonReentrant {
+        require(
+            token.balanceOf(address(this)) > amount,
+            "A-CNET-01"
+        );
 
-    /**
-     * @dev Claims tokens to user's Dexalot portfolio
-     * @param index value of the position in the list
-     * @param amount total value to airdrop, Percentage and Vesting calculated by it
-     * @param merkleProof the proof of merkle
-     */
-    function claimToPortfolio(
-        uint256 index,
-        uint256 amount,
-        bytes32[] calldata merkleProof
-    ) external whenNotPaused {
-        string memory symbolStr = IERC20Metadata(address(token)).symbol();
-        bytes32 symbol = stringToBytes32(symbolStr);
+        require(block.timestamp > _start, "A-TOOE-01");
 
-        // _doClaim is non-reentrant
-        uint256 unreleased = _doClaim(msg.sender, index, amount, merkleProof);
+        bytes32 leaf = keccak256(abi.encodePacked(index, msg.sender, amount));
+        require(
+            MerkleProof.verify(merkleProof, root, leaf),
+            "A-MPNV-01"
+        );
 
-        // _portfolio.depositTokenFromContract is non-reentrant
-        _portfolio.depositTokenFromContract(msg.sender, symbol, unreleased);
+        uint256 unreleased = _releasableAmount(index, amount);
+        require(unreleased > 0, "A-NTAD-01");
+
+        _released[index] += unreleased;
+
+        emit Claimed(msg.sender, unreleased, block.timestamp);
+
+        token.safeTransfer(msg.sender, unreleased);
     }
 
     /**
@@ -216,7 +161,7 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
 
         require(
             MerkleProof.verify(merkleProof, root, leaf),
-            "Airdrop: Merkle Proof is not valid"
+            "A-MPNV-02"
         );
 
         return _releasableAmount(index, amount);
@@ -252,17 +197,6 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
     }
 
     /**
-     * @dev set address for the portfolio
-     */
-    function setPortfolio(IPortfolio portfolio) external onlyOwner {
-        require(
-            address(portfolio) != address(0),
-            "Airdrop: portfolio is the zero address"
-        );
-        _portfolio = portfolio;
-    }
-
-    /**
      * @dev pauses the contract
      */
     function pause() external onlyOwner {
@@ -274,16 +208,5 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
      */
     function unpause() external onlyOwner {
         _unpause();
-    }
-
-    /**
-     * @dev utility function to convert string to bytes32
-     */
-    function stringToBytes32(string memory _string)
-        private
-        pure
-        returns (bytes32 result)
-    {
-        return _string.stringToBytes32();
     }
 }

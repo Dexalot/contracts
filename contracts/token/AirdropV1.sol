@@ -31,7 +31,7 @@ contract AirdropV1 is Pausable, Ownable, ReentrancyGuard {
     ) external whenNotPaused nonReentrant {
         require(
             token.balanceOf(address(this)) > amount,
-            "Contract doesnt have enough tokens"
+            "A1-CNET-01"
         );
 
         (uint256 claimedBlock, uint256 claimedMask) = claimed(index);
@@ -41,7 +41,7 @@ contract AirdropV1 is Pausable, Ownable, ReentrancyGuard {
 
         require(
             MerkleProof.verify(merkleProof, root, leaf),
-            "Merkle Proof is not valid"
+            "A1-MPNV-01"
         );
 
         emit Claimed(msg.sender, amount, block.timestamp);
@@ -58,7 +58,7 @@ contract AirdropV1 is Pausable, Ownable, ReentrancyGuard {
         claimedMask = (uint256(1) << uint256(index % 256));
         require(
             (claimedBlock & claimedMask) == 0,
-            "Tokens have already been claimed"
+            "A1-THAC-01"
         );
     }
 
