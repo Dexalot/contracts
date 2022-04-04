@@ -50,7 +50,7 @@ describe("Staking", function () {
 		});
 
 		it('rewardRate cannot set to zero', async () => {
-			await expect(staking.setRewardRate(0)).to.revertedWith("Staking: RewardRate cannot be zero");
+			await expect(staking.setRewardRate(0)).to.revertedWith("S-RCNZ-01");
 		});
 	});
 
@@ -103,7 +103,7 @@ describe("Staking", function () {
 			await staking.unpause();
 			await staking.pauseStaking();
 
-			await expect(staking.connect(investor1).stake(totalToStake)).to.revertedWith("Staking: Staking has been paused");
+			await expect(staking.connect(investor1).stake(totalToStake)).to.revertedWith("S-SHBP-01");
 		});
 
 		it('should not revert calling stake() when unpaused', async () => {
@@ -126,7 +126,7 @@ describe("Staking", function () {
 			await stakingToken.transfer(investor1.address, totalToStake);
 			await stakingToken.connect(investor1).approve(staking.address, totalToStake);
 
-			await expect(staking.connect(investor1).stake(totalToStake)).to.revertedWith("Staking: Staking has been paused");
+			await expect(staking.connect(investor1).stake(totalToStake)).to.revertedWith("S-SHBP-01");
 
 			await staking.unpauseStaking();
 
@@ -182,8 +182,7 @@ describe("Staking", function () {
 
 	describe('setRewardsDuration()', () => {
 		it('cannot set rewards duration before period ends', async () => {
-			const revertMsg = "Staking: Previous rewards period must be complete before changing the duration for the new period";
-			await expect(staking.setRewardsDuration(180)).to.revertedWith(revertMsg);
+			await expect(staking.setRewardsDuration(180)).to.revertedWith("S-DMBC-01");
 		});
 
 		it('sets rewards duration correctly after period ends', async () => {
@@ -210,7 +209,7 @@ describe("Staking", function () {
 		});
 
 		it('cannot stake 0', async () => {
-			await expect(staking.stake(0)).to.be.revertedWith("Staking: Cannot stake 0");
+			await expect(staking.stake(0)).to.be.revertedWith("S-CNSZ-01");
 		});
 
 		it('cannot stake after period ended', async () => {
@@ -222,7 +221,7 @@ describe("Staking", function () {
 			await stakingToken.transfer(investor1.address, totalToStake);
 			await stakingToken.connect(investor1).approve(staking.address, totalToStake);
 
-			await expect(staking.connect(investor1).stake(totalToStake)).to.be.revertedWith("Staking: period has been ended");
+			await expect(staking.connect(investor1).stake(totalToStake)).to.be.revertedWith("S-PHBE-01");
 		});
 	});
 
@@ -233,7 +232,7 @@ describe("Staking", function () {
 		});
 
 		it('cannot withdraw 0', async () => {
-			await expect(staking.withdraw(0)).to.be.revertedWith("Staking: Cannot withdraw 0");
+			await expect(staking.withdraw(0)).to.be.revertedWith("S-CNWZ-01");
 		});
 
 		it('should increases stake token balance and decreases staking balance', async () => {

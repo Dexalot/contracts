@@ -1,5 +1,5 @@
 /**
- * The test runner for Dexalot Airdrops contract
+ * The test runner for Dexalot Airdrop contract v1
  */
 
 const { expect } = require("chai");
@@ -9,7 +9,7 @@ const keccak256 = require('keccak256');
 
 const Utils = require('./utils.js');
 
-describe("Airdrop", function () {
+describe("Airdrop V1", function () {
     let Token;
     let testToken;
     let Airdrop;
@@ -105,7 +105,7 @@ describe("Airdrop", function () {
             expect(canClaim).to.be.true;
 
             await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof))
-                .to.revertedWith("Contract doesnt have enough tokens");
+                .to.revertedWith("A1-CNET-01");
         });
 
         it("User can not claim rewards for twice", async function () {
@@ -126,7 +126,7 @@ describe("Airdrop", function () {
 
             let canClaim = await airdropContract.canClaim(1);
             expect(canClaim).to.be.false;
-            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof)).to.be.revertedWith('Tokens have already been claimed');
+            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof)).to.be.revertedWith('A1-THAC-01');
         });
 
         it("User can not claim rewards with invalid merkle proof", async function () {
@@ -140,7 +140,7 @@ describe("Airdrop", function () {
             var leaf = userBalanceHashes[0]; // SET WRONG LEAF
             let proof = merkleTree.getHexProof(leaf);
 
-            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof)).to.be.revertedWith('Merkle Proof is not valid');
+            await expect(airdropContract.connect(investor1).claim(1, userItem.balance, proof)).to.be.revertedWith('A1-MPNV-01');
 
             var claimed = await testToken.balanceOf(userItem.address);
             expect(claimed).to.be.equal(0);

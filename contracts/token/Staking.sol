@@ -91,12 +91,9 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         nonReentrant
         updateReward(msg.sender)
     {
-        require(amount > 0, "Staking: Cannot stake 0");
-        require(!isStakingPaused, "Staking: Staking has been paused");
-        require(
-            block.timestamp < periodFinish,
-            "Staking: period has been ended"
-        );
+        require(amount > 0, "S-CNSZ-01");
+        require(!isStakingPaused, "S-SHBP-01");
+        require(block.timestamp < periodFinish,"S-PHBE-01");
 
         _totalSupply += amount;
         _balances[msg.sender] += amount;
@@ -112,7 +109,7 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         nonReentrant
         updateReward(msg.sender)
     {
-        require(amount > 0, "Staking: Cannot withdraw 0");
+        require(amount > 0, "S-CNWZ-01");
 
         _totalSupply -= amount;
         _balances[msg.sender] -= amount;
@@ -160,17 +157,14 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
     }
 
     function setRewardRate(uint256 newRewardRate) external onlyOwner {
-        require(newRewardRate > 0, "Staking: RewardRate cannot be zero");
+        require(newRewardRate > 0, "S-RCNZ-01");
         rewardRate = newRewardRate;
 
         emit RewardRateUpdated(rewardRate);
     }
 
     function setRewardsDuration(uint256 _rewardsDuration) external onlyOwner {
-        require(
-           block.timestamp > periodFinish,
-            "Staking: Previous rewards period must be complete before changing the duration for the new period"
-        );
+        require(block.timestamp > periodFinish, "S-DMBC-01");
 
         periodFinish = block.timestamp + _rewardsDuration;
 
