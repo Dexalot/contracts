@@ -1,60 +1,67 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.4;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 
-contract Staking is Ownable, ReentrancyGuard, Pausable {
-    using SafeERC20 for IERC20;
+contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
+    using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32("1.0.0");
+    bytes32 constant public VERSION = bytes32("1.1.1");
 
-    IERC20 public rewardsToken;
-    IERC20 public stakingToken;
+    IERC20Upgradeable public rewardsToken;
+    IERC20Upgradeable public stakingToken;
 
     // constants
     uint256 constant MULTIPLIER = 1e18;
     uint256 constant TENK = 1e4;
     uint256 constant SECONDSINYEAR = 365 days; // 60 * 60 * 24 * 365
 
-    uint256 public periodFinish = 0;
-    uint256 public rewardsDuration;
-    uint256 public rewardRate = 1000; // numerator for reward rate % to be used with a denominator of 10000, 10% = 1000/10000
+    uint256 public periodFinish;      // end of current period in unix time
+    uint256 public rewardsDuration;   // duration of current period in seconds
+    uint256 public rewardRate;        // numerator for reward rate % to be used with a denominator of 10000, 10% = 1000/10000
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
+
     bool public isStakingPaused;
 
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
 
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
+    uint256 private _totalStake;
+    mapping(address => uint256) private _stakes;
 
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
+    event Restaked(address indexed user, uint256 reward);
     event RewardPaid(address indexed user, uint256 reward);
     event RewardRateUpdated(uint256 rate);
     event RewardsDurationUpdated(uint256 rewardsDuration);
     event FundsRecovered(uint256 amount, address token);
 
-    constructor(address _stakingToken, address _rewardsToken, uint256 _rewardsDuration) {
-        stakingToken = IERC20(_stakingToken);
-        rewardsToken = IERC20(_rewardsToken);
+    function initialize(address _stakingToken, address _rewardsToken, uint256 _rewardRate, uint256 _rewardsDuration) public initializer {
+        __Ownable_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+
+        stakingToken = IERC20Upgradeable(_stakingToken);
+        rewardsToken = IERC20Upgradeable(_rewardsToken);
         rewardsDuration = _rewardsDuration;
-        periodFinish = block.timestamp + rewardsDuration;
+        rewardRate = _rewardRate;
+        periodFinish = block.timestamp + _rewardsDuration;
     }
 
-    function totalSupply() external view returns (uint256) {
-        return _totalSupply;
+    function totalStake() external view returns (uint256) {
+        return _totalStake;
     }
 
-    function balanceOf(address account) external view returns (uint256) {
-        return _balances[account];
+    function stakeOf(address account) external view returns (uint256) {
+        return _stakes[account];
     }
 
     function lastTimeRewardApplicable() public view returns (uint256) {
@@ -62,7 +69,7 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
     }
 
     function rewardPerToken() public view returns (uint256) {
-        if (_totalSupply == 0) {
+        if (_totalStake == 0) {
             return rewardPerTokenStored;
         }
 
@@ -72,7 +79,7 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
 
     function earned(address account) public view returns (uint256) {
         return
-            (((_balances[account] * (rewardPerToken() - userRewardPerTokenPaid[account]))) / MULTIPLIER) + rewards[account];
+            (((_stakes[account] * (rewardPerToken() - userRewardPerTokenPaid[account]))) / MULTIPLIER) + rewards[account];
     }
 
     modifier updateReward(address account) {
@@ -95,31 +102,51 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         require(!isStakingPaused, "S-SHBP-01");
         require(block.timestamp < periodFinish,"S-PHBE-01");
 
-        _totalSupply += amount;
-        _balances[msg.sender] += amount;
+        _totalStake += amount;
+        _stakes[msg.sender] += amount;
 
         emit Staked(msg.sender, amount);
 
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    function withdraw(uint256 amount)
+    function unstake(uint256 amount)
         public
         whenNotPaused
         nonReentrant
         updateReward(msg.sender)
     {
         require(amount > 0, "S-CNWZ-01");
+        require(_stakes[msg.sender] >= amount, "S-CNWM-01");
 
-        _totalSupply -= amount;
-        _balances[msg.sender] -= amount;
+        _totalStake -= amount;
+        _stakes[msg.sender] -= amount;
 
         emit Withdrawn(msg.sender, amount);
 
         stakingToken.safeTransfer(msg.sender, amount);
     }
 
-    function getReward()
+    function restake()
+        public
+        whenNotPaused
+        nonReentrant
+        updateReward(msg.sender)
+    {
+        require(!isStakingPaused, "S-SHBP-02");
+
+        uint256 reward = rewards[msg.sender];
+        if (reward > 0) {
+            rewards[msg.sender] = 0;
+
+            emit Restaked(msg.sender, reward);
+
+            _totalStake += reward;
+            _stakes[msg.sender] += reward;
+        }
+    }
+
+    function claim()
         public
         whenNotPaused
         nonReentrant
@@ -135,9 +162,9 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         }
     }
 
-    function exit() external {
-        withdraw(_balances[msg.sender]);
-        getReward();
+    function exit(uint256 amount) external {
+        unstake(amount);
+        claim();
     }
 
     function pause() external onlyOwner {
@@ -156,11 +183,12 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         isStakingPaused = false;
     }
 
-    function setRewardRate(uint256 newRewardRate) external onlyOwner {
-        require(newRewardRate > 0, "S-RCNZ-01");
-        rewardRate = newRewardRate;
+    function setRewardRate(uint256 _rewardRate) external onlyOwner {
+        require(_rewardRate > 0, "S-RCNZ-01");
 
-        emit RewardRateUpdated(rewardRate);
+        rewardRate = _rewardRate;
+
+        emit RewardRateUpdated(_rewardRate);
     }
 
     function setRewardsDuration(uint256 _rewardsDuration) external onlyOwner {
@@ -171,14 +199,14 @@ contract Staking is Ownable, ReentrancyGuard, Pausable {
         emit RewardsDurationUpdated(_rewardsDuration);
     }
 
-    function recoverFunds(address to) external onlyOwner {
-        uint256 balanceRewards = rewardsToken.balanceOf(address(this));
-        rewardsToken.safeTransfer(to, balanceRewards);
-
-        emit FundsRecovered(balanceRewards, address(rewardsToken));
+    function recoverFunds() external onlyOwner {
+        isStakingPaused = true;
 
         uint256 balanceStaking = stakingToken.balanceOf(address(this));
-        stakingToken.safeTransfer(to, balanceStaking);
+
+        // only recover the remainder of the funds sent to the staking contract for the rewards
+        // leave totalStake so people can unstake themselves
+        stakingToken.safeTransfer(msg.sender, balanceStaking - _totalStake);
 
         emit FundsRecovered(balanceStaking, address(stakingToken));
     }
