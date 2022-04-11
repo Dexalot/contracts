@@ -87,7 +87,7 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         bytes32[] calldata merkleProof
     ) external whenNotPaused nonReentrant {
         require(
-            token.balanceOf(address(this)) > amount,
+            token.balanceOf(address(this)) >= (amount - _released[index]),
             "A-CNET-01"
         );
 
