@@ -482,8 +482,8 @@ it("... Live Trading Mode : Add then C/R Order ", async () => {
 
    let order= {tp: pairIdAsBytes32, price: "1.03", quantity:"200", side}
    expect(await addOrder (tradePairC, order,  pair, orders) ).to.equal(true);
-   order = findOrder(accounts[3].address, side, BigNumber("200"), BigNumber("1.03"), orders);
-   await expect( CancelReplaceOrder(tradePairC, order, "1.04", "250", pair, orders) ).to.be.revertedWith("T-AUCT-13");
+  //  order = findOrder(accounts[3].address, side, BigNumber("200"), BigNumber("1.03"), orders);
+  //  await expect( CancelReplaceOrder(tradePairC, order, "1.04", "250", pair, orders) ).to.be.revertedWith("T-AUCT-13");
 
 });
 
@@ -610,8 +610,8 @@ it("... Turn Auction Mode OFF. Match 2 orders Live", async () => {
 
   order= {tp: pairIdAsBytes32, price: "0.03", quantity:"400", side}
   expect(await addOrder(accounts[3].tradePairsC, order,  pair, orders) ).to.equal(true);
-  order = findOrder(accounts[3].address, side, BigNumber("400"), BigNumber("0.03"), orders);
-  await expect( CancelReplaceOrder(tradePairC, order, "0.03", "410", pair, orders) ).to.be.revertedWith("T-AUCT-13");
+  // order = findOrder(accounts[3].address, side, BigNumber("400"), BigNumber("0.03"), orders);
+  // await expect( CancelReplaceOrder(tradePairC, order, "0.03", "410", pair, orders) ).to.be.revertedWith("T-AUCT-13");
 
   tradePairC = accounts[4].tradePairsC;
   order= {tp: pairIdAsBytes32, price: "0.03", quantity:"400", side:0}
@@ -683,27 +683,6 @@ it("... Balance Check After Auction Token withdraw ", async () => {
 
 
 }).timeout(240000);
-
-async function getRevertReason(error) {
-  let reason;
-  var idx = error.message.indexOf("VM Exception while processing transaction: revert ");
-  if (idx > -1 ) { //Hardhat revert reason already in the message
-    return error.message.substring(idx + 50, idx + 59);
-  } else {
-    if (!error.transaction) {
-      console.log (`${instanceName} getRevertReason: error.transaction is undefined`);
-    } else {
-      //https://gist.github.com/gluk64/fdea559472d957f1138ed93bcbc6f78a
-      let code = await provider.call(error.transaction, error.blockNumber);
-      reason = ethers.utils.toUtf8String('0x' + code.substr(138));
-      var i = reason.indexOf('\0'); // delete all null characters after the string
-      if (i>-1) {
-        return reason.substring(0, i);
-      }
-    }
-  }
-  return reason;
-}
 
 async function depositToken (account, portfolio, contract, symbolByte32,  decimals, deposit_amount) {
   const tx1 = await contract.approve(portfolio.address, Utils.parseUnits(deposit_amount.toString(), decimals), options);

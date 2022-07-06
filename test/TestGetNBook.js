@@ -67,7 +67,7 @@ var options = { gasLimit: 300000 };
 const foundationSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
 
 
-describe("Dexalot", () => {
+describe("Dexalot [ @noskip-on-coverage ]", () => {
 
     before(async () => {
 
@@ -556,7 +556,6 @@ describe("Dexalot", () => {
             }
         }
 
-
     });
 
     it("... should be able to get Buy & Sell Quantities at different prices", async () => {
@@ -596,8 +595,6 @@ describe("Dexalot", () => {
             console.log(`Bid quantities #${i}: ${Utils.formatUnits(buyQuantities[i], 18)}`)
             }
         }
-
-
 
     });
 

@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.3;
+pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
@@ -17,22 +17,7 @@ import "./interfaces/ITradePairs.sol";
 
 /**
 *   @author "DEXALOT TEAM"
-*   @title "The Exchange contract is the main entry point to DEXALOT Decentralized Exchange Trading."
-*
-*   @dev Start up order:
-*   @dev     1. Deploy contracts: Exchange, Portfolio, OrderBooks, TradePairs
-*   @dev     2. Call addTradePairs on Exchange
-*   @dev     3. Call setPortfolio and setTradePairs on Exchange
-*   @dev     4. Change ownership of contracts as per below
-*   @dev     5. Call addToken on Exchange to add supported ERC20 tokens to Portfolio
-*
-*   @dev "During deployment the ownerships of contracts are changed so they become as follows once DEXALOT is fully deployed:"
-*   @dev "Exchange is owned by proxyAdmin."
-*   @dev "Portfolio contract is owned by exchange contract."
-*   @dev "TradePairs contract is owned by exchange contract."
-*   @dev "OrderBooks contract is owned by TradePairs contract."
-*   @dev "Only tradepairs can internally call addExecution and adjustAvailable functions."
-*   @dev "Only valid trader accounts can call deposit and withdraw functions for their own accounts."
+*   @title "Exchange: the main entry point to DEXALOT Decentralized Exchange."
 */
 
 contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
@@ -41,7 +26,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.6');
+    bytes32 constant public VERSION = bytes32('1.4.0');
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -145,13 +130,13 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
     function updateRate(bytes32 _tradePair, uint _rate, ITradePairs.RateType _rateType) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-04");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-04");
         tradePairs.updateRate(_tradePair, _rate, _rateType);
     }
 
     // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
     function updateRates(bytes32 _tradePair, uint _makerRate, uint _takerRate) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-20");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-20");
         tradePairs.updateRate(_tradePair, _makerRate, ITradePairs.RateType.MAKER);
         tradePairs.updateRate(_tradePair, _takerRate, ITradePairs.RateType.TAKER);
     }
@@ -188,6 +173,40 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         return portfolio;
     }
 
+    // DEPLOYMENT ACCOUNT FUNCTION TO ADD A TRUSTED CONTRACT
+    function addTrustedContract(address _contract, string calldata _name) external {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-31");
+        portfolio.addTrustedContract(_contract, _name);
+    }
+
+    // FRONTEND FUNCTION TO CHECK IF A CONTRACT IS TRUSTED
+    function isTrustedContract(address _contract) external view returns(bool) {
+        return portfolio.isTrustedContract(_contract);
+    }
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO REMOVE A TRUSTED CONTRACT
+    function removeTrustedContract(address _contract) external {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-32");
+        portfolio.removeTrustedContract(_contract);
+    }
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO ADD AN INTERNAL CONTRACT
+    function addInternalContract(address _contract, string calldata _name) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-33");
+        portfolio.addInternalContract(_contract, _name);
+    }
+
+    // FRONTEND FUNCTION TO CHECK IF A CONTRACT IS INTERNAL
+    function isInternalContract(address _contract) external view returns(bool) {
+        return portfolio.isInternalContract(_contract);
+    }
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO REMOVE AN INTERNAL CONTRACT
+    function removeInternalContract(address _contract) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-34");
+        portfolio.removeInternalContract(_contract);
+    }
+
     // DEPLOYMENT ACCOUNT FUNCTION TO SET TRADEPAIRS FOR THE EXCHANGE
     function setTradePairs(ITradePairs _tradePairs) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-06");
@@ -206,17 +225,18 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
                           address _quoteAssetAddr, uint8 _quoteDisplayDecimals,
                           uint _minTradeAmount, uint _maxTradeAmount, ITradePairs.AuctionMode _mode)
             public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-07");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-07");
+
 
         (bytes32 _baseAssetSymbol, uint8 _baseAssetDecimals) = getAssetMeta(_baseAssetAddr);
         (bytes32 _quoteAssetSymbol, uint8 _quoteAssetDecimals) = getAssetMeta(_quoteAssetAddr);
         // check if base asset is native AVAX, if not it is ERC20 and add it
-        if (_baseAssetSymbol != bytes32("AVAX")) {
+        if (_baseAssetSymbol != portfolio.getNative()) {
             //Only the base token can be an auction TOKEN
             portfolio.addToken(_baseAssetSymbol, IERC20MetadataUpgradeable(_baseAssetAddr), _mode);
         }
         // check if quote asset is native AVAX, if not it is ERC20 and add it
-        if (_quoteAssetSymbol != bytes32("AVAX")) {
+        if (_quoteAssetSymbol != portfolio.getNative()) {
             portfolio.addToken(_quoteAssetSymbol, IERC20MetadataUpgradeable(_quoteAssetAddr), ITradePairs.AuctionMode.OFF);
         }
         tradePairs.addTradePair(_tradePairId,
@@ -227,7 +247,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     function getAssetMeta(address _assetAddr) private view returns (bytes32 _symbol, uint8 _decimals) {
         if (_assetAddr == address(0)) {
-            return (bytes32("AVAX"), 18);
+            return (portfolio.getNative(), 18);
         } else {
             IERC20MetadataUpgradeable _asset = IERC20MetadataUpgradeable(_assetAddr);
             return (StringLibrary.stringToBytes32(_asset.symbol()), _asset.decimals());
@@ -265,7 +285,8 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         pausePortfolio(_paused);
         pauseTrading(_paused);
     }
-        // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
+
+    // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
     // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
         (uint8 mode, , , ,) = tradePairs.getAuctionData(_tradePairId);
@@ -297,7 +318,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // DEPLOYMENT ACCOUNT FUNCTION TO SET MIN TRADE AMOUNT FOR A TRADEPAIR
     function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-15");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-15");
         tradePairs.setMinTradeAmount(_tradePairId, _minTradeAmount);
     }
 
@@ -308,7 +329,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // DEPLOYMENT ACCOUNT FUNCTION TO SET MAX TRADE AMOUNT FOR A TRADEPAIR
     function setMaxTradeAmount(bytes32 _tradePairId, uint _maxTradeAmount) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-16");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-16");
         tradePairs.setMaxTradeAmount(_tradePairId, _maxTradeAmount);
     }
 
@@ -356,6 +377,12 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         portfolio.addToken(_symbol, _token, _mode);
     }
 
+    // DEPLOYMENT ACCOUNT FUNCTION TO CANCEL ALL OUTSTANDING ORDERS IN AN ORDERBOOK
+    function unsolicitedCancel(bytes32 _tradePairId, bytes32 _bookId , uint8 _maxCount) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-30");
+        tradePairs.unsolicitedCancel(_tradePairId, _bookId, _maxCount);
+    }
+
     function setAuctionMode(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) public {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-25");
         tradePairs.setAuctionMode(_tradePairId, _mode);
@@ -377,7 +404,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         tradePairs.setAuctionPrice(_tradePairId, _price, _pct);
     }
 
-    fallback() external {}
+    fallback() external { revert("E-NFUN-01"); }
 
     // utility function to convert string to bytes32
     function stringToBytes32(string memory _string) public pure returns (bytes32 result) {

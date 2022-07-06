@@ -607,6 +607,8 @@ describe("Dexalot", () => {
             _checkValue = portfolioUser[order["owner"]][order["quoteSymbol"]]['available'];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
+
+            await portfolio.safeTransferFees();
             // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
             if (order["baseSymbol"] === "AVAX") {

@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.3;
+pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -29,7 +29,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     using Bytes32Library for bytes32;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.9');
+    bytes32 constant public VERSION = bytes32('1.4.1');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -39,7 +39,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
 
     // a dynamic array of trade pairs added to TradePairs contract
     bytes32[] private tradePairsArray;
-
 
     struct TradePair {
         bytes32 baseSymbol;          // symbol for base asset
@@ -82,7 +81,9 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     event OrderStatusChanged(address indexed traderaddress, bytes32 indexed pair, bytes32 id,  uint price, uint totalamount, uint quantity,
                              Side side, Type1 type1, Status status, uint quantityfilled, uint totalfee);
 
-    event Executed(bytes32 indexed pair, uint price, uint quantity, bytes32 maker, bytes32 taker, uint feeMaker, uint feeTaker, bool feeMakerBase, uint execId);
+    event Executed(bytes32 indexed pair, uint price, uint quantity, bytes32 maker, bytes32 taker,
+                   uint feeMaker, uint feeTaker, Side takerSide, uint execId,
+                   address indexed addressMaker, address indexed addressTaker);
 
     event ParameterUpdated(bytes32 indexed pair, string param, uint oldValue, uint newValue);
 
@@ -98,7 +99,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                           bytes32 _quoteSymbol, uint8 _quoteDecimals,  uint8 _quoteDisplayDecimals,
                           uint _minTradeAmount, uint _maxTradeAmount, AuctionMode _mode) public override onlyOwner {
 
-        if (tradePairMap[_tradePairId].baseSymbol == '') {
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        if (_tradePair.baseSymbol == '') {
             EnumerableSetUpgradeable.UintSet storage enumSet = allowedOrderTypes[_tradePairId];
             enumSet.add(uint(Type1.LIMIT)); // LIMIT orders always allowed
             //enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
@@ -106,28 +108,24 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             bytes32 _buyBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-BUYBOOK')).stringToBytes32();
             bytes32 _sellBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-SELLBOOK')).stringToBytes32();
 
-            tradePairMap[_tradePairId].baseSymbol = _baseSymbol;
-            tradePairMap[_tradePairId].baseDecimals = _baseDecimals;
-            tradePairMap[_tradePairId].baseDisplayDecimals = _baseDisplayDecimals;
-            tradePairMap[_tradePairId].quoteSymbol = _quoteSymbol;
-            tradePairMap[_tradePairId].quoteDecimals = _quoteDecimals;
-            tradePairMap[_tradePairId].quoteDisplayDecimals = _quoteDisplayDecimals;
-            tradePairMap[_tradePairId].minTradeAmount = _minTradeAmount;
-            tradePairMap[_tradePairId].maxTradeAmount = _maxTradeAmount;
-            tradePairMap[_tradePairId].buyBookId = _buyBookId;
-            tradePairMap[_tradePairId].sellBookId = _sellBookId;
-            tradePairMap[_tradePairId].makerRate = 10; // makerRate=10 (0.10% = 10/10000)
-            tradePairMap[_tradePairId].takerRate = 20; // takerRate=20 (0.20% = 20/10000)
-            tradePairMap[_tradePairId].allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
-            tradePairMap[_tradePairId].auctionIntervalPct = 1000 ;//auctionIntervalPct=1000 (10.00% = 1000/10000)   Buy Side (10000-1000)/10000 = 90%
-            // tradePairMap[_tradePairId].addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
-            // tradePairMap[_tradePairId].pairPaused = false;       // pair is not paused by default (EVM initializes to false)
+            _tradePair.baseSymbol = _baseSymbol;
+            _tradePair.baseDecimals = _baseDecimals;
+            _tradePair.baseDisplayDecimals = _baseDisplayDecimals;
+            _tradePair.quoteSymbol = _quoteSymbol;
+            _tradePair.quoteDecimals = _quoteDecimals;
+            _tradePair.quoteDisplayDecimals = _quoteDisplayDecimals;
+            _tradePair.minTradeAmount = _minTradeAmount;
+            _tradePair.maxTradeAmount = _maxTradeAmount;
+            _tradePair.buyBookId = _buyBookId;
+            _tradePair.sellBookId = _sellBookId;
+            _tradePair.makerRate = 10; // makerRate=10 (0.10% = 10/10000)
+            _tradePair.takerRate = 20; // takerRate=20 (0.20% = 20/10000)
+            _tradePair.allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
+            _tradePair.auctionIntervalPct = 1000 ;//auctionIntervalPct=1000 (10.00% = 1000/10000)   Buy Side (10000-1000)/10000 = 90%
+            // _tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
+            // _tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
 
-            tradePairMap[_tradePairId].auctionMode = _mode;
-            if (matchingAllowed(_mode)) {
-                enumSet.add(uint(Type1.LIMITFOK));  // LIMITFOK orders allowed only when not in auction mode
-            }
-
+            setAuctionMode(_tradePairId, _mode);
             tradePairsArray.push(_tradePairId);
 
             emit NewTradePair(_tradePairId, _baseDisplayDecimals, _quoteDisplayDecimals, _minTradeAmount, _maxTradeAmount);
@@ -170,7 +168,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         if (matchingAllowed(_mode)) {
             require(orderBooks.first(_tradePair.sellBookId) == 0
                             || orderBooks.first(_tradePair.sellBookId) > orderBooks.last(_tradePair.buyBookId), "T-AUCT-11");
-            addOrderType(_tradePairId, Type1.LIMITFOK);
+            addOrderType(_tradePairId, Type1.LIMITFOK); // LIMITFOK orders allowed only when not in auction mode
             pauseTradePair(_tradePairId, false);
 
         } else if (_mode == AuctionMode.OPEN ) {
@@ -223,8 +221,9 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) public override onlyOwner {
-        uint oldValue = tradePairMap[_tradePairId].minTradeAmount;
-        tradePairMap[_tradePairId].minTradeAmount = _minTradeAmount;
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        uint oldValue = _tradePair.minTradeAmount;
+        _tradePair.minTradeAmount = _minTradeAmount;
         emit ParameterUpdated(_tradePairId, "T-MINTRAMT", oldValue, _minTradeAmount);
     }
 
@@ -233,8 +232,9 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     function setMaxTradeAmount(bytes32 _tradePairId, uint _maxTradeAmount) public override onlyOwner {
-        uint oldValue = tradePairMap[_tradePairId].maxTradeAmount;
-        tradePairMap[_tradePairId].maxTradeAmount = _maxTradeAmount;
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        uint oldValue = _tradePair.maxTradeAmount;
+        _tradePair.maxTradeAmount = _maxTradeAmount;
         emit ParameterUpdated(_tradePairId, "T-MAXTRAMT", oldValue, _maxTradeAmount);
     }
 
@@ -263,12 +263,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) public override onlyOwner {
-        uint oldValue = tradePairMap[_tradePairId].baseDisplayDecimals;
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        uint oldValue = _tradePair.baseDisplayDecimals;
         if (_isBase) {
-            tradePairMap[_tradePairId].baseDisplayDecimals = _displayDecimals;
+            _tradePair.baseDisplayDecimals = _displayDecimals;
         } else {
-            oldValue = tradePairMap[_tradePairId].quoteDisplayDecimals;
-            tradePairMap[_tradePairId].quoteDisplayDecimals = _displayDecimals;
+            oldValue = _tradePair.quoteDisplayDecimals;
+            _tradePair.quoteDisplayDecimals = _displayDecimals;
         }
         emit ParameterUpdated(_tradePairId, "T-DISPDEC", oldValue, _displayDecimals);
     }
@@ -298,32 +299,34 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     function updateRate(bytes32 _tradePairId, uint _rate, ITradePairs.RateType _rateType) public override onlyOwner {
-        uint oldValue = tradePairMap[_tradePairId].makerRate;
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        uint oldValue = _tradePair.makerRate;
         if (_rateType == ITradePairs.RateType.MAKER) {
-            tradePairMap[_tradePairId].makerRate = _rate; // (_rate/100)% = _rate/10000: _rate=10 => 0.10%
+            _tradePair.makerRate = _rate; // (_rate/100)% = _rate/10000: _rate=10 => 0.10%
             emit ParameterUpdated(_tradePairId, "T-MAKERRATE", oldValue, _rate);
-        } else if (_rateType == ITradePairs.RateType.TAKER) {
-            oldValue = tradePairMap[_tradePairId].takerRate;
-            tradePairMap[_tradePairId].takerRate = _rate; // (_rate/100)% = _rate/10000: _rate=20 => 0.20%
+        } else {
+            oldValue = _tradePair.takerRate;
+            _tradePair.takerRate = _rate; // (_rate/100)% = _rate/10000: _rate=20 => 0.20%
             emit ParameterUpdated(_tradePairId, "T-TAKERRATE", oldValue, _rate);
-        } // Ignore the rest for now
+        }
     }
 
-    function getMakerRate(bytes32 _tradePairId) public view override returns (uint) {
+    function getMakerRate(bytes32 _tradePairId) external view override returns (uint) {
         return tradePairMap[_tradePairId].makerRate;
     }
 
-    function getTakerRate(bytes32 _tradePairId) public view override returns (uint) {
+    function getTakerRate(bytes32 _tradePairId) external view override returns (uint) {
         return tradePairMap[_tradePairId].takerRate;
     }
 
     function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) public override onlyOwner {
-        uint oldValue = tradePairMap[_tradePairId].allowedSlippagePercent;
-        tradePairMap[_tradePairId].allowedSlippagePercent = _allowedSlippagePercent;
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        uint oldValue = _tradePair.allowedSlippagePercent;
+        _tradePair.allowedSlippagePercent = _allowedSlippagePercent;
         emit ParameterUpdated(_tradePairId, "T-SLIPPAGE", oldValue, _allowedSlippagePercent);
     }
 
-    function getAllowedSlippagePercent(bytes32 _tradePairId) public override view returns (uint8) {
+    function getAllowedSlippagePercent(bytes32 _tradePairId) external override view returns (uint8) {
         return tradePairMap[_tradePairId].allowedSlippagePercent;
     }
 
@@ -353,7 +356,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     }
 
     // get quote amount
-    function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) private view returns (uint) {
+    function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) public override view returns (uint) {
       return  (_price * _quantity) / 10 ** tradePairMap[_tradePairId].baseDecimals;
     }
 
@@ -362,12 +365,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         emit OrderStatusChanged(_order.traderaddress, _tradePairId, _order.id,
                                 _order.price, _order.totalAmount, _order.quantity, _order.side,
                                 _order.type1, _order.status, _order.quantityFilled,  _order.totalFee);
-    }
-
-    //Used to Round Up the auction price interval small restrictions
-    // example: a = 1245, m: 100 ==> 1300
-    function ceil(uint a, uint m) pure public returns (uint) {
-        return ((a + m - 1) / m) * m;
     }
 
     //Used to Round Down the fees to the display decimals to avoid dust
@@ -401,9 +398,14 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         uint tlastFee = handleExecution(_tradePairId, _takerOrder.id, _price, _quantity, _tradePair.takerRate); // also updates the order status
         portfolio.addExecution(_makerOrder, _takerOrder.traderaddress, _tradePair.baseSymbol, _tradePair.quoteSymbol, _quantity,
                                getQuoteAmount(_tradePairId, _price, _quantity), mlastFee, tlastFee);
-        emit Executed(_tradePairId, _price, _quantity, _makerOrder.id, _takerOrder.id, mlastFee, tlastFee, _makerOrder.side == Side.BUY ? true : false, orderCounter++);
-
+        emitExecuted(_tradePairId, _price, _quantity, _makerOrder, _takerOrder, mlastFee, tlastFee);
         emitStatusUpdate(_tradePairId, _makerOrder.id); // EMIT maker order's status update
+    }
+
+    function emitExecuted(bytes32 _tradePairId, uint _price, uint _quantity , Order memory _makerOrder, Order memory _takerOrder, uint mlastFee, uint tlastFee) private {
+
+        emit Executed(_tradePairId, _price, _quantity, _makerOrder.id, _takerOrder.id, mlastFee, tlastFee, _takerOrder.side , orderCounter++,
+                    _makerOrder.traderaddress, _takerOrder.traderaddress); //_makerOrder.side == Side.BUY ? true : false
     }
 
     function decimalsOk(uint value, uint8 decimals, uint8 displayDecimals) private pure returns (bool) {
@@ -420,13 +422,30 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(decimalsOk(_quantity, _tradePair.baseDecimals, _tradePair.baseDisplayDecimals), "T-TMDQ-01");
 
         if (_type1 == Type1.LIMIT  || _type1 == Type1.LIMITFOK ) {
-            addLimitOrder(_tradePairId, _price, _quantity, _side, _type1);
+            addLimitOrder(msg.sender, _tradePairId, _price, _quantity, _side, _type1);
         } else if (_type1 == Type1.MARKET) {
-            addMarketOrder(_tradePairId, _quantity, _side);
+            addMarketOrder(msg.sender, _tradePairId, _quantity, _side);
         }
     }
 
-    function addMarketOrder(bytes32 _tradePairId, uint _quantity, Side _side) private {
+    // FRONTEND ENTRY FUNCTION TO CALL TO ADD ORDER
+    function addOrderFrom(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external override nonReentrant whenNotPaused {
+        require(_trader == msg.sender || portfolio.isInternalContract(msg.sender), "T-OODT-01");
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        require(!_tradePair.pairPaused, "T-PPAU-06");
+        require(!_tradePair.addOrderPaused, "T-AOPA-02");
+        require(allowedOrderTypes[_tradePairId].contains(uint(_type1)), "T-IVOT-02");
+
+        require(decimalsOk(_quantity, _tradePair.baseDecimals, _tradePair.baseDisplayDecimals), "T-TMDQ-02");
+
+        if (_type1 == Type1.LIMIT  || _type1 == Type1.LIMITFOK ) {
+            addLimitOrder(_trader, _tradePairId, _price, _quantity, _side, _type1);
+        } else if (_type1 == Type1.MARKET) {
+            addMarketOrder(_trader, _tradePairId, _quantity, _side);
+        }
+    }
+
+    function addMarketOrder(address _trader, bytes32 _tradePairId, uint _quantity, Side _side) private {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(matchingAllowed(_tradePair.auctionMode), "T-AUCT-04");
         uint marketPrice;
@@ -451,7 +470,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         bytes32 orderId = getOrderId();
         Order storage _order = orderMap[orderId];
         _order.id = orderId;
-        _order.traderaddress= msg.sender;
+        _order.traderaddress = _trader;
         _order.price = worstPrice; // setting the price to the worst price so it can be filled up to this price given enough qty
         _order.quantity = _quantity;
         _order.side = _side;
@@ -459,7 +478,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         //_order.totalAmount = 0;        // evm intialized
         //_order.type1 = _type1;         // evm intialized to MARKET
         //_order.status = Status.NEW;    // evm intialized
-        //_order.totalFee = 0;           // evm intialized;
+        //_order.totalFee = 0;           // evm intialized
 
         uint takerRemainingQuantity;
         if (_side == Side.BUY) {
@@ -483,14 +502,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         require(_tradePair.auctionPrice > 0 && _tradePair.auctionIntervalPct==0, "T-AUCT-03");
         Order memory takerOrder;
         uint takerRemainingQuantity;
-        bytes32 bookId;
-        bookId = _tradePair.sellBookId;
+        bytes32 bookId = _tradePair.sellBookId;
         uint price = orderBooks.first(bookId);
         bytes32 head = orderBooks.getHead(bookId, price);
         if ( head != '' ) {
             takerOrder = getOrder(head);
             uint startRemainingQuantity = getRemainingQuantity(takerOrder);
-            takerRemainingQuantity= matchBuyBookAuction(_tradePairId, takerOrder, _maxCount);
+            takerRemainingQuantity = matchBuyBookAuction(_tradePairId, takerOrder, _maxCount);
             if (takerRemainingQuantity == 0) {
                 orderBooks.removeFirstOrder(bookId, price);
             }
@@ -566,7 +584,20 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         return getRemainingQuantity(takerOrder);
     }
 
-    function addLimitOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) private {
+    function unsolicitedCancel(bytes32 _tradePairId, bytes32 _bookId, uint8 _maxCount) public override onlyOwner {
+        TradePair storage _tradePair = tradePairMap[_tradePairId];
+        require(_tradePair.pairPaused, "T-PPAU-05");
+        uint price = orderBooks.first(_bookId);
+        bytes32 head = orderBooks.getHead(_bookId, price);
+        while ( head != '' && _maxCount>0 ) {
+            doOrderCancel(_tradePairId, head);
+            price = orderBooks.first(_bookId);
+            head = orderBooks.getHead(_bookId, price);
+            _maxCount--;
+        }
+    }
+
+    function addLimitOrder(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) private {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(decimalsOk(_price, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-TMDP-01");
         uint tradeAmnt = (_price * _quantity) / (10 ** _tradePair.baseDecimals);
@@ -576,7 +607,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         bytes32 orderId = getOrderId();
         Order storage _order = orderMap[orderId];
         _order.id = orderId;
-        _order.traderaddress = msg.sender;
+        _order.traderaddress = _trader;
         _order.price = _price;
         _order.quantity = _quantity;
         _order.side = _side;
@@ -585,7 +616,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         //_order.quantityFilled= 0;      // evm intialized
         //_order.status= Status.NEW;     // evm intialized
         //_order.totalFee= 0;            // evm intialized
-
 
         if (_side == Side.BUY) {
             //Skip matching if in Auction Mode
@@ -609,8 +639,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
                 portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, _order.traderaddress, _tradePair.baseSymbol, _quantity);
             }
         }
-        if (_type1 == Type1.LIMITFOK && _quantity > 0) {
-            _order.status = Status.KILLED;
+        if (_type1 == Type1.LIMITFOK) {
+            require(_quantity == 0, "T-FOKF-01");
         }
         emitStatusUpdate(_tradePairId, _order.id);  // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
     }
@@ -634,14 +664,13 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     // The original order will lose its Time Priority as it is a new Order that is entered
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) public override nonReentrant whenNotPaused {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(uint8(_tradePair.auctionMode) > 1, "T-AUCT-13");
         Order storage _order = orderMap[_orderId];
         require(_order.id != '', "T-EOID-01");
         require(_order.traderaddress == msg.sender, "T-OOCC-01");
         require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
         require(!_tradePair.pairPaused, "T-PPAU-04");
         doOrderCancel(_tradePairId, _order.id);
-        addLimitOrder(_tradePairId, _price, _quantity, _order.side, _order.type1);
+        addLimitOrder(msg.sender, _tradePairId, _price, _quantity, _order.side, _order.type1);
     }
 
     // FRONTEND ENTRY FUNCTION TO CALL TO CANCEL ONE ORDER
@@ -670,6 +699,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         }
     }
 
-    fallback() external {}
+    fallback() external { revert("T-NFUN-01"); }
 
 }

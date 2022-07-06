@@ -1,6 +1,11 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.3;
+pragma solidity ^0.8.4;
+
+/**
+*   @author "DEXALOT TEAM"
+*   @title "ITradePairs: interface of TradePairs"
+*/
 
 interface ITradePairs {
     struct Order {
@@ -45,6 +50,7 @@ interface ITradePairs {
                                                                     returns (uint[] memory, uint[] memory, uint , bytes32);
     function getOrder(bytes32 _orderUid) external view returns (Order memory);
     function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
+    function addOrderFrom(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
     function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) external;
     function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) external;
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) external;
@@ -52,6 +58,8 @@ interface ITradePairs {
     function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) external;
     function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) external;
     function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint, uint, uint, uint);
+    function unsolicitedCancel(bytes32 _tradePairId, bytes32 bookId , uint8 _maxCount) external;
+    function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) external view returns(uint);
 
     enum Side     {BUY, SELL}
     enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}

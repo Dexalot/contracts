@@ -7,6 +7,9 @@ const { ethers, upgrades } = require("hardhat");
 
 const Utils = require('./utils.js');
 
+const ZERO_ACCT_ADDR = "0x0000000000000000000000000000000000000000";
+const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
 describe("TradePairs", function () {
     let MockToken;
     let Portfolio;
@@ -53,6 +56,14 @@ describe("TradePairs", function () {
             expect(await tradePairs.owner()).to.be.equal(admin.address);
         });
 
+        it("Should not accept via fallback()", async function () {
+            let ABI = ["function NOT_EXISTING_FUNCTION(address,uint256)"]
+            let iface = new ethers.utils.Interface(ABI)
+            let calldata = iface.encodeFunctionData("NOT_EXISTING_FUNCTION", [trader2.address, Utils.toWei('100')])
+            await expect(owner.sendTransaction({to: tradePairs.address, data: calldata}))
+                .to.be.revertedWith("T-NFUN-01")
+        })
+
         it("Should be able to add native as base asset and ERC20 as quote asset", async function () {
             let baseSymbolStr = "AVAX";
             let baseSymbol = Utils.fromUtf8(baseSymbolStr);
@@ -72,7 +83,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -122,7 +133,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -142,6 +153,9 @@ describe("TradePairs", function () {
             expect(await tradePairs.getMakerRate(tradePairId)).to.be.equal(mRate);
             await tradePairs.connect(admin).updateRate(tradePairId, tRate, 1);
             expect(await tradePairs.getTakerRate(tradePairId)).to.be.equal(tRate);
+
+            // call with wrong rate type
+            await expect(tradePairs.connect(admin).updateRate(tradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
         });
 
         it("Should add and remove order types from the admin account", async function () {
@@ -163,7 +177,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -213,7 +227,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -250,7 +264,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -287,7 +301,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -327,7 +341,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -364,7 +378,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 1000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -412,6 +426,10 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(trader1)
                     .addOrder(tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), side, type1))
                     .to.be.revertedWith("T-IVOT-01");
+
+            await expect(tradePairs.connect(trader1)
+                    .addOrderFrom(trader1.address, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), side, type1))
+                    .to.be.revertedWith("T-IVOT-02");
 
             // cannot add market order if auction is on
             await tradePairs.connect(admin).addOrderType(tradePairId, 0);    // add market order first
@@ -464,7 +482,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -525,7 +543,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -583,7 +601,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -630,7 +648,86 @@ describe("TradePairs", function () {
             expect(res3.events[3].args.status).to.be.equal(4);           // status is CANCELED = 4
         });
 
-        it("Should revert when price has more decimals then quote display decimals", async function () {
+        it("Should be able to add market buy order from the trader accounts", async function () {
+            let baseSymbolStr = "AVAX";
+            let baseSymbol = Utils.fromUtf8(baseSymbolStr);
+            let baseDecimals = 18;
+            let baseDisplayDecimals = 3;
+
+            let quoteTokenStr = "Quote Token";
+            let quoteSymbolStr = "QT"
+            let quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
+            let quoteDecimals = 6;
+            let quoteDisplayDecimals = 3;
+
+            let tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
+            let tradePairId = Utils.fromUtf8(tradePairStr);
+
+            let minTradeAmount = 1;
+            let maxTradeAmount = 1000;
+            let mode = 0;  // auction off
+
+            baseAssetAddr = ZERO_ACCT_ADDR;
+
+            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
+            quoteAssetAddr = quoteToken.address;
+
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
+            await quoteToken.mint(trader2.address, Utils.parseUnits('10000', quoteDecimals));
+
+            // add token to portfolio
+            await portfolio.addToken(baseSymbol, baseAssetAddr, mode);
+            await portfolio.addToken(quoteSymbol, quoteAssetAddr, mode);
+
+            // deposit some native to portfolio for trader1
+            await trader1.sendTransaction({from: trader1.address, to: portfolio.address, value: Utils.toWei('3000')});
+            await trader2.sendTransaction({from: trader2.address, to: portfolio.address, value: Utils.toWei('3000')});
+
+            // deposit some tokens to portfolio for trader1
+            await quoteToken.connect(trader1).approve(portfolio.address, Utils.parseUnits('2000', quoteDecimals));
+            await portfolio.connect(trader1).depositToken(trader1.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals));
+            await quoteToken.connect(trader2).approve(portfolio.address, Utils.parseUnits('2000', quoteDecimals));
+            await portfolio.connect(trader2).depositToken(trader2.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals));
+
+            await tradePairs.connect(admin).addTradePair(tradePairId, baseSymbol, baseDecimals, baseDisplayDecimals,
+                                                         quoteSymbol, quoteDecimals, quoteDisplayDecimals,
+                                                         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+                                                         Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+
+            await tradePairs.connect(admin).addOrderType(tradePairId, 0);
+
+            let tx = await tradePairs.connect(trader1)
+                    .addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 1, 1);  // SELL, LIMIT ORDER
+
+            tx = await tradePairs.connect(trader2)
+                    .addOrderFrom(trader2.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 0);  // BUY, MARKET ORDER
+            let res = await tx.wait();
+
+            expect(res.events[5].event).to.be.equal('OrderStatusChanged');
+            expect(res.events[5].args.pair).to.be.equal(tradePairId);
+            expect(res.events[5].args.price).to.be.equal(Utils.parseUnits('100', quoteDecimals));
+            expect(res.events[5].args.totalamount).to.be.equal(Utils.parseUnits('1000', quoteDecimals));  // totalamount is 1000 QT
+            expect(res.events[5].args.quantity).to.be.equal(Utils.parseUnits('10', baseDecimals));
+            expect(res.events[5].args.side).to.be.equal(1);              // side is SELL=1
+            expect(res.events[5].args.type1).to.be.equal(1);             // type1 is LIMIT=1
+            expect(res.events[5].args.status).to.be.equal(3);            // status is FILLED = 3
+            expect(res.events[5].args.quantityfilled).to.be.equal(Utils.parseUnits('10', baseDecimals));   // quantityfilled is 10 AVAX
+            expect(res.events[5].args.totalfee).to.be.equal(Utils.parseUnits('1', quoteDecimals));  // 0.1% of 1000 = 1 QT
+
+            expect(res.events[6].event).to.be.equal('OrderStatusChanged');
+            expect(res.events[6].args.pair).to.be.equal(tradePairId);
+            expect(res.events[6].args.price).to.be.equal(0);  // MARKET PRICE = 0
+            expect(res.events[6].args.totalamount).to.be.equal(Utils.parseUnits('1000', quoteDecimals));  // totalamount is 1000 QT
+            expect(res.events[6].args.quantity).to.be.equal(Utils.parseUnits('10', baseDecimals));
+            expect(res.events[6].args.side).to.be.equal(0);              // side is BUY=0
+            expect(res.events[6].args.type1).to.be.equal(0);             // type1 is MARKET=0
+            expect(res.events[6].args.status).to.be.equal(3);            // status is FILLED = 3
+            expect(res.events[6].args.quantityfilled).to.be.equal(Utils.parseUnits('10', baseDecimals));   // quantityfilled is 10 AVAX
+            expect(res.events[6].args.totalfee).to.be.equal(Utils.parseUnits('0.02', baseDecimals));  // 0.2% of 10 = 0.02 AVAX
+        });
+
+        it("Should revert when price has more decimals than quote display decimals", async function () {
             let baseSymbolStr = "AVAX";
             let baseSymbol = Utils.fromUtf8(baseSymbolStr);
             let baseDecimals = 18;
@@ -649,7 +746,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -700,7 +797,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -730,6 +827,9 @@ describe("TradePairs", function () {
 
             await expect(tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10.1234', baseDecimals), 0, 1))
                 .to.be.revertedWith("T-TMDQ-01");
+
+            await expect(tradePairs.connect(trader1).addOrderFrom(trader1.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10.1234', baseDecimals), 0, 1))
+                .to.be.revertedWith("T-TMDQ-02");
         });
 
         it("Should set auction mode from the auction admin account", async function () {
@@ -751,7 +851,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -799,7 +899,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -832,10 +932,20 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(trader1).pauseTradePair(tradePairId, true)).to.be.revertedWith("Ownable: caller is not the owner");
             // succeed from admin accounts
             await tradePairs.connect(admin).pauseTradePair(tradePairId, true);
+            // fail addOrder
             await expect(tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1))
                 .to.be.revertedWith("T-PPAU-01");
+            // fail addOrderFrom
+            await expect(tradePairs.connect(trader1).addOrderFrom(owner.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1))
+                .to.be.revertedWith("T-OODT-01");
+            await expect(tradePairs.connect(trader1).addOrderFrom(trader1.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1))
+                .to.be.revertedWith("T-PPAU-06");
+            // unpause to succeed
             await tradePairs.connect(admin).pauseTradePair(tradePairId, false);
+            // succeed addOrder
             await tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1);
+            // succeed addOrderFrom
+            await tradePairs.connect(trader1).addOrderFrom(trader1.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1);
         });
 
         it("Should pause addOrder for a trade pair from admin account", async function () {
@@ -857,7 +967,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -892,6 +1002,8 @@ describe("TradePairs", function () {
             await tradePairs.connect(admin).pauseAddOrder(tradePairId, true);
             await expect(tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1))
                 .to.be.revertedWith("T-AOPA-01");
+            await expect(tradePairs.connect(trader1).addOrderFrom(trader1.address, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1))
+                .to.be.revertedWith("T-AOPA-02");
             await tradePairs.connect(admin).pauseAddOrder(tradePairId, false);
             await tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1);
         });
@@ -915,7 +1027,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -971,7 +1083,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -1004,7 +1116,7 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -1043,8 +1155,8 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
-            zero_bytes32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
+            zero_bytes32 = ZERO_BYTES32;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -1108,8 +1220,8 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
-            zero_bytes32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
+            zero_bytes32 = ZERO_BYTES32;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -1182,6 +1294,84 @@ describe("TradePairs", function () {
                  .cancelReplaceOrder(tradePairId, id1, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("T-OAEX-01");
         });
 
+        it("Should be able to use unsolicitedCancel() correctly", async function () {
+            let baseSymbolStr = "AVAX";
+            let baseSymbol = Utils.fromUtf8(baseSymbolStr);
+            let baseDecimals = 18;
+            let baseDisplayDecimals = 3;
+
+            let quoteTokenStr = "Quote Token";
+            let quoteSymbolStr = "QT"
+            let quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
+            let quoteDecimals = 6;
+            let quoteDisplayDecimals = 3;
+
+            let tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
+            let tradePairId = Utils.fromUtf8(tradePairStr);
+
+            let minTradeAmount = 10;
+            let maxTradeAmount = 100000;
+            let mode = 0;  // auction off
+
+            baseAssetAddr = ZERO_ACCT_ADDR;
+            zero_bytes32 = ZERO_BYTES32;
+
+            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
+            quoteAssetAddr = quoteToken.address;
+
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
+
+            // add token to portfolio
+            await portfolio.addToken(baseSymbol, baseAssetAddr, mode);
+            await portfolio.addToken(quoteSymbol, quoteAssetAddr, mode);
+
+            // deposit some native to portfolio for trader1
+            await trader1.sendTransaction({from: trader1.address, to: portfolio.address, value: Utils.toWei('3000')});
+
+            // deposit some tokens to portfolio for trader1
+            await quoteToken.connect(trader1).approve(portfolio.address, Utils.parseUnits('2000', quoteDecimals));
+            await portfolio.connect(trader1).depositToken(trader1.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals));
+
+            await tradePairs.connect(admin).addTradePair(tradePairId, baseSymbol, baseDecimals, baseDisplayDecimals,
+                                                         quoteSymbol, quoteDecimals, quoteDisplayDecimals,
+                                                         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+                                                         Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+
+            // add two buy orders
+            const tx1 = await tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1);
+            const res1 = await tx1.wait();
+            const id1 = res1.events[1].args.id;
+
+            const tx2 = await tradePairs.connect(trader1).addOrder(tradePairId, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('200', baseDecimals), 0, 1);
+            const res2 = await tx2.wait();
+            const id2 = res2.events[1].args.id;
+
+            let order1 = await tradePairs.getOrder(id1);
+            let order2 = await tradePairs.getOrder(id2);
+            expect(order1.id).to.be.equal(id1);
+            expect(order2.id).to.be.equal(id2);
+            expect(order1.status).to.be.equal(0);
+            expect(order2.status).to.be.equal(0);
+
+            const bookId = Utils.fromUtf8(`${tradePairStr}-BUYBOOK`);
+            // fail from non-admin account
+            await expect(tradePairs.connect(trader1).unsolicitedCancel(tradePairId, bookId, 10)).to.be.revertedWith("Ownable: caller is not the owner");
+            // fail if tradePairs is not paused
+            await tradePairs.connect(admin).pauseTradePair(tradePairId, false);
+            await expect(tradePairs.connect(admin).unsolicitedCancel(tradePairId, bookId, 10)).to.be.revertedWith("T-PPAU-05");
+            // succeed
+            await tradePairs.connect(admin).pauseTradePair(tradePairId, true);
+            await tradePairs.connect(admin).unsolicitedCancel(tradePairId, bookId, 10);
+
+            order1 = await tradePairs.getOrder(id1);
+            order2 = await tradePairs.getOrder(id2);
+            expect(order1.id).to.be.equal(id1);
+            expect(order2.id).to.be.equal(id2);
+            expect(order1.status).to.be.equal(4);
+            expect(order2.status).to.be.equal(4);
+        });
+
         it("Should use matchAuctionOrder() correctly", async function () {
             let baseSymbolStr = "AVAX";
             let baseSymbol = Utils.fromUtf8(baseSymbolStr);
@@ -1201,8 +1391,8 @@ describe("TradePairs", function () {
             let maxTradeAmount = 100000;
             let mode = 0;  // auction off
 
-            baseAssetAddr = "0x0000000000000000000000000000000000000000";
-            zero_bytes32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+            baseAssetAddr = ZERO_ACCT_ADDR;
+            zero_bytes32 = ZERO_BYTES32;
 
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
@@ -1226,21 +1416,10 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(admin).matchAuctionOrders(tradePairId, 8)).to.be.revertedWith("T-AUCT-03");
         });
 
-        it("Should ceil correctly", async function () {
-            expect(await tradePairs.ceil(1245, 10)).to.be.equal(1250);
-            expect(await tradePairs.ceil(1245, 100)).to.be.equal(1300);
-            expect(await tradePairs.ceil(1245, 1000)).to.be.equal(2000);
-            expect(await tradePairs.ceil(1200, 100)).to.be.equal(1200);
-            expect(await tradePairs.ceil(1, 100)).to.be.equal(100);
-            expect(await tradePairs.ceil(0, 100)).to.be.equal(0);
-        });
-
         it("Should floor correctly", async function () {
             expect(await tradePairs.floor(1245, 1)).to.be.equal(1240);
             expect(await tradePairs.floor(1245, 2)).to.be.equal(1200);
             expect(await tradePairs.floor(1245, 3)).to.be.equal(1000);
-            expect(await tradePairs.ceil(1, 1)).to.be.equal(1);
-            expect(await tradePairs.ceil(0, 1)).to.be.equal(0);
         });
 
         it("Should reject sending gas token directly to trade pairs contract.", async () => {

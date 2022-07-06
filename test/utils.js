@@ -43,6 +43,10 @@ module.exports = {
         return _bn.toString();
     },
 
+    strToBn: function(_str) {
+        return ethers.BigNumber.from(_str);
+    },
+
     printResults: function(account, name, res, decimals) {
         let assetTypeInt = parseInt(res.assetType.toString());
         console.log("Account: ", account, ":::",

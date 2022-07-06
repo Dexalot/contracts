@@ -19,6 +19,8 @@ describe("Exchange", function () {
     let tradePairs;
     let OrderBooks;
     let orderBooks;
+    let OneClick;
+    let oneClick;
     let baseToken;
     let quoteToken;
     let owner;
@@ -35,6 +37,7 @@ describe("Exchange", function () {
         Portfolio = await ethers.getContractFactory("Portfolio");
         TradePairs = await ethers.getContractFactory("TradePairs");
         OrderBooks = await ethers.getContractFactory("OrderBooks");
+        OneClick = await ethers.getContractFactory("OneClick");
     });
 
     beforeEach(async function () {
@@ -44,6 +47,9 @@ describe("Exchange", function () {
         portfolio = await upgrades.deployProxy(Portfolio);
         orderBooks = await upgrades.deployProxy(OrderBooks);
         tradePairs = await upgrades.deployProxy(TradePairs, [orderBooks.address, portfolio.address]);
+
+        oneClick = await upgrades.deployProxy(OneClick,
+            [portfolio.address, tradePairs.address, await portfolio.getNative()]);
 
         await portfolio.setFeeAddress(foundationSafe.address);
         await exchange.setPortfolio(portfolio.address);
@@ -106,6 +112,47 @@ describe("Exchange", function () {
             await exchange.removeAuctionAdmin(trader2.address)
             expect(await exchange.isAuctionAdmin(trader2.address)).to.be.equal(false);
         });
+
+        it("Should set, check and remove trusted contract address correctly", async function () {
+            // ADD
+            // fail for non admin account
+            await portfolio.addAuctionAdmin(auctionAdmin.address)  // add only to portfolio but not to exchange, yet so it triggers E-OACC-31
+            await expect(exchange.connect(trader1).addTrustedContract(oneClick.address, "TestingTrusted")).to.be.revertedWith("E-OACC-31");
+            // succeed for auction admin account
+            await exchange.addAuctionAdmin(exchange.address)  // add so exchange can call addTrustedContract on portfolio
+            await exchange.addAuctionAdmin(auctionAdmin.address)
+            await exchange.connect(auctionAdmin).addTrustedContract(oneClick.address, "TestingTrusted");
+            expect(await exchange.isTrustedContract(oneClick.address)).to.be.equal(true);
+            // REMOVE
+            // fail for non admin account
+            await expect(exchange.connect(trader1).removeTrustedContract(oneClick.address)).to.be.revertedWith("E-OACC-32");
+            // succeed for admin account
+            await exchange.connect(auctionAdmin).removeTrustedContract(oneClick.address);
+            expect(await exchange.isTrustedContract(oneClick.address)).to.be.equal(false);
+        });
+
+        it("Should set, check and remove internal contract address correctly", async function () {
+            // ADD
+            // fail for non admin account
+            await expect(exchange.connect(trader1).addInternalContract(oneClick.address, "TestingInternal")).to.be.revertedWith("E-OACC-33");
+            // succeed for admin account
+            await exchange.addInternalContract(oneClick.address, "TestingInternal");
+            expect(await exchange.isInternalContract(oneClick.address)).to.be.equal(true);
+            // REMOVE
+            // fail for non admin account
+            await expect(exchange.connect(trader1).removeInternalContract(oneClick.address)).to.be.revertedWith("E-OACC-34");
+            // succeed for admin account
+            await exchange.removeInternalContract(oneClick.address);
+            expect(await exchange.isInternalContract(oneClick.address)).to.be.equal(false);
+        });
+
+        it("Should not accept via fallback()", async function () {
+            let ABI = ["function NOT_EXISTING_FUNCTION(address,uint256)"]
+            let iface = new ethers.utils.Interface(ABI)
+            let calldata = iface.encodeFunctionData("NOT_EXISTING_FUNCTION", [trader2.address, Utils.toWei('100')])
+            await expect(owner.sendTransaction({to: exchange.address, data: calldata}))
+                .to.be.revertedWith("E-NFUN-01")
+        })
 
         it("Should set chainlink price feed correctly by auction admin", async function () {
             priceFeed = await PriceFeed.deploy();
@@ -889,6 +936,72 @@ describe("Exchange", function () {
                 .to.be.revertedWith("T-AOPA-01");
             await exchange.connect(admin).pauseAddOrder(tradePairId, false);
             await tradePairs.addOrder(tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 1, 1);
+        });
+
+        it("Should call unsolicitedCancel from admin account", async function () {
+            let baseSymbolStr = "AVAX";
+            let baseSymbol = Utils.fromUtf8(baseSymbolStr);
+            let baseDecimals = 18;
+            let baseDisplayDecimals = 3;
+
+            let quoteTokenStr = "Quote Token";
+            let quoteSymbolStr = "QT"
+            let quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
+            let quoteDecimals = 6;
+            let quoteDisplayDecimals = 3;
+
+            let tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
+            let tradePairId = Utils.fromUtf8(tradePairStr);
+
+            let minTradeAmount = 10;
+            let maxTradeAmount = 100000;
+            let mode = 0;  // auction off
+
+            baseAssetAddr = "0x0000000000000000000000000000000000000000";
+
+            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
+            quoteAssetAddr = quoteToken.address;
+
+            await exchange.addTradePair(tradePairId, baseAssetAddr, baseDisplayDecimals,
+                                        quoteAssetAddr, quoteDisplayDecimals,
+                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+
+            // add deposit 1000 AVAX to be able to add a sell limit order
+            await owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.toWei('1000')});
+            const tx1 = await tradePairs.addOrder(tradePairId, Utils.parseUnits('6', quoteDecimals), Utils.parseUnits('2', baseDecimals), 1, 1);
+            const res1 = await tx1.wait();
+            const id1 = res1.events[1].args.id;
+            await tradePairs.addOrder(tradePairId, Utils.parseUnits('7', quoteDecimals), Utils.parseUnits('3', baseDecimals), 1, 1);
+            await tradePairs.addOrder(tradePairId, Utils.parseUnits('8', quoteDecimals), Utils.parseUnits('4', baseDecimals), 1, 1);
+            const tx4 = await tradePairs.addOrder(tradePairId, Utils.parseUnits('9', quoteDecimals), Utils.parseUnits('5', baseDecimals), 1, 1);
+            const res4 = await tx4.wait();
+            const id4 = res4.events[1].args.id;
+
+            let order1 = await tradePairs.getOrder(id1);
+            let order4 = await tradePairs.getOrder(id4);
+            expect(order1.id).to.be.equal(id1);
+            expect(order4.id).to.be.equal(id4);
+            expect(order1.status).to.be.equal(0);
+            expect(order4.status).to.be.equal(0);
+
+            // pause tradePairs for pair
+            await exchange.addAdmin(admin.address);
+            await exchange.pauseTradePair(tradePairId, true);
+
+            // call unsolicitedCancel
+            const bookId = Utils.fromUtf8(`${tradePairStr}-SELLBOOK`);
+            // fail for non-admin account
+            await expect(exchange.connect(trader1).unsolicitedCancel(tradePairId, bookId, 10)).to.be.revertedWith("E-OACC-30");
+            // succeed for admin account
+            await exchange.connect(admin).unsolicitedCancel(tradePairId, bookId, 10);
+
+            order1 = await tradePairs.getOrder(id1);
+            order4 = await tradePairs.getOrder(id4);
+            expect(order1.id).to.be.equal(id1);
+            expect(order4.id).to.be.equal(id4);
+            expect(order1.status).to.be.equal(4);
+            expect(order4.status).to.be.equal(4);
         });
 
         it("Should reject sending gas token directly to exchange contract.", async () => {
