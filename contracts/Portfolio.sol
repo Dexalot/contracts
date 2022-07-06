@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.3;
+pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
@@ -24,7 +24,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.3');
+    bytes32 constant public VERSION = bytes32('1.4.0');
 
     // denominator for rate calculations
     uint constant public TENK = 10000;
@@ -33,7 +33,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     address public feeAddress;
 
     // bytes32 variable to hold native token of DEXALOT
-    bytes32 constant public native = bytes32('AVAX');
+    bytes32 constant public native = bytes32('AVAX'); //obsolete as of 4/24/22 CD
 
     // bytes32 array of all ERC20 tokens traded on DEXALOT
     EnumerableSetUpgradeable.Bytes32Set private tokenList;
@@ -45,6 +45,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     enum AssetType {NATIVE, ERC20, NONE}
+
     // bytes32 symbols to ERC20 token map
     mapping (bytes32 => IERC20Upgradeable) private tokenMap;
 
@@ -61,18 +62,28 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     struct TokenDetails {
         ITradePairs.AuctionMode auctionMode;
     }
+
     // contract address to trust status
     mapping (address => bool) public trustedContracts;
+
     // contract address to integrator organization name
     mapping (address => string) public trustedContractToIntegrator;
+
     // auction status of each token
     mapping (bytes32 => TokenDetails) private tokenDetailsMap;
+
     // auction admin role
     bytes32 constant public AUCTION_ADMIN_ROLE = keccak256("AUCTION_ADMIN_ROLE");
+    bytes32 private nativeToken;
 
-    event FeeAddressSet(address _oldFee, address _newFee);
+    // contract address to internal status
+    mapping (address => bool) public internalContracts;
+
+    // contract address to contract name
+    mapping (address => string) public internalContractToName;
+
     event ParameterUpdated(bytes32 indexed pair, string _param, uint _oldValue, uint _newValue);
-    event ContractTrustStatusChanged(address indexed _contract, string indexed _organization, bool _status);
+    event AddressSet(string indexed name, string actionName, address oldAddress, address newAddress);
 
     function initialize() public initializer {
         __AccessControl_init();
@@ -84,6 +95,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         allowDeposit = true;
         depositFeeRate = 0;    // depositFeeRate=0 (0% = 0/10000)
         withdrawFeeRate = 0;   // withdrawFeeRate=0 (0% = 0/10000)
+        nativeToken = bytes32('AVAX');
     }
 
     function owner() public view returns(address) {
@@ -93,30 +105,39 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     function addAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
         grantRole(DEFAULT_ADMIN_ROLE, _address);
-        emit ContractTrustStatusChanged(_address, "P-ADMIN", true);
+        emit AddressSet("PORTFOLIO", "ADD-ADMIN", _address, _address);
     }
 
     function removeAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-02");
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE)>1, "P-ALOA-01");
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
-        emit ContractTrustStatusChanged(_address, "P-ADMIN", false);
+        emit AddressSet("PORTFOLIO", "REMOVE-ADMIN", _address, _address);
     }
 
     function isAdmin(address _address) public view returns(bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
     }
 
+    function setNative(bytes32 _symbol) public override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-17");
+        nativeToken = _symbol;
+    }
+
+    function getNative() public override view returns(bytes32)  {
+        return nativeToken;
+    }
+
     function addAuctionAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-11");
         grantRole(AUCTION_ADMIN_ROLE, _address);
-        emit ContractTrustStatusChanged(_address, "P-AUCTION-ADMIN", true);
+        emit AddressSet("PORTFOLIO", "ADD-AUCTIONADMIN", _address, _address);
     }
 
     function removeAuctionAdmin(address _address) public override {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-12");
         revokeRole(AUCTION_ADMIN_ROLE, _address);
-        emit ContractTrustStatusChanged(_address, "P-AUCTION-ADMIN", false);
+        emit AddressSet("PORTFOLIO", "REMOVE-AUCTIONADMIN", _address, _address);
     }
 
     function isAuctionAdmin(address _address) public view returns(bool) {
@@ -140,7 +161,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
 
     function setFeeAddress(address _feeAddress) public {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-06");
-        emit FeeAddressSet(feeAddress, _feeAddress);
+        emit AddressSet("PORTFOLIO", "SET_FEEADDRESS", feeAddress, _feeAddress);
         feeAddress = _feeAddress;
     }
 
@@ -152,13 +173,34 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-13");
         trustedContracts[_contract] = true;
         trustedContractToIntegrator[_contract] = _organization;
-        emit ContractTrustStatusChanged(_contract, _organization, true);
+        emit AddressSet(_organization, "P-ADD-TRUSTEDCONTRACT", _contract, _contract);
     }
 
-    function removeTrustedContract(address _contract) external {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-12");
+    function isTrustedContract(address _contract) external view override returns(bool) {
+        return trustedContracts[_contract];
+    }
+
+    function removeTrustedContract(address _contract) external override {
+        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-14");
         trustedContracts[_contract] = false;
-        emit ContractTrustStatusChanged(_contract, trustedContractToIntegrator[_contract], false);
+        emit AddressSet(trustedContractToIntegrator[_contract], "P-REMOVE-TRUSTED-CONTRACT", _contract, _contract);
+    }
+
+    function addInternalContract(address _contract, string calldata _name) external override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-16");
+        internalContracts[_contract] = true;
+        internalContractToName[_contract] = _name;
+        emit AddressSet(_name, "P-ADD-INTERNALCONTRACT", _contract, _contract);
+    }
+
+    function isInternalContract(address _contract) external view override returns(bool) {
+        return internalContracts[_contract];
+    }
+
+    function removeInternalContract(address _contract) external override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-18");
+        internalContracts[_contract] = false;
+        emit AddressSet(internalContractToName[_contract], "P-REMOVE-INTERNAL-CONTRACT", _contract, _contract);
     }
 
     function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) public override {
@@ -169,7 +211,9 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         } else if (_rateType == IPortfolio.Tx.DEPOSIT) {
             emit ParameterUpdated(bytes32("Portfolio"), "P-WITFEE", withdrawFeeRate, _rate);
             withdrawFeeRate = _rate; // (_rate/100)% = _rate/10000: _rate=20 => 0.20%
-        } // Ignore the rest for now
+        } else {
+            revert("P-WRTT-01");
+        }
     }
 
     function getDepositFeeRate() public view returns(uint) {
@@ -182,7 +226,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
 
     // function to add an ERC20 token
     function addToken(bytes32 _symbol, IERC20Upgradeable _token, ITradePairs.AuctionMode _mode) public override {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-08");
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "P-OACC-08");
         if (!tokenList.contains(_symbol)) {
             tokenList.add(_symbol);
             tokenMap[_symbol] = _token;
@@ -217,7 +261,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     function getBalance(address _owner, bytes32 _symbol) public view
         returns(uint total, uint available, AssetType assetType) {
             assetType = AssetType.NONE;
-            if (native == _symbol) {
+            if (nativeToken == _symbol) {
                 assetType = AssetType.NATIVE;
             }
             if (tokenList.contains(_symbol)) {
@@ -233,45 +277,56 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         revert();
     }
 
-    // FRONTEND FUNCTION TO DEPOSIT NATIVE TOKEN WITH WEB3 SENDTRANSACTION
-    receive() external payable whenNotPaused nonReentrant {
-        require(allowDeposit, "P-NTDP-01");
-        uint _quantityLessFee = msg.value;
+    function handleDepositNative(address payable _from, uint _value) private {
+        uint _quantityLessFee = _value;
         uint feeCharged;
-        if (depositFeeRate>0) {
-            feeCharged = (msg.value * depositFeeRate) / TENK;
-            safeTransferFee(native, feeCharged);
+        if (depositFeeRate>0 && !internalContracts[_from]) {
+            feeCharged = (_value * depositFeeRate) / TENK;
+            transferFee(nativeToken, feeCharged);
             _quantityLessFee -= feeCharged;
         }
-        safeIncrease(msg.sender, native, _quantityLessFee, 0, IPortfolio.Tx.DEPOSIT);
-        emitPortfolioEvent(msg.sender, native, msg.value, feeCharged, IPortfolio.Tx.DEPOSIT);
+        safeIncrease(_from, nativeToken, _quantityLessFee, 0, IPortfolio.Tx.DEPOSIT);
+        emitPortfolioEvent(_from, nativeToken, _value, feeCharged, IPortfolio.Tx.DEPOSIT);
+    }
+
+    // FRONTEND FUNCTION TO DEPOSIT NATIVE TOKEN VIA TRANSFER
+    receive() external payable whenNotPaused nonReentrant {
+        require(allowDeposit, "P-NTDP-01");
+        handleDepositNative(payable(msg.sender), msg.value);
+    }
+
+    // FRONTEND FUNCTION TO DEPOSIT NATIVE TOKEN
+    function depositNative(address payable _from) external override payable whenNotPaused nonReentrant {
+        require(_from == msg.sender || internalContracts[msg.sender], "P-OOWN-02");
+        require(allowDeposit, "P-NTDP-02");
+        handleDepositNative(_from, msg.value);
     }
 
     // FRONTEND FUNCTION TO WITHDRAW A QUANTITY FROM PORTFOLIO BALANCE FOR AN ACCOUNT AND NATIVE SYMBOL
-    function withdrawNative(address payable _to, uint _quantity) public whenNotPaused nonReentrant {
-        require(_to == msg.sender, "P-OOWN-01");
-        safeDecrease(_to, native, _quantity, IPortfolio.Tx.WITHDRAW); // does not decrease if transfer fails
+    function withdrawNative(address payable _to, uint _quantity) public override whenNotPaused nonReentrant {
+        require(_to == msg.sender || internalContracts[msg.sender], "P-OOWN-01");
+        safeDecrease(_to, nativeToken, _quantity, IPortfolio.Tx.WITHDRAW); // does not decrease if transfer fails
         uint _quantityLessFee = _quantity;
         uint feeCharged;
-        if (withdrawFeeRate>0) {
+        if (withdrawFeeRate>0 && !internalContracts[msg.sender]) {
             feeCharged = (_quantity * withdrawFeeRate) / TENK;
-            safeTransferFee(native, feeCharged);
+            transferFee(nativeToken, feeCharged);
             _quantityLessFee -= feeCharged;
         }
         (bool success, ) = _to.call{value: _quantityLessFee}('');
         require(success, "P-WNF-01");
-        emitPortfolioEvent(msg.sender, native, _quantity, feeCharged, IPortfolio.Tx.WITHDRAW);
+        emitPortfolioEvent(_to, nativeToken, _quantity, feeCharged, IPortfolio.Tx.WITHDRAW);
     }
 
     // handle ERC20 token deposit and withdrawal
     // FRONTEND FUNCTION TO DEPOSIT A QUANTITY TO PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
-    function depositToken(address _from, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
-        require(_from == msg.sender, "P-OODT-01");
+    function depositToken(address _from, bytes32 _symbol, uint _quantity) public override whenNotPaused nonReentrant {
+        require(_from == msg.sender || internalContracts[msg.sender], "P-OODT-01");
         require(allowDeposit, "P-ETDP-01");
         require(_quantity > 0, "P-ZETD-01");
         require(tokenList.contains(_symbol), "P-ETNS-01");
         uint feeCharged;
-        if (depositFeeRate>0) {
+        if (depositFeeRate>0 && !internalContracts[msg.sender]) {
             feeCharged = (_quantity * depositFeeRate) / TENK;
         }
         uint _quantityLessFee = _quantity - feeCharged;
@@ -279,7 +334,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
         if (depositFeeRate>0) {
-            safeTransferFee(_symbol, feeCharged);
+            transferFee(_symbol, feeCharged);
         }
         emitPortfolioEvent(_from, _symbol, _quantity, feeCharged, IPortfolio.Tx.DEPOSIT);
     }
@@ -296,17 +351,17 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
     }
 
     // FRONTEND FUNCTION TO WITHDRAW A QUANTITY FROM PORTFOLIO BALANCE FOR AN ACCOUNT AND TOKEN SYMBOL
-    function withdrawToken(address _to, bytes32 _symbol, uint _quantity) public whenNotPaused nonReentrant {
-        require(_to == msg.sender, "P-OOWT-01");
+    function withdrawToken(address _to, bytes32 _symbol, uint _quantity) public override whenNotPaused nonReentrant {
+        require(_to == msg.sender || internalContracts[msg.sender], "P-OOWT-01");
         require(_quantity > 0, "P-ZTQW-01");
         require(tokenList.contains(_symbol), "P-ETNS-02");
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF , "P-AUCT-02");
         safeDecrease(_to, _symbol, _quantity, IPortfolio.Tx.WITHDRAW); // does not decrease if transfer fails
         uint _quantityLessFee = _quantity;
         uint feeCharged;
-        if (withdrawFeeRate>0) {
+        if (withdrawFeeRate>0 && !internalContracts[msg.sender]) {
             feeCharged = (_quantity * withdrawFeeRate) / TENK;
-            safeTransferFee(_symbol, feeCharged);
+            transferFee(_symbol, feeCharged);
             _quantityLessFee -= feeCharged;
         }
         tokenMap[_symbol].safeTransfer(_to, _quantityLessFee);
@@ -351,18 +406,39 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
         } else if (_transaction == IPortfolio.Tx.DECREASEAVAIL)  {
             require(_amount <= assets[_trader][_symbol].available, "P-AFNE-01");
             assets[_trader][_symbol].available -= _amount;
-        } // IGNORE OTHER types of _transactions
+        } else {
+            revert("P-WRTT-02");
+        }
         emitPortfolioEvent(_trader, _symbol, _amount, 0, _transaction);
     }
 
-    function safeTransferFee(bytes32 _symbol, uint _feeCharged) private {
-        bool feesuccess = true;
-        if (native == _symbol) {
-            (feesuccess, ) = payable(feeAddress).call{value: _feeCharged}('');
-            require(feesuccess, "P-STFF-01");
-        } else {
-            tokenMap[_symbol].safeTransfer(payable(feeAddress), _feeCharged);
+    function safeTransferFee(bytes32 _symbol, uint _feeAccumulated) private {
+        if (_feeAccumulated>0) {
+            bool feesuccess = true;
+            assets[feeAddress][_symbol].total -= _feeAccumulated;
+            assets[feeAddress][_symbol].available -= _feeAccumulated;
+            if (nativeToken == _symbol) {
+                (feesuccess, ) = payable(feeAddress).call{value: _feeAccumulated}('');
+                require(feesuccess, "P-STFF-01");
+            } else {
+                tokenMap[_symbol].safeTransfer(payable(feeAddress), _feeAccumulated);
+            }
         }
+    }
+
+    function safeTransferFees() public override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-15");
+        bytes32 symbol;
+        safeTransferFee(nativeToken, assets[feeAddress][nativeToken].available);
+        for (uint i=0; i<tokenList.length(); i++) {
+            symbol = tokenList.at(i);
+            safeTransferFee(symbol, assets[feeAddress][symbol].available);
+        }
+    }
+
+    function transferFee(bytes32 _symbol, uint _feeCharged) private {
+        assets[feeAddress][_symbol].total += _feeCharged;
+        assets[feeAddress][_symbol].available += _feeCharged;
     }
 
     // Only called from addExecution
@@ -390,7 +466,7 @@ contract Portfolio is Initializable, AccessControlEnumerableUpgradeable, Pausabl
       assets[_trader][_symbol].available += _amount - _feeCharged;
 
       if (_feeCharged > 0 ) {
-        safeTransferFee(_symbol, _feeCharged);
+        transferFee(_symbol, _feeCharged);
       }
       if (transaction != IPortfolio.Tx.DEPOSIT && transaction != IPortfolio.Tx.WITHDRAW) {
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, transaction);

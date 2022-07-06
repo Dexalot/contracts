@@ -1,5 +1,5 @@
 /**
- * The test runner for Dexalot TokenVesting contract
+ * The test runner for Dexalot TokenVestingCloneable contract
  */
 
 const { expect } = require("chai");
@@ -9,10 +9,13 @@ const Utils = require('./utils.js');
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 
-describe("TokenVesting", function () {
+describe("TokenVestingCloneable", function () {
     let Token;
     let testToken;
-    let TokenVesting;
+    let TokenVestingCloneFactory;
+    let factory;
+    let TokenVestingCloneable;
+    let tokenVesting;
     let Portfolio;
     let portfolio;
     let owner;
@@ -30,15 +33,22 @@ describe("TokenVesting", function () {
 
     before(async function () {
         Token = await ethers.getContractFactory("DexalotToken");
-        TokenVesting = await ethers.getContractFactory("TokenVesting");
+        TokenVestingCloneFactory = await ethers.getContractFactory("TokenVestingCloneFactory");
+        TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable");
         Portfolio = await ethers.getContractFactory("Portfolio");
     });
 
     beforeEach(async function () {
         [owner, investor1] = await ethers.getSigners();
+
         testToken = await Token.deploy();
         await testToken.deployed();
+
         portfolio = await upgrades.deployProxy(Portfolio);
+        await portfolio.deployed();
+
+        factory = await TokenVestingCloneFactory.deploy();
+        await factory.deployed();
 
         currentTime = await latestTime();
         beneficiary = investor1.address;
@@ -63,8 +73,10 @@ describe("TokenVesting", function () {
             cliff = 500;
             period = 100;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             expect(await tokenVesting.beneficiary()).to.equal(investor1.address);
             expect(await tokenVesting.start()).to.equal(start);
@@ -78,59 +90,62 @@ describe("TokenVesting", function () {
         });
 
         it("Should not accept zero address as beneficiary", async function () {
-            await expect(TokenVesting.deploy(ZERO, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-BIZA-01");
+            await expect(factory.createTokenVesting(ZERO, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-BIZA-01");
         });
 
         it("Should not accept cliff longer than duration", async function () {
             cliff = 10000
             duration = 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-CLTD-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-CLTD-01");
         });
 
         it("Should not accept zero duration", async function () {
             duration = 0
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-DISZ-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-DISZ-01");
         });
 
         it("Should not accept final time before current time", async function () {
             start = start - 10000
             duration = 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-FTBC-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-FTBC-01");
         });
 
         it("Should not accept portfolio deposits beginning after start", async function () {
             startPortfolioDeposits = start + 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-PDBS-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-PDBS-01");
         });
 
         it("Should not accept an initial percentage greater than 100", async function () {
             percentage = 110
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-PGTZ-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address))
+                .to.revertedWith("TVC-PGTZ-01");
         });
 
         it("Should use setPercentage correctly", async function () {
             cliff = 100;
             percentage = 20;
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             // failure by a call from non-owner account
             await expect(tokenVesting.connect(investor1).setPercentage(15)).to.be.revertedWith('Ownable: caller is not the owner');
 
             // failure by a call with percentage > 100
-            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TV-PGTZ-02');
+            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TVC-PGTZ-02');
 
             // success
             await tokenVesting.setPercentage(15);
@@ -138,19 +153,30 @@ describe("TokenVesting", function () {
         });
 
         it("Should not accept 0 portfolio address", async function () {
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, ZERO))
-                        .to.revertedWith("TV-PIZA-01");
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, ZERO, owner.address))
+                .to.revertedWith("TVC-PIZA-01");
+        });
+
+        it("Should not accept 0 owner address", async function () {
+            await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, ZERO))
+                .to.revertedWith("TVC-OIZA-01");
         });
 
         it("Should not set 0 portfolio address", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TV-PIZA-02");
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
+            await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TVC-PIZA-02");
         });
 
         it("Should set and get start date for portfolio deposits", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
             await tokenVesting.setStartPortfolioDeposits(start-3000);
             expect(await tokenVesting.startPortfolioDeposits()).to.be.equal(start-3000);
         });
@@ -181,8 +207,10 @@ describe("TokenVesting", function () {
             let vestedAmount;
             let vestedPercentageAmount;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -314,21 +342,26 @@ describe("TokenVesting", function () {
         });
 
         it("Should not release vested tokens before start", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start+100000, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
 
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-TEAR-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TVC-TEAR-01");
         });
 
         it("Should not release vested tokens if nothing is due", async function () {
             cliff = 10000
             duration = 100000
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -340,7 +373,7 @@ describe("TokenVesting", function () {
             // release first
             await tokenVesting.connect(investor1).release(testToken.address);
             // now nothing to release
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NTAD-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TVC-NTAD-01");
         });
 
         it("Should release initial percentage only when auction deposits are enabled", async function () {
@@ -351,8 +384,10 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -368,7 +403,7 @@ describe("TokenVesting", function () {
 
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
             await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV-OPDA-01");
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TVC-OPDA-01");
         });
 
         it("Should release initial percentage only when auction deposits are enabled", async function () {
@@ -379,8 +414,10 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -402,14 +439,16 @@ describe("TokenVesting", function () {
             // now nothing to release from initial percentage
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
             await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV-NTAD-02");
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TVC-NTAD-02");
         });
 
         it("Should release vested tokens when duration has passed", async function () {
             let now;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -442,8 +481,10 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -531,7 +572,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NBOC-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TVC-NBOC-01");
 
             // initial percentage vested, all remaining vested, all released: R:1000, VA:900, VP:100
             await ethers.provider.send("evm_increaseTime", [cliff / 2]);
@@ -547,7 +588,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NBOC-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TVC-NBOC-01");
         });
 
         it('Cannot release if contract has no balance', async function () {
@@ -555,9 +596,10 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            let tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             now = await latestTime();
             released = await tokenVesting.released(testToken.address);
@@ -570,7 +612,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract, nothing deposited, yet
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TV-NBOC-01');
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TVC-NBOC-01');
         });
 
         it('Can only release initial percentage ampunt before cliff', async function () {
@@ -578,8 +620,11 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
+
             await tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
@@ -607,8 +652,10 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
             tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
@@ -676,29 +723,35 @@ describe("TokenVesting", function () {
             duration = 120000;
             revocable = false;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
-            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-CNTR-01');
+            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TVC-CNTR-01');
         });
 
         it('Should fail to be revoked a second time', async function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await tokenVesting.revoke(testToken.address);
-            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-TKAR-01');
+            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TVC-TKAR-01');
         });
 
         it('Should be able to reinstate a revoked contact by owner', async function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
             tokenVesting.setPercentage(20);
 
             await testToken.transfer(tokenVesting.address, 1000);
@@ -716,22 +769,26 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
             tokenVesting.setPercentage(20);
 
             await testToken.transfer(tokenVesting.address, 1000);
 
             expect(await tokenVesting.revoked(testToken.address)).to.be.false;
 
-            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TV-TKNR-01");
+            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TVC-TKNR-01");
 
             expect(await tokenVesting.revoked(testToken.address)).to.be.false;
         });
 
         it("Only owner can set the portfolio address", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(tokenVesting.connect(investor1).setPortfolio(portfolio.address)).to.be.revertedWith('Ownable: caller is not the owner');
 
@@ -747,8 +804,10 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -801,8 +860,10 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await testToken.transfer(tokenVesting.address, 1000);
 
@@ -834,8 +895,10 @@ describe("TokenVesting", function () {
             cliff = 5000;
             duration = 100000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -890,8 +953,10 @@ describe("TokenVesting", function () {
             let vestedAmount;
             let vestedPercentageAmount;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -1109,14 +1174,16 @@ describe("TokenVesting", function () {
         it("Should not release vested tokens before start if period", async function () {
             period = 100;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
+            await factory.createTokenVesting(beneficiary, start+100000, cliff, duration, startPortfolioDeposits,
+                revocable, percentage, period, portfolio.address, owner.address);
+            let count = await factory.count();
+            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
 
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-TEAR-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TVC-TEAR-01");
         });
 
     });

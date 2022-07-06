@@ -13,10 +13,10 @@ import "../interfaces/IPortfolio.sol";
 
 /**
  *   @author "DEXALOT TEAM"
- *   @title "TokenVesting: a flexible token vesting contract"
+ *   @title "TokenVestingV1: a flexible token vesting contract (version 1)"
  */
 
-contract TokenVesting is Ownable, ReentrancyGuard {
+contract TokenVestingV1 is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
     using StringLibrary for string;
 
@@ -26,7 +26,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     // cliff period of a year and a duration of four years, are safe to use.
 
     // version
-    bytes32 constant public VERSION = bytes32("1.2.0");
+    bytes32 constant public VERSION = bytes32("1.0.2");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -40,7 +40,6 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     uint256 private _start;
     uint256 private _duration;
     uint256 private _startPortfolioDeposits;
-    uint256 private _period;
 
     bool private _revocable;
 
@@ -61,10 +60,8 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @param __start the time (as Unix time) at which point vesting starts
      * @param __duration duration in seconds of the period in which the tokens will vest
      * @oaran __startPortfolioDeposits
-     * @param __revocable whether the vesting contract is revocable or not
+     * @param __revocable whether the vesting is revocable or not
      * @param __firstReleasePercentage
-     * @param __period length of claim period that allows one to withdraw in discrete periods. i.e. (60 x 60 x 24) x 30 will
-     *                 allow the beneficiary to claim every 30 days, 0 for no period restrictions
      * @param __portfolio
      */
     constructor(
@@ -75,16 +72,15 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         uint256 __startPortfolioDeposits,
         bool __revocable,
         uint256 __firstReleasePercentage,
-        uint256 __period,
         address __portfolio
     ) {
-        require(__beneficiary != address(0), "TV-BIZA-01");
-        require(__cliffDuration <= __duration, "TV-CLTD-01");
-        require(__duration > 0, "TV-DISZ-01");
-        require(__start + __duration > block.timestamp, "TV-FTBC-01");
-        require(__startPortfolioDeposits < __start, "TV-PDBS-01");
-        require(__firstReleasePercentage <= 100, "TV-PGTZ-01");
-        require(__portfolio != address(0), "TV-PIZA-01");
+        require(__beneficiary != address(0), "TV1-BIZA-01");
+        require(__cliffDuration <= __duration, "TV1-CLTD-01");
+        require(__duration > 0, "TV1-DISZ-01");
+        require(__start + __duration > block.timestamp, "TV1-FTBC-01");
+        require(__startPortfolioDeposits < __start, "TV1-PDBS-01");
+        require(__firstReleasePercentage <= 100, "TV1-PGTZ-01");
+        require(__portfolio != address(0), "TV1-PIZA-01");
 
         _beneficiary = __beneficiary;
         _revocable = __revocable;
@@ -93,7 +89,6 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         _start = __start;
         _startPortfolioDeposits = __startPortfolioDeposits;
         _firstReleasePercentage = __firstReleasePercentage;
-        _period = __period;
         _portfolio = IPortfolio(__portfolio);
     }
 
@@ -140,13 +135,6 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @return the duration in seconds for claim periods.
-     */
-    function period() external view returns (uint256) {
-        return _period;
-    }
-
-    /**
      * @return the amount of the token released.
      */
     function released(address token) external view returns (uint256) {
@@ -171,7 +159,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * set value of the percentage
      */
     function setPercentage(uint256 percentage) external onlyOwner {
-        require(percentage <= 100, "TV-PGTZ-02");
+        require(percentage <= 100, "TV1-PGTZ-02");
         _firstReleasePercentage = percentage;
     }
 
@@ -215,7 +203,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * set address for the portfolio.
      */
     function setPortfolio(address portfolio) external onlyOwner {
-        require(portfolio != address(0), "TV-PIZA-02");
+        require(portfolio != address(0), "TV1-PIZA-02");
         _portfolio = IPortfolio(portfolio);
     }
 
@@ -224,11 +212,11 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @param token ERC20 token which is being vested
      */
     function release(IERC20Metadata token) external nonReentrant {
-        require(token.balanceOf(address(this)) > 0, "TV-NBOC-01");
-        require(block.timestamp > _start, "TV-TEAR-01");
+        require(token.balanceOf(address(this)) > 0, "TV1-NBOC-01");
+        require(block.timestamp > _start, "TV1-TEAR-01");
 
         uint256 unreleased = _releasableAmount(token);
-        require(unreleased > 0, "TV-NTAD-01");
+        require(unreleased > 0, "TV1-NTAD-01");
 
         if (_releasedPercentage[address(token)] == 0) {
             _releasedPercentage[address(token)] = _vestedByPercentage(token);
@@ -246,10 +234,10 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @param token ERC20 token which is being vested
      */
     function releaseToPortfolio(IERC20Metadata token) external nonReentrant {
-        require(canFundPortfolio(_beneficiary), "TV-OPDA-01");
+        require(canFundPortfolio(_beneficiary), "TV1-OPDA-01");
 
         uint256 unreleased = _releasableAmount(token);
-        require(unreleased > 0, "TV-NTAD-02");
+        require(unreleased > 0, "TV1-NTAD-02");
 
         if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20Metadata(token).symbol();
@@ -277,8 +265,8 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @param token ERC20 token which is being vested
      */
     function revoke(IERC20Metadata token) external onlyOwner {
-        require(_revocable, "TV-CNTR-01");
-        require(!_revoked[address(token)], "TV-TKAR-01");
+        require(_revocable, "TV1-CNTR-01");
+        require(!_revoked[address(token)], "TV1-TKAR-01");
 
         uint256 balance = token.balanceOf(address(this));
         _totalSupplyBeforeRevoke = balance + _released[address(token)];
@@ -298,7 +286,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
      * @param token ERC20 token which is being vested
      */
     function reinstate(IERC20Metadata token) external onlyOwner {
-        require(_revoked[address(token)], "TV-TKNR-01");
+        require(_revoked[address(token)], "TV1-TKNR-01");
 
         _revoked[address(token)] = false;
 
@@ -357,11 +345,12 @@ contract TokenVesting is Ownable, ReentrancyGuard {
         ) {
             return totalBalance;
         } else {
-            if (_period > 0) {
-                return totalBalance * ((block.timestamp - _cliff) / _period) / ((_start + _duration - _cliff) / _period);
-            } else {
-                return (totalBalance * (block.timestamp - _cliff)) / (_start + _duration - _cliff);
-            }
+            uint256 fromCliff = block.timestamp - _cliff;
+            uint256 cliffDuration = _cliff - _start;
+            uint256 durationAfterCliff = _duration - cliffDuration;
+            uint256 vesting = (totalBalance * (fromCliff)) / (durationAfterCliff);
+
+            return vesting;
         }
     }
 

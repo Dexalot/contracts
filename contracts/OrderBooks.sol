@@ -1,6 +1,6 @@
-// SPDX-License-Identifier: BSD-3-Clause
+// SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.3;
+pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -23,7 +23,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.2.1');
+    bytes32 constant public VERSION = bytes32('1.4.0');
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -108,6 +108,7 @@ contract OrderBooks is Initializable, OwnableUpgradeable {
             price = _side == ITradePairs.Side.BUY ? prev(_orderBookID, _price) : next(_orderBookID, _price);
         }
     }
+
 
     // used for getting head of the linked list of orders at a price
     function getHead(bytes32 _orderBookID, uint price) public view returns (bytes32 head) {

@@ -9,9 +9,15 @@ const Utils = require('./utils.js');
 
 let MockToken;
 let Portfolio;
-let portfolio
+let portfolio;
+let TradePairs;
+let tradePairs;
+let OrderBooks;
+let orderBooks;
 let TokenVesting;
 let tokenVesting;
+let OneClick;
+let oneClick;
 let owner;
 let admin;
 let auctionAdmin;
@@ -28,7 +34,10 @@ describe("Portfolio", () => {
     before(async () => {
         MockToken = await ethers.getContractFactory("MockToken");
         Portfolio = await ethers.getContractFactory("Portfolio");
+        TradePairs = await ethers.getContractFactory("TradePairs");
+        OrderBooks = await ethers.getContractFactory("OrderBooks")
         TokenVesting = await ethers.getContractFactory("TokenVesting");
+        OneClick = await ethers.getContractFactory("OneClick");
     });
 
     beforeEach(async function () {
@@ -62,6 +71,14 @@ describe("Portfolio", () => {
         await expect(portfolio.removeAdmin(owner.address)).to.be.revertedWith("P-ALOA-01");
     });
 
+    it("Should set and get native correctly", async function () {
+        // fail for non-admin
+        await expect(portfolio.connect(trader1).setNative(Utils.fromUtf8("ALOT"))).to.be.revertedWith("P-OACC-17");
+        // succeed for admin
+        await portfolio.setNative(Utils.fromUtf8("ALOT"))
+        expect(await portfolio.getNative()).to.be.equal(Utils.fromUtf8("ALOT"));
+    });
+
     it("Should add and remove auction admin correctly", async function () {
         // fail for non-admin
         await expect(portfolio.connect(trader1).addAuctionAdmin(trader2.address)).to.be.revertedWith("P-OACC-11");
@@ -75,6 +92,24 @@ describe("Portfolio", () => {
         expect(await portfolio.isAuctionAdmin(trader2.address)).to.be.equal(false);
     });
 
+    it("Should add, check and remove an internal contract correctly", async function () {
+        orderBooks = await upgrades.deployProxy(OrderBooks);
+        tradePairs = await upgrades.deployProxy(TradePairs, [orderBooks.address, portfolio.address]);
+        oneClick = await upgrades.deployProxy(OneClick, [portfolio.address, tradePairs.address, await portfolio.getNative()]);
+        // ADD
+        // fail for non-admin
+        await expect(portfolio.connect(trader1).addInternalContract(oneClick.address, "OneClick")).to.be.revertedWith("P-OACC-16");
+        // succeed for admin
+        await portfolio.addInternalContract(oneClick.address, "OneClick")
+        expect(await portfolio.isInternalContract(oneClick.address)).to.be.equal(true);
+        // REMOVE
+        // fail for non-admin
+        await expect(portfolio.connect(trader1).removeInternalContract(oneClick.address)).to.be.revertedWith("P-OACC-18");
+        // succeed for admin
+        await portfolio.removeInternalContract(oneClick.address)
+        expect(await portfolio.isInternalContract(oneClick.address)).to.be.equal(false);
+    });
+
     it("Should update deposit and withdrawal rates by admin correctly", async function () {
         const dRate = ethers.BigNumber.from(5);
         const wRate = ethers.BigNumber.from(10);
@@ -86,6 +121,19 @@ describe("Portfolio", () => {
         expect(await portfolio.getDepositFeeRate()).to.be.equal(dRate);
         await portfolio.updateTransferFeeRate(wRate, 1);
         expect(await portfolio.getWithdrawFeeRate()).to.be.equal(wRate);
+        // fail for wrong rate type
+        await expect(portfolio.updateTransferFeeRate(dRate, 2)).to.revertedWith("P-WRTT-01");
+    });
+
+    it("Should set and get native token correctly from the admin account", async function () {
+        let native = Utils.fromUtf8('ALOT');
+        // fail from non admin accounts
+        await expect(portfolio.connect(trader1).setNative(native)).to.revertedWith("P-OACC-17");
+        await expect(portfolio.connect(admin).setNative(native)).to.revertedWith("P-OACC-17");
+        // succeed from admin accounts
+        await portfolio.addAdmin(admin.address);
+        await portfolio.connect(admin).setNative(native);
+        expect(await portfolio.getNative()).to.be.equal(native);
     });
 
     it("... should have starting portfolio with zero total and available balances for native token", async () => {
@@ -106,10 +154,21 @@ describe("Portfolio", () => {
         // now try with non-zero deposit rate with 50%
         const dRate = ethers.BigNumber.from(5000);
         await portfolio.updateTransferFeeRate(dRate, 0);
-        const balBefore = await ethers.provider.getBalance(foundationSafe.address);
+        const balBeforeFoundation = await ethers.provider.getBalance(foundationSafe.address);;
+        //const balBefore = await ethers.provider.getBalance(foundationSafe.address);
+        const balBefore = (await portfolio.getBalance(foundationSafe.address, native)).total;
         await owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.toWei('2')});
-        const balAfter = await ethers.provider.getBalance(foundationSafe.address);
+        const balAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
+
+        //const balAfter = await ethers.provider.getBalance(foundationSafe.address);
         expect((balAfter.sub(balBefore)).toString()).to.be.equal((Utils.toWei("1")).toString());
+
+        await portfolio.safeTransferFees();
+        //const balPrtfAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
+        const balAfterFoundation = await ethers.provider.getBalance(foundationSafe.address);
+        console.log("Native Prtf Bal Before: ", balBefore.toString(), "After: ",  balAfter.toString(),"Found Before: ",  balBeforeFoundation.toString() ,"Found After: ",  balAfterFoundation.toString());
+
+        expect((balAfter.sub(balBefore)).toString()).to.be.equal((balAfterFoundation.sub(balBeforeFoundation)).toString());
     });
 
     it("... should withdraw native tokens from portfolio", async () => {
@@ -130,10 +189,18 @@ describe("Portfolio", () => {
         // now try with non-zero withdraw rate with 50%
         const wRate = ethers.BigNumber.from(5000);
         await portfolio.updateTransferFeeRate(wRate, 1);
-        const balBefore = await ethers.provider.getBalance(foundationSafe.address);
+        const balBeforeFoundation = await ethers.provider.getBalance(foundationSafe.address);;
+
+        const balBefore = (await portfolio.getBalance(foundationSafe.address, native)).total;
         await portfolio.withdrawNative(owner.address, Utils.toWei("2"));
-        const balAfter = await ethers.provider.getBalance(foundationSafe.address);
+        const balAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
         expect((balAfter.sub(balBefore)).toString()).to.be.equal((Utils.toWei("1")).toString());
+        await portfolio.safeTransferFees();
+        //const balPrtfAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
+        const balAfterFoundation = await ethers.provider.getBalance(foundationSafe.address);
+        console.log("Native Prtf Bal Before: ", balBefore.toString(), "After: ",  balAfter.toString(),"Found Before: ",  balBeforeFoundation.toString() ,"Found After: ",  balAfterFoundation.toString());
+
+        expect((balAfter.sub(balBefore)).toString()).to.be.equal((balAfterFoundation.sub(balBeforeFoundation)).toString());
     });
 
     it("... should create ERC20 token", async () => {
@@ -194,6 +261,24 @@ describe("Portfolio", () => {
         expect(res.available).to.equal(0);
     });
 
+    it("... should deposit native token to portfolio using depositNative()", async () => {
+        console.log();
+        const native = await portfolio.getNative();
+        deposit_amount = '200';  // ether
+        deposit_amount_less_fee = (parseFloat(deposit_amount) * (1 - depositFeeRate)).toString();
+        // fail for account other then msg.sender
+        await expect(portfolio.depositNative(trader2.address, {value: Utils.toWei(deposit_amount)})).to.be.revertedWith("P-OOWN-02");
+        // succeed for msg.sender
+        await portfolio.depositNative(owner.address, {value: Utils.toWei(deposit_amount)});
+        res = await portfolio.getBalance(owner.address, native);
+        Utils.printResults(owner.address, "after deposit", res);
+        expect(res.total).to.equal(Utils.toWei(deposit_amount));
+        expect(res.available).to.equal(Utils.toWei(deposit_amount));
+        // fail if deposits are paused
+        await portfolio.pauseDeposit(true);
+        await expect(portfolio.depositNative(owner.address, {value: Utils.toWei(deposit_amount)})).to.be.revertedWith("P-NTDP-02");
+     });
+
     it("... should deposit ERC20 token to portfolio using depositToken()", async () => {
         console.log();
         token_name = "Mock USDT Token";
@@ -217,11 +302,22 @@ describe("Portfolio", () => {
         // now try with non-zero deposit rate with 50%
         const dRate = ethers.BigNumber.from(5000);
         await portfolio.updateTransferFeeRate(dRate, 0);
+        //const balBefore = await usdt.balanceOf(foundationSafe.address);
         const balBefore = await usdt.balanceOf(foundationSafe.address);
+        const balBeforeFoundation = await usdt.balanceOf(foundationSafe.address);
         await usdt.approve(portfolio.address, Utils.toWei('2'));
         await portfolio.depositToken(owner.address, USDT, Utils.toWei('2'));
-        const balAfter = await usdt.balanceOf(foundationSafe.address);
+        //const balAfter = await usdt.balanceOf(foundationSafe.address);
+        const balAfter = (await portfolio.getBalance(foundationSafe.address, USDT)).total;
         expect((balAfter.sub(balBefore)).toString()).to.be.equal((Utils.toWei("1")).toString());
+        // fail safeTransferFees for non-admin accounts
+        await expect(portfolio.connect(trader2).safeTransferFees()).to.be.revertedWith("P-OACC-15");
+        // succeed safeTransferFees for admin accounts
+        await portfolio.safeTransferFees();
+        //const balPrtfAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
+        const balAfterFoundation = await usdt.balanceOf(foundationSafe.address);
+        console.log("Token Prtf Bal Before: ", balBefore.toString(), "After: ",  balAfter.toString(),"Found Before: ",  balBeforeFoundation.toString() ,"Found After: ",  balAfterFoundation.toString());
+        expect((balAfter.sub(balBefore)).toString()).to.be.equal((balAfterFoundation.sub(balBeforeFoundation)).toString());
      });
 
      it("... should deposit ERC20 token to portfolio using depositTokenFromContract()", async () => {
@@ -277,11 +373,18 @@ describe("Portfolio", () => {
         // now try with non-zero withdraw rate with 50%
         const wRate = ethers.BigNumber.from(5000);
         await portfolio.updateTransferFeeRate(wRate, 1);
-        const balBefore = await usdt.balanceOf(foundationSafe.address);
+        const balBefore = (await portfolio.getBalance(foundationSafe.address, USDT)).total;
+        const balBeforeFoundation = await usdt.balanceOf(foundationSafe.address);
         await usdt.approve(portfolio.address, Utils.toWei('2'));
         await portfolio.withdrawToken(owner.address, USDT, Utils.toWei('2'));
-        const balAfter = await usdt.balanceOf(foundationSafe.address);
+        const balAfter = (await portfolio.getBalance(foundationSafe.address, USDT)).total;
         expect((balAfter.sub(balBefore)).toString()).to.be.equal((Utils.toWei("1")).toString());
+
+        await portfolio.safeTransferFees();
+        //const balPrtfAfter = (await portfolio.getBalance(foundationSafe.address, native)).total;
+        const balAfterFoundation = await usdt.balanceOf(foundationSafe.address);
+        console.log("Token Prtf Bal Before: ", balBefore.toString(), "After: ",  balAfter.toString(),"Found Before: ",  balBeforeFoundation.toString() ,"Found After: ",  balAfterFoundation.toString());
+        expect((balAfter.sub(balBefore)).toString()).to.be.equal((balAfterFoundation.sub(balBeforeFoundation)).toString());
     });
 
     it("Should pause and unpause Portfolio from the admin account", async function () {
@@ -369,6 +472,23 @@ describe("Portfolio", () => {
         expect(await portfolio.getFeeAddress()).to.be.equal(foundationSafe.address);
     });
 
+    it("Should fail addExecution from non-admin accounts", async function () {
+        const makerOrderId = "0x8c18210df0d9514f2d2e5d8ca7c100978219ee80d3968ad850ab5ead208287b3";  // fake id keccak256(100)
+        const order = {id: makerOrderId, price: 0, totalAmount: 0, quantity: 0, quantityFilled: 0,
+                       totalFee: 0, traderaddress: trader1.address, side: 0, type1: 0, status: 1}
+        const takerAddr = trader1.address;
+        const baseSymbol = Utils.fromUtf8("AVAX");
+        const quoteSymbol = Utils.fromUtf8("USDC");
+        const baseAmount = 0;
+        const quoteAmount = 0;
+        const makerfeeCharged = 0;
+        const takerfeeCharged = 0;
+        // fail from non admin accounts
+        await expect(portfolio.connect(trader1)
+            .addExecution(order, takerAddr, baseSymbol, quoteSymbol, baseAmount, quoteAmount, makerfeeCharged, takerfeeCharged))
+            .to.revertedWith("P-OACC-10");
+    });
+
     it("Should add a trusted contract to Portfolio from the auction admin account", async function () {
         let start = await latestTime() + 10000;
         let cliff = 20000;
@@ -376,7 +496,8 @@ describe("Portfolio", () => {
         let startPortfolioDeposits = start - 10000;
         let revocable = true;
         let percentage = 15;
-        const tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+        let period = 0;
+        tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
         await tokenVesting.deployed();
 
         token_name = "Mock USDT Token";
@@ -395,9 +516,11 @@ describe("Portfolio", () => {
         // fail from non admin accounts
         await expect(portfolio.connect(trader1).addTrustedContract(tokenVesting.address, "Dexalot")).to.revertedWith("P-OACC-13");
         await expect(portfolio.connect(admin).addTrustedContract(tokenVesting.address, "Dexalot")).to.revertedWith("P-OACC-13");
+        expect(await portfolio.isTrustedContract(tokenVesting.address)).to.be.equal(false);
         // succeed from admin accounts
         await portfolio.addAuctionAdmin(auctionAdmin.address);
         await portfolio.connect(auctionAdmin).addTrustedContract(tokenVesting.address, "Dexalot");
+        expect(await portfolio.isTrustedContract(tokenVesting.address)).to.be.equal(true);
 
         await ethers.provider.send("evm_increaseTime", [5000]);
         await ethers.provider.send("evm_mine");
@@ -416,7 +539,8 @@ describe("Portfolio", () => {
         let startPortfolioDeposits = start - 10000;
         let revocable = true;
         let percentage = 15;
-        const tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+        let period = 0;
+        tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
         await tokenVesting.deployed();
 
         token_name = "Mock USDT Token";
@@ -438,8 +562,8 @@ describe("Portfolio", () => {
         await portfolio.connect(auctionAdmin).addTrustedContract(tokenVesting.address, "Dexalot");
         expect(await portfolio.trustedContracts(tokenVesting.address)).to.be.equal(true);
         // fail to remove from non admin accounts
-        await expect(portfolio.connect(trader1).removeTrustedContract(tokenVesting.address)).to.revertedWith("P-OACC-12");
-        await expect(portfolio.connect(admin).removeTrustedContract(tokenVesting.address)).to.revertedWith("P-OACC-12");
+        await expect(portfolio.connect(trader1).removeTrustedContract(tokenVesting.address)).to.revertedWith("P-OACC-14");
+        await expect(portfolio.connect(admin).removeTrustedContract(tokenVesting.address)).to.revertedWith("P-OACC-14");
         // succeed to add from admin accounts
         await portfolio.connect(auctionAdmin).removeTrustedContract(tokenVesting.address);
         expect(await portfolio.trustedContracts(tokenVesting.address)).to.be.equal(false);
@@ -452,6 +576,8 @@ describe("Portfolio", () => {
         usdt = await MockToken.deploy(token_name, token_symbol, token_decimals);
         USDT = Utils.fromUtf8(await usdt.symbol());
         await portfolio.addToken(USDT, usdt.address, 0); //Auction mode off
+        // fail if wrong tx type is used
+        await expect(portfolio.adjustAvailable(0, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-WRTT-02");
         // fail if ammount is greater than available
         await expect(portfolio.adjustAvailable(4, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-AFNE-01");
     });

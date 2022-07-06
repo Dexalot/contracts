@@ -1,4 +1,5 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
+
 pragma solidity ^0.8.4;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -9,6 +10,11 @@ import "@openzeppelin/contracts/security/Pausable.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 import "../library/StringLibrary.sol";
+
+/**
+*   @author "DEXALOT TEAM"
+*   @title "AirDrop: a flexible airdrop contract"
+*/
 
 contract Airdrop is Pausable, Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;

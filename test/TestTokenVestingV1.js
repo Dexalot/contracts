@@ -1,5 +1,5 @@
 /**
- * The test runner for Dexalot TokenVesting contract
+ * The test runner for Dexalot TokenVestingV1 contract
  */
 
 const { expect } = require("chai");
@@ -9,10 +9,10 @@ const Utils = require('./utils.js');
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 
-describe("TokenVesting", function () {
+describe("TokenVestingV1", function () {
     let Token;
     let testToken;
-    let TokenVesting;
+    let TokenVestingV1;
     let Portfolio;
     let portfolio;
     let owner;
@@ -30,7 +30,7 @@ describe("TokenVesting", function () {
 
     before(async function () {
         Token = await ethers.getContractFactory("DexalotToken");
-        TokenVesting = await ethers.getContractFactory("TokenVesting");
+        TokenVestingV1 = await ethers.getContractFactory("TokenVestingV1");
         Portfolio = await ethers.getContractFactory("Portfolio");
     });
 
@@ -48,22 +48,18 @@ describe("TokenVesting", function () {
         duration = 1000;
         revocable = true;
         percentage = 10;
-        period = 0;
 
         amount = 1000;
     });
 
-    describe("Contract parameters", function () {
+    describe("Vesting", function () {
         it("Assign total supply of tokens to the owner", async function () {
             const balance = await testToken.balanceOf(owner.address);
             expect(await testToken.totalSupply()).to.equal(balance);
         });
 
         it("Create vesting for an investor", async function () {
-            cliff = 500;
-            period = 100;
-
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             expect(await tokenVesting.beneficiary()).to.equal(investor1.address);
@@ -73,64 +69,63 @@ describe("TokenVesting", function () {
             expect(await tokenVesting.startPortfolioDeposits()).to.equal(startPortfolioDeposits);
             expect(await tokenVesting.revocable()).to.equal(revocable);
             expect(await tokenVesting.getPercentage()).to.equal(percentage);
-            expect(await tokenVesting.period()).to.equal(period);
             expect(await tokenVesting.getPortfolio()).to.equal(portfolio.address);
         });
 
         it("Should not accept zero address as beneficiary", async function () {
-            await expect(TokenVesting.deploy(ZERO, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-BIZA-01");
+            await expect(TokenVestingV1.deploy(ZERO, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-BIZA-01");
         });
 
         it("Should not accept cliff longer than duration", async function () {
             cliff = 10000
             duration = 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-CLTD-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-CLTD-01");
         });
 
         it("Should not accept zero duration", async function () {
             duration = 0
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-DISZ-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-DISZ-01");
         });
 
         it("Should not accept final time before current time", async function () {
             start = start - 10000
             duration = 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-FTBC-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-FTBC-01");
         });
 
         it("Should not accept portfolio deposits beginning after start", async function () {
             startPortfolioDeposits = start + 1000
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-PDBS-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-PDBS-01");
         });
 
         it("Should not accept an initial percentage greater than 100", async function () {
             percentage = 110
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, portfolio.address))
-                        .to.revertedWith("TV-PGTZ-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, portfolio.address))
+                        .to.revertedWith("TV1-PGTZ-01");
         });
 
         it("Should use setPercentage correctly", async function () {
             cliff = 100;
             percentage = 20;
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             // failure by a call from non-owner account
             await expect(tokenVesting.connect(investor1).setPercentage(15)).to.be.revertedWith('Ownable: caller is not the owner');
 
             // failure by a call with percentage > 100
-            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TV-PGTZ-02');
+            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TV1-PGTZ-02');
 
             // success
             await tokenVesting.setPercentage(15);
@@ -138,29 +133,25 @@ describe("TokenVesting", function () {
         });
 
         it("Should not accept 0 portfolio address", async function () {
-            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                                             revocable, percentage, period, ZERO))
-                        .to.revertedWith("TV-PIZA-01");
+            await expect(TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, ZERO))
+                        .to.revertedWith("TV1-PIZA-01");
         });
 
         it("Should not set 0 portfolio address", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TV-PIZA-02");
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
+            await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TV1-PIZA-02");
         });
 
         it("Should set and get start date for portfolio deposits", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
             await tokenVesting.setStartPortfolioDeposits(start-3000);
             expect(await tokenVesting.startPortfolioDeposits()).to.be.equal(start-3000);
         });
 
-    });
-
-    describe("Linear vesting with zero period", function () {
-
         // TIME PARAMETERS FOR TEST
-        // |--------- EPOCH 1------------|---- EPOCH 2---------|------- EPOCH 3----|----- EPOCH 4-----|----- EPOCH 5-----|
+        // |---------PERIOD 1------------|----PERIOD 2---------|-------PERIOD 3----|-----PERIOD 4-----|-----PERIOD 5-----|
         //                           PORTFOLIO
         //  CURRENT TIME --+30,000--> DEPOSIT  ---+20,000---> START --+20,000--> CLIFF --+100,000--> END
         //                            ENABLED
@@ -181,7 +172,7 @@ describe("TokenVesting", function () {
             let vestedAmount;
             let vestedPercentageAmount;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
@@ -194,7 +185,7 @@ describe("TokenVesting", function () {
             await portfolio.addAuctionAdmin(owner.address);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
-            // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
+            // R:0, VA:0, VP:0 | PERIOD 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
             now = await latestTime()
             released = await tokenVesting.released(testToken.address);
             vestedAmount = await tokenVesting.vestedAmount(testToken.address);
@@ -204,7 +195,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(0);
 
-            // R:0, VA:0, VP:150 |  EPOCH 2: AT THE BEGINNING OF THE  EPOCH WHEN PORTFOLIO DEPOSITS ARE ENABLED
+            // R:0, VA:0, VP:150 | PERIOD 2: AT THE BEGINNING OF THE PERIOD WHEN PORTFOLIO DEPOSITS ARE ENABLED
             await ethers.provider.send("evm_increaseTime", [30000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -216,7 +207,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:0, VP:150 |  EPOCH 2: HALF WAY INTO THE  EPOCH WHERE PORTFOLIO DEPOSITS ARE ENABLED
+            // R:0, VA:0, VP:150 | PERIOD 2: HALF WAY INTO THE PERIOD WHERE PORTFOLIO DEPOSITS ARE ENABLED
             await ethers.provider.send("evm_increaseTime", [10000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -228,7 +219,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:0, VP:150 |   EPOCH 3: AT THE BEGINNG OF START
+            // R:0, VA:0, VP:150 |  PERIOD 3: AT THE BEGINNG OF START
             await ethers.provider.send("evm_increaseTime", [10000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -240,7 +231,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:0, VP:150 |  EPOCH 3: BETWEEN START AND CLIFF
+            // R:0, VA:0, VP:150 | PERIOD 3: BETWEEN START AND CLIFF
             await ethers.provider.send("evm_increaseTime", [10000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -252,7 +243,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:0, VP:150  |  EPOCH 4: AT THE BEGINNING OF CLIFF
+            // R:0, VA:0, VP:150  | PERIOD 4: AT THE BEGINNING OF CLIFF
             await ethers.provider.send("evm_increaseTime", [10000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -264,7 +255,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(0);
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:340, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END
+            // R:0, VA:340, VP:150  | PERIOD 4: BETWEEN CLIFF AND END
             await ethers.provider.send("evm_increaseTime", [40000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -276,7 +267,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*(now-currentTime-cliff-delay)/(duration-cliff)));
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:510, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END
+            // R:0, VA:510, VP:150  | PERIOD 4: BETWEEN CLIFF AND END
             await ethers.provider.send("evm_increaseTime", [20000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -288,7 +279,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*(now-currentTime-cliff-delay)/(duration-cliff)));
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:850, VP:150  |  EPOCH 5: AT THE END
+            // R:0, VA:850, VP:150  | PERIOD 5: AT THE END
             await ethers.provider.send("evm_increaseTime", [40000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -300,7 +291,7 @@ describe("TokenVesting", function () {
             expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*(now-currentTime-cliff-delay)/(duration-cliff)));
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
 
-            // R:0, VA:850, VP:150  |  EPOCH 5: BEYOND THE END
+            // R:0, VA:850, VP:150  | PERIOD 5: BEYOND THE END
             await ethers.provider.send("evm_increaseTime", [50000]);
             await ethers.provider.send("evm_mine")
             now = await latestTime()
@@ -314,20 +305,20 @@ describe("TokenVesting", function () {
         });
 
         it("Should not release vested tokens before start", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
 
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-TEAR-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV1-TEAR-01");
         });
 
         it("Should not release vested tokens if nothing is due", async function () {
             cliff = 10000
             duration = 100000
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
@@ -340,10 +331,10 @@ describe("TokenVesting", function () {
             // release first
             await tokenVesting.connect(investor1).release(testToken.address);
             // now nothing to release
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NTAD-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV1-NTAD-01");
         });
 
-        it("Should release initial percentage only when auction deposits are enabled", async function () {
+        it("Should release initial percentage only when auction depsoits are enabled", async function () {
             start = start + 5000;
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
@@ -351,7 +342,7 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
@@ -368,10 +359,10 @@ describe("TokenVesting", function () {
 
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
             await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV-OPDA-01");
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV1-OPDA-01");
         });
 
-        it("Should release initial percentage only when auction deposits are enabled", async function () {
+        it("Should release initial percentage only when auction depsoits are enabled", async function () {
             start = start + 5000;
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
@@ -379,7 +370,7 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
@@ -402,13 +393,13 @@ describe("TokenVesting", function () {
             // now nothing to release from initial percentage
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
             await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
-            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV-NTAD-02");
+            await expect(tokenVesting.connect(investor1).releaseToPortfolio(testToken.address)).to.revertedWith("TV1-NTAD-0");
         });
 
         it("Should release vested tokens when duration has passed", async function () {
             let now;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, amount))
@@ -442,7 +433,7 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
@@ -531,7 +522,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NBOC-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV1-NBOC-01");
 
             // initial percentage vested, all remaining vested, all released: R:1000, VA:900, VP:100
             await ethers.provider.send("evm_increaseTime", [cliff / 2]);
@@ -547,7 +538,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NBOC-01");
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV1-NBOC-01");
         });
 
         it('Cannot release if contract has no balance', async function () {
@@ -555,7 +546,7 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            let tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            let tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
 
@@ -570,7 +561,7 @@ describe("TokenVesting", function () {
             console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
 
             // no balance on the contract, nothing deposited, yet
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TV-NBOC-01');
+            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TV1-NBOC-01');
         });
 
         it('Can only release initial percentage ampunt before cliff', async function () {
@@ -578,7 +569,7 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
             await tokenVesting.setPercentage(20);
 
@@ -607,7 +598,7 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
             tokenVesting.setPercentage(20);
 
@@ -676,28 +667,28 @@ describe("TokenVesting", function () {
             duration = 120000;
             revocable = false;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
-            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-CNTR-01');
+            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV1-CNTR-01');
         });
 
         it('Should fail to be revoked a second time', async function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await tokenVesting.revoke(testToken.address);
-            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-TKAR-01');
+            await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV1-TKAR-01');
         });
 
         it('Should be able to reinstate a revoked contact by owner', async function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
             tokenVesting.setPercentage(20);
 
@@ -716,7 +707,7 @@ describe("TokenVesting", function () {
             cliff = 60000;
             duration = 120000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
             tokenVesting.setPercentage(20);
 
@@ -724,13 +715,13 @@ describe("TokenVesting", function () {
 
             expect(await tokenVesting.revoked(testToken.address)).to.be.false;
 
-            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TV-TKNR-01");
+            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TV1-TKNR-01");
 
             expect(await tokenVesting.revoked(testToken.address)).to.be.false;
         });
 
         it("Only owner can set the portfolio address", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(tokenVesting.connect(investor1).setPortfolio(portfolio.address)).to.be.revertedWith('Ownable: caller is not the owner');
@@ -747,7 +738,7 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
@@ -801,7 +792,7 @@ describe("TokenVesting", function () {
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await testToken.transfer(tokenVesting.address, 1000);
@@ -834,7 +825,7 @@ describe("TokenVesting", function () {
             cliff = 5000;
             duration = 100000;
 
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
+            const tokenVesting = await TokenVestingV1.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, portfolio.address);
             await tokenVesting.deployed();
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
@@ -863,262 +854,6 @@ describe("TokenVesting", function () {
             expect(await tokenVesting.vestedAmount(testToken.address)).to.equal(47);
             expect(await tokenVesting.vestedPercentageAmount(testToken.address)).to.equal(100);
         });
-    });
-
-    describe("Linear vesting with non-zero period", function () {
-
-        // TIME PARAMETERS FOR TEST
-        // |--------- EPOCH 1------------|---- EPOCH 2---------|------- EPOCH 3----|----- EPOCH 4-----|----- EPOCH 5-----|
-        //                           PORTFOLIO
-        //  CURRENT TIME --+30,000--> DEPOSIT  ---+20,000---> START --+20,000--> CLIFF --+100,000--> END
-        //                            ENABLED
-        //                                                 DURATION ----------+120,000-------------> END
-
-        it("Should have correct vestedPercentageAmount, vestedAmount and releasable amounts for different key times", async function () {
-            let delay = 50000;
-            start = start + delay;
-            let rewind = 20000;
-            startPortfolioDeposits = start - rewind;
-            cliff = 20000;
-            duration = 120000;
-            percentage = 15;
-            period = 20000;
-            let now;
-            let dt = Utils.fromUtf8("ALOT");
-            let am = 0; // auction mode OFF
-            let released;
-            let vestedAmount;
-            let vestedPercentageAmount;
-
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-
-            await expect(testToken.transfer(tokenVesting.address, amount))
-                .to.emit(testToken, "Transfer")
-                .withArgs(owner.address, tokenVesting.address, amount);
-            const vestingBalance = await testToken.balanceOf(tokenVesting.address);
-            expect(vestingBalance).to.equal(amount);
-
-            await portfolio.addToken(dt, testToken.address, am);
-            await portfolio.addAuctionAdmin(owner.address);
-            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
-
-            // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(0);
-
-            // R:0, VA:0, VP:150 |  EPOCH 2: AT THE BEGINNING OF THE  EPOCH WHEN PORTFOLIO DEPOSITS ARE ENABLED
-            await ethers.provider.send("evm_increaseTime", [30000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:0, VP:150 |  EPOCH 2: HALF WAY INTO THE  EPOCH WHERE PORTFOLIO DEPOSITS ARE ENABLED
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:0, VP:150 |   EPOCH 3: AT THE BEGINNG OF START
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:0, VP:150 |  EPOCH 3: BETWEEN START AND CLIFF
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:0, VP:150  |  EPOCH 4: AT THE BEGINNING OF CLIFF
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:0, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - MIDDLE OF PERIOD 1
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(0);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:170, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - END OF PERIOD 1
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*1/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:170, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - MIDDLE OF PERIOD 2
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*1/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:340, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - END OF PERIOD 2
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*2/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:340, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - MIDDLE OF PERIOD 3
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*2/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:510, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - END OF PERIOD 3
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*3/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:510, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - MIDDLE OF PERIOD 4
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*3/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:680, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - END OF PERIOD 4
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*4/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:680, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - MIDDLE OF PERIOD 5
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*4/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:850, VP:150  |  EPOCH 4: BETWEEN CLIFF AND END - END OF PERIOD 5
-            await ethers.provider.send("evm_increaseTime", [10000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(parseInt(amount*(100-percentage)/100*5/5));
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-
-            // R:0, VA:850, VP:150  |  EPOCH 5: BEYOND THE END
-            await ethers.provider.send("evm_increaseTime", [50000]);
-            await ethers.provider.send("evm_mine")
-            now = await latestTime()
-            released = await tokenVesting.released(testToken.address);
-            vestedAmount = await tokenVesting.vestedAmount(testToken.address);
-            vestedPercentageAmount = await tokenVesting.vestedPercentageAmount(testToken.address);
-            console.log(`Time: ${now-currentTime} | Released: ${released} | vestedAmount ${vestedAmount} | vestedPercentageAmount: ${vestedPercentageAmount}`);
-            expect(released).to.be.equal(0);
-            expect(vestedAmount).to.be.equal(amount*(100-percentage)/100);
-            expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
-        });
-
-        it("Should not release vested tokens before start if period", async function () {
-            period = 100;
-
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-
-            await expect(testToken.transfer(tokenVesting.address, amount))
-                .to.emit(testToken, "Transfer")
-                .withArgs(owner.address, tokenVesting.address, amount);
-
-            await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-TEAR-01");
-        });
-
     });
 });
 
