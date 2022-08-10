@@ -590,13 +590,12 @@ describe("TokenVestingCloneable", function () {
             let now;
             cliff = 60000;
             duration = 120000;
+            percentage = 20;
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             let count = await factory.count();
             tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-
-            await tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -622,12 +621,12 @@ describe("TokenVestingCloneable", function () {
         it('Should be revoked by owner if revocable is set', async function () {
             cliff = 60000;
             duration = 120000;
+            percentage = 20;
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             let count = await factory.count();
             tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-            tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -713,46 +712,6 @@ describe("TokenVestingCloneable", function () {
 
             await tokenVesting.revoke(testToken.address);
             await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TVC-TKAR-01');
-        });
-
-        it('Should be able to reinstate a revoked contact by owner', async function () {
-            cliff = 60000;
-            duration = 120000;
-
-            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                revocable, percentage, period, portfolio.address, owner.address);
-            let count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-            tokenVesting.setPercentage(20);
-
-            await testToken.transfer(tokenVesting.address, 1000);
-
-            await tokenVesting.revoke(testToken.address);
-            expect(await tokenVesting.revoked(testToken.address)).to.be.true;
-
-            await expect(tokenVesting.reinstate(testToken.address))
-                .to.emit(tokenVesting, "TokenVestingReinstated")
-                .withArgs(testToken.address);
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
-        });
-
-        it('Should not be able to reinstate a contact not revoked', async function () {
-            cliff = 60000;
-            duration = 120000;
-
-            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                revocable, percentage, period, portfolio.address, owner.address);
-            let count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-            tokenVesting.setPercentage(20);
-
-            await testToken.transfer(tokenVesting.address, 1000);
-
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
-
-            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TVC-TKNR-01");
-
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
         });
 
         it("Only owner can set the portfolio address", async function () {
