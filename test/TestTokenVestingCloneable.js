@@ -132,26 +132,6 @@ describe("TokenVestingCloneable", function () {
                 .to.revertedWith("TVC-PGTZ-01");
         });
 
-        it("Should use setPercentage correctly", async function () {
-            cliff = 100;
-            percentage = 20;
-
-            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                revocable, percentage, period, portfolio.address, owner.address);
-            let count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-
-            // failure by a call from non-owner account
-            await expect(tokenVesting.connect(investor1).setPercentage(15)).to.be.revertedWith('Ownable: caller is not the owner');
-
-            // failure by a call with percentage > 100
-            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TVC-PGTZ-02');
-
-            // success
-            await tokenVesting.setPercentage(15);
-            expect(await tokenVesting.getPercentage()).to.equal(15);
-        });
-
         it("Should not accept 0 portfolio address", async function () {
             await expect(factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, ZERO, owner.address))
@@ -170,15 +150,6 @@ describe("TokenVestingCloneable", function () {
             let count = await factory.count();
             tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
             await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TVC-PIZA-02");
-        });
-
-        it("Should set and get start date for portfolio deposits", async function () {
-            await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
-                revocable, percentage, period, portfolio.address, owner.address);
-            let count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
-            await tokenVesting.setStartPortfolioDeposits(start-3000);
-            expect(await tokenVesting.startPortfolioDeposits()).to.be.equal(start-3000);
         });
 
     });

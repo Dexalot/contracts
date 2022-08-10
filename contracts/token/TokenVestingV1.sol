@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -30,7 +30,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
-    event TokenVestingReinstated(address token);
+    event PortfolioChanged(address portfolio);
 
     // beneficiary of tokens after they are released
     address private _beneficiary;
@@ -155,33 +155,18 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
         return _firstReleasePercentage;
     }
 
-    /*
-     * set value of the percentage
-     */
-    function setPercentage(uint256 percentage) external onlyOwner {
-        require(percentage <= 100, "TV1-PGTZ-02");
-        _firstReleasePercentage = percentage;
-    }
-
-    /*
-     * set starting time for depositing to portfolio
-     */
-    function setStartPortfolioDeposits(uint256 time) external onlyOwner {
-        _startPortfolioDeposits = time;
-    }
-
-    /*
+    /**
      * @return true if the vesting is funded to the portfolio.
      * beneficiary check is not for access control, it is just for convenience in frontend
      */
-    function canFundWallet(IERC20Metadata token, address __beneficiary) public view returns (bool) {
+    function canFundWallet(IERC20Metadata token, address __beneficiary) external view returns (bool) {
         return
             __beneficiary == _beneficiary &&
             block.timestamp > _start &&
             (_vestedByPercentage(token) > _releasedPercentage[address(token)] || block.timestamp > _cliff);
     }
 
-    /*
+    /**
      * @return true if the vesting is funded to the portfolio.
      * beneficiary check is not for access control, it is just for convenience in frontend
      */
@@ -205,6 +190,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     function setPortfolio(address portfolio) external onlyOwner {
         require(portfolio != address(0), "TV1-PIZA-02");
         _portfolio = IPortfolio(portfolio);
+        emit PortfolioChanged(portfolio);
     }
 
     /**
@@ -232,6 +218,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     /**
      * @notice Transfers vested tokens to Portfolio.
      * @param token ERC20 token which is being vested
+     * @dev User must approve the vesting and porfolio contract before calling this function.
      */
     function releaseToPortfolio(IERC20Metadata token) external nonReentrant {
         require(canFundPortfolio(_beneficiary), "TV1-OPDA-01");
@@ -241,7 +228,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
         if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20Metadata(token).symbol();
-            bytes32 symbol = stringToBytes32(symbolStr);
+            bytes32 symbol = symbolStr.stringToBytes32();
 
             _releasedPercentage[address(token)] = _vestedByPercentage(token);
 
@@ -279,18 +266,6 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
         emit TokenVestingRevoked(address(token));
 
         token.safeTransfer(owner(), refund);
-    }
-
-    /**
-     * @notice Allows the owner to reinstate the vesting.
-     * @param token ERC20 token which is being vested
-     */
-    function reinstate(IERC20Metadata token) external onlyOwner {
-        require(_revoked[address(token)], "TV1-TKNR-01");
-
-        _revoked[address(token)] = false;
-
-        emit TokenVestingReinstated(address(token));
     }
 
     /**
@@ -368,10 +343,5 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
             return percentage;
         }
-    }
-
-    // utility function to convert string to bytes32
-    function stringToBytes32(string memory _string) public pure returns (bytes32 result) {
-        return _string.stringToBytes32();
     }
 }

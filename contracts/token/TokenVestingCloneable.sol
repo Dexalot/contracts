@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
@@ -30,7 +30,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
-    event TokenVestingReinstated(address token);
+    event PortfolioChanged(address portfolio);
 
     // beneficiary of tokens after they are released
     address private _beneficiary;
@@ -173,33 +173,18 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
         return _firstReleasePercentage;
     }
 
-    /*
-     * set value of the percentage
-     */
-    function setPercentage(uint256 percentage) external onlyOwner {
-        require(percentage <= 100, "TVC-PGTZ-02");
-        _firstReleasePercentage = percentage;
-    }
-
-    /*
-     * set starting time for depositing to portfolio
-     */
-    function setStartPortfolioDeposits(uint256 time) external onlyOwner {
-        _startPortfolioDeposits = time;
-    }
-
-    /*
+    /**
      * @return true if the vesting is funded to the portfolio.
      * beneficiary check is not for access control, it is just for convenience in frontend
      */
-    function canFundWallet(IERC20MetadataUpgradeable token, address __beneficiary) public view returns (bool) {
+    function canFundWallet(IERC20MetadataUpgradeable token, address __beneficiary) external view returns (bool) {
         return
             __beneficiary == _beneficiary &&
             block.timestamp > _start &&
             (_vestedByPercentage(token) > _releasedPercentage[address(token)] || block.timestamp > _cliff);
     }
 
-    /*
+    /**
      * @return true if the vesting is funded to the portfolio.
      * beneficiary check is not for access control, it is just for convenience in frontend
      */
@@ -223,6 +208,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
     function setPortfolio(address __portfolio) external onlyOwner {
         require(__portfolio != address(0), "TVC-PIZA-02");
         _portfolio = IPortfolio(__portfolio);
+        emit PortfolioChanged(__portfolio);
     }
 
     /**
@@ -250,6 +236,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
     /**
      * @notice Transfers vested tokens to Portfolio.
      * @param token ERC20 token which is being vested
+     * @dev User must approve the vesting and porfolio contract before calling this function.
      */
     function releaseToPortfolio(IERC20MetadataUpgradeable token) external nonReentrant {
         require(canFundPortfolio(_beneficiary), "TVC-OPDA-01");
@@ -259,7 +246,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
 
         if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20MetadataUpgradeable(token).symbol();
-            bytes32 symbol = stringToBytes32(symbolStr);
+            bytes32 symbol = symbolStr.stringToBytes32();
 
             _releasedPercentage[address(token)] = _vestedByPercentage(token);
 
@@ -297,18 +284,6 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
         emit TokenVestingRevoked(address(token));
 
         token.safeTransfer(owner(), refund);
-    }
-
-    /**
-     * @notice Allows the owner to reinstate the vesting.
-     * @param token ERC20 token which is being vested
-     */
-    function reinstate(IERC20MetadataUpgradeable token) external onlyOwner {
-        require(_revoked[address(token)], "TVC-TKNR-01");
-
-        _revoked[address(token)] = false;
-
-        emit TokenVestingReinstated(address(token));
     }
 
     /**
@@ -385,10 +360,5 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
 
             return percentage;
         }
-    }
-
-    // utility function to convert string to bytes32
-    function stringToBytes32(string memory _string) public pure returns (bytes32 result) {
-        return _string.stringToBytes32();
     }
 }
