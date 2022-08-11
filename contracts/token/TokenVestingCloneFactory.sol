@@ -18,7 +18,6 @@ contract TokenVestingCloneFactory is
     // version
     bytes32 constant public VERSION = bytes32("1.0.0");
 
-
     address public implementation;
 
     mapping (uint256 => address) public clones;
@@ -35,7 +34,17 @@ contract TokenVestingCloneFactory is
     }
 
     /**
-     * @notice Create function for a new TokenVesting clone
+     * @dev Create function for a new TokenVesting clone
+     * @param __beneficiary address of the beneficiary to whom vested tokens are transferred
+     * @param __start time (as Unix time) at which point vesting starts
+     * @param __cliffDuration duration in seconds of the cliff in which tokens will begin to vest
+     * @param __duration duration in seconds of the period in which the tokens will vest
+     * @param __startPortfolioDeposits time (as Unix time) portfolio deposits start
+     * @param __revocable whether the vesting is revocable or not
+     * @param __firstReleasePercentage percentage to be released initially
+     * @param __period length of claim period that allows one to withdraw in discrete periods. i.e. (60 x 60 x 24) x 30 will
+     *                 allow the beneficiary to claim every 30 days, 0 for no period restrictions
+     * @param __portfolio address of portfolio
      */
     function createTokenVesting(
         address __beneficiary,
@@ -67,7 +76,8 @@ contract TokenVestingCloneFactory is
     }
 
     /**
-     * @notice Accessor method to get all clones
+     * @dev Accessor method to get i-th clone
+     * @param index clone index
      */
     function getClone(uint index) external view returns (address) {
         require(index < count, "TVCF-IOOB-01");
