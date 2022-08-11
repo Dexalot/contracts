@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -30,7 +30,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
-    event TokenVestingReinstated(address token);
+    event PortfolioChanged(address portfolio);
 
     // beneficiary of tokens after they are released
     address private _beneficiary;
@@ -51,18 +51,18 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     mapping(address => uint256) private _released;
     mapping(address => bool) private _revoked;
 
-    /*
+    /**
      * @dev Creates a vesting contract that vests its balance of any ERC20 token to the
      * beneficiary, gradually in a linear fashion until start + duration. By then all
      * of the balance will have vested.
      * @param __beneficiary address of the beneficiary to whom vested tokens are transferred
+     * @param __start time (as Unix time) at which point vesting starts
      * @param __cliffDuration duration in seconds of the cliff in which tokens will begin to vest
-     * @param __start the time (as Unix time) at which point vesting starts
      * @param __duration duration in seconds of the period in which the tokens will vest
-     * @oaran __startPortfolioDeposits
+     * @param __startPortfolioDeposits time (as Unix time) portfolio deposits start
      * @param __revocable whether the vesting is revocable or not
-     * @param __firstReleasePercentage
-     * @param __portfolio
+     * @param __firstReleasePercentage percentage to be released initially
+     * @param __portfolio address of portfolio
      */
     constructor(
         address __beneficiary,
@@ -93,97 +93,87 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @return the beneficiary of the tokens.
+     * @return _beneficiary beneficiary of the tokens.
      */
     function beneficiary() external view returns (address) {
         return _beneficiary;
     }
 
     /**
-     * @return the cliff time of the token vesting.
+     * @return _cliff cliff time of the token vesting.
      */
     function cliff() external view returns (uint256) {
         return _cliff;
     }
 
     /**
-     * @return the start time of the token vesting.
+     * @return _start start time of the token vesting.
      */
     function start() external view returns (uint256) {
         return _start;
     }
 
     /**
-     * @return the duration of the token vesting.
+     * @return _duration duration of the token vesting.
      */
     function duration() external view returns (uint256) {
         return _duration;
     }
 
     /**
-     * @return the start time for depositing to portfolio.
+     * @return _startPortfolioDeposits start time for depositing to portfolio.
      */
     function startPortfolioDeposits() external view returns (uint256) {
         return _startPortfolioDeposits;
     }
 
     /**
-     * @return true if the vesting is revocable.
+     * @return _revocable true if the vesting is revocable.
      */
     function revocable() external view returns (bool) {
         return _revocable;
     }
 
     /**
-     * @return the amount of the token released.
+     * @param token ERC20 token which is being vested.
+     * @return _released amount of the token released.
      */
     function released(address token) external view returns (uint256) {
         return _released[token];
     }
 
     /**
-     * @return true if the token is revoked.
+     * @param token  ERC20 token which is being vested.
+     * @return _revoked true if the token is revoked.
      */
     function revoked(address token) external view returns (bool) {
         return _revoked[token];
     }
 
-    /*
-     * get value of the percentage
+    /**
+     * @return _firstReleasePercentage percentage to be released initially.
      */
     function getPercentage() external view returns (uint256) {
         return _firstReleasePercentage;
     }
 
-    /*
-     * set value of the percentage
-     */
-    function setPercentage(uint256 percentage) external onlyOwner {
-        require(percentage <= 100, "TV1-PGTZ-02");
-        _firstReleasePercentage = percentage;
-    }
-
-    /*
-     * set starting time for depositing to portfolio
-     */
-    function setStartPortfolioDeposits(uint256 time) external onlyOwner {
-        _startPortfolioDeposits = time;
-    }
-
-    /*
+    /**
+     * @notice beneficiary check is not for access control, it is just for convenience in frontend
+     * @param token ERC20 token which is being vested.
+     * @param __beneficiary address of beneficiary.
      * @return true if the vesting is funded to the portfolio.
-     * beneficiary check is not for access control, it is just for convenience in frontend
      */
-    function canFundWallet(IERC20Metadata token, address __beneficiary) public view returns (bool) {
+    function canFundWallet(IERC20Metadata token, address __beneficiary) external view returns (bool) {
         return
             __beneficiary == _beneficiary &&
             block.timestamp > _start &&
             (_vestedByPercentage(token) > _releasedPercentage[address(token)] || block.timestamp > _cliff);
     }
 
-    /*
+    /**
+     * @notice beneficiary check is not for access control, it is just for convenience in frontend
+     * @param __beneficiary address of beneficiary.
      * @return true if the vesting is funded to the portfolio.
-     * beneficiary check is not for access control, it is just for convenience in frontend
      */
     function canFundPortfolio(address __beneficiary) public view returns (bool) {
         return
@@ -193,23 +183,25 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @return the portfolio address for funding
+     * @return _portfolio portfolio address for funding
      */
     function getPortfolio() external view returns (address) {
         return address(_portfolio);
     }
 
-    /*
-     * set address for the portfolio.
+    /**
+     * @dev sets the address for the portfolio.
+     * @param __portfolio address of portfolio
      */
-    function setPortfolio(address portfolio) external onlyOwner {
-        require(portfolio != address(0), "TV1-PIZA-02");
-        _portfolio = IPortfolio(portfolio);
+    function setPortfolio(address __portfolio) external onlyOwner {
+        require(__portfolio != address(0), "TV1-PIZA-02");
+        _portfolio = IPortfolio(__portfolio);
+        emit PortfolioChanged(__portfolio);
     }
 
     /**
-     * @notice Transfers vested tokens to beneficiary.
-     * @param token ERC20 token which is being vested
+     * @dev transfers vested tokens to beneficiary.
+     * @param token ERC20 token which is being vested.
      */
     function release(IERC20Metadata token) external nonReentrant {
         require(token.balanceOf(address(this)) > 0, "TV1-NBOC-01");
@@ -230,8 +222,9 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Transfers vested tokens to Portfolio.
-     * @param token ERC20 token which is being vested
+     * @notice User must give two approvals for the vesting and porfolio contracts before calling this function.
+     * @dev Transfers vested tokens to Portfolio.
+     * @param token ERC20 token which is being vested.
      */
     function releaseToPortfolio(IERC20Metadata token) external nonReentrant {
         require(canFundPortfolio(_beneficiary), "TV1-OPDA-01");
@@ -241,7 +234,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
         if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20Metadata(token).symbol();
-            bytes32 symbol = stringToBytes32(symbolStr);
+            bytes32 symbol = symbolStr.stringToBytes32();
 
             _releasedPercentage[address(token)] = _vestedByPercentage(token);
 
@@ -260,9 +253,9 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Allows the owner to revoke the vesting. Tokens already vested
-     * remain in the contract, the rest are returned to the owner.
-     * @param token ERC20 token which is being vested
+     * @dev Allows the owner to revoke the vesting.
+     * @notice Tokens already vested remain in the contract, the rest are returned to the owner.
+     * @param token ERC20 token which is being vested.
      */
     function revoke(IERC20Metadata token) external onlyOwner {
         require(_revocable, "TV1-CNTR-01");
@@ -282,20 +275,8 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Allows the owner to reinstate the vesting.
-     * @param token ERC20 token which is being vested
-     */
-    function reinstate(IERC20Metadata token) external onlyOwner {
-        require(_revoked[address(token)], "TV1-TKNR-01");
-
-        _revoked[address(token)] = false;
-
-        emit TokenVestingReinstated(address(token));
-    }
-
-    /**
      * @dev Calculates the amount that has already vested but hasn't been released yet.
-     * @param token ERC20 token which is being vested
+     * @param token ERC20 token which is being vested.
      */
     function _releasableAmount(IERC20Metadata token) private view returns (uint256) {
         return
@@ -305,7 +286,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     /**
      * @dev Returns the amount for the amount remaining after the initial percentage vested at TGE.
-     * @param token ERC20 token which is being vested
+     * @param token ERC20 token which is being vested.
      */
     function vestedAmount(IERC20Metadata token) external view returns (uint256) {
         return _vestedAmount(token);
@@ -313,7 +294,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     /**
      * @dev Returns the amount that has been released based on the initial percentage vested at TGE.
-     * @param token ERC20 token which is being vested
+     * @param token ERC20 token which is being vested.
      */
     function releasedPercentageAmount(IERC20Metadata token) external view returns (uint256) {
         return _releasedPercentage[address(token)];
@@ -321,7 +302,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     /**
      * @dev Returns the amount that is releaseable based on the initial percentage vested  at TGE.
-     * @param token ERC20 token which is being vested
+     * @param token ERC20 token which is being vested.
      */
     function vestedPercentageAmount(IERC20Metadata token) external view returns (uint256) {
         return _vestedByPercentage(token);
@@ -329,9 +310,9 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     /**
      * @dev Calculates the amount that has already vested.
-     * Subtracts the amount calculated by percentage.
-     * Starts calculating of vested amount after the time of cliff.
-     * @param token ERC20 token which is being vested
+     * @notice Subtracts the amount calculated by percentage.
+     * @notice Starts calculating of vested amount after the time of cliff.
+     * @param token ERC20 token which is being vested.
      */
     function _vestedAmount(IERC20Metadata token) private view returns (uint256) {
         uint256 currentBalance = token.balanceOf(address(this));
@@ -356,7 +337,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
     /**
      * @dev Calculates the amount vested at TGE.
-     * @param token ERC20 token which is being vested
+     * @param token ERC20 token which is being vested.
      */
     function _vestedByPercentage(IERC20Metadata token) private view returns (uint256) {
         if (block.timestamp < _startPortfolioDeposits) {
@@ -368,10 +349,5 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
             return percentage;
         }
-    }
-
-    // utility function to convert string to bytes32
-    function stringToBytes32(string memory _string) public pure returns (bytes32 result) {
-        return _string.stringToBytes32();
     }
 }

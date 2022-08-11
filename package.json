@@ -5,7 +5,7 @@
   "description": "Smart contracts in Solidity programming language for Dexalot",
   "private": true,
   "engines": {
-    "node": "14.17.1"
+    "node": "16.15.1"
   },
   "scripts": {
     "clean-contracts": "rimraf .openzeppelin/unknown-*.json",
@@ -35,8 +35,8 @@
     "@ethersproject/experimental": "5.6.3",
     "@nomiclabs/hardhat-ethers": "2.0.6",
     "@nomiclabs/hardhat-waffle": "2.0.3",
-    "@openzeppelin/contracts": "4.7.0",
-    "@openzeppelin/contracts-upgradeable": "4.7.0",
+    "@openzeppelin/contracts": "4.7.3",
+    "@openzeppelin/contracts-upgradeable": "4.7.3",
     "@openzeppelin/hardhat-upgrades": "1.19.0",
     "bignumber.js": "9.0.2",
     "chai": "4.3.6",

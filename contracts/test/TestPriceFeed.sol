@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.4;
 
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
@@ -10,21 +10,21 @@ import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 contract TestPriceFeed is AggregatorV3Interface {
 
-    function decimals() external pure returns (uint8) {
+    function decimals() external pure override returns (uint8) {
         return 18;
     }
 
-    function description() external pure returns (string memory) {
+    function description() external pure override returns (string memory) {
         return "Price Feed Test";
     }
 
-    function version() external pure returns (uint256) {
+    function version() external pure override returns (uint256) {
         return 1;
     }
 
     function getRoundData(uint80 _roundId)
     public
-    pure
+    pure override
     returns (
       uint80 roundId,
       int256 answer,
@@ -41,7 +41,7 @@ contract TestPriceFeed is AggregatorV3Interface {
 
   function latestRoundData()
     external
-    pure
+    pure override
     returns (
       uint80 roundId,
       int256 answer,

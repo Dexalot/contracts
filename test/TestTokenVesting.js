@@ -120,23 +120,6 @@ describe("TokenVesting", function () {
                         .to.revertedWith("TV-PGTZ-01");
         });
 
-        it("Should use setPercentage correctly", async function () {
-            cliff = 100;
-            percentage = 20;
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-
-            // failure by a call from non-owner account
-            await expect(tokenVesting.connect(investor1).setPercentage(15)).to.be.revertedWith('Ownable: caller is not the owner');
-
-            // failure by a call with percentage > 100
-            await expect(tokenVesting.setPercentage(110)).to.be.revertedWith('TV-PGTZ-02');
-
-            // success
-            await tokenVesting.setPercentage(15);
-            expect(await tokenVesting.getPercentage()).to.equal(15);
-        });
-
         it("Should not accept 0 portfolio address", async function () {
             await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
                                              revocable, percentage, period, ZERO))
@@ -146,13 +129,6 @@ describe("TokenVesting", function () {
         it("Should not set 0 portfolio address", async function () {
             const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TV-PIZA-02");
-        });
-
-        it("Should set and get start date for portfolio deposits", async function () {
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-            await tokenVesting.setStartPortfolioDeposits(start-3000);
-            expect(await tokenVesting.startPortfolioDeposits()).to.be.equal(start-3000);
         });
 
     });
@@ -577,10 +553,10 @@ describe("TokenVesting", function () {
             let now;
             cliff = 60000;
             duration = 120000;
+            percentage = 20;
 
             tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();
-            await tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -606,10 +582,10 @@ describe("TokenVesting", function () {
         it('Should be revoked by owner if revocable is set', async function () {
             cliff = 60000;
             duration = 120000;
+            percentage = 20;
 
             const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();
-            tokenVesting.setPercentage(20);
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -691,42 +667,6 @@ describe("TokenVesting", function () {
 
             await tokenVesting.revoke(testToken.address);
             await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-TKAR-01');
-        });
-
-        it('Should be able to reinstate a revoked contact by owner', async function () {
-            cliff = 60000;
-            duration = 120000;
-
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-            tokenVesting.setPercentage(20);
-
-            await testToken.transfer(tokenVesting.address, 1000);
-
-            await tokenVesting.revoke(testToken.address);
-            expect(await tokenVesting.revoked(testToken.address)).to.be.true;
-
-            await expect(tokenVesting.reinstate(testToken.address))
-                .to.emit(tokenVesting, "TokenVestingReinstated")
-                .withArgs(testToken.address);
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
-        });
-
-        it('Should not be able to reinstate a contact not revoked', async function () {
-            cliff = 60000;
-            duration = 120000;
-
-            const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-            await tokenVesting.deployed();
-            tokenVesting.setPercentage(20);
-
-            await testToken.transfer(tokenVesting.address, 1000);
-
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
-
-            await expect(tokenVesting.reinstate(testToken.address)).to.be.revertedWith("TV-TKNR-01");
-
-            expect(await tokenVesting.revoked(testToken.address)).to.be.false;
         });
 
         it("Only owner can set the portfolio address", async function () {
