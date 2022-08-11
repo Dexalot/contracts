@@ -234,7 +234,7 @@ contract TokenVesting is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice User must give two approvals for the vesting and porfolio contracts before calling this function.
+     * @notice User must give two approvals for the vesting and portfolio contracts before calling this function.
      * @dev Transfers vested tokens to Portfolio.
      * @param token ERC20 token which is being vested.
      */
