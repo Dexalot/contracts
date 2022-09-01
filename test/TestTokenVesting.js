@@ -44,24 +44,24 @@ describe("TokenVesting", function () {
         beneficiary = investor1.address;
         start = currentTime;
         startPortfolioDeposits = currentTime - 5000;
-        cliff = 0;
+        cliff = 400;
         duration = 1000;
         revocable = true;
         percentage = 10;
-        period = 0;
+        period = 400;
 
         amount = 1000;
     });
 
     describe("Contract parameters", function () {
-        it("Assign total supply of tokens to the owner", async function () {
+        it("Should assign total supply of tokens to the owner", async function () {
             const balance = await testToken.balanceOf(owner.address);
             expect(await testToken.totalSupply()).to.equal(balance);
         });
 
-        it("Create vesting for an investor", async function () {
+        it("Should create vesting for an investor", async function () {
             cliff = 500;
-            period = 100;
+            period = 500;
 
             const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();
@@ -91,11 +91,18 @@ describe("TokenVesting", function () {
                         .to.revertedWith("TV-CLTD-01");
         });
 
-        it("Should not accept zero duration", async function () {
-            duration = 0
+        it("Should not accept duration less than 5 mins", async function () {
+            duration = 200
             await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
                                              revocable, percentage, period, portfolio.address))
                         .to.revertedWith("TV-DISZ-01");
+        });
+
+        it("Should not accept a non-zero period less than 5 mins", async function () {
+            period = 200;
+            await expect(TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits,
+                                             revocable, percentage, period, portfolio.address))
+                       .to.revertedWith("TV-PISZ-01");
         });
 
         it("Should not accept final time before current time", async function () {
@@ -526,7 +533,7 @@ describe("TokenVesting", function () {
             await expect(tokenVesting.connect(investor1).release(testToken.address)).to.revertedWith("TV-NBOC-01");
         });
 
-        it('Cannot release if contract has no balance', async function () {
+        it('Should not release if contract has no balance', async function () {
             let now;
             cliff = 60000;
             duration = 120000;
@@ -549,7 +556,7 @@ describe("TokenVesting", function () {
             await expect(tokenVesting.connect(investor1).release(testToken.address)).to.be.revertedWith('TV-NBOC-01');
         });
 
-        it('Can only release initial percentage ampunt before cliff', async function () {
+        it('Should only release initial percentage amount before cliff', async function () {
             let now;
             cliff = 60000;
             duration = 120000;
@@ -669,7 +676,7 @@ describe("TokenVesting", function () {
             await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TV-TKAR-01');
         });
 
-        it("Only owner can set the portfolio address", async function () {
+        it("Should allow only owner to set the portfolio address", async function () {
             const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();
 
@@ -684,6 +691,7 @@ describe("TokenVesting", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
+            period = 0;
             let dt = Utils.fromUtf8("ALOT");
             let am = 0; // auction mode OFF
 
@@ -733,7 +741,7 @@ describe("TokenVesting", function () {
             expect((await portfolio.getBalance(investor1.address, dt))[0]).to.equal(100);
         });
 
-        it("Should multiple releaseToPortfolio behave correctly", async function () {
+        it("Should behave correctly with multiple releaseToPortfolio calls", async function () {
             start = start + 5000;
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
@@ -770,9 +778,10 @@ describe("TokenVesting", function () {
             expect(await tokenVesting.connect(investor1).releasedPercentageAmount(testToken.address)).to.be.equal(releasedPercentageAmount);
         });
 
-        it("Release ~50 tokens when cliff has passed", async function () {
+        it("Should release ~50 tokens when cliff has passed", async function () {
             cliff = 5000;
             duration = 100000;
+            period = 0;
 
             const tokenVesting = await TokenVesting.deploy(beneficiary, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();
@@ -1046,8 +1055,8 @@ describe("TokenVesting", function () {
             expect(vestedPercentageAmount).to.be.equal(amount*percentage/100);
         });
 
-        it("Should not release vested tokens before start if period", async function () {
-            period = 100;
+        it("Should not release vested tokens before a new period starts", async function () {
+            period = 500;
 
             const tokenVesting = await TokenVesting.deploy(beneficiary, start+50000, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
             await tokenVesting.deployed();

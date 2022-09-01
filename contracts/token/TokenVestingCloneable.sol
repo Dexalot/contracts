@@ -20,13 +20,8 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
     using StringLibrary for string;
 
-    // The vesting schedule is time-based (i.e. using block timestamps as opposed to e.g. block numbers), and is
-    // therefore sensitive to timestamp manipulation (which is something miners can do, to a certain degree). Therefore,
-    // it is recommended to avoid using short time durations (less than a minute). Typical vesting schemes, with a
-    // cliff period of a year and a duration of four years, are safe to use.
-
     // version
-    bytes32 constant public VERSION = bytes32("1.0.0");
+    bytes32 constant public VERSION = bytes32("1.0.1");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -56,6 +51,10 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @dev Creates a vesting contract that vests its balance of any ERC20 token to the
      * beneficiary, gradually in a linear fashion until start + duration. By then all
      * of the balance will have vested.
+     * @notice This vesting contract depends on time-based vesting schedule using block timestamps.  Therefore, the contract
+     * would be susceptible to timestamp manipulation miners may be able to do in some EVMs for variables with less than
+     * a min time lengths for delta time. To mitigate potential exploits variables holding delta time are required to
+     * be more than 5 minutes.
      * @param __beneficiary address of the beneficiary to whom vested tokens are transferred
      * @param __start time (as Unix time) at which point vesting starts
      * @param __cliffDuration duration in seconds of the cliff in which tokens will begin to vest
@@ -67,6 +66,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      *                 allow the beneficiary to claim every 30 days, 0 for no period restrictions
      * @param __portfolio address of portfolio
      */
+
     function initialize (
         address __beneficiary,
         uint256 __start,
@@ -82,11 +82,12 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
         __Ownable_init();
 
         require(__beneficiary != address(0), "TVC-BIZA-01");
-        require(__cliffDuration <= __duration, "TVC-CLTD-01");
-        require(__duration > 0, "TVC-DISZ-01");
+        require(__duration > 300, "TVC-DISZ-01");
+        require(__cliffDuration > 300 && __cliffDuration <= __duration, "TVC-CLTD-01");
         require(__start + __duration > block.timestamp, "TVC-FTBC-01");
         require(__startPortfolioDeposits < __start, "TVC-PDBS-01");
         require(__firstReleasePercentage <= 100, "TVC-PGTZ-01");
+        require(__period == 0 || __period > 300, "TVC-PISZ-01");
         require(__portfolio != address(0), "TVC-PIZA-01");
         require(__owner != address(0), "TVC-OIZA-01");
 
