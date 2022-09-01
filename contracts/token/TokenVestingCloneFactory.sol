@@ -8,19 +8,17 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./TokenVestingCloneable.sol";
 
 /**
-*   @author "DEXALOT TEAM"
-*   @title "TokenVestingCloneFactory: clone factory for TokenVestingCloneable"
-*/
+ *   @author "DEXALOT TEAM"
+ *   @title "TokenVestingCloneFactory: clone factory for TokenVestingCloneable"
+ */
 
-contract TokenVestingCloneFactory is
-    Ownable
-{
+contract TokenVestingCloneFactory is Ownable {
     // version
-    bytes32 constant public VERSION = bytes32("1.0.0");
+    bytes32 public constant VERSION = bytes32("1.0.0");
 
     address public implementation;
 
-    mapping (uint256 => address) public clones;
+    mapping(uint256 => address) public clones;
 
     // number of clones
     uint256 public count;
@@ -42,10 +40,11 @@ contract TokenVestingCloneFactory is
      * @param __startPortfolioDeposits time (as Unix time) portfolio deposits start
      * @param __revocable whether the vesting is revocable or not
      * @param __firstReleasePercentage percentage to be released initially
-     * @param __period length of claim period that allows one to withdraw in discrete periods. i.e. (60 x 60 x 24) x 30 will
-     *                 allow the beneficiary to claim every 30 days, 0 for no period restrictions
+     * @param __period length of claim period that allows one to withdraw in discrete periods.
+     * i.e. (60 x 60 x 24) x 30 will allow the beneficiary to claim every 30 days, 0 for no restrictions
      * @param __portfolio address of portfolio
      */
+
     function createTokenVesting(
         address __beneficiary,
         uint256 __start,
@@ -60,16 +59,16 @@ contract TokenVestingCloneFactory is
     ) external onlyOwner {
         address clone = Clones.clone(implementation);
         TokenVestingCloneable(clone).initialize(
-         __beneficiary,
-         __start,
-         __cliffDuration,
-         __duration,
-         __startPortfolioDeposits,
-         __revocable,
-         __firstReleasePercentage,
-         __period,
-         __portfolio,
-         __owner
+            __beneficiary,
+            __start,
+            __cliffDuration,
+            __duration,
+            __startPortfolioDeposits,
+            __revocable,
+            __firstReleasePercentage,
+            __period,
+            __portfolio,
+            __owner
         );
         clones[count++] = clone;
         emit NewClone(clone);
@@ -79,7 +78,7 @@ contract TokenVestingCloneFactory is
      * @dev Accessor method to get i-th clone
      * @param index clone index
      */
-    function getClone(uint index) external view returns (address) {
+    function getClone(uint256 index) external view returns (address) {
         require(index < count, "TVCF-IOOB-01");
         return clones[index];
     }
