@@ -21,6 +21,26 @@ interface ITradePairs {
         Status status;
     }
 
+    struct TradePair {
+        bytes32 baseSymbol;          // symbol for base asset
+        bytes32 quoteSymbol;         // symbol for quote asset
+        bytes32 buyBookId;           // identifier for the buyBook for TradePair
+        bytes32 sellBookId;          // identifier for the sellBook for TradePair
+        uint minTradeAmount;         // min trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
+        uint maxTradeAmount;         // max trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
+        uint makerRate;              // numerator for maker fee rate % to be used with a denominator of 10000
+        uint takerRate;              // numerator for taker fee rate % to be used with a denominator of 10000
+        uint8 baseDecimals;          // decimals for base asset
+        uint8 baseDisplayDecimals;   // display decimals for base asset
+        uint8 quoteDecimals;         // decimals for quote asset
+        uint8 quoteDisplayDecimals;  // display decimals for quote asset
+        uint8 allowedSlippagePercent;// numerator for allowed slippage rate % to be used with denominator 100
+        bool addOrderPaused;         // boolean to control addOrder functionality per TradePair
+        bool pairPaused;             // boolean to control addOrder and cancelOrder functionality per TradePair
+        AuctionMode auctionMode;     // control auction states
+        uint auctionPrice;           // Indicative & Final Price
+    }
+
     function pause() external;
     function unpause() external;
     function pauseTradePair(bytes32 _tradePairId, bool _pairPaused) external;
@@ -56,8 +76,8 @@ interface ITradePairs {
     function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) external;
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
     function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) external;
-    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) external;
-    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint, uint, uint, uint);
+    function setAuctionPrice (bytes32 _tradePairId, uint _price) external;
+    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint);
     function unsolicitedCancel(bytes32 _tradePairId, bytes32 bookId , uint8 _maxCount) external;
     function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) external view returns(uint);
 

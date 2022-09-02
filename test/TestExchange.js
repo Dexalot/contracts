@@ -19,8 +19,6 @@ describe("Exchange", function () {
     let tradePairs;
     let OrderBooks;
     let orderBooks;
-    let OneClick;
-    let oneClick;
     let baseToken;
     let quoteToken;
     let owner;
@@ -37,7 +35,6 @@ describe("Exchange", function () {
         Portfolio = await ethers.getContractFactory("Portfolio");
         TradePairs = await ethers.getContractFactory("TradePairs");
         OrderBooks = await ethers.getContractFactory("OrderBooks");
-        OneClick = await ethers.getContractFactory("OneClick");
     });
 
     beforeEach(async function () {
@@ -47,9 +44,6 @@ describe("Exchange", function () {
         portfolio = await upgrades.deployProxy(Portfolio);
         orderBooks = await upgrades.deployProxy(OrderBooks);
         tradePairs = await upgrades.deployProxy(TradePairs, [orderBooks.address, portfolio.address]);
-
-        oneClick = await upgrades.deployProxy(OneClick,
-            [portfolio.address, tradePairs.address, await portfolio.getNative()]);
 
         await portfolio.setFeeAddress(foundationSafe.address);
         await exchange.setPortfolio(portfolio.address);
@@ -117,33 +111,33 @@ describe("Exchange", function () {
             // ADD
             // fail for non admin account
             await portfolio.addAuctionAdmin(auctionAdmin.address)  // add only to portfolio but not to exchange, yet so it triggers E-OACC-31
-            await expect(exchange.connect(trader1).addTrustedContract(oneClick.address, "TestingTrusted")).to.be.revertedWith("E-OACC-31");
+            await expect(exchange.connect(trader1).addTrustedContract(tradePairs.address, "TestingTrusted")).to.be.revertedWith("E-OACC-31");
             // succeed for auction admin account
             await exchange.addAuctionAdmin(exchange.address)  // add so exchange can call addTrustedContract on portfolio
             await exchange.addAuctionAdmin(auctionAdmin.address)
-            await exchange.connect(auctionAdmin).addTrustedContract(oneClick.address, "TestingTrusted");
-            expect(await exchange.isTrustedContract(oneClick.address)).to.be.equal(true);
+            await exchange.connect(auctionAdmin).addTrustedContract(tradePairs.address, "TestingTrusted");
+            expect(await exchange.isTrustedContract(tradePairs.address)).to.be.equal(true);
             // REMOVE
             // fail for non admin account
-            await expect(exchange.connect(trader1).removeTrustedContract(oneClick.address)).to.be.revertedWith("E-OACC-32");
+            await expect(exchange.connect(trader1).removeTrustedContract(tradePairs.address)).to.be.revertedWith("E-OACC-32");
             // succeed for admin account
-            await exchange.connect(auctionAdmin).removeTrustedContract(oneClick.address);
-            expect(await exchange.isTrustedContract(oneClick.address)).to.be.equal(false);
+            await exchange.connect(auctionAdmin).removeTrustedContract(tradePairs.address);
+            expect(await exchange.isTrustedContract(tradePairs.address)).to.be.equal(false);
         });
 
         it("Should set, check and remove internal contract address correctly", async function () {
             // ADD
             // fail for non admin account
-            await expect(exchange.connect(trader1).addInternalContract(oneClick.address, "TestingInternal")).to.be.revertedWith("E-OACC-33");
+            await expect(exchange.connect(trader1).addInternalContract(tradePairs.address, "TestingInternal")).to.be.revertedWith("E-OACC-33");
             // succeed for admin account
-            await exchange.addInternalContract(oneClick.address, "TestingInternal");
-            expect(await exchange.isInternalContract(oneClick.address)).to.be.equal(true);
+            await exchange.addInternalContract(tradePairs.address, "TestingInternal");
+            expect(await exchange.isInternalContract(tradePairs.address)).to.be.equal(true);
             // REMOVE
             // fail for non admin account
-            await expect(exchange.connect(trader1).removeInternalContract(oneClick.address)).to.be.revertedWith("E-OACC-34");
+            await expect(exchange.connect(trader1).removeInternalContract(tradePairs.address)).to.be.revertedWith("E-OACC-34");
             // succeed for admin account
-            await exchange.removeInternalContract(oneClick.address);
-            expect(await exchange.isInternalContract(oneClick.address)).to.be.equal(false);
+            await exchange.removeInternalContract(tradePairs.address);
+            expect(await exchange.isInternalContract(tradePairs.address)).to.be.equal(false);
         });
 
         it("Should not accept via fallback()", async function () {
@@ -770,15 +764,13 @@ describe("Exchange", function () {
 
             await exchange.addAuctionAdmin(auctionAdmin.address);
             let auctionPrice = Utils.parseUnits("4.16", quoteDecimals);
-            let auctionPct = ethers.BigNumber.from(15);
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).setAuctionPrice(tradePairId, auctionPrice, auctionPct)).to.revertedWith("E-OACC-27");
+            await expect(exchange.connect(trader1).setAuctionPrice(tradePairId, auctionPrice)).to.revertedWith("E-OACC-27");
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).setAuctionPrice(tradePairId, auctionPrice, auctionPct);
+            await exchange.connect(auctionAdmin).setAuctionPrice(tradePairId, auctionPrice);
             let auctionData = await exchange.getAuctionData(tradePairId);
             expect(auctionData[0]).to.be.equal(mode);
             expect(auctionData[1]).to.be.equal(auctionPrice);
-            expect(auctionData[2]).to.be.equal(auctionPct);
             // fail matchAuctionOrders() if not auction admin
             await expect(exchange.connect(admin).matchAuctionOrders(tradePairId, 10)).to.be.revertedWith("E-OACC-29");
         });

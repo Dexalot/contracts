@@ -1056,12 +1056,14 @@ describe("TradePairs", function () {
                                                          Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
 
             // too many decimals
-            await expect(tradePairs.connect(admin).setAuctionPrice(tradePairId, Utils.parseUnits('4.1234', quoteDecimals), 20))
+            await expect(tradePairs.connect(admin).setAuctionPrice(tradePairId, Utils.parseUnits('4.1234', quoteDecimals)))
                          .to.be.revertedWith("T-AUCT-02");
 
-            // percent is zero
-            await expect(tradePairs.connect(admin).setAuctionPrice(tradePairId, Utils.parseUnits('4.123', quoteDecimals), 0))
-                         .to.be.revertedWith("T-AUCT-12");
+            // right decimals
+            await tradePairs.connect(admin).setAuctionPrice(tradePairId, Utils.parseUnits('4.123', quoteDecimals));
+            auctionData = await tradePairs.getAuctionData(tradePairId);
+            expect(auctionData.mode).to.be.equal(0);
+            expect(auctionData.price).to.be.equal(Utils.parseUnits('4.123', quoteDecimals));
         });
 
         it("Should be able to check if trade pair exists", async function () {
