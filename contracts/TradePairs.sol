@@ -40,29 +40,8 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     // a dynamic array of trade pairs added to TradePairs contract
     bytes32[] private tradePairsArray;
 
-    struct TradePair {
-        bytes32 baseSymbol;          // symbol for base asset
-        bytes32 quoteSymbol;         // symbol for quote asset
-        bytes32 buyBookId;           // identifier for the buyBook for TradePair
-        bytes32 sellBookId;          // identifier for the sellBook for TradePair
-        uint minTradeAmount;         // min trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
-        uint maxTradeAmount;         // max trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
-        uint makerRate;              // numerator for maker fee rate % to be used with a denominator of 10000
-        uint takerRate;              // numerator for taker fee rate % to be used with a denominator of 10000
-        uint8 baseDecimals;          // decimals for base asset
-        uint8 baseDisplayDecimals;   // display decimals for base asset
-        uint8 quoteDecimals;         // decimals for quote asset
-        uint8 quoteDisplayDecimals;  // display decimals for quote asset
-        uint8 allowedSlippagePercent;// numerator for allowed slippage rate % to be used with denominator 100
-        bool addOrderPaused;         // boolean to control addOrder functionality per TradePair
-        bool pairPaused;             // boolean to control addOrder and cancelOrder functionality per TradePair
-        AuctionMode auctionMode;     // control auction states
-        uint auctionPrice;           // Indicative & Final Price
-        uint auctionIntervalPct;     // auctionIntervalPct=500 (5.00% = 500/10000)   Buy Side (10000-500)/10000 = 95%
-    }
-
     // mapping data structure for all trade pairs
-    mapping (bytes32 => TradePair) private tradePairMap;
+    mapping (bytes32 => ITradePairs.TradePair) private tradePairMap;
 
     // mapping  for allowed order types for a TradePair
     mapping (bytes32 => EnumerableSetUpgradeable.UintSet) private allowedOrderTypes;
@@ -121,7 +100,6 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             _tradePair.makerRate = 10; // makerRate=10 (0.10% = 10/10000)
             _tradePair.takerRate = 20; // takerRate=20 (0.20% = 20/10000)
             _tradePair.allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
-            _tradePair.auctionIntervalPct = 1000 ;//auctionIntervalPct=1000 (10.00% = 1000/10000)   Buy Side (10000-1000)/10000 = 90%
             // _tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // _tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
 
@@ -185,31 +163,18 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
         emit ParameterUpdated(_tradePairId, "T-AUCTIONMODE", oldValue, uint(_mode) );
     }
 
-    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) public override onlyOwner {
+    function setAuctionPrice (bytes32 _tradePairId, uint _price) public override onlyOwner {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(decimalsOk(_price, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-AUCT-02");
-        if (_tradePair.auctionMode != AuctionMode.MATCHING){
-            require(_pct > 0, "T-AUCT-12");
-        }
         uint oldValue = _tradePair.auctionPrice;
-        uint oldValuePct = _tradePair.auctionIntervalPct;
         _tradePair.auctionPrice = _price;
-        //Auction Price should be set right after matching status and pct should be equal to 0
-        if (_tradePair.auctionMode == AuctionMode.MATCHING) {
-            _pct = 0;
-        }
-        _tradePair.auctionIntervalPct= _pct;
         emit ParameterUpdated(_tradePairId, "T-AUCTIONPRICE", oldValue, _price);
-        emit ParameterUpdated(_tradePairId, "T-AUCTIONINTPCT", oldValuePct, _pct);
     }
 
-    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price, uint percent, uint lower, uint upper) {
+    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price) {
          TradePair storage _tradePair = tradePairMap[_tradePairId];
          mode = uint8(_tradePair.auctionMode);
          price = _tradePair.auctionPrice;
-         percent = _tradePair.auctionIntervalPct;
-         lower = _tradePair.auctionPrice * (10000 - _tradePair.auctionIntervalPct) / TENK;
-         upper = _tradePair.auctionPrice * (10000 + _tradePair.auctionIntervalPct) / TENK;
     }
 
     function tradePairExists(bytes32 _tradePairId) public view returns (bool) {
@@ -499,7 +464,7 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
     function matchAuctionOrders(bytes32 _tradePairId, uint8 _maxCount) public override onlyOwner {
         TradePair storage _tradePair = tradePairMap[_tradePairId];
         require(_tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
-        require(_tradePair.auctionPrice > 0 && _tradePair.auctionIntervalPct==0, "T-AUCT-03");
+        require(_tradePair.auctionPrice > 0, "T-AUCT-03");
         Order memory takerOrder;
         uint takerRemainingQuantity;
         bytes32 bookId = _tradePair.sellBookId;

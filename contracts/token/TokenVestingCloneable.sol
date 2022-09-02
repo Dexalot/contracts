@@ -20,13 +20,8 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
     using StringLibrary for string;
 
-    // The vesting schedule is time-based (i.e. using block timestamps as opposed to e.g. block numbers), and is
-    // therefore sensitive to timestamp manipulation (which is something miners can do, to a certain degree). Therefore,
-    // it is recommended to avoid using short time durations (less than a minute). Typical vesting schemes, with a
-    // cliff period of a year and a duration of four years, are safe to use.
-
     // version
-    bytes32 constant public VERSION = bytes32("1.0.0");
+    bytes32 public constant VERSION = bytes32("1.0.1");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -52,10 +47,14 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
     mapping(address => uint256) private _released;
     mapping(address => bool) private _revoked;
 
-     /**
+    /**
      * @dev Creates a vesting contract that vests its balance of any ERC20 token to the
      * beneficiary, gradually in a linear fashion until start + duration. By then all
      * of the balance will have vested.
+     * @notice This vesting contract depends on time-based vesting schedule using block timestamps.
+     * Therefore, the contract would be susceptible to timestamp manipulation miners may be able to
+     * do in some EVMs for variables with less than a min time lengths for delta time. To mitigate
+     * potential exploits variables holding delta time are required to be more than 5 minutes.
      * @param __beneficiary address of the beneficiary to whom vested tokens are transferred
      * @param __start time (as Unix time) at which point vesting starts
      * @param __cliffDuration duration in seconds of the cliff in which tokens will begin to vest
@@ -63,11 +62,12 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @param __startPortfolioDeposits time (as Unix time) portfolio deposits start
      * @param __revocable whether the vesting is revocable or not
      * @param __firstReleasePercentage percentage to be released initially
-     * @param __period length of claim period that allows one to withdraw in discrete periods. i.e. (60 x 60 x 24) x 30 will
-     *                 allow the beneficiary to claim every 30 days, 0 for no period restrictions
+     * @param __period length of claim period that allows one to withdraw in discrete periods.
+     * i.e. (60 x 60 x 24) x 30 will allow the beneficiary to claim every 30 days, 0 for no restrictions
      * @param __portfolio address of portfolio
      */
-    function initialize (
+
+    function initialize(
         address __beneficiary,
         uint256 __start,
         uint256 __cliffDuration,
@@ -82,11 +82,12 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
         __Ownable_init();
 
         require(__beneficiary != address(0), "TVC-BIZA-01");
-        require(__cliffDuration <= __duration, "TVC-CLTD-01");
-        require(__duration > 0, "TVC-DISZ-01");
+        require(__duration > 300, "TVC-DISZ-01");
+        require(__cliffDuration > 300 && __cliffDuration <= __duration, "TVC-CLTD-01");
         require(__start + __duration > block.timestamp, "TVC-FTBC-01");
         require(__startPortfolioDeposits < __start, "TVC-PDBS-01");
         require(__firstReleasePercentage <= 100, "TVC-PGTZ-01");
+        require(__period == 0 || __period > 300, "TVC-PISZ-01");
         require(__portfolio != address(0), "TVC-PIZA-01");
         require(__owner != address(0), "TVC-OIZA-01");
 
@@ -194,10 +195,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @return true if the vesting is funded to the portfolio.
      */
     function canFundPortfolio(address __beneficiary) public view returns (bool) {
-        return
-            __beneficiary == _beneficiary &&
-            block.timestamp > _startPortfolioDeposits &&
-            block.timestamp < _start;
+        return __beneficiary == _beneficiary && block.timestamp > _startPortfolioDeposits && block.timestamp < _start;
     }
 
     /**
@@ -262,11 +260,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
 
             token.safeTransfer(_beneficiary, unreleased);
 
-            _portfolio.depositTokenFromContract(
-                _beneficiary,
-                symbol,
-                unreleased
-            );
+            _portfolio.depositTokenFromContract(_beneficiary, symbol, unreleased);
         }
     }
 
@@ -297,9 +291,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @param token ERC20 token which is being vested.
      */
     function _releasableAmount(IERC20MetadataUpgradeable token) private view returns (uint256) {
-        return
-            (_vestedAmount(token) + _vestedByPercentage(token)) -
-            _released[address(token)];
+        return (_vestedAmount(token) + _vestedByPercentage(token)) - _released[address(token)];
     }
 
     /**
@@ -334,18 +326,16 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      */
     function _vestedAmount(IERC20MetadataUpgradeable token) private view returns (uint256) {
         uint256 currentBalance = token.balanceOf(address(this));
-        uint256 totalBalance = (currentBalance + _released[address(token)]) -
-            _vestedByPercentage(token);
+        uint256 totalBalance = (currentBalance + _released[address(token)]) - _vestedByPercentage(token);
 
         if (block.timestamp < _cliff) {
             return 0;
-        } else if (
-            block.timestamp >= _start + _duration || _revoked[address(token)]
-        ) {
+        } else if (block.timestamp >= _start + _duration || _revoked[address(token)]) {
             return totalBalance;
         } else {
             if (_period > 0) {
-                return (totalBalance * ((block.timestamp - _cliff) / _period)) / ((_start + _duration - _cliff) / _period);
+                return
+                    (totalBalance * ((block.timestamp - _cliff) / _period)) / ((_start + _duration - _cliff) / _period);
             } else {
                 return (totalBalance * (block.timestamp - _cliff)) / (_start + _duration - _cliff);
             }
@@ -361,7 +351,9 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
             return 0;
         } else {
             uint256 currentBalance = token.balanceOf(address(this));
-            uint256 totalBalance = _revoked[address(token)] ? _totalSupplyBeforeRevoke : currentBalance + _released[address(token)];
+            uint256 totalBalance = _revoked[address(token)]
+                ? _totalSupplyBeforeRevoke
+                : currentBalance + _released[address(token)];
             uint256 percentage = (totalBalance * _firstReleasePercentage) / 100;
 
             return percentage;

@@ -20,13 +20,8 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20Metadata;
     using StringLibrary for string;
 
-    // The vesting schedule is time-based (i.e. using block timestamps as opposed to e.g. block numbers), and is
-    // therefore sensitive to timestamp manipulation (which is something miners can do, to a certain degree). Therefore,
-    // it is recommended to avoid using short time durations (less than a minute). Typical vesting schemes, with a
-    // cliff period of a year and a duration of four years, are safe to use.
-
     // version
-    bytes32 constant public VERSION = bytes32("1.0.2");
+    bytes32 public constant VERSION = bytes32("1.0.3");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -55,6 +50,10 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
      * @dev Creates a vesting contract that vests its balance of any ERC20 token to the
      * beneficiary, gradually in a linear fashion until start + duration. By then all
      * of the balance will have vested.
+     * @notice This vesting contract depends on time-based vesting schedule using block timestamps.
+     * Therefore, the contract would be susceptible to timestamp manipulation miners may be able to
+     * do in some EVMs for variables with less than a min time lengths for delta time. To mitigate
+     * potential exploits variables holding delta time are required to be more than 5 minutes.
      * @param __beneficiary address of the beneficiary to whom vested tokens are transferred
      * @param __start time (as Unix time) at which point vesting starts
      * @param __cliffDuration duration in seconds of the cliff in which tokens will begin to vest
@@ -64,6 +63,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
      * @param __firstReleasePercentage percentage to be released initially
      * @param __portfolio address of portfolio
      */
+
     constructor(
         address __beneficiary,
         uint256 __start,
@@ -75,8 +75,8 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
         address __portfolio
     ) {
         require(__beneficiary != address(0), "TV1-BIZA-01");
-        require(__cliffDuration <= __duration, "TV1-CLTD-01");
-        require(__duration > 0, "TV1-DISZ-01");
+        require(__duration > 300, "TV1-DISZ-01");
+        require(__cliffDuration > 300 && __cliffDuration <= __duration, "TV1-CLTD-01");
         require(__start + __duration > block.timestamp, "TV1-FTBC-01");
         require(__startPortfolioDeposits < __start, "TV1-PDBS-01");
         require(__firstReleasePercentage <= 100, "TV1-PGTZ-01");
@@ -176,10 +176,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
      * @return true if the vesting is funded to the portfolio.
      */
     function canFundPortfolio(address __beneficiary) public view returns (bool) {
-        return
-            __beneficiary == _beneficiary &&
-            block.timestamp > _startPortfolioDeposits &&
-            block.timestamp < _start;
+        return __beneficiary == _beneficiary && block.timestamp > _startPortfolioDeposits && block.timestamp < _start;
     }
 
     /**
@@ -244,11 +241,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
 
             token.safeTransfer(_beneficiary, unreleased);
 
-            _portfolio.depositTokenFromContract(
-                _beneficiary,
-                symbol,
-                unreleased
-            );
+            _portfolio.depositTokenFromContract(_beneficiary, symbol, unreleased);
         }
     }
 
@@ -279,9 +272,7 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
      * @param token ERC20 token which is being vested.
      */
     function _releasableAmount(IERC20Metadata token) private view returns (uint256) {
-        return
-            (_vestedAmount(token) + _vestedByPercentage(token)) -
-            _released[address(token)];
+        return (_vestedAmount(token) + _vestedByPercentage(token)) - _released[address(token)];
     }
 
     /**
@@ -316,14 +307,11 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
      */
     function _vestedAmount(IERC20Metadata token) private view returns (uint256) {
         uint256 currentBalance = token.balanceOf(address(this));
-        uint256 totalBalance = (currentBalance + _released[address(token)]) -
-            _vestedByPercentage(token);
+        uint256 totalBalance = (currentBalance + _released[address(token)]) - _vestedByPercentage(token);
 
         if (block.timestamp < _cliff) {
             return 0;
-        } else if (
-            block.timestamp >= _start + _duration || _revoked[address(token)]
-        ) {
+        } else if (block.timestamp >= _start + _duration || _revoked[address(token)]) {
             return totalBalance;
         } else {
             uint256 fromCliff = block.timestamp - _cliff;
@@ -344,7 +332,9 @@ contract TokenVestingV1 is Ownable, ReentrancyGuard {
             return 0;
         } else {
             uint256 currentBalance = token.balanceOf(address(this));
-            uint256 totalBalance = _revoked[address(token)] ? _totalSupplyBeforeRevoke : currentBalance + _released[address(token)];
+            uint256 totalBalance = _revoked[address(token)]
+                ? _totalSupplyBeforeRevoke
+                : currentBalance + _released[address(token)];
             uint256 percentage = (totalBalance * _firstReleasePercentage) / 100;
 
             return percentage;

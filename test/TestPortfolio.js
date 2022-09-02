@@ -16,8 +16,6 @@ let OrderBooks;
 let orderBooks;
 let TokenVesting;
 let tokenVesting;
-let OneClick;
-let oneClick;
 let owner;
 let admin;
 let auctionAdmin;
@@ -37,7 +35,6 @@ describe("Portfolio", () => {
         TradePairs = await ethers.getContractFactory("TradePairs");
         OrderBooks = await ethers.getContractFactory("OrderBooks")
         TokenVesting = await ethers.getContractFactory("TokenVesting");
-        OneClick = await ethers.getContractFactory("OneClick");
     });
 
     beforeEach(async function () {
@@ -95,19 +92,18 @@ describe("Portfolio", () => {
     it("Should add, check and remove an internal contract correctly", async function () {
         orderBooks = await upgrades.deployProxy(OrderBooks);
         tradePairs = await upgrades.deployProxy(TradePairs, [orderBooks.address, portfolio.address]);
-        oneClick = await upgrades.deployProxy(OneClick, [portfolio.address, tradePairs.address, await portfolio.getNative()]);
         // ADD
         // fail for non-admin
-        await expect(portfolio.connect(trader1).addInternalContract(oneClick.address, "OneClick")).to.be.revertedWith("P-OACC-16");
+        await expect(portfolio.connect(trader1).addInternalContract(tradePairs.address, "TestingInternal")).to.be.revertedWith("P-OACC-16");
         // succeed for admin
-        await portfolio.addInternalContract(oneClick.address, "OneClick")
-        expect(await portfolio.isInternalContract(oneClick.address)).to.be.equal(true);
+        await portfolio.addInternalContract(tradePairs.address, "TestingInternal")
+        expect(await portfolio.isInternalContract(tradePairs.address)).to.be.equal(true);
         // REMOVE
         // fail for non-admin
-        await expect(portfolio.connect(trader1).removeInternalContract(oneClick.address)).to.be.revertedWith("P-OACC-18");
+        await expect(portfolio.connect(trader1).removeInternalContract(tradePairs.address)).to.be.revertedWith("P-OACC-18");
         // succeed for admin
-        await portfolio.removeInternalContract(oneClick.address)
-        expect(await portfolio.isInternalContract(oneClick.address)).to.be.equal(false);
+        await portfolio.removeInternalContract(tradePairs.address)
+        expect(await portfolio.isInternalContract(tradePairs.address)).to.be.equal(false);
     });
 
     it("Should update deposit and withdrawal rates by admin correctly", async function () {

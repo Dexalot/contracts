@@ -296,18 +296,14 @@ it("... Auction should be setup properly", async () => {
   tradePairC = accounts[0].tradePairsC;
 
   auctionData= (await exchange.getAuctionData(pairIdAsBytes32));
-  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}, Pct ${auctionData.percent.toString()} ` )
+  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}} ` )
 
   // exchange.getOrderType(pairIdAsBytes32, 0) ONLY LIMIT Orders
 
   expect(auctionData.mode).to.equal(2);
   expect(auctionData.price).to.equal(0);
-  expect(auctionData.lower).to.equal(0);
-  expect(auctionData.upper).to.equal(0);
-  expect(auctionData.percent).to.equal(1000);
   expect(await exchange.isAuctionAdmin(auctionAdminWallet.address) ).to.equal(true);
   expect(await portfolio.isAuctionAdmin(auctionAdminWallet.address) ).to.equal(true);
-
 });
 
 it("... Nobody can withdraw auction token when mode=OPEN", async () => {
@@ -327,7 +323,6 @@ it("...Send orders ", async () => {
     let order= {tp: pairIdAsBytes32, price: "0.01", quantity:"1000", side}
     expect(await addOrder (tradePairC, order,  pair, orders) ).to.equal(true);
     await expect(withdrawToken(accounts[i].address, accounts[i].portfolioC, 100, Utils.fromUtf8(pair.baseSymbol) , pair.baseDecimals) ).to.be.revertedWith("P-AUCT-02");
-
   }
 
   side = 0;//BUY
@@ -336,8 +331,6 @@ it("...Send orders ", async () => {
     let order= {tp: pairIdAsBytes32, price: "500000", quantity:"0.01", side}
     expect(await addOrder (tradePairC, order,  pair, orders) ).to.equal(true);
   }
-
-
 
   side = 0;//BUY
   for (i=4; i<6; i++) {
@@ -374,7 +367,7 @@ it("... All order operations allowed when CLOSING ", async () => {
 
   await auctionAdmin.setAuctionMode(pairIdAsBytes32, 3)
   auctionData= (await exchange.getAuctionData(pairIdAsBytes32));
-  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}, Pct ${auctionData.percent.toString()} ` )
+  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}} ` )
 
   side = 1;//SELL
   tradePairC = accounts[3].tradePairsC;
@@ -385,8 +378,6 @@ it("... All order operations allowed when CLOSING ", async () => {
   expect(await CancelReplaceOrder(tradePairC, order, "0.03", "410", pair, orders) ).to.equal(true);
   order = findOrder(accounts[3].address,side, BigNumber("410"), BigNumber("0.03"), orders);
   expect(await cancelOrder(tradePairC, order,  pair, orders)).to.equal(true);
-
-
 });
 
 it("... Nobody can withdraw auction token when mode=CLOSING", async () => {
@@ -410,7 +401,7 @@ it("... Can't have any order operation when MATCHING", async () => {
   // RESTRICTED = 7
   await auctionAdmin.setAuctionMode(pairIdAsBytes32, 5)
   auctionData= (await exchange.getAuctionData(pairIdAsBytes32));
-  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}, Pct ${auctionData.percent.toString()} ` )
+  console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}`)
 
   side = 0;//BUY
   tradePairC = accounts[3].tradePairsC;
@@ -424,7 +415,6 @@ it("... Can't have any order operation when MATCHING", async () => {
   orderids=[]
   orderids[0]= order.id;
   await expect(cancelAllOrders(tradePairC, orderids,  pair, orders)).to.be.revertedWith("T-PPAU-03");
-
 });
 
 it("... Nobody can withdraw auction token when mode=MATCHING", async () => {
@@ -444,7 +434,7 @@ it("... Can't set LIVETRADING or OFF when order book is crossed", async () => {
 
 it("... Set the auction Price & Do the actual matching", async () => {
   await auctionAdmin.setAuctionMode(pairIdAsBytes32, 5);
-  await auctionAdmin.setAuctionPrice(pairIdAsBytes32, Utils.parseUnits('0.51', pair.quoteDecimals), 0);
+  await auctionAdmin.setAuctionPrice(pairIdAsBytes32, Utils.parseUnits('0.51', pair.quoteDecimals));
   auctionData= (await exchange.getAuctionData(pairIdAsBytes32));
   expect(auctionData.mode).to.equal(5);
   expect(Utils.formatUnits(auctionData.price, pair.quoteDecimals)).to.equal('0.51');
@@ -454,7 +444,6 @@ it("... Set the auction Price & Do the actual matching", async () => {
     tx = await auctionAdmin.matchAuctionOrders(pairIdAsBytes32, 30 , options);
     result = await tx.wait();
   }
-
 });
 
 
@@ -470,8 +459,6 @@ it("... Get The OrderBook", async () => {
   expect(Utils.formatUnits(buybook[0].total, pair.baseDecimals)).to.equal('6999.05');
 });
 
-
-
 it("... Live Trading Mode : Add then C/R Order ", async () => {
    await auctionAdmin.setAuctionMode(pairIdAsBytes32, 1);
    auctionData= (await exchange.getAuctionData(pairIdAsBytes32));
@@ -484,7 +471,6 @@ it("... Live Trading Mode : Add then C/R Order ", async () => {
    expect(await addOrder (tradePairC, order,  pair, orders) ).to.equal(true);
   //  order = findOrder(accounts[3].address, side, BigNumber("200"), BigNumber("1.03"), orders);
   //  await expect( CancelReplaceOrder(tradePairC, order, "1.04", "250", pair, orders) ).to.be.revertedWith("T-AUCT-13");
-
 });
 
 

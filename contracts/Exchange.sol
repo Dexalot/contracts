@@ -289,7 +289,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
     // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
-        (uint8 mode, , , ,) = tradePairs.getAuctionData(_tradePairId);
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
         if (mode == 0) { //Auction OFF
             require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
         } else {
@@ -390,7 +390,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         portfolio.setAuctionMode(tradePairs.getSymbol(_tradePairId, true), _mode);
     }
 
-    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price, uint percent, uint lower, uint upper) {
+    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price) {
         return tradePairs.getAuctionData(_tradePairId);
     }
 
@@ -399,9 +399,9 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
         tradePairs.matchAuctionOrders(_tradePairId, maxCount);
     }
 
-    function setAuctionPrice (bytes32 _tradePairId, uint _price, uint _pct) public  {
+    function setAuctionPrice (bytes32 _tradePairId, uint _price) public  {
         require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
-        tradePairs.setAuctionPrice(_tradePairId, _price, _pct);
+        tradePairs.setAuctionPrice(_tradePairId, _price);
     }
 
     fallback() external { revert("E-NFUN-01"); }
