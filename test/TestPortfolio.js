@@ -34,7 +34,8 @@ describe("Portfolio", () => {
         Portfolio = await ethers.getContractFactory("Portfolio");
         TradePairs = await ethers.getContractFactory("TradePairs");
         OrderBooks = await ethers.getContractFactory("OrderBooks")
-        TokenVesting = await ethers.getContractFactory("TokenVesting");
+        TokenVestingCloneFactory = await ethers.getContractFactory("TokenVestingCloneFactory")
+        TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable")
     });
 
     beforeEach(async function () {
@@ -493,8 +494,14 @@ describe("Portfolio", () => {
         let revocable = true;
         let percentage = 15;
         let period = 0;
-        tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-        await tokenVesting.deployed();
+
+        let factory = await TokenVestingCloneFactory.deploy();
+        await factory.deployed();
+
+        await factory.createTokenVesting(trader2.address, start, cliff, duration, startPortfolioDeposits,
+            revocable, percentage, period, portfolio.address, owner.address);
+        let count = await factory.count();
+        tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
         token_name = "Mock USDT Token";
         token_symbol = "USDT";
@@ -536,8 +543,14 @@ describe("Portfolio", () => {
         let revocable = true;
         let percentage = 15;
         let period = 0;
-        tokenVesting = await TokenVesting.deploy(trader2.address, start, cliff, duration, startPortfolioDeposits, revocable, percentage, period, portfolio.address);
-        await tokenVesting.deployed();
+
+        let factory = await TokenVestingCloneFactory.deploy();
+        await factory.deployed();
+
+        await factory.createTokenVesting(trader2.address, start, cliff, duration, startPortfolioDeposits,
+            revocable, percentage, period, portfolio.address, owner.address);
+        let count = await factory.count();
+        tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count-1))
 
         token_name = "Mock USDT Token";
         token_symbol = "USDT";

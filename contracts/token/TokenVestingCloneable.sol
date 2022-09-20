@@ -5,7 +5,6 @@ pragma solidity 0.8.4;
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
 import "../library/StringLibrary.sol";
 
@@ -16,12 +15,12 @@ import "../interfaces/IPortfolio.sol";
  *   @title "TokenVestingCloneable: a flexible, cloneable token vesting contract"
  */
 
-contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable {
+contract TokenVestingCloneable is OwnableUpgradeable {
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
     using StringLibrary for string;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.0.2");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -219,7 +218,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @notice Transfers vested tokens to beneficiary.
      * @param token ERC20 token which is being vested.
      */
-    function release(IERC20MetadataUpgradeable token) external nonReentrant {
+    function release(IERC20MetadataUpgradeable token) external {
         require(token.balanceOf(address(this)) > 0, "TVC-NBOC-01");
         require(block.timestamp > _start, "TVC-TEAR-01");
 
@@ -242,7 +241,7 @@ contract TokenVestingCloneable is OwnableUpgradeable, ReentrancyGuardUpgradeable
      * @dev Transfers vested tokens to Portfolio.
      * @param token ERC20 token which is being vested.
      */
-    function releaseToPortfolio(IERC20MetadataUpgradeable token) external nonReentrant {
+    function releaseToPortfolio(IERC20MetadataUpgradeable token) external {
         require(canFundPortfolio(_beneficiary), "TVC-OPDA-01");
 
         uint256 unreleased = _releasableAmount(token);
