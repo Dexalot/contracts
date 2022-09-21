@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.4;
+pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
-import "../library/StringLibrary.sol";
+import "../library/UtilsLibrary.sol";
 
 import "../interfaces/IPortfolio.sol";
 
@@ -17,10 +17,9 @@ import "../interfaces/IPortfolio.sol";
 
 contract TokenVestingCloneable is OwnableUpgradeable {
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
-    using StringLibrary for string;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.2");
+    bytes32 public constant VERSION = bytes32("1.0.3");
 
     event TokensReleased(address token, uint256 amount);
     event TokenVestingRevoked(address token);
@@ -249,7 +248,7 @@ contract TokenVestingCloneable is OwnableUpgradeable {
 
         if (_releasedPercentage[address(token)] == 0) {
             string memory symbolStr = IERC20MetadataUpgradeable(token).symbol();
-            bytes32 symbol = symbolStr.stringToBytes32();
+            bytes32 symbol = UtilsLibrary.stringToBytes32(symbolStr);
 
             _releasedPercentage[address(token)] = _vestedByPercentage(token);
 

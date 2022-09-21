@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
@@ -9,8 +9,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
-import "./library/Bytes32Library.sol";
-import "./library/StringLibrary.sol";
+import "./library/UtilsLibrary.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
@@ -22,8 +21,6 @@ import "./interfaces/ITradePairs.sol";
 
 contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
-    using StringLibrary for string;
-    using Bytes32Library for bytes32;
 
     // version
     bytes32 constant public VERSION = bytes32('1.4.0');
@@ -250,7 +247,7 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
             return (portfolio.getNative(), 18);
         } else {
             IERC20MetadataUpgradeable _asset = IERC20MetadataUpgradeable(_assetAddr);
-            return (StringLibrary.stringToBytes32(_asset.symbol()), _asset.decimals());
+            return (UtilsLibrary.stringToBytes32(_asset.symbol()), _asset.decimals());
         }
     }
 
@@ -408,12 +405,12 @@ contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
 
     // utility function to convert string to bytes32
     function stringToBytes32(string memory _string) public pure returns (bytes32 result) {
-        return _string.stringToBytes32();
+        return UtilsLibrary.stringToBytes32(_string);
     }
 
     // utility function to convert bytes32 to string
     function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
-        return _bytes32.bytes32ToString();
+        return UtilsLibrary.bytes32ToString(_bytes32);
     }
 
 }

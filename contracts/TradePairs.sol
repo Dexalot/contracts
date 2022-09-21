@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity ^0.8.4;
+pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -8,8 +8,7 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 
-import "./library/Bytes32Library.sol";
-import "./library/StringLibrary.sol";
+import "./library/UtilsLibrary.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
@@ -25,8 +24,6 @@ import "./OrderBooks.sol";
 
 contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable, ITradePairs {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
-    using StringLibrary for string;
-    using Bytes32Library for bytes32;
 
     // version
     bytes32 constant public VERSION = bytes32('1.4.1');
@@ -84,8 +81,12 @@ contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgrade
             enumSet.add(uint(Type1.LIMIT)); // LIMIT orders always allowed
             //enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
 
-            bytes32 _buyBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-BUYBOOK')).stringToBytes32();
-            bytes32 _sellBookId = string(abi.encodePacked(_tradePairId.bytes32ToString(), '-SELLBOOK')).stringToBytes32();
+            bytes32 _buyBookId = UtilsLibrary.stringToBytes32(
+                string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-BUYBOOK"))
+            );
+            bytes32 _sellBookId = UtilsLibrary.stringToBytes32(
+                string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-SELLBOOK"))
+            );
 
             _tradePair.baseSymbol = _baseSymbol;
             _tradePair.baseDecimals = _baseDecimals;
