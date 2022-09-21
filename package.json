@@ -28,7 +28,9 @@
     "hh-mint": "npx hardhat run scripts/deploy-tokens.js --network localhost",
     "hh-deploy": "npx hardhat run scripts/deploy.js --network localhost",
     "hh-deploy-dexalot-token": "npx hardhat run scripts/deploy-dexalot-token.js --network localhost",
-    "hh-deploy-all": "yarn hh-mint && yarn hh-deploy"
+    "hh-deploy-all": "yarn hh-mint && yarn hh-deploy",
+    "compile": "yarn hardhat compile",
+    "size": "yarn hardhat size-contracts"
   },
   "dependencies": {
     "@chainlink/contracts": "0.4.2",
