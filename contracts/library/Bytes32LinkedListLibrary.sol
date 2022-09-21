@@ -61,11 +61,7 @@ library Bytes32LinkedListLibrary {
         view returns (bool)
     {
         // if the head nodes previous or next pointers both point to itself, then there are no items in the list
-        if (self.list[HEAD][PREV] != HEAD || self.list[HEAD][NEXT] != HEAD) {
-            return true;
-        } else {
-            return false;
-        }
+        return self.list[HEAD][PREV] != HEAD || self.list[HEAD][NEXT] != HEAD;
     }
 
     /// @dev returns true if the node exists
@@ -76,11 +72,7 @@ library Bytes32LinkedListLibrary {
         view returns (bool)
     {
         if (self.list[_node][PREV] == HEAD && self.list[_node][NEXT] == HEAD) {
-            if (self.list[HEAD][NEXT] == _node) {
-                return true;
-            } else {
-                return false;
-            }
+            return self.list[HEAD][NEXT] == _node;
         } else {
             return true;
         }
