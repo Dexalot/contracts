@@ -2,27 +2,37 @@
 
 pragma solidity 0.8.17;
 
+import "@openzeppelin/contracts/utils/Strings.sol";
+
 import "../interfaces/ITradePairs.sol";
+
+/**
+ * @title Common utility functions used across Dexalot's smart contracts.
+ * @dev This library provides a set of simple, pure functions to be used in other contracts.
+ */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
 library UtilsLibrary {
     /**
-     * @notice  Checks the validity of price & quantity given the evm & display decimals
-     * @param   value  price or quantity
-     * @param   decimals  evm decimals
-     * @param   displayDecimals  base or quote display decimals
+     * @notice  Checks the validity of price and quantity given the evm and display decimals.
+     * @param   _value  price or quantity
+     * @param   _decimals  evm decimals
+     * @param   _displayDecimals  base or quote display decimals
      * @return  bool  true if ok
      */
     function decimalsOk(
-        uint256 value,
-        uint8 decimals,
-        uint8 displayDecimals
+        uint256 _value,
+        uint8 _decimals,
+        uint8 _displayDecimals
     ) internal pure returns (bool) {
-        return (value - (value - ((value % 10**decimals) % 10**(decimals - displayDecimals)))) == 0;
+        return (_value - (_value - ((_value % 10**_decimals) % 10**(_decimals - _displayDecimals)))) == 0;
     }
 
     /**
-     * @notice  get remaining quantity for an Order struct
-     * @dev     cheap pure function
+     * @notice  Returns the remaining quantity for an Order struct.
      * @param   _quantity  original order quantity
      * @param   _quantityFilled  filled quantity
      * @return  uint256  remaining quantity
@@ -32,7 +42,7 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  If a tradePair is in auction, matching is not allowed in the orderbook
+     * @notice  Checks if a tradePair is in auction and if matching is not allowed in the orderbook.
      * @param   _mode  Auction Mode
      * @return  bool  true/false
      */
@@ -41,7 +51,7 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  Returns if the auction is in restricted state
+     * @notice  Checks if the auction is in a restricted state.
      * @param   _mode  Auction Mode
      * @return  bool  true if Auction is in restricted mode
      */
@@ -50,8 +60,8 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  Checks to see if the order is cancelable.
-     * @dev     the order _quantityFilled < _quantity & its status should be PARTIAL or NEW
+     * @notice  Checks if the order is cancelable.
+     * @dev     For an order _quantityFilled < _quantity and its status should be PARTIAL or NEW
                 to be eligable for cancelation
      * @param   _quantity  quantity of the order
      * @param   _quantityFilled  quantityFilled of the order
@@ -68,27 +78,28 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  Used to Round Down the fees to the display decimals to avoid dust
+     * @notice  Round down a unit256 value.  Used for the fees to avoid dust.
      * @dev     example: a = 1245, m: 2 ==> 1200
-     * @param   a  number to round down
-     * @param   m  number of digits from the right to round down
+     * @param   _a  number to round down
+     * @param   _m  number of digits from the right to round down
      * @return  uint256  .
      */
-    function floor(uint256 a, uint256 m) internal pure returns (uint256) {
-        return (a / 10**m) * 10**m;
+    function floor(uint256 _a, uint256 _m) internal pure returns (uint256) {
+        return (_a / 10**_m) * 10**_m;
     }
 
     /**
-     * @param   a  A
-     * @param   b  B
+     * @notice  Returns the minuimum of the two uint256 arguments
+     * @param   _a  A
+     * @param   _b  B
      * @return  uint256  Min of a and b
      */
-    function min(uint256 a, uint256 b) internal pure returns (uint256) {
-        return (a <= b ? a : b);
+    function min(uint256 _a, uint256 _b) internal pure returns (uint256) {
+        return (_a <= _b ? _a : _b);
     }
 
     /**
-     * @dev     utility function to convert bytes32 to string
+     * @notice  Converts a bytes32 value to a string
      * @param   _bytes32  bytes32 data to be converted to string
      * @return  string  converted string representation
      */
@@ -105,7 +116,7 @@ library UtilsLibrary {
     }
 
     /**
-     * @dev     utility function to convert string to bytes32
+     * @notice  Converts a string to a bytes32 value
      * @param   _string  a sting to be converted to bytes32
      * @return  result  converted bytes32 representation
      */
@@ -118,5 +129,15 @@ library UtilsLibrary {
         assembly {
             result := mload(add(_string, 32))
         }
+    }
+
+    /**
+     * @notice  Returns the symbolId that consists of symbol+chainid
+     * @param   _symbol  token symbol of an asset
+     * @param   _srcChainId  chain id where the asset exists
+     * @return  id  the resulting symbolId
+     */
+    function getIdForToken(bytes32 _symbol, uint32 _srcChainId) internal pure returns (bytes32 id) {
+        id = stringToBytes32(string.concat(bytes32ToString(_symbol), Strings.toString(_srcChainId)));
     }
 }

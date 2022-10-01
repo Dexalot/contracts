@@ -13,18 +13,8 @@ unknown-*.json
 .env.*
 !.env.example
 
-# .log files
-*-deployment.log
-
-# .json files
-*-*tokensWithAddress.json
-*-contracts.json
-*-*hashes*.json
-*-airdrop*.json
-*-DexalotToken.json
-*-0x*.json
-!fuji-*.json
-!prod-*.json
+# typechain
+typechain-types
 
 # coverage
 coverage

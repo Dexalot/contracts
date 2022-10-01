@@ -26,12 +26,12 @@ Additional Use Grant: You may make use of the Licensed Work, provided
 
                       * Create Non-Open-Source Commercial Derviative Works
 
-                      (2) Link or directly include the Licensed Work in a
+                      (3) Link or directly include the Licensed Work in a
                       commercial or for-profit application or other product
                       not distributed under an Open Source Initiative (OSI)
                       compliant license. See: https://opensource.org/licenses
 
-                      (3) Remove the name, logo, copyright, or other branding
+                      (4) Remove the name, logo, copyright, or other branding
                       material from the Licensed Work to create a "rebranded"
                       or "white labeled" version to distribute as part of
                       any commercial or for-profit product or service.

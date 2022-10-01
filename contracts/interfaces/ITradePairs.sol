@@ -3,88 +3,391 @@
 pragma solidity 0.8.17;
 
 /**
-*   @author "DEXALOT TEAM"
-*   @title "ITradePairs: interface of TradePairs"
-*/
+ * @title Interface of TradePairs
+ */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
 interface ITradePairs {
+    /**
+     * @notice  Order is the data structure defining an order on Dexalot.
+     * @dev     Order has the following members: \
+     * `id`  unique order id assigned by the contract (immutable) \
+     * `clientOrderId`  client order id given by the sender of the order as a reference (immutable) \
+     * `tradePairId`  client order id given by the sender of the order as a reference (immutable) \
+     * `price` price of the order entered by the trader. (0 if market order) (immutable) \
+     * `totalamount`   cumulative amount in quote currency. ⇒ price* quantityfilled . If
+     * multiple partial fills , the new partial fill price*quantity is added to the
+     * current value in the field. Average execution price can be quickly
+     * calculated by totalamount/quantityfilled regardless of the number of
+     * partial fills at different prices \
+     * `quantity`  order quantity (immutable) \
+     * `quantityfilled`  cumulative quantity filled \
+     * `totalfee` cumulative fee paid for the order (total fee is always in terms of
+     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
+     * ALOT/AVAX , fee is paid in AVAX \
+     * `traderaddress`  traders’s wallet (immutable) \
+     * `side` Order side      See #Side (immutable) \
+     * `type1`  Order Type1   See #Type1 (immutable) \
+     * `type2`  Order Type2   See #Type2 (immutable) \
+     * `status` Order Status  See #Status
+     */
     struct Order {
         bytes32 id;
-        uint price;
-        uint totalAmount;
-        uint quantity;
-        uint quantityFilled;
-        uint totalFee;
+        bytes32 clientOrderId;
+        bytes32 tradePairId;
+        uint256 price;
+        uint256 totalAmount;
+        uint256 quantity;
+        uint256 quantityFilled;
+        uint256 totalFee;
         address traderaddress;
         Side side;
         Type1 type1;
+        Type2 type2;
         Status status;
     }
 
+    /**
+     * @notice  TradePair is the data structure defining a trading pair on Dexalot.
+     * @dev     TradePair has the following members: \
+     * `baseSymbol`  symbol of the base asset \
+     * `quaoteSymbol`  symbol of the quote asset \
+     * `buyBookId`  buy book id for the trading pair \
+     * `sellBookId`  sell book id for the trading pair \
+     * `minTradeAmount`  minimum trade amount \
+     * `maxTradeAmount`  maximum trade amount \
+     * `auctionPrice`  price during an auction \
+     * `auctionMode`  current auction mode of the trading pair \
+     * `makerRate` fee rate for a maker order for the trading pair \
+     * `takerRate` fee rate for taker order for the trading pair \
+     * `baseDecimals`  evm decimals of the base asset \
+     * `baseDisplayDecimals`  display decimals of the base Asset. Quantity increment \
+     * `quoteDecimals`  evm decimals of the quote asset \
+     * `quoteDisplayDecimals`  display decimals of the quote Asset. Price increment \
+     * `allowedSlippagePercent` allowed slippage percentage for the trading pair \
+     * `addOrderPaused` true/false pause state for adding orders on the trading pair \
+     * `pairPaused` true/false pause state of the trading pair as a whole
+     */
     struct TradePair {
-        bytes32 baseSymbol;          // symbol for base asset
-        bytes32 quoteSymbol;         // symbol for quote asset
-        bytes32 buyBookId;           // identifier for the buyBook for TradePair
-        bytes32 sellBookId;          // identifier for the sellBook for TradePair
-        uint minTradeAmount;         // min trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
-        uint maxTradeAmount;         // max trade for a TradePair expressed as amount = (price * quantity) / (10 ** quoteDecimals)
-        uint makerRate;              // numerator for maker fee rate % to be used with a denominator of 10000
-        uint takerRate;              // numerator for taker fee rate % to be used with a denominator of 10000
-        uint8 baseDecimals;          // decimals for base asset
-        uint8 baseDisplayDecimals;   // display decimals for base asset
-        uint8 quoteDecimals;         // decimals for quote asset
-        uint8 quoteDisplayDecimals;  // display decimals for quote asset
-        uint8 allowedSlippagePercent;// numerator for allowed slippage rate % to be used with denominator 100
-        bool addOrderPaused;         // boolean to control addOrder functionality per TradePair
-        bool pairPaused;             // boolean to control addOrder and cancelOrder functionality per TradePair
-        AuctionMode auctionMode;     // control auction states
-        uint auctionPrice;           // Indicative & Final Price
+        bytes32 baseSymbol;
+        bytes32 quoteSymbol;
+        bytes32 buyBookId;
+        bytes32 sellBookId;
+        uint256 minTradeAmount;
+        uint256 maxTradeAmount;
+        uint256 auctionPrice;
+        AuctionMode auctionMode;
+        uint8 makerRate;
+        uint8 takerRate;
+        uint8 baseDecimals;
+        uint8 baseDisplayDecimals;
+        uint8 quoteDecimals;
+        uint8 quoteDisplayDecimals;
+        uint8 allowedSlippagePercent;
+        bool addOrderPaused;
+        bool pairPaused;
     }
 
     function pause() external;
-    function unpause() external;
-    function pauseTradePair(bytes32 _tradePairId, bool _pairPaused) external;
-    function pauseAddOrder(bytes32 _tradePairId, bool _allowAddOrder) external;
-    function addTradePair(bytes32 _tradePairId, bytes32 _baseSymbol, uint8 _baseDecimals, uint8 _baseDisplayDecimals,
-                          bytes32 _quoteSymbol, uint8 _quoteDecimals, uint8 _quoteDisplayDecimals,
-                          uint _minTradeAmount, uint _maxTradeAmount, AuctionMode _mode) external;
-    function getTradePairs() external view returns (bytes32[] memory);
-    function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) external;
-    function getMinTradeAmount(bytes32 _tradePairId) external view returns (uint);
-    function setMaxTradeAmount(bytes32 _tradePairId, uint _maxTradeAmount) external;
-    function getMaxTradeAmount(bytes32 _tradePairId) external view returns (uint);
-    function addOrderType(bytes32 _tradePairId, Type1 _type) external;
-    function removeOrderType(bytes32 _tradePairId, Type1 _type) external;
-    function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) external;
-    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
-    function getDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
-    function getSymbol(bytes32 _tradePairId, bool _isBase) external view returns (bytes32);
-    function updateRate(bytes32 _tradePairId, uint _rate, RateType _rateType) external;
-    function getMakerRate(bytes32 _tradePairId) external view returns (uint);
-    function getTakerRate(bytes32 _tradePairId) external view returns (uint);
-    function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) external;
-    function getAllowedSlippagePercent(bytes32 _tradePairId) external view returns (uint8);
-    function getNSellBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder) external view
-                                                                    returns (uint[] memory, uint[] memory, uint , bytes32);
-    function getNBuyBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder) external view
-                                                                    returns (uint[] memory, uint[] memory, uint , bytes32);
-    function getOrder(bytes32 _orderUid) external view returns (Order memory);
-    function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
-    function addOrderFrom(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external;
-    function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) external;
-    function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) external;
-    function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) external;
-    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
-    function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) external;
-    function setAuctionPrice (bytes32 _tradePairId, uint _price) external;
-    function getAuctionData (bytes32 _tradePairId) external view returns (uint8, uint);
-    function unsolicitedCancel(bytes32 _tradePairId, bytes32 bookId , uint8 _maxCount) external;
-    function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) external view returns(uint);
 
-    enum Side     {BUY, SELL}
-    enum Type1    {MARKET, LIMIT, STOP, STOPLIMIT, LIMITFOK}
-    enum Status   {NEW, REJECTED, PARTIAL, FILLED, CANCELED, EXPIRED, KILLED}
-    enum RateType {MAKER, TAKER}
-    enum Type2    {GTC, FOK}
-    enum AuctionMode  {OFF, LIVETRADING, OPEN, CLOSING, PAUSED, MATCHING, CLOSINGT2, RESTRICTED}
+    function unpause() external;
+
+    function pauseTradePair(bytes32 _tradePairId, bool _pairPause) external;
+
+    function pauseAddOrder(bytes32 _tradePairId, bool _allowAddOrder) external;
+
+    function addTradePair(
+        bytes32 _tradePairId,
+        bytes32 _baseSymbol,
+        uint8 _baseDecimals,
+        uint8 _baseDisplayDecimals,
+        bytes32 _quoteSymbol,
+        uint8 _quoteDecimals,
+        uint8 _quoteDisplayDecimals,
+        uint256 _minTradeAmount,
+        uint256 _maxTradeAmount,
+        AuctionMode _mode
+    ) external;
+
+    function getTradePairs() external view returns (bytes32[] memory);
+
+    function setMinTradeAmount(bytes32 _tradePairId, uint256 _minTradeAmount) external;
+
+    function getMinTradeAmount(bytes32 _tradePairId) external view returns (uint256);
+
+    function setMaxTradeAmount(bytes32 _tradePairId, uint256 _maxTradeAmount) external;
+
+    function getMaxTradeAmount(bytes32 _tradePairId) external view returns (uint256);
+
+    function addOrderType(bytes32 _tradePairId, Type1 _type) external;
+
+    function removeOrderType(bytes32 _tradePairId, Type1 _type) external;
+
+    function setDisplayDecimals(
+        bytes32 _tradePairId,
+        uint8 _displayDecimals,
+        bool _isBase
+    ) external;
+
+    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
+
+    function getDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
+
+    function getSymbol(bytes32 _tradePairId, bool _isBase) external view returns (bytes32);
+
+    function updateRate(
+        bytes32 _tradePairId,
+        uint8 _rate,
+        RateType _rateType
+    ) external;
+
+    function getMakerRate(bytes32 _tradePairId) external view returns (uint8);
+
+    function getTakerRate(bytes32 _tradePairId) external view returns (uint8);
+
+    function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) external;
+
+    function getAllowedSlippagePercent(bytes32 _tradePairId) external view returns (uint8);
+
+    function getNBook(
+        bytes32 _tradePairId,
+        Side _side,
+        uint256 _nPrice,
+        uint256 _nOrder,
+        uint256 _lastPrice,
+        bytes32 _lastOrder
+    )
+        external
+        view
+        returns (
+            uint256[] memory,
+            uint256[] memory,
+            uint256,
+            bytes32
+        );
+
+    function getOrder(bytes32 _orderId) external view returns (Order memory);
+
+    function getOrderByClientOrderId(address _trader, bytes32 _clientOrderId) external view returns (Order memory);
+
+    function addOrder(
+        address _trader,
+        bytes32 _clientOrderId,
+        bytes32 _tradePairId,
+        uint256 _price,
+        uint256 _quantity,
+        Side _side,
+        Type1 _type1,
+        Type2 _type2
+    ) external;
+
+    function cancelOrder(bytes32 _orderId) external;
+
+    function cancelAllOrders(bytes32[] memory _orderIds) external;
+
+    function cancelReplaceOrder(
+        bytes32 _orderId,
+        bytes32 _clientOrderId,
+        uint256 _price,
+        uint256 _quantity
+    ) external;
+
+    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
+
+    function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external;
+
+    function getAuctionData(bytes32 _tradePairId) external view returns (uint8, uint256);
+
+    function unsolicitedCancel(
+        bytes32 _tradePairId,
+        bool _isBuyBook,
+        uint8 _maxCount
+    ) external;
+
+    function getQuoteAmount(
+        bytes32 _tradePairId,
+        uint256 _price,
+        uint256 _quantity
+    ) external view returns (uint256);
+
+    function getBookId(bytes32 _tradePairId, Side _side) external view returns (bytes32);
+
+    function matchAuctionOrder(bytes32 _takerOrderId, uint8 _maxCount) external returns (uint256);
+
+    /**
+     * @notice  Order Side
+     * @dev
+     * 0: BUY    – BUY \
+     * 1: SELL   – SELL
+     */
+    enum Side {
+        BUY,
+        SELL
+    }
+
+    /**
+     * @notice  Order Type1
+     * @dev     Type1 = LIMIT is always allowed. MARKET is enabled pair by pair basis based on liquidity. \
+     * 0: MARKET – Order will immediately match with the best Bid/Ask  \
+     * 1: LIMIT  – Order that may execute at limit price or better at the order entry. The remaining quantity
+     * will be entered in the order book\
+     * 2: STOP   –  For future use \
+     * 3: STOPLIMIT  –  For future use \
+     */
+    enum Type1 {
+        MARKET,
+        LIMIT,
+        STOP,
+        STOPLIMIT
+    }
+
+    /**
+     * @notice  Order Status
+     * @dev     And order automatically gets the NEW status once it is committed to the blockchain \
+     * 0: NEW      – Order is in the orderbook with no trades/executions \
+     * 1: REJECTED – For future use \
+     * 2: PARTIAL  – Order filled partially and it remains in the orderbook until FILLED/CANCELED \
+     * 3: FILLED   – Order filled fully and removed from the orderbook \
+     * 4: CANCELED – Order canceled and removed from the orderbook. PARTIAL before CANCELED is allowed \
+     * 5: EXPIRED  – For future use \
+     * 6: KILLED   – For future use \
+     */
+    enum Status {
+        NEW,
+        REJECTED,
+        PARTIAL,
+        FILLED,
+        CANCELED,
+        EXPIRED,
+        KILLED
+    }
+    /**
+     * @notice  Rate Type
+     * @dev     Maker Rates are typically lower than taker rates \
+     * 0: MAKER   – MAKER \
+     * 1: TAKER   – TAKER \
+     */
+    enum RateType {
+        MAKER,
+        TAKER
+    }
+
+    /**
+     * @notice  Order Type2 to be used in conjunction with when Type1= LIMIT
+     * @dev     GTC is the default Type2 \
+     * 0: GTC  – Good Till Cancel \
+     * 1: FOK  – Fill or Kill. The order is required to get an immediate FILLED status or reverts with *T-FOKF-01*.
+     * If reverted, no transaction is commited to the blockchain) \
+     * 2: IOC  – Immediate or Cancel. The order is required to get either a FILLED status or a PARTIAL
+     * status fallowed by an automatic CANCELED. If PARTIAL, the remaining will not go in the orderbook) \
+     * 3: PO   – Post Only. The order is required to go in the orderbook without any fills or reverts with
+     * T-T2PO-01. If reverted, no transaction is commited to the blockchain) \
+     */
+    enum Type2 {
+        GTC,
+        FOK,
+        IOC,
+        PO
+    }
+
+    enum AuctionMode {
+        OFF,
+        LIVETRADING,
+        OPEN,
+        CLOSING,
+        PAUSED,
+        MATCHING,
+        RESTRICTED
+    }
+
+    event NewTradePair(
+        uint8 version,
+        bytes32 pair,
+        uint8 basedisplaydecimals,
+        uint8 quotedisplaydecimals,
+        uint256 mintradeamount,
+        uint256 maxtradeamount
+    );
+
+    /**
+     * @notice  Emits a given order's latest state
+     * @dev     The details of the emitted event is as follows: \
+     * `version`  event version \
+     * `traderaddress`  traders’s wallet (immutable) \
+     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 (immutable) \
+     * `orderId`  unique order id assigned by the contract (immutable) \
+     * `clientOrderId`  client order id given by the sender of the order as a reference (immutable) \
+     * `price` price of the order entered by the trader. (0 if market order) (immutable) \
+     * `totalamount`   cumulative amount in quote currency. ⇒ price* quantityfilled . If
+     * multiple partial fills , the new partial fill price*quantity is added to the
+     * current value in the field. Average execution price can be quickly
+     * calculated by totalamount/quantityfilled regardless of the number of
+     * partial fills at different prices \
+     * `quantity`  order quantity (immutable) \
+     * `side` Order side      See #Side (immutable) \
+     * `type1`  Order Type1   See #Type1 (immutable) \
+     * `type2`  Order Type2   See #Type2 (immutable) \
+     * `status` Order Status  See #Status \
+     * `quantityfilled`  cumulative quantity filled \
+     * `totalfee` cumulative fee paid for the order (total fee is always in terms of
+     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
+     * ALOT/AVAX , fee is paid in AVAX \
+     * **Note**: The execution price will always be equal or better than the Order price.
+     */
+    event OrderStatusChanged(
+        uint8 version,
+        address indexed traderaddress,
+        bytes32 indexed pair,
+        bytes32 orderId,
+        bytes32 clientOrderId,
+        uint256 price,
+        uint256 totalamount,
+        uint256 quantity,
+        Side side,
+        Type1 type1,
+        Type2 type2,
+        Status status,
+        uint256 quantityfilled,
+        uint256 totalfee
+    );
+
+    /**
+     * @notice  Emits the Executed/Trade Event showing
+     * @dev     The details of the emitted event is as follows: \
+     * `version`  event version \
+     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 \
+     * `price`  executed price \
+     * `quantity`  executed quantity \
+     * `makerOrderId`  Maker Order id \
+     * `takerOrderId`  Taker Order id \
+     * `mlastFee`  fee paid by maker \
+     * `tlastFee`  fee paid by taker \
+     * `takerSide`  Side of the taker order. 0 - BUY, 1- SELL (Note: This can be used to identify
+     * the fee UNITs. If takerSide = 1, then the fee is paid by the Maker in Base
+     * Currency and the fee paid by the taker in Quote currency. If takerSide= 0
+     * then the fee is paid by the Maker in Quote Currency and the fee is paid by
+     * the taker in Base currency \
+     * `execId`  Unique trade id (execution id) assigned by the contract \
+     * `addressMaker`  maker traderaddress \
+     * `addressTaker`  taker traderaddress \
+     */
+    event Executed(
+        uint8 version,
+        bytes32 indexed pair,
+        uint256 price,
+        uint256 quantity,
+        bytes32 makerOrder,
+        bytes32 takerOrder,
+        uint256 feeMaker,
+        uint256 feeTaker,
+        Side takerSide,
+        uint256 execId,
+        address indexed addressMaker,
+        address indexed addressTaker
+    );
+
+    event ParameterUpdated(uint8 version, bytes32 indexed pair, string param, uint256 oldValue, uint256 newValue);
 }

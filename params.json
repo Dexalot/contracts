@@ -1,0 +1,13 @@
+{
+    "P-DEPFEE": "deposit fee rate updated",
+    "P-WITFEE": "withdrawal fee rate updated",
+    "T-MAKERRATE": "maker fee rate updated",
+    "T-TAKERRATE": "taker fee rate updated",
+    "T-MINTRAMT": "minimum trade amount updated",
+    "T-MAXTRAMT": "maximum trade amount updated",
+    "T-OTYPADD": "allowed order type added",
+    "T-OTYPREM": "allowed order type removed",
+    "T-DISPDEC": "display decimals updated",
+    "T-SLIPPAGE": "allowed slippage percentage updated",
+    "T-AUCTIONMODE": "auction mode updated"
+}
