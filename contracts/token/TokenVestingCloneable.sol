@@ -11,9 +11,12 @@ import "../library/UtilsLibrary.sol";
 import "../interfaces/IPortfolio.sol";
 
 /**
- *   @author "DEXALOT TEAM"
- *   @title "TokenVestingCloneable: a flexible, cloneable token vesting contract"
+ * @title Flexible, cloneable token vesting contract
  */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
 contract TokenVestingCloneable is OwnableUpgradeable {
     using SafeERC20Upgradeable for IERC20MetadataUpgradeable;

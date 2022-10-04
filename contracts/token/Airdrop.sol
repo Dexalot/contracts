@@ -7,18 +7,20 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
 /**
-*   @author "DEXALOT TEAM"
-*   @title "AirDrop: a flexible airdrop contract"
-*/
+ * @title Flexible airdrop contract
+ */
 
-contract Airdrop is Pausable, Ownable, ReentrancyGuard {
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
+
+contract Airdrop is Pausable, Ownable {
     using SafeERC20 for IERC20;
 
     // version
-    bytes32 constant public VERSION = bytes32("1.3.0");
+    bytes32 public constant VERSION = bytes32("1.3.1");
 
     IERC20 public immutable token;
 
@@ -88,19 +90,13 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         uint256 index,
         uint256 amount,
         bytes32[] calldata merkleProof
-    ) external whenNotPaused nonReentrant {
-        require(
-            token.balanceOf(address(this)) >= (amount - _released[index]),
-            "A-CNET-01"
-        );
+    ) external whenNotPaused {
+        require(token.balanceOf(address(this)) >= (amount - _released[index]), "A-CNET-01");
 
         require(block.timestamp > _start, "A-TOOE-01");
 
         bytes32 leaf = keccak256(abi.encodePacked(index, msg.sender, amount));
-        require(
-            MerkleProof.verify(merkleProof, root, leaf),
-            "A-MPNV-01"
-        );
+        require(MerkleProof.verify(merkleProof, root, leaf), "A-MPNV-01");
 
         uint256 unreleased = _releasableAmount(index, amount);
         require(unreleased > 0, "A-NTAD-01");
@@ -120,14 +116,8 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         return _released[index];
     }
 
-    function _releasableAmount(uint256 index, uint256 amount)
-        private
-        view
-        returns (uint256)
-    {
-        return
-            (_vestedAmount(amount) + _vestedByPercentage(amount)) -
-            _released[index];
+    function _releasableAmount(uint256 index, uint256 amount) private view returns (uint256) {
+        return (_vestedAmount(amount) + _vestedByPercentage(amount)) - _released[index];
     }
 
     function _vestedAmount(uint256 amount) private view returns (uint256) {
@@ -141,8 +131,7 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
             uint256 fromCliff = block.timestamp - _cliff;
             uint256 cliffDuration = _cliff - _start;
             uint256 durationAfterCliff = _duration - cliffDuration;
-            uint256 vesting = (totalBalance * (fromCliff)) /
-                (durationAfterCliff);
+            uint256 vesting = (totalBalance * (fromCliff)) / (durationAfterCliff);
 
             return vesting;
         }
@@ -159,22 +148,14 @@ contract Airdrop is Pausable, Ownable, ReentrancyGuard {
         uint256 amount,
         bytes32[] calldata merkleProof
     ) external view returns (uint256) {
-
         bytes32 leaf = keccak256(abi.encodePacked(index, msg.sender, amount));
 
-        require(
-            MerkleProof.verify(merkleProof, root, leaf),
-            "A-MPNV-02"
-        );
+        require(MerkleProof.verify(merkleProof, root, leaf), "A-MPNV-02");
 
         return _releasableAmount(index, amount);
     }
 
-    function _vestedByPercentage(uint256 amount)
-        private
-        view
-        returns (uint256)
-    {
+    function _vestedByPercentage(uint256 amount) private view returns (uint256) {
         if (block.timestamp < _start) {
             return 0;
         } else {

@@ -3,7 +3,7 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
@@ -14,657 +14,1210 @@ import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
 
 import "./OrderBooks.sol";
-/**
-*   @author "DEXALOT TEAM"
-*   @title "TradePairs: a contract implementing the data structures and functions for trade pairs"
-*   @dev "For each trade pair an entry is added tradePairMap."
-*   @dev "The naming convention for the trade pairs is as follows: BASEASSET/QUOTEASSET."
-*   @dev "For base asset AVAX and quote asset USDT the trade pair name is AVAX/USDT."
-*/
 
-contract TradePairs is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable, ITradePairs {
+/**
+ * @title Implements the data structures and functions for trade pairs
+ * @dev For each trade pair an entry is added tradePairMap.
+ * The naming convention for the trade pairs is as follows: BASEASSET/QUOTEASSET.
+ * For base asset AVAX and quote asset USDT the trade pair name is AVAX/USDT.
+ * ExchangeSub needs to have DEFAULT_ADMIN_ROLE on TradePairs.
+ * TradePairs should have EXECUTOR_ROLE on OrderBooks.
+ */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
+
+contract TradePairs is
+    Initializable,
+    AccessControlEnumerableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable,
+    ITradePairs
+{
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 constant public VERSION = bytes32('1.4.1');
+    bytes32 public constant VERSION = bytes32("2.1.0");
 
     // denominator for rate calculations
-    uint constant public TENK = 10000;
+    uint256 public constant TENK = 10000;
 
-    // order counter to build a unique handle for each new order
-    uint private orderCounter;
+    // id counter to build a unique handle for each new order/execution
+    uint256 private idCounter;
 
     // a dynamic array of trade pairs added to TradePairs contract
     bytes32[] private tradePairsArray;
 
     // mapping data structure for all trade pairs
-    mapping (bytes32 => ITradePairs.TradePair) private tradePairMap;
+    mapping(bytes32 => TradePair) private tradePairMap;
 
     // mapping  for allowed order types for a TradePair
-    mapping (bytes32 => EnumerableSetUpgradeable.UintSet) private allowedOrderTypes;
+    mapping(bytes32 => EnumerableSetUpgradeable.UintSet) private allowedOrderTypes;
 
     // mapping structure for all orders
-    mapping (bytes32 => Order) private orderMap;
+    mapping(bytes32 => Order) private orderMap;
 
-    // reference to OrderBooks contract (one sell or buy book)
+    // mapping for clientOrderID unique per trader
+    // e.g. for Trader1, Order1 having ClientOrderID1 ClientOrderIDMap(Trader1, TraderMap(ClientOrderID1, Order1))
+    mapping(address => mapping(bytes32 => bytes32)) private clientOrderIDMap;
+    // reference to OrderBooks contract that contains one sell and one buy book for every single tradepair
     OrderBooks private orderBooks;
-
     // reference Portfolio contract
     IPortfolio private portfolio;
 
-    event NewTradePair(bytes32 pair, uint8 basedisplaydecimals, uint8 quotedisplaydecimals, uint mintradeamount, uint maxtradeamount);
+    bytes32 public constant ON_BEHALFOF_ROLE = keccak256("ON_BEHALFOF_ROLE");
 
-    event OrderStatusChanged(address indexed traderaddress, bytes32 indexed pair, bytes32 id,  uint price, uint totalamount, uint quantity,
-                             Side side, Type1 type1, Status status, uint quantityfilled, uint totalfee);
+    //Event versions to better communicate changes to listening components
+    uint8 private constant NEW_TRADE_PAIR_VERSION = 1;
+    uint8 private constant ORDER_STATUS_CHANGED_VERSION = 1;
+    uint8 private constant EXECUTED_VERSION = 1;
+    uint8 private constant PARAMETER_UPDATED_VERSION = 1;
 
-    event Executed(bytes32 indexed pair, uint price, uint quantity, bytes32 maker, bytes32 taker,
-                   uint feeMaker, uint feeTaker, Side takerSide, uint execId,
-                   address indexed addressMaker, address indexed addressTaker);
-
-    event ParameterUpdated(bytes32 indexed pair, string param, uint oldValue, uint newValue);
-
+    /**
+     * @notice  initializer function for Upgradeable TradePairs
+     * @dev     idCounter needs to be unique for each order and execution id.
+     * Both the orderbooks and the portolio should be deployed before tradepairs.
+     * @param   _orderbooks  orderbooks instance
+     * @param   _portfolio  portfolio instance
+     */
     function initialize(address _orderbooks, address _portfolio) public initializer {
-        __Ownable_init();
-        orderCounter = block.timestamp;
+        __AccessControlEnumerable_init();
+        __Pausable_init();
+        __ReentrancyGuard_init();
+
+        // intitialize deployment account to have DEFAULT_ADMIN_ROLE
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        idCounter = block.timestamp;
         orderBooks = OrderBooks(_orderbooks);
         portfolio = IPortfolio(_portfolio);
     }
 
-    function addTradePair(bytes32 _tradePairId,
-                          bytes32 _baseSymbol, uint8 _baseDecimals, uint8 _baseDisplayDecimals,
-                          bytes32 _quoteSymbol, uint8 _quoteDecimals,  uint8 _quoteDisplayDecimals,
-                          uint _minTradeAmount, uint _maxTradeAmount, AuctionMode _mode) public override onlyOwner {
-
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        if (_tradePair.baseSymbol == '') {
+    /**
+     * @notice  Adds a new TradePair
+     * @dev     Only DEFAULT_ADMIN or ExchangeSub can call this function which has this role.
+     * ExhangeSub makes sure that the symbols are added to the portfolio with the
+     * correct addresses first.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _baseSymbol  symbol of the base asset
+     * @param   _baseDecimals  evm decimals of the base asset
+     * @param   _baseDisplayDecimals  display decimals of the base Asset. Quantity increment
+     * @param   _quoteSymbol  symbol of the quote asset
+     * @param   _quoteDecimals  evm decimals of the quote asset
+     * @param   _quoteDisplayDecimals  display decimals of the quote Asset. Price increment
+     * @param   _minTradeAmount  minimum trade amount
+     * @param   _maxTradeAmount  maximum trade amount
+     * @param   _mode  Auction Mode of the auction token. Auction token is always the BASE asset.
+     */
+    function addTradePair(
+        bytes32 _tradePairId,
+        bytes32 _baseSymbol,
+        uint8 _baseDecimals,
+        uint8 _baseDisplayDecimals,
+        bytes32 _quoteSymbol,
+        uint8 _quoteDecimals,
+        uint8 _quoteDisplayDecimals,
+        uint256 _minTradeAmount,
+        uint256 _maxTradeAmount,
+        AuctionMode _mode
+    ) external override {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "T-OACC-01");
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        if (tradePair.baseSymbol == "") {
             EnumerableSetUpgradeable.UintSet storage enumSet = allowedOrderTypes[_tradePairId];
-            enumSet.add(uint(Type1.LIMIT)); // LIMIT orders always allowed
+            enumSet.add(uint256(Type1.LIMIT)); // LIMIT orders always allowed
             //enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
 
-            bytes32 _buyBookId = UtilsLibrary.stringToBytes32(
+            bytes32 buyBookId = UtilsLibrary.stringToBytes32(
                 string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-BUYBOOK"))
             );
-            bytes32 _sellBookId = UtilsLibrary.stringToBytes32(
+            bytes32 sellBookId = UtilsLibrary.stringToBytes32(
                 string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-SELLBOOK"))
             );
+            orderBooks.addToOrderbooks(buyBookId, Side.BUY);
+            orderBooks.addToOrderbooks(sellBookId, Side.SELL);
+            tradePair.baseSymbol = _baseSymbol;
+            tradePair.baseDecimals = _baseDecimals;
+            tradePair.baseDisplayDecimals = _baseDisplayDecimals;
+            tradePair.quoteSymbol = _quoteSymbol;
+            tradePair.quoteDecimals = _quoteDecimals;
+            tradePair.quoteDisplayDecimals = _quoteDisplayDecimals;
+            tradePair.minTradeAmount = _minTradeAmount;
+            tradePair.maxTradeAmount = _maxTradeAmount;
+            tradePair.buyBookId = buyBookId;
+            tradePair.sellBookId = sellBookId;
+            tradePair.makerRate = 10; // makerRate=10 (0.10% = 10/10000)
+            tradePair.takerRate = 20; // takerRate=20 (0.20% = 20/10000)
+            // with default allowedSlippagePercent of 20, the market orders cannot be filled
+            // worst than 80% of the bestBid and 120% of bestAsk
+            tradePair.allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100)
+            // tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
+            // tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
 
-            _tradePair.baseSymbol = _baseSymbol;
-            _tradePair.baseDecimals = _baseDecimals;
-            _tradePair.baseDisplayDecimals = _baseDisplayDecimals;
-            _tradePair.quoteSymbol = _quoteSymbol;
-            _tradePair.quoteDecimals = _quoteDecimals;
-            _tradePair.quoteDisplayDecimals = _quoteDisplayDecimals;
-            _tradePair.minTradeAmount = _minTradeAmount;
-            _tradePair.maxTradeAmount = _maxTradeAmount;
-            _tradePair.buyBookId = _buyBookId;
-            _tradePair.sellBookId = _sellBookId;
-            _tradePair.makerRate = 10; // makerRate=10 (0.10% = 10/10000)
-            _tradePair.takerRate = 20; // takerRate=20 (0.20% = 20/10000)
-            _tradePair.allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100) market orders can't be filled worst than 80% of the bestBid / 120% of bestAsk
-            // _tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
-            // _tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
-
-            setAuctionMode(_tradePairId, _mode);
+            setAuctionModePrivate(_tradePairId, _mode);
             tradePairsArray.push(_tradePairId);
 
-            emit NewTradePair(_tradePairId, _baseDisplayDecimals, _quoteDisplayDecimals, _minTradeAmount, _maxTradeAmount);
+            emit NewTradePair(
+                NEW_TRADE_PAIR_VERSION,
+                _tradePairId,
+                _baseDisplayDecimals,
+                _quoteDisplayDecimals,
+                _minTradeAmount,
+                _maxTradeAmount
+            );
         }
     }
 
-    // FRONTEND FUNCTION TO GET A LIST OF TRADE PAIRS
-    function getTradePairs() public override view returns (bytes32[] memory) {
+    /**
+     * @notice  Gets a list of the trade Pairs
+     * @dev     All pairs are returned. Even the delisted ones.
+     * @return  bytes32[]  Array of trade Pairs .
+     */
+    function getTradePairs() external view override returns (bytes32[] memory) {
         return tradePairsArray;
     }
 
-    function pause() public override onlyOwner {
+    /**
+     * @notice  Returns the bookid given the tradePairId and side
+     * @return  bytes32  BookId
+     */
+    function getBookId(bytes32 _tradePairId, Side _side) external view override returns (bytes32) {
+        return _side == Side.BUY ? tradePairMap[_tradePairId].buyBookId : tradePairMap[_tradePairId].sellBookId;
+    }
+
+    /**
+     * @notice  Pauses the contract
+     * @dev     Can only be called by DEFAULT_ADMIN.
+     */
+    function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
 
-    function unpause() public override onlyOwner {
+    /**
+     * @notice  Unpauses the contract
+     * @dev     Can only be called by DEFAULT_ADMIN.
+     */
+    function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 
-    function pauseTradePair(bytes32 _tradePairId, bool _pairPaused) public override onlyOwner {
-        tradePairMap[_tradePairId].pairPaused = _pairPaused;
+    /**
+     * @notice  Pauses a specific Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN.
+     * Public instead of external because it saves 0.184(KiB) in contract size
+     * @param   _tradePairId  id of the trading pair
+     * @param   _pause  true to pause, false to unpause
+     */
+    function pauseTradePair(bytes32 _tradePairId, bool _pause) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].pairPaused = _pause;
     }
 
-    function pauseAddOrder(bytes32 _tradePairId, bool _addOrderPaused) public override onlyOwner {
-        tradePairMap[_tradePairId].addOrderPaused = _addOrderPaused;
+    /**
+     * @notice  Pauses adding new orders to a specific Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _pause  true to pause, false to unpause
+     */
+    function pauseAddOrder(bytes32 _tradePairId, bool _pause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].addOrderPaused = _pause;
     }
 
-    function matchingAllowed(AuctionMode _mode) private pure returns(bool) {
-        return _mode == AuctionMode.OFF || _mode == AuctionMode.LIVETRADING ;
+    /**
+     * @notice  Sets the auction mode of a specific Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _mode  Auction Mode
+     */
+    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        setAuctionModePrivate(_tradePairId, _mode);
     }
 
-    function isAuctionRestricted(AuctionMode _mode) private pure returns(bool) {
-        return _mode == AuctionMode.RESTRICTED || _mode == AuctionMode.CLOSING ;
-    }
-
-    function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = uint(_tradePair.auctionMode);
-        _tradePair.auctionMode = _mode;
-        if (matchingAllowed(_mode)) {
-            require(orderBooks.first(_tradePair.sellBookId) == 0
-                            || orderBooks.first(_tradePair.sellBookId) > orderBooks.last(_tradePair.buyBookId), "T-AUCT-11");
-            addOrderType(_tradePairId, Type1.LIMITFOK); // LIMITFOK orders allowed only when not in auction mode
+    /**
+     * @notice  Sets the auction mode of a specific Trade Pair
+     * @dev     Need to be able to call it internally from the constructor
+     * @param   _tradePairId  id of the trading pair
+     * @param   _mode  Auction Mode
+     */
+    function setAuctionModePrivate(bytes32 _tradePairId, AuctionMode _mode) private {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = uint256(tradePair.auctionMode);
+        tradePair.auctionMode = _mode;
+        if (UtilsLibrary.matchingAllowed(_mode)) {
+            // Makes sure that the matching is completed after the auction has ended and order book
+            // doesn't have any crossed orders left before unpausing the trade pair
+            require(orderBooks.isNotCrossedBook(tradePair.sellBookId, tradePair.buyBookId), "T-AUCT-05");
             pauseTradePair(_tradePairId, false);
-
-        } else if (_mode == AuctionMode.OPEN ) {
-            removeOrderType(_tradePairId, Type1.LIMITFOK);
+        } else if (_mode == AuctionMode.OPEN || UtilsLibrary.isAuctionRestricted(_mode)) {
             pauseTradePair(_tradePairId, false);
-
-        } else if (_mode == AuctionMode.MATCHING
-                            || _mode == AuctionMode.PAUSED) {
+        } else if (_mode == AuctionMode.MATCHING || _mode == AuctionMode.PAUSED) {
             pauseTradePair(_tradePairId, true);
-
-        } else if (isAuctionRestricted(_mode)) {
-            pauseTradePair(_tradePairId, false);
         }
-        emit ParameterUpdated(_tradePairId, "T-AUCTIONMODE", oldValue, uint(_mode) );
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-AUCTIONMODE", oldValue, uint256(_mode));
     }
 
-    function setAuctionPrice (bytes32 _tradePairId, uint _price) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(decimalsOk(_price, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-AUCT-02");
-        uint oldValue = _tradePair.auctionPrice;
-        _tradePair.auctionPrice = _price;
-        emit ParameterUpdated(_tradePairId, "T-AUCTIONPRICE", oldValue, _price);
+    /**
+     * @notice  Sets the auction price
+     * @dev     Price is calculated by the backend (off chain) after the auction has closed.
+     * Auction price can be changed anytime. It is imperative that is not changed after the
+     * first order is matched until the last order to be matched.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _price  price of the auction
+     */
+    function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(UtilsLibrary.decimalsOk(_price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals), "T-AUCT-02");
+        uint256 oldValue = tradePair.auctionPrice;
+        tradePair.auctionPrice = _price;
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-AUCTIONPRICE", oldValue, _price);
     }
 
-    function getAuctionData (bytes32 _tradePairId) public view override returns (uint8 mode, uint price) {
-         TradePair storage _tradePair = tradePairMap[_tradePairId];
-         mode = uint8(_tradePair.auctionMode);
-         price = _tradePair.auctionPrice;
+    /**
+     * @notice  Returns the auction mode and the auction price of a specific Trade Pair
+     * @param   _tradePairId  id of the trading pair
+     * @return  mode  auction mode
+     * @return  price  auction price
+     */
+    function getAuctionData(bytes32 _tradePairId) external view override returns (uint8 mode, uint256 price) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        mode = uint8(tradePair.auctionMode);
+        price = tradePair.auctionPrice;
     }
 
-    function tradePairExists(bytes32 _tradePairId) public view returns (bool) {
-        bool exists = false;
-        if (tradePairMap[_tradePairId].baseSymbol != '') { // It is possible to have a tradepair with baseDecimal
-            exists = true;
-        }
-        return exists;
+    /**
+     * @notice  Checks if TradePair already exists
+     * @param   _tradePairId  id of the trading pair
+     * @return  bool  true if it exists
+     */
+    function tradePairExists(bytes32 _tradePairId) external view returns (bool) {
+        return tradePairMap[_tradePairId].baseSymbol != "";
     }
 
-    function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = _tradePair.minTradeAmount;
-        _tradePair.minTradeAmount = _minTradeAmount;
-        emit ParameterUpdated(_tradePairId, "T-MINTRAMT", oldValue, _minTradeAmount);
+    /**
+     * @notice  Sets the minimum trade amount allowed for a specific Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN. The min trade amount needs to satisfy
+     * `getQuoteAmount(_price, _quantity, _tradePairId) >= _minTradeAmount`
+     * @param   _tradePairId  id of the trading pair
+     * @param   _minTradeAmount  minimum trade amount in terms of quote asset
+     */
+    function setMinTradeAmount(bytes32 _tradePairId, uint256 _minTradeAmount)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = tradePair.minTradeAmount;
+        tradePair.minTradeAmount = _minTradeAmount;
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MINTRAMT", oldValue, _minTradeAmount);
     }
 
-    function getMinTradeAmount(bytes32 _tradePairId) public override view returns (uint) {
+    /**
+     * @notice  Returns the minimum trade amount allowed for a specific Trade Pair
+     * @dev     The min trade amount needs to satisfy
+     * `getQuoteAmount(_price, _quantity, _tradePairId) >= _minTradeAmount`
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint256  minimum trade amount in terms of quote asset
+     */
+    function getMinTradeAmount(bytes32 _tradePairId) external view override returns (uint256) {
         return tradePairMap[_tradePairId].minTradeAmount;
     }
 
-    function setMaxTradeAmount(bytes32 _tradePairId, uint _maxTradeAmount) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = _tradePair.maxTradeAmount;
-        _tradePair.maxTradeAmount = _maxTradeAmount;
-        emit ParameterUpdated(_tradePairId, "T-MAXTRAMT", oldValue, _maxTradeAmount);
+    /**
+     * @notice  Sets the maximum trade amount allowed for a specific Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN. The max trade amount needs to satisfy
+     * `getQuoteAmount(_price, _quantity, _tradePairId) <= _maxTradeAmount`
+     * @param   _tradePairId  id of the trading pair
+     * @param   _maxTradeAmount  maximum trade amount in terms of quote asset
+     */
+    function setMaxTradeAmount(bytes32 _tradePairId, uint256 _maxTradeAmount)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = tradePair.maxTradeAmount;
+        tradePair.maxTradeAmount = _maxTradeAmount;
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MAXTRAMT", oldValue, _maxTradeAmount);
     }
 
-    function getMaxTradeAmount(bytes32 _tradePairId) public override view returns (uint) {
+    /**
+     * @notice  Returns the maximum trade amount allowed for a specific Trade Pair
+     * @dev     The max trade amount needs to satisfy
+     * `getQuoteAmount(_price, _quantity, _tradePairId) <= _maxTradeAmount`
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint256  maximum trade amount in terms of quote asset
+     */
+    function getMaxTradeAmount(bytes32 _tradePairId) external view override returns (uint256) {
         return tradePairMap[_tradePairId].maxTradeAmount;
     }
 
-    function addOrderType(bytes32 _tradePairId, Type1 _type) public override onlyOwner {
-        allowedOrderTypes[_tradePairId].add(uint(_type));
-        emit ParameterUpdated(_tradePairId, "T-OTYPADD", 0, uint(_type));
+    /**
+     * @notice  Adds a new order type to a tradePair
+     * @dev     Can only be called by DEFAULT_ADMIN. LIMIT order is added by default.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _type  Order Type
+     */
+    function addOrderType(bytes32 _tradePairId, Type1 _type) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        allowedOrderTypes[_tradePairId].add(uint256(_type));
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-OTYPADD", 0, uint256(_type));
     }
 
-    function removeOrderType(bytes32 _tradePairId, Type1 _type) public override onlyOwner {
+    /**
+     * @notice  Removes an order type that is previously allowed
+     * @dev     Can only be called by DEFAULT_ADMIN. LIMIT order type can't be removed.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _type  Order Type
+     */
+    function removeOrderType(bytes32 _tradePairId, Type1 _type) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_type != Type1.LIMIT, "T-LONR-01");
-        allowedOrderTypes[_tradePairId].remove(uint(_type));
-        emit ParameterUpdated(_tradePairId, "T-OTYPREM", 0, uint(_type));
+        allowedOrderTypes[_tradePairId].remove(uint256(_type));
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-OTYPREM", 0, uint256(_type));
     }
 
-    function getAllowedOrderTypes(bytes32 _tradePairId) public view returns (uint[] memory) {
-        uint size = allowedOrderTypes[_tradePairId].length();
-        uint[] memory allowed = new uint[](size);
-        for (uint i=0; i<size; i++) {
+    /**
+     * @notice  Returns the allowed order types.
+     * @dev     LIMIT is always available by default. Market order type may be allowed once there is
+     * enough liquidity on a pair.
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint256[]  Array of allowed order types
+     */
+    function getAllowedOrderTypes(bytes32 _tradePairId) external view returns (uint256[] memory) {
+        uint256 size = allowedOrderTypes[_tradePairId].length();
+        uint256[] memory allowed = new uint256[](size);
+        for (uint256 i = 0; i < size; i++) {
             allowed[i] = allowedOrderTypes[_tradePairId].at(i);
         }
         return allowed;
     }
 
-    function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = _tradePair.baseDisplayDecimals;
+    /**
+     * @notice  Sets the display decimals of the base or the quote asset in a tradePair
+     * @dev     Can only be called by DEFAULT_ADMIN. Display decimals can also be referred as
+     * `Quantity Increment if _isBase==true` or `PriceIncrement if _isBase==false`
+     * @param   _tradePairId  id of the trading pair
+     * @param   _displayDecimals  display decimal
+     * @param   _isBase  true/false
+     */
+    function setDisplayDecimals(
+        bytes32 _tradePairId,
+        uint8 _displayDecimals,
+        bool _isBase
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = tradePair.baseDisplayDecimals;
         if (_isBase) {
-            _tradePair.baseDisplayDecimals = _displayDecimals;
+            tradePair.baseDisplayDecimals = _displayDecimals;
         } else {
-            oldValue = _tradePair.quoteDisplayDecimals;
-            _tradePair.quoteDisplayDecimals = _displayDecimals;
+            oldValue = tradePair.quoteDisplayDecimals;
+            tradePair.quoteDisplayDecimals = _displayDecimals;
         }
-        emit ParameterUpdated(_tradePairId, "T-DISPDEC", oldValue, _displayDecimals);
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-DISPDEC", oldValue, _displayDecimals);
     }
 
-    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) public override view returns (uint8) {
-        if (_isBase) {
-            return tradePairMap[_tradePairId].baseDisplayDecimals;
-        } else {
-            return tradePairMap[_tradePairId].quoteDisplayDecimals;
-        }
+    /**
+     * @notice  Returns the display decimals of the base or the quote asset in a tradePair
+     * @dev     Display decimals can also be referred as
+     * `Quantity Increment if _isBase==true` or `PriceIncrement if _isBase==false`
+     * @param   _tradePairId  id of the trading pair
+     * @param   _isBase  true/false
+     * @return  uint8  display decimal
+     */
+    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) external view override returns (uint8) {
+        return
+            _isBase ? tradePairMap[_tradePairId].baseDisplayDecimals : tradePairMap[_tradePairId].quoteDisplayDecimals;
     }
 
-    function getDecimals(bytes32 _tradePairId, bool _isBase) public override view returns (uint8) {
-        if (_isBase) {
-            return tradePairMap[_tradePairId].baseDecimals;
-        } else {
-            return tradePairMap[_tradePairId].quoteDecimals;
-        }
+    /**
+     * @notice  Returns the evm decimals of the base or the quote symbol in a tradePair
+     * @dev     The decimals is identical to decimals value from ERC20 contract of the symbol.
+     * It is 18 for ALOT and AVAX.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _isBase  true/false
+     * @return  uint8  evm decimal
+     */
+    function getDecimals(bytes32 _tradePairId, bool _isBase) external view override returns (uint8) {
+        return _isBase ? tradePairMap[_tradePairId].baseDecimals : tradePairMap[_tradePairId].quoteDecimals;
     }
 
-    function getSymbol(bytes32 _tradePairId, bool _isBase) public override view returns (bytes32) {
-        if (_isBase) {
-            return tradePairMap[_tradePairId].baseSymbol;
-        } else {
-            return tradePairMap[_tradePairId].quoteSymbol;
-        }
+    /**
+     * @notice  Returns the base or quote symbol
+     * @param   _tradePairId  id of the trading pair
+     * @param   _isBase  true/false
+     * @return  bytes32  symbol in bytes32
+     */
+    function getSymbol(bytes32 _tradePairId, bool _isBase) external view override returns (bytes32) {
+        return _isBase ? tradePairMap[_tradePairId].baseSymbol : tradePairMap[_tradePairId].quoteSymbol;
     }
 
-    function updateRate(bytes32 _tradePairId, uint _rate, ITradePairs.RateType _rateType) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = _tradePair.makerRate;
+    /**
+     * @notice  Sets the Maker or the Taker Rate
+     * @dev     Can only be called by DEFAULT_ADMIN
+     * @param   _tradePairId  id of the trading pair
+     * @param   _rate  Percent Rate `(_rate/100)% = _rate/10000: _rate=10 => 0.10%`
+     * @param   _rateType  Rate Type, 0 maker or 1 taker
+     */
+    function updateRate(
+        bytes32 _tradePairId,
+        uint8 _rate,
+        ITradePairs.RateType _rateType
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint8 oldValue = tradePair.makerRate;
         if (_rateType == ITradePairs.RateType.MAKER) {
-            _tradePair.makerRate = _rate; // (_rate/100)% = _rate/10000: _rate=10 => 0.10%
-            emit ParameterUpdated(_tradePairId, "T-MAKERRATE", oldValue, _rate);
+            tradePair.makerRate = _rate; // (_rate/100)% = _rate/10000: _rate=10 => 0.10%
+            emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MAKERRATE", oldValue, _rate);
         } else {
-            oldValue = _tradePair.takerRate;
-            _tradePair.takerRate = _rate; // (_rate/100)% = _rate/10000: _rate=20 => 0.20%
-            emit ParameterUpdated(_tradePairId, "T-TAKERRATE", oldValue, _rate);
+            oldValue = tradePair.takerRate;
+            tradePair.takerRate = _rate; // (_rate/100)% = _rate/10000: _rate=20 => 0.20%
+            emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-TAKERRATE", oldValue, _rate);
         }
     }
 
-    function getMakerRate(bytes32 _tradePairId) external view override returns (uint) {
+    /**
+     * @notice  Returns Maker Rate (Commission)
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint8  maker Rate
+     */
+    function getMakerRate(bytes32 _tradePairId) external view override returns (uint8) {
         return tradePairMap[_tradePairId].makerRate;
     }
 
-    function getTakerRate(bytes32 _tradePairId) external view override returns (uint) {
+    /**
+     * @notice  Returns Taker Rate (Commission)
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint8  taker Rate
+     */
+    function getTakerRate(bytes32 _tradePairId) external view override returns (uint8) {
         return tradePairMap[_tradePairId].takerRate;
     }
 
-    function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        uint oldValue = _tradePair.allowedSlippagePercent;
-        _tradePair.allowedSlippagePercent = _allowedSlippagePercent;
-        emit ParameterUpdated(_tradePairId, "T-SLIPPAGE", oldValue, _allowedSlippagePercent);
+    /**
+     * @notice  sets the slippage percent for market orders, before it gets unsolicited cancel
+     * @dev     Can only be called by DEFAULT_ADMIN. Market Orders will be filled up to allowedSlippagePercent
+     * from the marketPrice(bestbid or bestask) to protect the trader. The remaining quantity gets
+     * unsolicited cancel
+     * @param   _tradePairId  id of the trading pair
+     * @param   _allowedSlippagePercent  allowed slippage percent=20 (Default = 20 : 20% = 20/100)
+     */
+    function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = tradePair.allowedSlippagePercent;
+        tradePair.allowedSlippagePercent = _allowedSlippagePercent;
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-SLIPPAGE", oldValue, _allowedSlippagePercent);
     }
 
-    function getAllowedSlippagePercent(bytes32 _tradePairId) external override view returns (uint8) {
+    /**
+     * @notice  Allowed slippage percent for market orders, before the market order gets an unsolicited cancel.
+     * @param   _tradePairId  id of the trading pair
+     * @return  uint8  slippage percent
+     */
+    function getAllowedSlippagePercent(bytes32 _tradePairId) external view override returns (uint8) {
         return tradePairMap[_tradePairId].allowedSlippagePercent;
     }
 
-    function getNSellBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder)
-                public view override returns (uint[] memory, uint[] memory, uint , bytes32) {
-        // get lowest (_type=0) N orders
-        return orderBooks.getNOrders(tradePairMap[_tradePairId].sellBookId, nPrice, nOrder, lastPrice, lastOrder,  0);
+    /**
+     * @notice  Returns Buy or Sell orderbook for the given tradepair and side
+     * @dev     Although this is a view function, it may run out of gas in case you try to get the entire order book
+     * with a lot of orders. That's why it has nPrice and nOrder parameters.
+     * Example: `getNBook(tradePair, 0, 2, 50, 0, bytes32(''))` : This will get the best 2 buy
+     * price points (top of the buy book and the next best price and it will aggregate the quantities
+     * of up to 50 orders at a time when generating the orderbook).
+     * @dev     If the order book is large and has many orders at a price point one needs to paginate through the order
+     * book using `getNBook`.  Use 0 for `_lastPrice` and an empty string in bytes32 for `_lastOrder`.  If looping use
+     * the last `_lastPrice` and `_lastOrder` returned from this function call.
+     * @param   _tradePairId  id of the trading pair
+     * @param   _side  0- BUY for BuyBook, 1- SELL for SellBook
+     * @param   _nPrice  Depth requested. If 1, top of the book, if 2 best 2 prices etc
+     * @param   _nOrder  The number of orders to be retrieved at a time at the price point
+     * @param   _lastPrice  The price point to start at
+     * @param   _lastOrder  the orderid to start at
+     * @return  uint256[]  Prices array
+     * @return  uint256[]  Quantities array
+     * @return  uint256  Last Price processed. 0 if no more price point left
+     * @return  bytes32  Last Order id processed. "" if no more orders left
+     */
+    function getNBook(
+        bytes32 _tradePairId,
+        Side _side,
+        uint256 _nPrice,
+        uint256 _nOrder,
+        uint256 _lastPrice,
+        bytes32 _lastOrder
+    )
+        external
+        view
+        override
+        returns (
+            uint256[] memory,
+            uint256[] memory,
+            uint256,
+            bytes32
+        )
+    {
+        bytes32 bookId = _side == Side.BUY
+            ? tradePairMap[_tradePairId].buyBookId
+            : tradePairMap[_tradePairId].sellBookId;
+        return orderBooks.getNOrders(bookId, _nPrice, _nOrder, _lastPrice, _lastOrder);
     }
 
-    function getNBuyBook(bytes32 _tradePairId, uint nPrice, uint nOrder, uint lastPrice, bytes32 lastOrder)
-                public view override returns (uint[] memory, uint[] memory, uint , bytes32) {
-        // get highest (_type=1) N orders
-        return orderBooks.getNOrders(tradePairMap[_tradePairId].buyBookId, nPrice, nOrder, lastPrice, lastOrder, 1);
-    }
-
+    /**
+     * @notice  Returns order details given the order id
+     * @param   _orderId  order id assigned by the contract
+     * @return  Order  Order Struct
+     */
     function getOrder(bytes32 _orderId) public view override returns (Order memory) {
         return orderMap[_orderId];
     }
 
-    function getOrderId() private returns (bytes32) {
-        return keccak256(abi.encodePacked(orderCounter++));
+    /**
+     * @notice  Returns order details given the trader and the clientOrderId
+     * @param   _trader  user's address
+     * @param   _clientOrderId   client Order id assigned by the user
+     * @return  Order  Order Struct
+     */
+    function getOrderByClientOrderId(address _trader, bytes32 _clientOrderId)
+        external
+        view
+        override
+        returns (Order memory)
+    {
+        return orderMap[clientOrderIDMap[_trader][_clientOrderId]];
     }
 
-    // get remaining quantity for an Order struct - cheap pure function
-    function getRemainingQuantity(Order memory _order) private pure returns (uint) {
-        return _order.quantity - _order.quantityFilled;
+    /**
+     * @notice  Returns the next Id to be used as order id
+     * @return  bytes32  id
+     */
+    function getNextOrderId() private returns (bytes32) {
+        return bytes32(getNextId());
+    }
+
+    /**
+     * @notice  increments the id counter to be used as order id or as an execution id
+     * @return  uint256  id
+     */
+    function getNextId() private returns (uint256) {
+        return idCounter++;
     }
 
     // get quote amount
-    function getQuoteAmount(bytes32 _tradePairId, uint _price, uint _quantity) public override view returns (uint) {
-      return  (_price * _quantity) / 10 ** tradePairMap[_tradePairId].baseDecimals;
+    /**
+     * @notice  Returns the quote amount for a given price and quantity
+     * @param   _tradePairId  id of the trading pair
+     * @param   _price  price
+     * @param   _quantity  quantity
+     * @return  uint256  quote amount
+     */
+    function getQuoteAmount(
+        bytes32 _tradePairId,
+        uint256 _price,
+        uint256 _quantity
+    ) public view override returns (uint256) {
+        return (_price * _quantity) / 10**tradePairMap[_tradePairId].baseDecimals;
     }
 
-    function emitStatusUpdate(bytes32 _tradePairId, bytes32 _orderId) private {
-        Order storage _order = orderMap[_orderId];
-        emit OrderStatusChanged(_order.traderaddress, _tradePairId, _order.id,
-                                _order.price, _order.totalAmount, _order.quantity, _order.side,
-                                _order.type1, _order.status, _order.quantityFilled,  _order.totalFee);
+    /**
+     * @notice  Emits a given order's latest state
+     * @dev     The details of the emitted event is as follows: \
+     * *version*  event version \
+     * *traderaddress*  traders’s wallet (immutable) \
+     * *pair*  traded pair. ie. ALOT/AVAX in bytes32 (immutable) \
+     * *orderId*  unique order id assigned by the contract (immutable) \
+     * *clientOrderId*  client order id given by the sender of the order as a reference (immutable) \
+     * *price * price of the order entered by the trader. (0 if market order) (immutable) \
+     * *totalamount*   cumulative amount in quote currency. ⇒ price* quantityfilled . If
+     * multiple partial fills , the new partial fill price*quantity is added to the
+     * current value in the field. Average execution price can be quickly
+     * calculated by totalamount/quantityfilled regardless of the number of
+     * partial fills at different prices \
+     * *quantity*  order quantity (immutable) \
+     * *side* Order side. See #addOrder (immutable) \
+     * *type1*  See #addOrder (immutable) \
+     * *type2*  See #addOrder (immutable) \
+     * ```solidity
+     * status  Order Status  {
+     *          NEW,
+     *          REJECTED, -- not used
+     *          PARTIAL,
+     *          FILLED,
+     *          CANCELED,
+     *          EXPIRED, -- not used
+     *          KILLED -- not used
+     *       }
+     * ```
+     * *quantityfilled*  cumulative quantity filled \
+     * *totalfee* cumulative fee paid for the order (total fee is always in terms of
+     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
+     * ALOT/AVAX , fee is paid in AVAX \
+     * Note: Order price can be different than the execution price.
+     * @param   _orderId  order id
+     */
+    function emitStatusUpdate(bytes32 _orderId) private {
+        Order storage order = orderMap[_orderId];
+        emit OrderStatusChanged(
+            ORDER_STATUS_CHANGED_VERSION,
+            order.traderaddress,
+            order.tradePairId,
+            order.id,
+            order.clientOrderId,
+            order.price,
+            order.totalAmount,
+            order.quantity,
+            order.side,
+            order.type1,
+            order.type2,
+            order.status,
+            order.quantityFilled,
+            order.totalFee
+        );
     }
 
-    //Used to Round Down the fees to the display decimals to avoid dust
-    //Used to Round Down the auction price interval to avoid small restrictions
-    // example: a = 1245, m: 2 ==> 1200
-    function floor(uint a, uint m) pure public returns (uint) {
-        return (a / 10 ** m) * 10 ** m;
-    }
-
-    function handleExecution(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity, uint _rate) private returns (uint) {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        Order storage _order = orderMap[_orderId];
-        require(_order.status != Status.CANCELED, "T-OACA-01");
-        _order.quantityFilled += _quantity;
-        require(_order.quantityFilled <= _order.quantity, "T-CQFA-01");
-        _order.status = _order.quantity == _order.quantityFilled ? Status.FILLED : Status.PARTIAL;
-        uint amount = getQuoteAmount(_tradePairId, _price, _quantity);
-        _order.totalAmount += amount;
+    /**
+     * @notice  Calculates the commission and updates the oder state after an execution
+     * @dev     Updates the `totalAmount`, `quantityFilled`, `totalFee` and the status of the order.
+     * Commissions are rounded down based on evm and display decimals to avoid DUST
+     * @param   _orderId  order id to update
+     * @param   _price  execution price ( Can be different than order price)
+     * @param   _quantity  execution quantity
+     * @param   _rate  maker or taker rate
+     * @return  uint256  last fee charged
+     */
+    function handleExecution(
+        bytes32 _orderId,
+        uint256 _price,
+        uint256 _quantity,
+        uint8 _rate
+    ) private returns (uint256) {
+        Order storage order = orderMap[_orderId];
+        TradePair storage tradePair = tradePairMap[order.tradePairId];
+        require(order.status != Status.CANCELED, "T-OACA-01");
+        order.quantityFilled += _quantity;
+        require(order.quantityFilled <= order.quantity, "T-CQFA-01");
+        order.status = order.quantity == order.quantityFilled ? Status.FILLED : Status.PARTIAL;
+        uint256 amount = getQuoteAmount(order.tradePairId, _price, _quantity);
+        order.totalAmount += amount;
         //Rounding Down the fee based on display decimals to avoid DUST
-        uint lastFeeRounded = _order.side == Side.BUY ?
-                floor(_quantity * _rate / TENK, _tradePair.baseDecimals - _tradePair.baseDisplayDecimals) :
-                floor(amount * _rate / TENK, _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals);
-        _order.totalFee += lastFeeRounded;
+        uint256 lastFeeRounded = order.side == Side.BUY
+            ? UtilsLibrary.floor((_quantity * _rate) / TENK, tradePair.baseDecimals - tradePair.baseDisplayDecimals)
+            : UtilsLibrary.floor((amount * _rate) / TENK, tradePair.quoteDecimals - tradePair.quoteDisplayDecimals);
+        order.totalFee += lastFeeRounded;
         return lastFeeRounded;
     }
 
-    function addExecution(bytes32 _tradePairId, Order memory _makerOrder, Order memory _takerOrder, uint _price, uint _quantity) private {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        // fill the maker first so it is out of the book quickly
-        uint mlastFee = handleExecution(_tradePairId, _makerOrder.id, _price, _quantity, _tradePair.makerRate); // also updates the order status
-        uint tlastFee = handleExecution(_tradePairId, _takerOrder.id, _price, _quantity, _tradePair.takerRate); // also updates the order status
-        portfolio.addExecution(_makerOrder, _takerOrder.traderaddress, _tradePair.baseSymbol, _tradePair.quoteSymbol, _quantity,
-                               getQuoteAmount(_tradePairId, _price, _quantity), mlastFee, tlastFee);
-        emitExecuted(_tradePairId, _price, _quantity, _makerOrder, _takerOrder, mlastFee, tlastFee);
-        emitStatusUpdate(_tradePairId, _makerOrder.id); // EMIT maker order's status update
+    /**
+     * @notice  Applies an execution to both maker and the taker orders and adjust holdings in portfolio
+     * @dev     Emits Executed event showing the execution details. Note that an order's price
+     * can be different than a taker order price, but it should be identical to maker order's price.
+     * @param   _makerOrderId  maker order id
+     * @param   _takerOrderId  maker order id
+     * @param   _price  execution price
+     * @param   _quantity  execution quantity
+     */
+    function addExecution(
+        bytes32 _makerOrderId,
+        bytes32 _takerOrderId,
+        uint256 _price,
+        uint256 _quantity
+    ) private {
+        Order storage makerOrder = orderMap[_makerOrderId];
+        TradePair storage tradePair = tradePairMap[makerOrder.tradePairId];
+        Order storage takerOrder = orderMap[_takerOrderId];
+        uint256 mlastFee = handleExecution(makerOrder.id, _price, _quantity, tradePair.makerRate);
+        uint256 tlastFee = handleExecution(takerOrder.id, _price, _quantity, tradePair.takerRate);
+        uint256 qAmount = getQuoteAmount(makerOrder.tradePairId, _price, _quantity);
+        portfolio.addExecution(
+            makerOrder.side,
+            makerOrder.traderaddress,
+            takerOrder.traderaddress,
+            tradePair.baseSymbol,
+            tradePair.quoteSymbol,
+            _quantity,
+            qAmount,
+            mlastFee,
+            tlastFee
+        );
+        emitExecuted(_price, _quantity, makerOrder.id, takerOrder.id, mlastFee, tlastFee);
+        emitStatusUpdate(makerOrder.id); // EMIT maker order's status update
     }
 
-    function emitExecuted(bytes32 _tradePairId, uint _price, uint _quantity , Order memory _makerOrder, Order memory _takerOrder, uint mlastFee, uint tlastFee) private {
-
-        emit Executed(_tradePairId, _price, _quantity, _makerOrder.id, _takerOrder.id, mlastFee, tlastFee, _takerOrder.side , orderCounter++,
-                    _makerOrder.traderaddress, _takerOrder.traderaddress); //_makerOrder.side == Side.BUY ? true : false
+    /**
+     * @notice  Emits the Executed Event showing \
+     * `ersion`  event version \
+     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 \
+     * `_price`  see below \
+     * `_quantity`  see below \
+     * `_makerOrderId`  see below \
+     * `_takerOrderId`  see below \
+     * `_mlastFee`  see below \
+     * `_tlastFee`  see below \
+     * `takerSide`  Side of the taker order. 0 - BUY, 1- SELL (Note: This can be used to identify
+     * the fee UNITs. If takerSide = 1, then the fee is paid by the Maker in Base
+     * Currency and the fee paid by the taker in Quote currency. If takerSide= 0
+     * then the fee is paid by the Maker in Quote Currency and the fee is paid by
+     * the taker in Base currency \
+     * `execId`  Unique trade id (execution id) assigned by the contract \
+     * `addressMaker`  maker traderaddress \
+     * `addressTaker`  taker traderaddress \
+     * @param   _price      executed price
+     * @param   _quantity   executed quantity
+     * @param   _makerOrderId  Maker Order id
+     * @param   _takerOrderId  Taker Order id
+     * @param   _mlastFee   fee paid by maker
+     * @param   _tlastFee   fee paid by taker
+     */
+    function emitExecuted(
+        uint256 _price,
+        uint256 _quantity,
+        bytes32 _makerOrderId,
+        bytes32 _takerOrderId,
+        uint256 _mlastFee,
+        uint256 _tlastFee
+    ) private {
+        Order storage makerOrder = orderMap[_makerOrderId];
+        Order storage takerOrder = orderMap[_takerOrderId];
+        emit Executed(
+            EXECUTED_VERSION,
+            makerOrder.tradePairId,
+            _price,
+            _quantity,
+            makerOrder.id,
+            takerOrder.id,
+            _mlastFee,
+            _tlastFee,
+            takerOrder.side,
+            getNextId(),
+            makerOrder.traderaddress,
+            takerOrder.traderaddress
+        );
     }
 
-    function decimalsOk(uint value, uint8 decimals, uint8 displayDecimals) private pure returns (bool) {
-        return (value - (value - ((value % 10**decimals) % 10**(decimals - displayDecimals) ))) == 0;
+    /**
+     * @notice  Checks if order can be entered without any issues
+     * @dev     Checks if tradePair or addOrder is paused as well as
+     * if decimals, order types and clientOrderId are supplied properly \
+     * @dev     clientorderid is sent by the owner of an order and it is returned in responses for
+     * reference. It must be unique per traderaddress.
+     * @param   _trader  trader address
+     * @param   _clientOrderId  unique id provided by the owner of an order
+     * @param   _tradePairId  id of the trading pair
+     * @param   _quantity  quantity
+     * @param   _type1  Type1 : MARKET,LIMIT etc
+     */
+    function addOrderChecks(
+        address _trader,
+        bytes32 _clientOrderId,
+        bytes32 _tradePairId,
+        uint256 _quantity,
+        Type1 _type1
+    ) private view {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(!tradePair.pairPaused, "T-PPAU-01");
+        require(!tradePair.addOrderPaused, "T-AOPA-01");
+        require(allowedOrderTypes[_tradePairId].contains(uint256(_type1)), "T-IVOT-01");
+        require(UtilsLibrary.decimalsOk(_quantity, tradePair.baseDecimals, tradePair.baseDisplayDecimals), "T-TMDQ-01");
+        require(clientOrderIDMap[_trader][_clientOrderId] == 0, "T-CLOI-01");
     }
 
-    // FRONTEND ENTRY FUNCTION TO CALL TO ADD ORDER
-    function addOrder(bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) public override nonReentrant whenNotPaused {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(!_tradePair.pairPaused, "T-PPAU-01");
-        require(!_tradePair.addOrderPaused, "T-AOPA-01");
-        require(allowedOrderTypes[_tradePairId].contains(uint(_type1)), "T-IVOT-01");
+    /**
+     * @notice  Frontend Entry function to call to add an order
+     * @dev     Adds an order with the given fields. As a general rule of thumb msg.sender should be the `_trader`
+     * otherwise the tx will revert. 'OrderStatusChanged' event will be emitted
+     * when an order is received and committed to the blockchain. You can get the contract
+     * generated orderid along with your clientorderid from this event. When the blockchain is extremely busy,
+     * the transactions are queued up in the mempool and prioritized based on their gas price.
+     * We have seen orders waiting for hours in the mempool in Avalanche C-Chain, before they are committed
+     * in extreme cases. This is a function of the blockchain and will typically happen when the current gas
+     * price is around 100 gwei (3-4 times of the minimum gas price) and your transaction maximum gas is set
+     * to be 50 gwei(normal level). Your transaction will wait in the mempool until the blockchain gas price
+     * goes back to normal levels. \
+     * @dev     `_clientoOderId` is sent by the owner of an order and it is returned in responses for
+     * reference. It must be unique per traderaddress. \
+     * @dev     Price for market Orders are set to 0 internally (type1=0). Valid price decimals (baseDisplayDecimals)
+     * and evm decimals can be obtained by calling `getDisplayDecimals` and `getDecimals`, respectively. \
+     * @dev     Valid quantity decimals (quoteDisplayDecimals) and evm decimals can be obtained by calling
+     * `getDisplayDecimals` and `getDecimals`, respectively. \
+     * @dev     The default for type2 (Order SubType) is 0 equivalent to GTC. \
+     * Here are the other SubTypes: \
+     * 0 = GTC : Good Till Cancel \
+     * 1 = FOK : FIll or Kill (Will fill entirely or will revert with "T-FOKF-01") \
+     * 2 = IOC : Immedidate or Cancel  (Will fill partially or fully, will get status=CANCELED if filled partially) \
+     * 3 = PO : Post Only (Will either go in the orderbook or revert with "T-T2PO-01" if it has a potential match)
+     * @param   _trader  address of the trader. If msg.sender is not the `_trader` the tx will revert.
+     * @param   _clientOrderId unique id provided by the owner of an order
+     * @param   _tradePairId  id of the trading pair
+     * @param   _price  price of the order
+     * @param   _quantity  quantity of the order
+     * @param   _side  enum ITradePairs.Side  Side of the order 0 BUY, 1 SELL
+     * @param   _type1  enum ITradePairs.Type1 Type of the order. 0 MARKET , 1 LIMIT (STOP and STOPLIMIT NOT Supported)
+     * @param   _type2  enum ITradePairs.Type2 SubType of the order
+     */
+    function addOrder(
+        address _trader,
+        bytes32 _clientOrderId,
+        bytes32 _tradePairId,
+        uint256 _price,
+        uint256 _quantity,
+        Side _side,
+        Type1 _type1,
+        Type2 _type2
+    ) external override nonReentrant whenNotPaused {
+        require(_trader == msg.sender || hasRole(ON_BEHALFOF_ROLE, msg.sender), "T-OOCA-01");
+        addOrderChecks(_trader, _clientOrderId, _tradePairId, _quantity, _type1);
 
-        require(decimalsOk(_quantity, _tradePair.baseDecimals, _tradePair.baseDisplayDecimals), "T-TMDQ-01");
-
-        if (_type1 == Type1.LIMIT  || _type1 == Type1.LIMITFOK ) {
-            addLimitOrder(msg.sender, _tradePairId, _price, _quantity, _side, _type1);
+        if (_type1 == Type1.LIMIT) {
+            addLimitOrder(_trader, _clientOrderId, _tradePairId, _price, _quantity, _side, _type2);
         } else if (_type1 == Type1.MARKET) {
-            addMarketOrder(msg.sender, _tradePairId, _quantity, _side);
+            addMarketOrder(_trader, _clientOrderId, _tradePairId, _quantity, _side);
         }
     }
 
-    // FRONTEND ENTRY FUNCTION TO CALL TO ADD ORDER
-    function addOrderFrom(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) external override nonReentrant whenNotPaused {
-        require(_trader == msg.sender || portfolio.isInternalContract(msg.sender), "T-OODT-01");
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(!_tradePair.pairPaused, "T-PPAU-06");
-        require(!_tradePair.addOrderPaused, "T-AOPA-02");
-        require(allowedOrderTypes[_tradePairId].contains(uint(_type1)), "T-IVOT-02");
+    /**
+     * @notice  Private function. Adds a LIMIT Order. See #addOrder.
+     * @param   _trader   See #addOrder
+     * @param   _clientOrderId   See #addOrder
+     * @param   _tradePairId   See #addOrder
+     * @param   _price   See #addOrder
+     * @param   _quantity   See #addOrder
+     * @param   _side   See #addOrder
+     * @param   _type2   See #addOrder
+     */
+    function addLimitOrder(
+        address _trader,
+        bytes32 _clientOrderId,
+        bytes32 _tradePairId,
+        uint256 _price,
+        uint256 _quantity,
+        Side _side,
+        Type2 _type2
+    ) private {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(UtilsLibrary.decimalsOk(_price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals), "T-TMDP-01");
+        uint256 tradeAmnt = getQuoteAmount(_tradePairId, _price, _quantity);
+        require(tradeAmnt >= tradePair.minTradeAmount, "T-LTMT-02");
+        require(tradeAmnt <= tradePair.maxTradeAmount, "T-MTMT-02");
 
-        require(decimalsOk(_quantity, _tradePair.baseDecimals, _tradePair.baseDisplayDecimals), "T-TMDQ-02");
-
-        if (_type1 == Type1.LIMIT  || _type1 == Type1.LIMITFOK ) {
-            addLimitOrder(_trader, _tradePairId, _price, _quantity, _side, _type1);
-        } else if (_type1 == Type1.MARKET) {
-            addMarketOrder(_trader, _tradePairId, _quantity, _side);
+        bytes32 orderId = getNextOrderId();
+        clientOrderIDMap[_trader][_clientOrderId] = orderId;
+        Order storage order = orderMap[orderId];
+        order.id = orderId;
+        order.clientOrderId = _clientOrderId;
+        order.tradePairId = _tradePairId;
+        order.traderaddress = _trader;
+        order.price = _price;
+        order.quantity = _quantity;
+        order.side = _side;
+        order.type1 = Type1.LIMIT;
+        if (_type2 != Type2.GTC && !UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
+            _type2 = Type2.GTC; // All auction orders are GTC
         }
+        order.type2 = _type2;
+        //order.totalAmount= 0;         // evm intialized
+        //order.quantityFilled= 0;      // evm intialized
+        //order.status= Status.NEW;     // evm intialized
+        //order.totalFee= 0;            // evm intialized
+
+        //Skip matching if in Auction Mode
+        if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
+            _quantity = matchOrder(order.id, 255);
+        }
+        require(_type2 != Type2.PO || (_type2 == Type2.PO && order.quantity == _quantity), "T-T2PO-01");
+        // Unfilled Limit Orders Go in the Orderbook (Including Auction Orders)
+        if (_quantity > 0 && (_type2 == Type2.GTC || _type2 == Type2.PO)) {
+            bytes32 bookId = _side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
+            orderBooks.addOrder(bookId, order.id, order.price);
+            bytes32 adjSymbol = _side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
+            uint256 adjAmount = _side == Side.BUY ? getQuoteAmount(_tradePairId, _price, _quantity) : _quantity;
+            portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
+        }
+        if (_type2 == Type2.FOK) {
+            require(_quantity == 0, "T-FOKF-01");
+        }
+        if (_type2 == Type2.IOC && _quantity > 0) {
+            order.status = Status.CANCELED;
+        }
+        // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
+        emitStatusUpdate(order.id);
     }
 
-    function addMarketOrder(address _trader, bytes32 _tradePairId, uint _quantity, Side _side) private {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(matchingAllowed(_tradePair.auctionMode), "T-AUCT-04");
-        uint marketPrice;
-        uint worstPrice; // Market Orders will be filled up to allowedSlippagePercent from the marketPrice to protect the trader, the remaining qty gets unsolicited cancel
-        bytes32 bookId;
-        if (_side == Side.BUY) {
-            bookId = _tradePair.sellBookId;
-            marketPrice = orderBooks.first(bookId);
-            worstPrice = marketPrice * (100 + _tradePair.allowedSlippagePercent) / 100;
-        } else {
-            bookId = _tradePair.buyBookId;
-            marketPrice = orderBooks.last(bookId);
-            worstPrice = marketPrice * (100 - _tradePair.allowedSlippagePercent) / 100;
-        }
+    /**
+     * @notice  Private function. Adds a MARKET Order. See #addOrder.
+     * @param   _trader  See #addOrder
+     * @param   _clientOrderId  See #addOrder
+     * @param   _tradePairId  See #addOrder
+     * @param   _quantity  See #addOrder
+     * @param   _side  See #addOrder
+     */
+    function addMarketOrder(
+        address _trader,
+        bytes32 _clientOrderId,
+        bytes32 _tradePairId,
+        uint256 _quantity,
+        Side _side
+    ) private {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(UtilsLibrary.matchingAllowed(tradePair.auctionMode), "T-AUCT-04");
+        // Market Orders will be filled up to allowedSlippagePercent from the marketPrice to protect the trader,
+        // the remaining quantity gets unsolicited cancel
+
+        bytes32 bookId = _side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
+        uint256 marketPrice = orderBooks.bestPrice(bookId);
+        uint256 worstPrice = _side == Side.BUY
+            ? (marketPrice * (100 + tradePair.allowedSlippagePercent)) / 100
+            : (marketPrice * (100 - tradePair.allowedSlippagePercent)) / 100;
 
         // don't need digit check here as it is taken from the book
-        uint tradeAmnt = (marketPrice * _quantity) / (10 ** _tradePair.baseDecimals);
+        uint256 tradeAmnt = getQuoteAmount(_tradePairId, marketPrice, _quantity);
         // a market order will be rejected here if there is nothing in the book because marketPrice will be 0
-        require(tradeAmnt >= _tradePair.minTradeAmount, "T-LTMT-01");
-        require(tradeAmnt <= _tradePair.maxTradeAmount, "T-MTMT-01");
+        require(tradeAmnt >= tradePair.minTradeAmount, "T-LTMT-01");
+        require(tradeAmnt <= tradePair.maxTradeAmount, "T-MTMT-01");
 
-        bytes32 orderId = getOrderId();
-        Order storage _order = orderMap[orderId];
-        _order.id = orderId;
-        _order.traderaddress = _trader;
-        _order.price = worstPrice; // setting the price to the worst price so it can be filled up to this price given enough qty
-        _order.quantity = _quantity;
-        _order.side = _side;
-        //_order.quantityFilled = 0;     // evm intialized
-        //_order.totalAmount = 0;        // evm intialized
-        //_order.type1 = _type1;         // evm intialized to MARKET
-        //_order.status = Status.NEW;    // evm intialized
-        //_order.totalFee = 0;           // evm intialized
+        bytes32 orderId = getNextOrderId();
+        clientOrderIDMap[_trader][_clientOrderId] = orderId;
+        Order storage order = orderMap[orderId];
+        order.id = orderId;
+        order.clientOrderId = _clientOrderId;
+        order.tradePairId = _tradePairId;
+        order.traderaddress = _trader;
+        order.price = worstPrice; // price set to the worst price to fill up to this price given enough quantity
+        order.quantity = _quantity;
+        order.side = _side;
+        //order.type2 = Type2.GTC;      // evm initialzed
+        //order.quantityFilled = 0;     // evm intialized
+        //order.totalAmount = 0;        // evm intialized
+        //order.type1 = _type1;         // evm intialized to MARKET
+        //order.status = Status.NEW;    // evm intialized
+        //order.totalFee = 0;           // evm intialized
 
-        uint takerRemainingQuantity;
-        if (_side == Side.BUY) {
-            takerRemainingQuantity= matchSellBook(_tradePairId, _order);
-        } else {  // == Order.Side.SELL
-            takerRemainingQuantity= matchBuyBook(_tradePairId, _order);
-        }
-
-        if (!orderBooks.orderListExists(bookId, worstPrice)
-                && takerRemainingQuantity > 0) {
+        uint256 takerRemainingQuantity = matchOrder(order.id, 255);
+        if (!orderBooks.orderListExists(bookId, worstPrice) && takerRemainingQuantity > 0) {
             // IF the Market Order fills all the way to the worst price, it gets KILLED for the remaining amount.
-            orderMap[_order.id].status = Status.KILLED;
+            orderMap[order.id].status = Status.CANCELED;
         }
-        _order.price = 0; //Reset the market order price back to 0
-        emitStatusUpdate(_tradePairId, _order.id);  // EMIT taker(potential) order status. if no fills, the status will be NEW, if not status will be either PARTIAL or FILLED
+        order.price = 0; //Reset the market order price back to 0
+
+        // Order status will be either FILLED
+        // or CANCELED in case it hits allowedSlippagePercent treshold after partial fills
+        emitStatusUpdate(order.id);
     }
 
-    function matchAuctionOrders(bytes32 _tradePairId, uint8 _maxCount) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(_tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
-        require(_tradePair.auctionPrice > 0, "T-AUCT-03");
-        Order memory takerOrder;
-        uint takerRemainingQuantity;
-        bytes32 bookId = _tradePair.sellBookId;
-        uint price = orderBooks.first(bookId);
-        bytes32 head = orderBooks.getHead(bookId, price);
-        if ( head != '' ) {
-            takerOrder = getOrder(head);
-            uint startRemainingQuantity = getRemainingQuantity(takerOrder);
-            takerRemainingQuantity = matchBuyBookAuction(_tradePairId, takerOrder, _maxCount);
+    /**
+     * @notice  Function to match Auction orders
+     * @dev     Requires `DEFAULT_ADMIN_ROLE`, also called by `ExchangeSub.matchAuctionOrders` that
+     * requires `AUCTION_ADMIN_ROLE`.
+     * @param   _takerOrderId  Taker Order id
+     * @param   _maxCount   controls max number of fills an order can get at a time to avoid running out of gas
+     * @return  uint256  Remaining quantity of the taker order
+     */
+    function matchAuctionOrder(bytes32 _takerOrderId, uint8 _maxCount)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        returns (uint256)
+    {
+        TradePair storage tradePair = tradePairMap[orderMap[_takerOrderId].tradePairId];
+        require(tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
+        require(tradePair.auctionPrice > 0, "T-AUCT-03");
+        return matchOrder(_takerOrderId, _maxCount);
+    }
+
+    /**
+     * @notice  Matches a taker order with maker orders in the opposite Orderbook before
+     * it is entered in its own orderbook.
+     * Also handles matching auction orders.
+     * @dev     IF BUY order, it will try to match with an order in the SELL OrderBook and vice versa
+     * @param   _takerOrderId  Taker Order id
+     * @param   _maxCount  Max number of fills an order can get at a time to avoid running out of gas (Defaults 255).
+     * @return  uint256  Remaining quantity of the taker order
+     */
+    function matchOrder(bytes32 _takerOrderId, uint8 _maxCount) private returns (uint256) {
+        Order storage takerOrder = orderMap[_takerOrderId];
+        Side side = takerOrder.side;
+        TradePair storage tradePair = tradePairMap[takerOrder.tradePairId];
+        // Get the opposite Book. if buying need to match with SellBook and vice versa
+        bytes32 bookId = side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
+
+        (uint256 price, bytes32 makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+
+        Order storage makerOrder;
+        uint256 quantity;
+        // Don't need price > 0 check as orderBooks.getHead(bookId,price) != ""
+        // which is makerOrderId != "" takes care of it
+        while (
+            takerOrder.quantity > takerOrder.quantityFilled &&
+            makerOrderId != "" &&
+            (side == Side.BUY ? takerOrder.price >= price : takerOrder.price <= price) &&
+            _maxCount > 0
+        ) {
+            makerOrder = orderMap[makerOrderId];
+            quantity = orderBooks.matchTrade(
+                bookId,
+                price,
+                UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled),
+                UtilsLibrary.getRemainingQuantity(makerOrder.quantity, makerOrder.quantityFilled)
+            );
+
+            if (tradePair.auctionMode == AuctionMode.MATCHING) {
+                //In the typical flow, takerOrder amounts are all available and not locked
+                //In auction, taker order amounts are locked like a maker oder and
+                //has to be made available before addExecution
+                portfolio.adjustAvailable(
+                    IPortfolio.Tx.INCREASEAVAIL,
+                    takerOrder.traderaddress,
+                    tradePair.baseSymbol,
+                    quantity
+                );
+                // In Auction, all executions should be at auctionPrice
+                price = tradePair.auctionPrice;
+            }
+            addExecution(makerOrder.id, takerOrder.id, price, quantity); // this makes a state change to Order Map
+
+            if (tradePair.auctionMode == AuctionMode.MATCHING && makerOrder.price > tradePair.auctionPrice) {
+                // Increase the available by the difference between the makerOrder & the auction Price
+                portfolio.adjustAvailable(
+                    IPortfolio.Tx.INCREASEAVAIL,
+                    makerOrder.traderaddress,
+                    tradePair.quoteSymbol,
+                    getQuoteAmount(makerOrder.tradePairId, makerOrder.price - tradePair.auctionPrice, quantity)
+                );
+            }
+            (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+            _maxCount--;
+        }
+
+        uint256 takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(
+            takerOrder.quantity,
+            takerOrder.quantityFilled
+        );
+        if (tradePair.auctionMode == AuctionMode.MATCHING) {
+            emitStatusUpdate(takerOrder.id); // EMIT taker order's status update
             if (takerRemainingQuantity == 0) {
-                orderBooks.removeFirstOrder(bookId, price);
+                //Remove the taker auction order from the sell orderbook
+                orderBooks.removeFirstOrder(tradePair.sellBookId, takerOrder.price);
             }
-            if (startRemainingQuantity == takerRemainingQuantity) {
-                emit ParameterUpdated(_tradePairId, "T-AUCT-MATCH", 1, 0);
-            } else {
-                emitStatusUpdate(_tradePairId, takerOrder.id); // EMIT taker order's status update
-            }
-        } else {
-            emit ParameterUpdated(_tradePairId, "T-AUCT-MATCH", 1, 0);
         }
+
+        return takerRemainingQuantity;
     }
 
-    function matchSellBook(bytes32 _tradePairId, Order memory takerOrder) private returns (uint) {
-        bytes32 sellBookId = tradePairMap[_tradePairId].sellBookId;
-        uint price = orderBooks.first(sellBookId);
-        bytes32 head = orderBooks.getHead(sellBookId, price);
-        Order memory makerOrder;
-        uint quantity;
-        //Don't need price > 0 check as sellBook.getHead(price) != '' takes care of it
-        while ( getRemainingQuantity(takerOrder) > 0 && head != '' && takerOrder.price >=  price) {
-            makerOrder = getOrder(head);
-            quantity = orderBooks.matchTrade(sellBookId, price, getRemainingQuantity(takerOrder), getRemainingQuantity(makerOrder));
-            addExecution(_tradePairId, makerOrder, takerOrder, price, quantity); // this makes a state change to Order Map
-            takerOrder.quantityFilled += quantity;  // locally keep track of Qty remaining
-            price = orderBooks.first(sellBookId);
-            head = orderBooks.getHead(sellBookId, price);
-        }
-        return getRemainingQuantity(takerOrder);
-    }
-
-    function matchBuyBook(bytes32 _tradePairId, Order memory takerOrder) private returns (uint) {
-        bytes32 buyBookId = tradePairMap[_tradePairId].buyBookId;
-        uint price = orderBooks.last(buyBookId);
-        bytes32 head = orderBooks.getHead(buyBookId, price);
-        Order memory makerOrder;
-        uint quantity;
-        //Don't need price > 0 check as buyBook.getHead(price) != '' takes care of it
-        while (getRemainingQuantity(takerOrder) > 0 && head != '' && takerOrder.price <=  price ) {
-            makerOrder = getOrder(head);
-            quantity = orderBooks.matchTrade(buyBookId, price, getRemainingQuantity(takerOrder), getRemainingQuantity(makerOrder));
-            addExecution(_tradePairId, makerOrder, takerOrder, price, quantity); // this makes a state change to Order Map
-            takerOrder.quantityFilled += quantity;  // locally keep track of Qty remaining
-            price = orderBooks.last(buyBookId);
-            head = orderBooks.getHead(buyBookId, price);
-        }
-        return getRemainingQuantity(takerOrder);
-    }
-
-    function matchBuyBookAuction(bytes32 _tradePairId, Order memory takerOrder, uint8 maxCount) private returns (uint) {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        bytes32 buyBookId = _tradePair.buyBookId;
-        uint price = orderBooks.last(buyBookId);
-        bytes32 head = orderBooks.getHead(buyBookId, price);
-        Order memory makerOrder;
-        uint quantity;
-        //Don't need price > 0 check as buyBook.getHead(price) != '' takes care of it
-        while (getRemainingQuantity(takerOrder) > 0 && head != '' && takerOrder.price <=  price && maxCount>0) {
-            makerOrder = getOrder(head);
-            quantity = orderBooks.matchTrade(buyBookId, price, getRemainingQuantity(takerOrder), getRemainingQuantity(makerOrder));
-            portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, takerOrder.traderaddress, _tradePair.baseSymbol, quantity);
-            addExecution(_tradePairId, makerOrder, takerOrder, _tradePair.auctionPrice , quantity); // this makes a state change to Order Map
-            // Increase the available by the difference between the makerOrder & the auction Price
-            if (makerOrder.price > _tradePair.auctionPrice) {
-                portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, makerOrder.traderaddress, _tradePair.quoteSymbol,
-                                    getQuoteAmount(_tradePairId, makerOrder.price -_tradePair.auctionPrice, quantity));
-            }
-            takerOrder.quantityFilled += quantity;  // locally keep track of Qty remaining
-            price = orderBooks.last(buyBookId);
-            head = orderBooks.getHead(buyBookId, price);
-            maxCount--;
-        }
-        return getRemainingQuantity(takerOrder);
-    }
-
-    function unsolicitedCancel(bytes32 _tradePairId, bytes32 _bookId, uint8 _maxCount) public override onlyOwner {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(_tradePair.pairPaused, "T-PPAU-05");
-        uint price = orderBooks.first(_bookId);
-        bytes32 head = orderBooks.getHead(_bookId, price);
-        while ( head != '' && _maxCount>0 ) {
-            doOrderCancel(_tradePairId, head);
-            price = orderBooks.first(_bookId);
-            head = orderBooks.getHead(_bookId, price);
+    /**
+     * @notice  Admin Function to cancel orders in the orderbook when delisting a trade pair
+     * @dev     Will cancel orders even when TradePair is paused
+     * @param   _tradePairId  id of the trading pair
+     * @param   _isBuyBook  true if buy Orderbook
+     * @param   _maxCount  controls max number of orders to cancel at a time to avoid running out of gas
+     */
+    function unsolicitedCancel(
+        bytes32 _tradePairId,
+        bool _isBuyBook,
+        uint8 _maxCount
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        //Need to be able to cancel when tradePair is paused
+        bytes32 bookId = _isBuyBook ? tradePair.buyBookId : tradePair.sellBookId;
+        (uint256 price, bytes32 orderId) = orderBooks.getTopOfTheBook(bookId);
+        while (orderId != "" && _maxCount > 0) {
+            doOrderCancel(orderId);
+            (price, orderId) = orderBooks.getTopOfTheBook(bookId);
             _maxCount--;
         }
     }
 
-    function addLimitOrder(address _trader, bytes32 _tradePairId, uint _price, uint _quantity, Side _side, Type1 _type1) private {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(decimalsOk(_price, _tradePair.quoteDecimals, _tradePair.quoteDisplayDecimals), "T-TMDP-01");
-        uint tradeAmnt = (_price * _quantity) / (10 ** _tradePair.baseDecimals);
-        require(tradeAmnt >= _tradePair.minTradeAmount, "T-LTMT-02");
-        require(tradeAmnt <= _tradePair.maxTradeAmount, "T-MTMT-02");
-
-        bytes32 orderId = getOrderId();
-        Order storage _order = orderMap[orderId];
-        _order.id = orderId;
-        _order.traderaddress = _trader;
-        _order.price = _price;
-        _order.quantity = _quantity;
-        _order.side = _side;
-        _order.type1 = _type1;
-        //_order.totalAmount= 0;         // evm intialized
-        //_order.quantityFilled= 0;      // evm intialized
-        //_order.status= Status.NEW;     // evm intialized
-        //_order.totalFee= 0;            // evm intialized
-
-        if (_side == Side.BUY) {
-            //Skip matching if in Auction Mode
-            if (matchingAllowed(_tradePair.auctionMode)) {
-                _quantity = matchSellBook(_tradePairId, _order);
-            }
-            // Unfilled Limit Orders Go in the Orderbook (Including Auction Orders)
-            if (_quantity > 0  && _type1 == Type1.LIMIT) {
-                orderBooks.addOrder(_tradePair.buyBookId, _order.id, _order.price);
-                portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, _order.traderaddress, _tradePair.quoteSymbol,
-                                          getQuoteAmount(_tradePairId, _price, _quantity));
-            }
-        } else {  // == Order.Side.SELL
-            //Skip matching if in Auction Mode
-            if (matchingAllowed(_tradePair.auctionMode)) {
-                _quantity = matchBuyBook(_tradePairId, _order);
-            }
-            // Unfilled Limit Orders Go in the Orderbook (Including Auction Orders)
-            if (_quantity > 0 && _type1 == Type1.LIMIT) {
-                orderBooks.addOrder(_tradePair.sellBookId, _order.id, _order.price);
-                portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, _order.traderaddress, _tradePair.baseSymbol, _quantity);
-            }
-        }
-        if (_type1 == Type1.LIMITFOK) {
-            require(_quantity == 0, "T-FOKF-01");
-        }
-        emitStatusUpdate(_tradePairId, _order.id);  // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
+    /**
+     * @notice  Cancels an order and immediatly enters a similar order in the same direction.
+     * @dev     Only the quantity and the price of the order can be changed. All the other order
+     * fields are copied from the canceled order to the new order.
+     * The time priority of the original order is lost.
+     * Canceled order's locked quantity is made available for the new order within this tx
+     * @param   _orderId  order id to cancel
+     * @param   _clientOrderId  clinent order id of the new order
+     * @param   _price  price of the new order
+     * @param   _quantity  quantity of the new order
+     */
+    function cancelReplaceOrder(
+        bytes32 _orderId,
+        bytes32 _clientOrderId,
+        uint256 _price,
+        uint256 _quantity
+    ) external override nonReentrant whenNotPaused {
+        Order storage order = orderMap[_orderId];
+        require(order.traderaddress == msg.sender, "T-OOCC-01");
+        require(UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status), "T-OAEX-01");
+        addOrderChecks(order.traderaddress, _clientOrderId, order.tradePairId, _quantity, order.type1);
+        doOrderCancel(order.id);
+        addLimitOrder(
+            order.traderaddress,
+            _clientOrderId,
+            order.tradePairId,
+            _price,
+            _quantity,
+            order.side,
+            order.type2
+        );
     }
 
-    function doOrderCancel(bytes32 _tradePairId, bytes32 _orderId) private {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        Order storage _order = orderMap[_orderId];
-        _order.status = Status.CANCELED;
-        if (_order.side == Side.BUY) {
-            orderBooks.cancelOrder(_tradePair.buyBookId, _orderId, _order.price);
-            portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, _order.traderaddress, _tradePair.quoteSymbol,
-                                      getQuoteAmount(_tradePairId, _order.price, getRemainingQuantity(_order)));
-        } else {
-            orderBooks.cancelOrder(_tradePair.sellBookId, _orderId, _order.price);
-            portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, _order.traderaddress, _tradePair.baseSymbol, getRemainingQuantity(_order));
-        }
-        emitStatusUpdate(_tradePairId, _order.id);
+    /**
+     * @notice  Cancels an order given the order id supplied
+     * @dev     Will revert with "T-OAEX-01" if order is already filled or canceled
+     * @param   _orderId  order id to cancel
+     */
+    function cancelOrder(bytes32 _orderId) external override nonReentrant whenNotPaused {
+        Order storage order = orderMap[_orderId];
+        require(order.traderaddress == msg.sender, "T-OOCC-01");
+        require(UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status), "T-OAEX-01");
+        TradePair storage tradePair = tradePairMap[order.tradePairId];
+        require(!tradePair.pairPaused, "T-PPAU-02");
+        doOrderCancel(order.id);
     }
 
-    // FRONTEND ENTRY FUNCTION TO CALL TO C/R ORDER DURING AUCTION
-    // The original order will lose its Time Priority as it is a new Order that is entered
-    function cancelReplaceOrder(bytes32 _tradePairId, bytes32 _orderId, uint _price, uint _quantity) public override nonReentrant whenNotPaused {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        Order storage _order = orderMap[_orderId];
-        require(_order.id != '', "T-EOID-01");
-        require(_order.traderaddress == msg.sender, "T-OOCC-01");
-        require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
-        require(!_tradePair.pairPaused, "T-PPAU-04");
-        doOrderCancel(_tradePairId, _order.id);
-        addLimitOrder(msg.sender, _tradePairId, _price, _quantity, _order.side, _order.type1);
-    }
-
-    // FRONTEND ENTRY FUNCTION TO CALL TO CANCEL ONE ORDER
-    function cancelOrder(bytes32 _tradePairId, bytes32 _orderId) public override nonReentrant whenNotPaused {
-        Order storage _order = orderMap[_orderId];
-        require(_order.id != '', "T-EOID-01");
-        require(_order.traderaddress == msg.sender, "T-OOCC-01");
-        require(_order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW), "T-OAEX-01");
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(!_tradePair.pairPaused, "T-PPAU-02");
-        doOrderCancel(_tradePairId, _order.id);
-    }
-
-    // FRONTEND ENTRY FUNCTION TO CALL TO CANCEL A DYNAMIC LIST OF ORDERS
-    // THIS FUNCTION MAY RUN OUT OF GAS FOR FOR A TRADER TRYING TO CANCEL MANY ORDERS
-    // CALL MAXIMUM 20 ORDERS AT A TIME
-    function cancelAllOrders(bytes32 _tradePairId, bytes32[] memory _orderIds) public override nonReentrant whenNotPaused {
-        TradePair storage _tradePair = tradePairMap[_tradePairId];
-        require(!_tradePair.pairPaused, "T-PPAU-03");
-        for (uint i=0; i<_orderIds.length; i++) {
-            Order storage _order = orderMap[_orderIds[i]];
-            require(_order.traderaddress == msg.sender, "T-OOCC-02");
-            if (_order.id != '' && _order.quantityFilled < _order.quantity && (_order.status == Status.PARTIAL || _order.status== Status.NEW)) {
-                doOrderCancel(_tradePairId, _order.id);
+    /**
+     * @notice  Cancels all the orders given the array of order ids supplied
+     * @dev     This function may run out of gas if a trader is trying to cancel too many orders
+     * Call with Maximum 20 orders at a time
+     * Will skip orders that are already canceled/filled and continue canceling the remaining ones in the list
+     * @param   _orderIds  array of order ids
+     */
+    function cancelAllOrders(bytes32[] memory _orderIds) external override nonReentrant whenNotPaused {
+        for (uint256 i = 0; i < _orderIds.length; i++) {
+            Order storage order = orderMap[_orderIds[i]];
+            require(order.traderaddress == msg.sender, "T-OOCC-02");
+            TradePair storage tradePair = tradePairMap[order.tradePairId];
+            require(!tradePair.pairPaused, "T-PPAU-03");
+            if (UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status)) {
+                doOrderCancel(order.id);
             }
         }
     }
 
-    fallback() external { revert("T-NFUN-01"); }
+    /**
+     * @notice  Cancels an order and makes the locked amount available in the porftolio
+     * @param   _orderId  order id to cancel
+     */
+    function doOrderCancel(bytes32 _orderId) private {
+        //DO not add requires here for unsolicitedCancel to work
+        Order storage order = orderMap[_orderId];
+        TradePair storage tradePair = tradePairMap[order.tradePairId];
+        order.status = Status.CANCELED;
 
+        bytes32 bookId = order.side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
+        bytes32 adjSymbol = order.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
+        uint256 adjAmount = order.side == Side.BUY
+            ? getQuoteAmount(
+                order.tradePairId,
+                order.price,
+                UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled)
+            )
+            : UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled);
+
+        orderBooks.removeOrder(bookId, _orderId, order.price);
+        portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
+        emitStatusUpdate(order.id);
+    }
+
+    // solhint-disable-next-line payable-fallback
+    fallback() external {
+        revert("T-NFUN-01");
+    }
 }

@@ -4,10 +4,6 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20MetadataUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 import "./library/UtilsLibrary.sol";
 
@@ -15,402 +11,199 @@ import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
 
 /**
-*   @author "DEXALOT TEAM"
-*   @title "Exchange: the main entry point to DEXALOT Decentralized Exchange."
-*/
+ * @title Abstract contract to be inherited in ExchangeMain and ExchangeSub
+ * @notice Exchange is an administrative wrapper contract that provides different access levels
+ * using [OpenZeppelin](https://www.openzeppelin.com) AccessControl roles.
+ * Currently it has DEFAULT_ADMIN_ROLE and AUCTION_ADMIN_ROLE.
+ * @dev Exchange is DEFAULT_ADMIN to all Portfolio implementation contracts and TradePairs contract.
+ * Exchange is also the AuctionManager using AUCTION_ADMIN_ROLE.
+ * Auction Admin Functions can only be invoked from the Exchange contracts.
+ * All the functions pertaining to Auction can also be called directly in
+ * TradePairs and Portfolio using DEFAULT_ADMIN_ROLE but not recommended because certain
+ * actions require a synchronized update to both Portfolio and TradePairs contracts.
+ */
 
-contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
-    using SafeERC20Upgradeable for IERC20MetadataUpgradeable;
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
-    // version
-    bytes32 constant public VERSION = bytes32('1.4.0');
-
-    // map and array of all trading pairs on DEXALOT
-    ITradePairs private tradePairs;
-
+abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable {
     // portfolio reference
-    IPortfolio private portfolio;
+    IPortfolio internal portfolio;
 
     // auction admin role
-    bytes32 constant public AUCTION_ADMIN_ROLE = keccak256("AUCTION_ADMIN_ROLE");
-
-    // price feed from chainlink oracle
-    AggregatorV3Interface internal priceFeed;
+    bytes32 public constant AUCTION_ADMIN_ROLE = keccak256("AUCTION_ADMIN_ROLE");
 
     event PortfolioSet(IPortfolio _oldPortfolio, IPortfolio _newPortfolio);
-    event TradePairsSet(ITradePairs _oldTradePairs, ITradePairs _newTradePairs);
-    event CoinFlipped(uint80 roundid, int price, bool outcome);
+    event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
 
-    function initialize() public initializer {
-        __AccessControl_init();
-
-        // intitialize the admins
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender); // set deployment account to have DEFAULT_ADMIN_ROLE
-
-        // initialize AVAX/USD price feed with fuji testnet contract,
-        // for production deployment it needs to be updated with setPriceFeed function
-        // heart-beat = 2m, decimals = 8
-        priceFeed = AggregatorV3Interface(0x5498BB86BC934c8D34FDA08E81D444153d0D06aD);
+    /**
+     * @notice  Initializer for upgradeable contract.
+     * @dev     Grants admin role to the deployer.
+     */
+    function initialize() public virtual initializer {
+        __AccessControlEnumerable_init();
+        // intitialize deployment account to have DEFAULT_ADMIN_ROLE
+        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    function owner() public view returns(address) {
-        return getRoleMember(DEFAULT_ADMIN_ROLE, 0);
-    }
-
-    function addAdmin(address _address) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-01");
+    /**
+     * @notice  Adds Default Admin role to the address
+     * @param   _address  address to add role to
+     */
+    function addAdmin(address _address) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit RoleUpdated("EXCHANGE", "ADD-ROLE", DEFAULT_ADMIN_ROLE, _address);
         grantRole(DEFAULT_ADMIN_ROLE, _address);
-        portfolio.addAdmin(_address);
     }
 
-    function removeAdmin(address _address) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-02");
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE)>1, "E-ALOA-01");
+    /**
+     * @notice  Removes Default Admin role from the address
+     * @param   _address  address to remove role from
+     */
+    function removeAdmin(address _address) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "E-ALOA-01");
+        emit RoleUpdated("EXCHANGE", "REMOVE-ROLE", DEFAULT_ADMIN_ROLE, _address);
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
-        portfolio.removeAdmin(_address);
     }
 
-    function isAdmin(address _address) public view returns(bool) {
+    /**
+     * @param   _address  address to check
+     * @return  bool    true if address has Default Admin role
+     */
+    function isAdmin(address _address) public view returns (bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
     }
 
-    function addAuctionAdmin(address _address) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-22");
+    /**
+     * @notice  Adds Auction Admin role to the address
+     * @param   _address  address to add role to
+     */
+    function addAuctionAdmin(address _address) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit RoleUpdated("EXCHANGE", "ADD-ROLE", AUCTION_ADMIN_ROLE, _address);
         grantRole(AUCTION_ADMIN_ROLE, _address);
-        portfolio.addAuctionAdmin(_address);
     }
 
-    function removeAuctionAdmin(address _address) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-23");
+    /**
+     * @notice  Removes Auction Admin role from the address
+     * @param   _address  address to remove role from
+     */
+    function removeAuctionAdmin(address _address) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        emit RoleUpdated("EXCHANGE", "REMOVE-ROLE", AUCTION_ADMIN_ROLE, _address);
         revokeRole(AUCTION_ADMIN_ROLE, _address);
-        portfolio.removeAuctionAdmin(_address);
     }
 
-    function isAuctionAdmin(address _address) public view returns(bool) {
+    /**
+     * @param   _address  address to check
+     * @return  bool  true if address has Auction Admin role
+     */
+    function isAuctionAdmin(address _address) external view returns (bool) {
         return hasRole(AUCTION_ADMIN_ROLE, _address);
     }
 
-    function setPriceFeed(address _address) public {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-24");
-        priceFeed = AggregatorV3Interface(_address);
-    }
-
-    function getPriceFeed() public view returns (AggregatorV3Interface) {
-        return priceFeed;
-    }
-
-    // returns true/false = head/tail based on the latest AVAX/USD price
-    function isHead() public view returns (uint80 r, int p, bool o) {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-28");
-        (r, p, , , ) = priceFeed.latestRoundData();  // example answer: 7530342847
-        int d1 = p % 1000000 / 100000;    // get 6th digit from right, d1=3 for example
-        int d2 = p % 10000000 / 1000000;  // get 7th digit from right, d2=0 for example
-        o = d1>d2;                        // head if d1>d2, 3>0=True=Heads for example
-    }
-
-    // emits coin flip results based on the latest AVAX/USD price
-    function flipCoin() public {
-        (uint80 r, int p, bool o) = isHead();
-        emit CoinFlipped(r, p, o);
-    }
-
-    // FRONTEND FUNCTION TO GET A LIST OF TRADE PAIRS
-    function getTradePairs() public view returns(bytes32[] memory) {
-         return tradePairs.getTradePairs();
-    }
-
-     // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATES FOR DEPOSIT AND WITHDRAW
-    function updateTransferFeeRate(uint _rate, IPortfolio.Tx _rateType) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-03");
-        portfolio.updateTransferFeeRate(_rate, _rateType);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
-    function updateRate(bytes32 _tradePair, uint _rate, ITradePairs.RateType _rateType) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-04");
-        tradePairs.updateRate(_tradePair, _rate, _rateType);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE FEE RATE FOR EXECUTIONS
-    function updateRates(bytes32 _tradePair, uint _makerRate, uint _takerRate) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-20");
-        tradePairs.updateRate(_tradePair, _makerRate, ITradePairs.RateType.MAKER);
-        tradePairs.updateRate(_tradePair, _takerRate, ITradePairs.RateType.TAKER);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO UPDATE ALL FEE RATES FOR EXECUTIONS
-    function updateAllRates(uint _makerRate, uint _takerRate) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-21");
-        bytes32[] memory pairs = getTradePairs();
-        for (uint i=0; i<pairs.length; i++) {
-            tradePairs.updateRate(pairs[i], _makerRate, ITradePairs.RateType.MAKER);
-            tradePairs.updateRate(pairs[i], _takerRate, ITradePairs.RateType.TAKER);
-        }
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO GET MAKER FEE RATE
-    function getMakerRate(bytes32 _tradePairId) public view returns (uint) {
-        return tradePairs.getMakerRate(_tradePairId);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO GET TAKER FEE RATE
-    function getTakerRate(bytes32 _tradePairId) public view returns (uint) {
-        return tradePairs.getTakerRate(_tradePairId);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO SET PORTFOLIO FOR THE EXCHANGE
-    function setPortfolio(IPortfolio _portfolio) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-05");
+    /**
+     * @notice  Set portfolio address
+     * @param   _portfolio  address of portfolio contract
+     */
+    function setPortfolio(IPortfolio _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
         emit PortfolioSet(portfolio, _portfolio);
         portfolio = _portfolio;
     }
 
-    // FRONTEND FUNCTION TO GET PORTFOLIO
-    function getPortfolio() public view returns(IPortfolio) {
+    /**
+     * @return  IPortfolio  portfolio contract
+     */
+    function getPortfolio() external view returns (IPortfolio) {
         return portfolio;
     }
 
-    // DEPLOYMENT ACCOUNT FUNCTION TO ADD A TRUSTED CONTRACT
-    function addTrustedContract(address _contract, string calldata _name) external {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-31");
-        portfolio.addTrustedContract(_contract, _name);
-    }
-
-    // FRONTEND FUNCTION TO CHECK IF A CONTRACT IS TRUSTED
-    function isTrustedContract(address _contract) external view returns(bool) {
-        return portfolio.isTrustedContract(_contract);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO REMOVE A TRUSTED CONTRACT
-    function removeTrustedContract(address _contract) external {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-32");
-        portfolio.removeTrustedContract(_contract);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO ADD AN INTERNAL CONTRACT
-    function addInternalContract(address _contract, string calldata _name) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-33");
-        portfolio.addInternalContract(_contract, _name);
-    }
-
-    // FRONTEND FUNCTION TO CHECK IF A CONTRACT IS INTERNAL
-    function isInternalContract(address _contract) external view returns(bool) {
-        return portfolio.isInternalContract(_contract);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO REMOVE AN INTERNAL CONTRACT
-    function removeInternalContract(address _contract) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-34");
-        portfolio.removeInternalContract(_contract);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO SET TRADEPAIRS FOR THE EXCHANGE
-    function setTradePairs(ITradePairs _tradePairs) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-06");
-        emit TradePairsSet(tradePairs, _tradePairs);
-        tradePairs = _tradePairs;
-    }
-
-    // FRONTEND FUNCTION TO GET TRADEPAIRS
-    function getTradePairsAddr() public view returns(ITradePairs) {
-        return tradePairs;
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO ADD A NEW TRADEPAIR
-    function addTradePair(bytes32 _tradePairId,
-                          address _baseAssetAddr, uint8 _baseDisplayDecimals,
-                          address _quoteAssetAddr, uint8 _quoteDisplayDecimals,
-                          uint _minTradeAmount, uint _maxTradeAmount, ITradePairs.AuctionMode _mode)
-            public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-07");
-
-
-        (bytes32 _baseAssetSymbol, uint8 _baseAssetDecimals) = getAssetMeta(_baseAssetAddr);
-        (bytes32 _quoteAssetSymbol, uint8 _quoteAssetDecimals) = getAssetMeta(_quoteAssetAddr);
-        // check if base asset is native AVAX, if not it is ERC20 and add it
-        if (_baseAssetSymbol != portfolio.getNative()) {
-            //Only the base token can be an auction TOKEN
-            portfolio.addToken(_baseAssetSymbol, IERC20MetadataUpgradeable(_baseAssetAddr), _mode);
-        }
-        // check if quote asset is native AVAX, if not it is ERC20 and add it
-        if (_quoteAssetSymbol != portfolio.getNative()) {
-            portfolio.addToken(_quoteAssetSymbol, IERC20MetadataUpgradeable(_quoteAssetAddr), ITradePairs.AuctionMode.OFF);
-        }
-        tradePairs.addTradePair(_tradePairId,
-                                _baseAssetSymbol, _baseAssetDecimals, _baseDisplayDecimals,
-                                _quoteAssetSymbol, _quoteAssetDecimals, _quoteDisplayDecimals,
-                                _minTradeAmount, _maxTradeAmount, _mode);
-    }
-
-    function getAssetMeta(address _assetAddr) private view returns (bytes32 _symbol, uint8 _decimals) {
-        if (_assetAddr == address(0)) {
-            return (portfolio.getNative(), 18);
-        } else {
-            IERC20MetadataUpgradeable _asset = IERC20MetadataUpgradeable(_assetAddr);
-            return (UtilsLibrary.stringToBytes32(_asset.symbol()), _asset.decimals());
-        }
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE PORTFOLIO CONTRACT - AFFECTS ALL DEPOSIT AND WITHDRAW FUNCTIONS
-    function pausePortfolio(bool _paused) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-08");
-        if (_paused) {
+    /**
+     * @notice  (Un)pause portfolio operations
+     * @dev     This also includes deposit/withdraw processes
+     * @param   _pause  true to pause, false to unpause
+     */
+    function pausePortfolio(bool _pause) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_pause) {
             portfolio.pause();
         } else {
             portfolio.unpause();
         }
     }
 
-    // DEPLOYMENT ACCOUNT FUNCTION TO DISABLE ONLY DEPOSIT FUNCTIONS
-    function pauseDeposit(bool _paused) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-09");
-        portfolio.pauseDeposit(_paused);
+    /**
+     * @notice  Implemented in the child contract, as the logic differs.
+     * @param   _pause  true to pause, false to unpause
+     */
+    function pauseForUpgrade(bool _pause) external virtual;
+
+    // solhint-disable-next-line payable-fallback
+    fallback() external {
+        revert("E-NFUN-01");
     }
 
-    // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
-    // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR ALL TRADE PAIRS
-    function pauseTrading(bool _tradingPaused) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-10");
-        if (_tradingPaused) {
-            tradePairs.pause();
-        } else {
-            tradePairs.unpause();
-        }
-    }
-
-    function pauseForUpgrade(bool _paused) public {
-        pausePortfolio(_paused);
-        pauseTrading(_paused);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO PAUSE AND UNPAUSE THE TRADEPAIRS CONTRACT
-    // AFFECTS BOTH ADDORDER AND CANCELORDER FUNCTIONS FOR A SELECTED TRADE PAIR
-    function pauseTradePair(bytes32 _tradePairId, bool _tradePairPaused) public {
-        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
-        if (mode == 0) { //Auction OFF
-            require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-11");
-        } else {
-            require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-26");
-        }
-        tradePairs.pauseTradePair(_tradePairId, _tradePairPaused);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO DISABLE ONLY ADDORDER FUNCTION FOR A TRADEPAIR
-    function pauseAddOrder(bytes32 _tradePairId, bool _addOrderPaused) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-12");
-        tradePairs.pauseAddOrder(_tradePairId, _addOrderPaused);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO ADD AN ORDER TYPE TO A TRADEPAIR
-    function addOrderType(bytes32 _tradePairId, ITradePairs.Type1 _type) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-13");
-        tradePairs.addOrderType(_tradePairId, _type);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO REMOVE AN ORDER TYPE FROM A TRADEPAIR
-    function removeOrderType(bytes32 _tradePairId, ITradePairs.Type1 _type) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-14");
-        tradePairs.removeOrderType(_tradePairId, _type);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO SET MIN TRADE AMOUNT FOR A TRADEPAIR
-    function setMinTradeAmount(bytes32 _tradePairId, uint _minTradeAmount) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-15");
-        tradePairs.setMinTradeAmount(_tradePairId, _minTradeAmount);
-    }
-
-    // FRONTEND FUNCTION TO GET MIN TRADE AMOUNT
-    function getMinTradeAmount(bytes32 _tradePairId) public view returns (uint) {
-        return tradePairs.getMinTradeAmount(_tradePairId);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO SET MAX TRADE AMOUNT FOR A TRADEPAIR
-    function setMaxTradeAmount(bytes32 _tradePairId, uint _maxTradeAmount) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-16");
-        tradePairs.setMaxTradeAmount(_tradePairId, _maxTradeAmount);
-    }
-
-    // FRONTEND FUNCTION TO GET MAX TRADE AMOUNT
-    function getMaxTradeAmount(bytes32 _tradePairId) public view returns (uint) {
-        return tradePairs.getMaxTradeAmount(_tradePairId);
-    }
-
-    // FRONTEND FUNCTION TO SET DISPLAY DECIMALS
-    function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-17");
-        tradePairs.setDisplayDecimals(_tradePairId, _displayDecimals, _isBase);
-    }
-
-    // FRONTEND FUNCTION TO GET DISPLAY DECIMALS
-    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) public view returns(uint8) {
-        return tradePairs.getDisplayDecimals(_tradePairId, _isBase);
-    }
-
-    // FRONTEND FUNCTION TO GET DECIMALS
-    function getDecimals(bytes32 _tradePairId, bool _isBase) public view returns(uint8) {
-         return tradePairs.getDecimals(_tradePairId, _isBase);
-    }
-
-    // FRONTEND FUNCTION TO GET DECIMALS
-    function getSymbol(bytes32 _tradePairId, bool _isBase) public view returns(bytes32) {
-         return tradePairs.getSymbol(_tradePairId, _isBase);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO SET ALLOWED SLIPPAGE PERCENT
-    function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-18");
-        tradePairs.setAllowedSlippagePercent(_tradePairId, _allowedSlippagePercent);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO GET ALLOWED SLIPPAGE PERCENT
-    function getAllowedSlippagePercent(bytes32 _tradePairId) public view returns (uint8) {
-        return tradePairs.getAllowedSlippagePercent(_tradePairId);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO ADD A NEW TOKEN
-    // NEEDS TO BE CALLED ONLY AFTER PORTFOLIO IS SET FOR EXCHANGE AND PORTFOLIO OWNERSHIP IS CHANGED TO EXCHANGE
-    function addToken(bytes32 _symbol, IERC20Upgradeable _token, ITradePairs.AuctionMode _mode) public {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-19");
-        portfolio.addToken(_symbol, _token, _mode);
-    }
-
-    // DEPLOYMENT ACCOUNT FUNCTION TO CANCEL ALL OUTSTANDING ORDERS IN AN ORDERBOOK
-    function unsolicitedCancel(bytes32 _tradePairId, bytes32 _bookId , uint8 _maxCount) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "E-OACC-30");
-        tradePairs.unsolicitedCancel(_tradePairId, _bookId, _maxCount);
-    }
-
-    function setAuctionMode(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) public {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-25");
-        tradePairs.setAuctionMode(_tradePairId, _mode);
-        // Only Base Token can be in Auction
-        portfolio.setAuctionMode(tradePairs.getSymbol(_tradePairId, true), _mode);
-    }
-
-    function getAuctionData(bytes32 _tradePairId) public view returns (uint8 mode, uint price) {
-        return tradePairs.getAuctionData(_tradePairId);
-    }
-
-    function matchAuctionOrders(bytes32 _tradePairId, uint8 maxCount) public {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-29");
-        tradePairs.matchAuctionOrders(_tradePairId, maxCount);
-    }
-
-    function setAuctionPrice (bytes32 _tradePairId, uint _price) public  {
-        require(hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-27");
-        tradePairs.setAuctionPrice(_tradePairId, _price);
-    }
-
-    fallback() external { revert("E-NFUN-01"); }
-
-    // utility function to convert string to bytes32
+    /**
+     * @dev     utility function to convert string to bytes32
+     * @param   _string  string to convert
+     * @return  result  bytes32 representation of the string
+     */
     function stringToBytes32(string memory _string) public pure returns (bytes32 result) {
         return UtilsLibrary.stringToBytes32(_string);
     }
 
-    // utility function to convert bytes32 to string
+    /**
+     * @dev     utility function to convert bytes32 to string
+     * @param   _bytes32  bytes32 to convert
+     * @return  string  string representation of the bytes32
+     */
     function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
         return UtilsLibrary.bytes32ToString(_bytes32);
     }
 
+    //========== AUCTION ADMIN FUNCTIONS ==================
+
+    /**
+     * @notice  Adds trusted contract to portfolio
+     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
+     * @param   _contract  address of trusted contract
+     * @param   _name  name of trusted contract
+     */
+    function addTrustedContract(address _contract, string calldata _name) external onlyRole(AUCTION_ADMIN_ROLE) {
+        portfolio.addTrustedContract(_contract, _name);
+    }
+
+    /**
+     * @param   _contract  address to check
+     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
+     * @return  bool  true if contract is trusted
+     */
+    function isTrustedContract(address _contract) external view returns (bool) {
+        return portfolio.isTrustedContract(_contract);
+    }
+
+    /**
+     * @notice  Removes trusted contract from portfolio
+     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
+     * @param   _contract  address of trusted contract
+     */
+    function removeTrustedContract(address _contract) external onlyRole(AUCTION_ADMIN_ROLE) {
+        portfolio.removeTrustedContract(_contract);
+    }
+
+    /**
+     * @notice  Add new token to portfolio
+     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
+     * @param   _symbol  symbol of the token
+     * @param   _tokenaddress  address of the token
+     * @param   _srcChainId  Source Chain id
+     * @param   _decimals  decimals of the token
+     * @param   _mode  starting auction mode
+     */
+    function addToken(
+        bytes32 _symbol,
+        address _tokenaddress,
+        uint32 _srcChainId,
+        uint8 _decimals,
+        ITradePairs.AuctionMode _mode
+    ) external onlyRole(AUCTION_ADMIN_ROLE) {
+        portfolio.addToken(_symbol, _tokenaddress, _srcChainId, _decimals, _mode);
+    }
 }

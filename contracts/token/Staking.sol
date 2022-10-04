@@ -9,27 +9,30 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 
 /**
-*   @author "DEXALOT TEAM"
-*   @title "Staking: a flexible staking contract"
-*/
+ * @title Flexible staking contract
+ */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
 contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeable, PausableUpgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 constant public VERSION = bytes32("1.1.1");
+    bytes32 public constant VERSION = bytes32("1.1.2");
 
     IERC20Upgradeable public rewardsToken;
     IERC20Upgradeable public stakingToken;
 
     // constants
-    uint256 constant MULTIPLIER = 1e18;
-    uint256 constant TENK = 1e4;
-    uint256 constant SECONDSINYEAR = 365 days; // 60 * 60 * 24 * 365
+    uint256 private constant MULTIPLIER = 1e18;
+    uint256 private constant TENK = 1e4;
+    uint256 private constant SECONDSINYEAR = 365 days; // 60 * 60 * 24 * 365
 
-    uint256 public periodFinish;      // end of current period in unix time
-    uint256 public rewardsDuration;   // duration of current period in seconds
-    uint256 public rewardRate;        // numerator for reward rate % to be used with a denominator of 10000, 10% = 1000/10000
+    uint256 public periodFinish; // end of current period in unix time
+    uint256 public rewardsDuration; // duration of current period in seconds
+    uint256 public rewardRate; // numerator for reward rate % to be used with a denominator of 10000, 10% = 1000/10000
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
 
@@ -49,7 +52,12 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
     event RewardsDurationUpdated(uint256 rewardsDuration);
     event FundsRecovered(uint256 amount, address token);
 
-    function initialize(address _stakingToken, address _rewardsToken, uint256 _rewardRate, uint256 _rewardsDuration) public initializer {
+    function initialize(
+        address _stakingToken,
+        address _rewardsToken,
+        uint256 _rewardRate,
+        uint256 _rewardsDuration
+    ) public initializer {
         __Ownable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
@@ -79,12 +87,14 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
         }
 
         return
-            rewardPerTokenStored + (((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * MULTIPLIER / SECONDSINYEAR) / TENK);
+            rewardPerTokenStored +
+            ((((lastTimeRewardApplicable() - lastUpdateTime) * rewardRate * MULTIPLIER) / SECONDSINYEAR) / TENK);
     }
 
     function earned(address account) public view returns (uint256) {
         return
-            (((_stakes[account] * (rewardPerToken() - userRewardPerTokenPaid[account]))) / MULTIPLIER) + rewards[account];
+            (((_stakes[account] * (rewardPerToken() - userRewardPerTokenPaid[account]))) / MULTIPLIER) +
+            rewards[account];
     }
 
     modifier updateReward(address account) {
@@ -97,15 +107,10 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
         _;
     }
 
-    function stake(uint256 amount)
-        external
-        whenNotPaused
-        nonReentrant
-        updateReward(msg.sender)
-    {
+    function stake(uint256 amount) external whenNotPaused updateReward(msg.sender) {
         require(amount > 0, "S-CNSZ-01");
         require(!isStakingPaused, "S-SHBP-01");
-        require(block.timestamp < periodFinish,"S-PHBE-01");
+        require(block.timestamp < periodFinish, "S-PHBE-01");
 
         _totalStake += amount;
         _stakes[msg.sender] += amount;
@@ -115,12 +120,7 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
         stakingToken.safeTransferFrom(msg.sender, address(this), amount);
     }
 
-    function unstake(uint256 amount)
-        public
-        whenNotPaused
-        nonReentrant
-        updateReward(msg.sender)
-    {
+    function unstake(uint256 amount) public whenNotPaused nonReentrant updateReward(msg.sender) {
         require(amount > 0, "S-CNWZ-01");
         require(_stakes[msg.sender] >= amount, "S-CNWM-01");
 
@@ -132,12 +132,7 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
         stakingToken.safeTransfer(msg.sender, amount);
     }
 
-    function restake()
-        public
-        whenNotPaused
-        nonReentrant
-        updateReward(msg.sender)
-    {
+    function restake() public whenNotPaused nonReentrant updateReward(msg.sender) {
         require(!isStakingPaused, "S-SHBP-02");
 
         uint256 reward = rewards[msg.sender];
@@ -151,12 +146,7 @@ contract Staking is Initializable, OwnableUpgradeable, ReentrancyGuardUpgradeabl
         }
     }
 
-    function claim()
-        public
-        whenNotPaused
-        nonReentrant
-        updateReward(msg.sender)
-    {
+    function claim() public whenNotPaused nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         if (reward > 0) {
             rewards[msg.sender] = 0;

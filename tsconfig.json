@@ -1,18 +1,12 @@
 {
   "compilerOptions": {
-    "emitDecoratorMetadata": true,
-    "experimentalDecorators": true,
-    "lib": [
-      "ES6"
-    ],
+    "target": "es2018",
     "module": "commonjs",
-    "moduleResolution": "node",
-    "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "pretty": true,
-    "removeComments": false,
-    "sourceMap": false,
-    "suppressImplicitAnyIndexErrors": true,
-    "target": "es6"
-  }
+    "strict": true,
+    "esModuleInterop": true,
+    "outDir": "dist",
+    "resolveJsonModule": true
+  },
+  "include": ["./test", "./typechain-types"],
+  "files": ["./hardhat.config.ts"]
 }

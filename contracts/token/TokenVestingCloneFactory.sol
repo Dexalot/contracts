@@ -8,9 +8,12 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 import "./TokenVestingCloneable.sol";
 
 /**
- *   @author "DEXALOT TEAM"
- *   @title "TokenVestingCloneFactory: clone factory for TokenVestingCloneable"
+ * @title Clone factory for TokenVestingCloneable
  */
+
+// The code in this file is part of Dexalot project.
+// Please see the LICENSE.txt file for licensing info.
+// Copyright 2022 Dexalot.
 
 contract TokenVestingCloneFactory is Ownable {
     // version
