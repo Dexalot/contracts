@@ -13,26 +13,25 @@ pragma solidity 0.8.17;
 interface ITradePairs {
     /**
      * @notice  Order is the data structure defining an order on Dexalot.
-     * @dev     Order has the following members: \
-     * `id`  unique order id assigned by the contract (immutable) \
-     * `clientOrderId`  client order id given by the sender of the order as a reference (immutable) \
-     * `tradePairId`  client order id given by the sender of the order as a reference (immutable) \
-     * `price` price of the order entered by the trader. (0 if market order) (immutable) \
-     * `totalamount`   cumulative amount in quote currency. ⇒ price* quantityfilled . If
-     * multiple partial fills , the new partial fill price*quantity is added to the
-     * current value in the field. Average execution price can be quickly
-     * calculated by totalamount/quantityfilled regardless of the number of
+     * @dev     If there are multiple partial fills, the new partial fill `price * quantity`
+     * is added to the current value in `totalamount`. Average execution price can be
+     * quickly calculated by `totalamount / quantityfilled` regardless of the number of
      * partial fills at different prices \
-     * `quantity`  order quantity (immutable) \
-     * `quantityfilled`  cumulative quantity filled \
-     * `totalfee` cumulative fee paid for the order (total fee is always in terms of
-     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
-     * ALOT/AVAX , fee is paid in AVAX \
-     * `traderaddress`  traders’s wallet (immutable) \
-     * `side` Order side      See #Side (immutable) \
-     * `type1`  Order Type1   See #Type1 (immutable) \
-     * `type2`  Order Type2   See #Type2 (immutable) \
-     * `status` Order Status  See #Status
+     * `totalFee` is always in terms of received(incoming) currency. ie. if Buy ALOT/AVAX,
+     * fee is paid in ALOT, if Sell ALOT/AVAX, fee is paid in AVAX
+     * @param   id  unique order id assigned by the contract (immutable)
+     * @param   clientOrderId  client order id given by the sender of the order as a reference (immutable)
+     * @param   tradePairId  client order id given by the sender of the order as a reference (immutable)
+     * @param   price  price of the order entered by the trader. (0 if market order) (immutable)
+     * @param   totalamount  cumulative amount in quote currency: `price* quantityfilled`
+     * @param   quantity  order quantity (immutable)
+     * @param   quantityfilled  cumulative quantity filled
+     * @param   totalfee cumulative fee paid for the order
+     * @param   traderaddress`  traders’s wallet (immutable)
+     * @param   side  Order side  See #Side (immutable)
+     * @param   type1  Order Type1  See #Type1 (immutable)
+     * @param   type2  Order Type2  See #Type2 (immutable)
+     * @param   status  Order Status  See #Status
      */
     struct Order {
         bytes32 id;
@@ -52,24 +51,23 @@ interface ITradePairs {
 
     /**
      * @notice  TradePair is the data structure defining a trading pair on Dexalot.
-     * @dev     TradePair has the following members: \
-     * `baseSymbol`  symbol of the base asset \
-     * `quaoteSymbol`  symbol of the quote asset \
-     * `buyBookId`  buy book id for the trading pair \
-     * `sellBookId`  sell book id for the trading pair \
-     * `minTradeAmount`  minimum trade amount \
-     * `maxTradeAmount`  maximum trade amount \
-     * `auctionPrice`  price during an auction \
-     * `auctionMode`  current auction mode of the trading pair \
-     * `makerRate` fee rate for a maker order for the trading pair \
-     * `takerRate` fee rate for taker order for the trading pair \
-     * `baseDecimals`  evm decimals of the base asset \
-     * `baseDisplayDecimals`  display decimals of the base Asset. Quantity increment \
-     * `quoteDecimals`  evm decimals of the quote asset \
-     * `quoteDisplayDecimals`  display decimals of the quote Asset. Price increment \
-     * `allowedSlippagePercent` allowed slippage percentage for the trading pair \
-     * `addOrderPaused` true/false pause state for adding orders on the trading pair \
-     * `pairPaused` true/false pause state of the trading pair as a whole
+     * @param   baseSymbol  symbol of the base asset
+     * @param   quaoteSymbol  symbol of the quote asset
+     * @param   buyBookId  buy book id for the trading pair
+     * @param   sellBookId  sell book id for the trading pair
+     * @param   minTradeAmount  minimum trade amount
+     * @param   maxTradeAmount  maximum trade amount
+     * @param   auctionPrice  price during an auction
+     * @param   auctionMode  current auction mode of the trading pair
+     * @param   makerRate fee rate for a maker order for the trading pair
+     * @param   takerRate fee rate for taker order for the trading pair
+     * @param   baseDecimals  evm decimals of the base asset
+     * @param   baseDisplayDecimals  display decimals of the base Asset. Quantity increment
+     * @param   quoteDecimals  evm decimals of the quote asset
+     * @param   quoteDisplayDecimals  display decimals of the quote Asset. Price increment
+     * @param   allowedSlippagePercent allowed slippage percentage for the trading pair
+     * @param   addOrderPaused true/false pause state for adding orders on the trading pair
+     * @param   pairPaused true/false pause state of the trading pair as a whole
      */
     struct TradePair {
         bytes32 baseSymbol;
@@ -219,8 +217,7 @@ interface ITradePairs {
 
     /**
      * @notice  Order Side
-     * @dev
-     * 0: BUY    – BUY \
+     * @dev     0: BUY    – BUY \
      * 1: SELL   – SELL
      */
     enum Side {
@@ -253,7 +250,7 @@ interface ITradePairs {
      * 3: FILLED   – Order filled fully and removed from the orderbook \
      * 4: CANCELED – Order canceled and removed from the orderbook. PARTIAL before CANCELED is allowed \
      * 5: EXPIRED  – For future use \
-     * 6: KILLED   – For future use \
+     * 6: KILLED   – For future use
      */
     enum Status {
         NEW,
@@ -268,7 +265,7 @@ interface ITradePairs {
      * @notice  Rate Type
      * @dev     Maker Rates are typically lower than taker rates \
      * 0: MAKER   – MAKER \
-     * 1: TAKER   – TAKER \
+     * 1: TAKER   – TAKER
      */
     enum RateType {
         MAKER,
@@ -284,7 +281,7 @@ interface ITradePairs {
      * 2: IOC  – Immediate or Cancel. The order is required to get either a FILLED status or a PARTIAL
      * status fallowed by an automatic CANCELED. If PARTIAL, the remaining will not go in the orderbook) \
      * 3: PO   – Post Only. The order is required to go in the orderbook without any fills or reverts with
-     * T-T2PO-01. If reverted, no transaction is commited to the blockchain) \
+     * T-T2PO-01. If reverted, no transaction is commited to the blockchain)
      */
     enum Type2 {
         GTC,
@@ -314,28 +311,27 @@ interface ITradePairs {
 
     /**
      * @notice  Emits a given order's latest state
-     * @dev     The details of the emitted event is as follows: \
-     * `version`  event version \
-     * `traderaddress`  traders’s wallet (immutable) \
-     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 (immutable) \
-     * `orderId`  unique order id assigned by the contract (immutable) \
-     * `clientOrderId`  client order id given by the sender of the order as a reference (immutable) \
-     * `price` price of the order entered by the trader. (0 if market order) (immutable) \
-     * `totalamount`   cumulative amount in quote currency. ⇒ price* quantityfilled . If
-     * multiple partial fills , the new partial fill price*quantity is added to the
-     * current value in the field. Average execution price can be quickly
-     * calculated by totalamount/quantityfilled regardless of the number of
+     * @dev     If there are multiple partial fills, the new partial fill `price * quantity`
+     * is added to the current value in `totalamount`. Average execution price can be
+     * quickly calculated by `totalamount / quantityfilled` regardless of the number of
      * partial fills at different prices \
-     * `quantity`  order quantity (immutable) \
-     * `side` Order side      See #Side (immutable) \
-     * `type1`  Order Type1   See #Type1 (immutable) \
-     * `type2`  Order Type2   See #Type2 (immutable) \
-     * `status` Order Status  See #Status \
-     * `quantityfilled`  cumulative quantity filled \
-     * `totalfee` cumulative fee paid for the order (total fee is always in terms of
-     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
-     * ALOT/AVAX , fee is paid in AVAX \
+     * `totalfee` is always in terms of received(incoming) currency. ie. if Buy ALOT/AVAX,
+     * fee is paid in ALOT, if Sell ALOT/AVAX , fee is paid in AVAX \
      * **Note**: The execution price will always be equal or better than the Order price.
+     * @param   version  event version
+     * @param   traderaddress  traders’s wallet (immutable)
+     * @param   pair  traded pair. ie. ALOT/AVAX in bytes32 (immutable)
+     * @param   orderId  unique order id assigned by the contract (immutable)
+     * @param   clientOrderId  client order id given by the sender of the order as a reference (immutable)
+     * @param   price  price of the order entered by the trader. (0 if market order) (immutable)
+     * @param   totalamount  cumulative amount in quote currency: `price * quantityfilled`
+     * @param   quantity  order quantity (immutable)
+     * @param   side  Order Side  See #Side (immutable)
+     * @param   type1  Order Type1  See #Type1 (immutable)
+     * @param   type2  Order Type2  See #Type2 (immutable)
+     * @param   status Order Status See #Status
+     * @param   quantityfilled  cumulative quantity filled
+     * @param   totalfee cumulative fee paid for the order
      */
     event OrderStatusChanged(
         uint8 version,
@@ -356,23 +352,23 @@ interface ITradePairs {
 
     /**
      * @notice  Emits the Executed/Trade Event showing
-     * @dev     The details of the emitted event is as follows: \
-     * `version`  event version \
-     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 \
-     * `price`  executed price \
-     * `quantity`  executed quantity \
-     * `makerOrderId`  Maker Order id \
-     * `takerOrderId`  Taker Order id \
-     * `mlastFee`  fee paid by maker \
-     * `tlastFee`  fee paid by taker \
-     * `takerSide`  Side of the taker order. 0 - BUY, 1- SELL (Note: This can be used to identify
-     * the fee UNITs. If takerSide = 1, then the fee is paid by the Maker in Base
-     * Currency and the fee paid by the taker in Quote currency. If takerSide= 0
-     * then the fee is paid by the Maker in Quote Currency and the fee is paid by
-     * the taker in Base currency \
-     * `execId`  Unique trade id (execution id) assigned by the contract \
-     * `addressMaker`  maker traderaddress \
-     * `addressTaker`  taker traderaddress \
+     * @dev     The side of the taker order can be used to identify
+     * the fee unit. If takerSide = 1, then the fee is paid by the maker in base
+     * currency and the fee paid by the taker in quote currency. If takerSide = 0
+     * then the fee is paid by the maker in quote currency and the fee is paid by
+     * the taker in base currency
+     * @param   version  event version
+     * @param   pair  traded pair. ie. ALOT/AVAX in bytes32
+     * @param   price  executed price
+     * @param   quantity  executed quantity
+     * @param   makerOrder  maker Order id
+     * @param   takerOrder  taker Order id
+     * @param   feeMaker  fee paid by maker
+     * @param   feeTaker  fee paid by taker
+     * @param   takerSide  Side of the taker order. 0 - BUY, 1- SELL
+     * @param   execId  unique trade id (execution id) assigned by the contract
+     * @param   addressMaker  maker traderaddress
+     * @param   addressTaker  taker traderaddress
      */
     event Executed(
         uint8 version,

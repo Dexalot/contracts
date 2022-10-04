@@ -8,7 +8,7 @@
 
 - Install the latest version of VS Code
 - Install the latest version of git version control
-- Install Node.js version 14.17.1
+- Install Node.js version 16.15.1
 
 ## Get the code
 
@@ -39,6 +39,15 @@ The `run_tests.sh` script runs one or more tests fitting a pattern on the Hardha
 ```
 ./test/run_test.sh            [run each test with pauses or all in one go]
 ./test/run_test.sh Portfolio  [run all tests with a Portfolio prefix]
+```
+
+The above commands would work in a unix-like shell environment.  On other platforms you can call individul tests as below:
+
+```
+npx hardhat test test/<TEST_FILE_NAME>.ts
+
+Example:
+npx hardhat test test/TestAirdrop.ts
 ```
 
 Available tests are as follows:

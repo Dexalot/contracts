@@ -473,7 +473,7 @@ abstract contract Portfolio is
     }
 
     /**
-     * Receive function for direct send of native tokens
+     * @notice Receive function for direct send of native tokens
      * @dev we process it as a deposit with the default bridge
      */
     receive() external payable {
