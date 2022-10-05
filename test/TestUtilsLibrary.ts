@@ -149,4 +149,11 @@ describe("UtilsLibrary via UtilsLibraryMock", function () {
 		const testBytes32 = Utils.fromUtf8(testString);
 		expect(await utilsLibraryMock.stringToBytes32(testString)).to.be.equal(testBytes32);
 	});
+
+	it('Should return slice() correctly', async () => {
+		const testString = "Dexalot is awesome!";
+		const testBytes32 = Utils.fromUtf8(testString);
+		const result = await utilsLibraryMock.slice(testBytes32, 10, 5);
+		expect(result).to.be.equal("0x2061776573");
+	});
 });

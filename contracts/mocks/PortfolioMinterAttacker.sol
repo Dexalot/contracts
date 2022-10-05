@@ -26,9 +26,9 @@ contract PortfolioMinterAttacker is Ownable {
     }
 
     receive() external payable {
-        address nativeMinterAddr = portfolioMinter.getNativeMinter();
-        if (address(nativeMinterAddr).balance > 0) {
-            portfolioMinter.mint(address(this), address(nativeMinterAddr).balance);
+        if (address(this).balance < 1000) {
+            // every attack tries to mint 1000
+            portfolioMinter.mint(address(this), 100); // 100 at a time
         } else {
             payable(owner()).transfer(address(this).balance);
         }

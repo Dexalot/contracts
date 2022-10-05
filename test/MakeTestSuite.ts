@@ -166,7 +166,7 @@ export const setRemoteBridges = async (
     bridgeOne: PortfolioBridge, chainIDOne: number,
     bridgeTwo: PortfolioBridge, chainIDTwo: number,
     lzOne: LZEndpointMock, lzTwo: LZEndpointMock) => {
-    await bridgeOne.setLZTrustedRemote(
+    await bridgeOne.setLZTrustedRemoteAddress(
         chainIDTwo,
         bridgeTwo.address
     )
@@ -175,7 +175,7 @@ export const setRemoteBridges = async (
         lzTwo.address
     )
 
-    await bridgeTwo.setLZTrustedRemote(
+    await bridgeTwo.setLZTrustedRemoteAddress(
         chainIDOne,
         bridgeOne.address
     )

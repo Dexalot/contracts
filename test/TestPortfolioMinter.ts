@@ -138,8 +138,13 @@ describe("Portfolio Minter", () => {
         // 1st defense fail if MINTER_ROLE is not added
         await expect(attacker.attackMint()).to.be.revertedWith("AccessControl: account");
 
-        // 2nd defense fail with ReentrancyGuard //FIXME IT IS NOT WORKING
-        // await portfolioMinter.grantRole(await portfolioMinter.MINTER_ROLE(), attacker.address);
-        // await attacker.attackMint();
+        // 2nd defense fail with ReentrancyGuard
+        await portfolioMinter.grantRole(await portfolioMinter.MINTER_ROLE(), attacker.address);
+         // without nonReentrant modifier added to the mint function of PortfolioMinter
+         //     attackMint does not revert
+         // with nonReentrant modifier added to the mint function of PortfolioMinteradded
+         //     attackMint reverts but the hardhat catches "Mint Failed" from NativeMinterMock
+         //     instead of the ReentrancyGuard revert message
+        await expect(attacker.attackMint()).to.be.revertedWith("Mint Failed");
     })
  });

@@ -10,7 +10,6 @@ import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeab
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioBridge.sol";
 import "./bridgeApps/LzApp.sol";
-import "./library/UtilsLibrary.sol";
 
 /**
  * @title Bridge aggregator and message relayer for multiple different bridges
@@ -512,7 +511,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         uint64,
         bytes calldata _payload
     ) external override nonReentrant {
-        bytes memory trustedRemote = lzTrustedRemoteLookup[_srcChainId];
+        bytes memory trustedRemote = this.getTrustedRemoteAddress(_srcChainId);
         require(_msgSender() == address(lzEndpoint), "PB-IVEC-01");
         require(trustedRemote.length != 0 && keccak256(_srcAddress) == keccak256(trustedRemote), "PB-SINA-01");
         processPayload(BridgeProvider.LZ, _srcChainId, _payload);
