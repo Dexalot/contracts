@@ -6,14 +6,12 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgrad
 import "../interfaces/layerZero/ILayerZeroReceiver.sol";
 import "../interfaces/layerZero/ILayerZeroUserApplicationConfig.sol";
 import "../interfaces/layerZero/ILayerZeroEndpoint.sol";
+import "../library/UtilsLibrary.sol";
 
 /**
  * @title Generic Layer Zero Application Implementation
+ * @dev https://github.com/LayerZero-Labs/solidity-examples/blob/main/contracts/lzApp/LzApp.sol
  */
-
-// The code in this file is part of Dexalot project.
-// Please see the LICENSE.txt file for licensing info.
-// Copyright 2022 Dexalot.
 
 abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
     ILayerZeroEndpoint internal lzEndpoint;
@@ -23,7 +21,8 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     mapping(uint16 => bytes) public lzTrustedRemoteLookup;
 
-    event LZTrustedRemoteSet(uint16 remoteChainId, bytes remoteAddress);
+    event LzSetTrustedRemote(uint16 remoteChainId, bytes path);
+    event LzSetTrustedRemoteAddress(uint16 remoteChainId, bytes remoteAddress);
     uint16 internal lzRemoteChainId;
     uint256 public gasForDestinationLzReceive;
 
@@ -66,9 +65,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @return  uint256  Message fee
      */
     function lzSend(bytes memory _payload, address payable _refundAddress) internal virtual returns (uint256) {
-        bytes memory trustedRemote = lzTrustedRemoteLookup[lzRemoteChainId];
-        require(trustedRemote.length != 0, "LA-DCNT-01");
-
+        bytes memory trustedRemote = this.getTrustedRemoteAddress(lzRemoteChainId);
         (uint256 messageFee, bytes memory adapterParams) = lzEstimateFees(_payload);
         // solhint-disable-next-line check-send-result
         lzEndpoint.send{value: messageFee}(
@@ -151,19 +148,31 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @notice  Sets trusted remote address
-     * @dev     Allow owner to set it multiple times.
-     * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
+     * @notice  Set the trusted path for the cross-chain communication
+     * @dev     _path = abi.encodePacked(remoteAddress, localAddress)
+     * @param   _srcChainId  Source(Remote) chain id
+     * @param   _path  abi.encodePacked(sourceAddress, localAddress)
      */
-    function setLZTrustedRemote(uint16 _srcChainId, bytes calldata _srcAddress)
+    function setLZTrustedRemote(uint16 _srcChainId, bytes calldata _path) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        lzTrustedRemoteLookup[_srcChainId] = _path;
+        lzRemoteChainId = _srcChainId;
+        emit LzSetTrustedRemote(_srcChainId, _path);
+    }
+
+    /**
+     * @notice  Sets trusted remote address for the cross-chain communication
+     * @dev     Allow DEFAULT_ADMIN to set it multiple times.
+     * @param   _srcChainId  Source(Remote) chain id
+     * @param   _srcAddress  Source(Remote) contract address
+     */
+    function setLZTrustedRemoteAddress(uint16 _srcChainId, bytes calldata _srcAddress)
         external
         virtual
         onlyRole(DEFAULT_ADMIN_ROLE)
     {
-        lzTrustedRemoteLookup[_srcChainId] = _srcAddress;
+        lzTrustedRemoteLookup[_srcChainId] = abi.encodePacked(_srcAddress, address(this));
         lzRemoteChainId = _srcChainId;
-        emit LZTrustedRemoteSet(_srcChainId, _srcAddress);
+        emit LzSetTrustedRemoteAddress(_srcChainId, _srcAddress);
     }
 
     /**
@@ -200,6 +209,17 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     //--------------------------- VIEW FUNCTION ----------------------------------------
 
     /**
+     * @notice  Gets the Trusted Remote Address per given chainId
+     * @param   _srcChainId  Source chain id
+     * @return  bytes  Trusted Source Address
+     */
+    function getTrustedRemoteAddress(uint16 _srcChainId) external view returns (bytes memory) {
+        bytes memory path = lzTrustedRemoteLookup[_srcChainId];
+        require(path.length != 0, "LA-DCNT-01");
+        return UtilsLibrary.slice(path, 0, path.length - 20); // the last 20 bytes should be address(this)
+    }
+
+    /**
      * @param   _srcChainId  Source chain id
      * @param   _srcAddress  Source contract address
      * @return  bool  True if the bridge has stored payload, means it is stuck
@@ -224,15 +244,5 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      */
     function getOutboundNonce(uint16 _dstChainId, address _srcAddress) external view returns (uint64) {
         return lzEndpoint.getOutboundNonce(_dstChainId, _srcAddress);
-    }
-
-    /**
-     * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
-     * @return  bool  True if the source address is trusted
-     */
-    function isLZTrustedRemote(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (bool) {
-        bytes memory trustedSource = lzTrustedRemoteLookup[_srcChainId];
-        return keccak256(trustedSource) == keccak256(_srcAddress);
     }
 }

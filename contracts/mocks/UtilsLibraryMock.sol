@@ -56,4 +56,12 @@ contract UtilsLibraryMock {
     function stringToBytes32(string memory _string) external pure returns (bytes32) {
         return UtilsLibrary.stringToBytes32(_string);
     }
+
+    function slice(
+        bytes memory _bytes,
+        uint256 _start,
+        uint256 _length
+    ) external pure returns (bytes memory) {
+        return UtilsLibrary.slice(_bytes, _start, _length);
+    }
 }

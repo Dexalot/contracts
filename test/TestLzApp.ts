@@ -206,18 +206,36 @@ describe("LzApp via LzAppMock", () => {
         expect(nonce).to.be.equal(0);   // no transactions are sent
     });
 
-    it("Should use isLZTrustedRemote correctly", async () => {
+    it("Should set setLZTrustedRemoteAddress correctly", async () => {
         const {other1} = await f.getAccounts();
 
-        expect(await lzAppMock.isLZTrustedRemote(1, lzAppMock.address)).to.be.false;
+        expect(lzAppMock.getTrustedRemoteAddress(1)).to.be.revertedWith("LA-DCNT-01");
 
         // fail for non owner
-        await expect(lzAppMock.connect(other1).setLZTrustedRemote(1, lzAppMock.address)).to.be.revertedWith("AccessControl:");
+        await expect(lzAppMock.connect(other1).setLZTrustedRemoteAddress(1, lzAppMock.address)).to.be.revertedWith("AccessControl:");
 
         // succeed for owner
-        await lzAppMock.setLZTrustedRemote(1, lzAppMock.address);
-        expect(await lzAppMock.isLZTrustedRemote(1, lzAppMock.address)).to.be.true;
+        await lzAppMock.setLZTrustedRemoteAddress(1, lzAppMock.address);
+        const add = ethers.utils.getAddress(ethers.utils.hexlify(await lzAppMock.getTrustedRemoteAddress(1)));
+        expect(add).to.be.equal(lzAppMock.address);
     });
+
+    it("Should set setLZTrustedRemote correctly", async () => {
+        const {other1} = await f.getAccounts();
+
+        const trustedRemote  = ethers.utils.solidityPack([ "address", "address" ], [ lzAppMock.address, lzAppMock.address ])
+        expect(lzAppMock.getTrustedRemoteAddress(1)).to.be.revertedWith("LA-DCNT-01");
+
+        //fail for non owner
+        await expect(lzAppMock.connect(other1).setLZTrustedRemote(1, trustedRemote)).to.be.revertedWith("AccessControl:");
+
+        // succeed for owner
+        await lzAppMock.setLZTrustedRemote(1, trustedRemote);
+        const add = ethers.utils.getAddress(ethers.utils.hexlify(await lzAppMock.getTrustedRemoteAddress(1)));
+        expect(add).to.be.equal(lzAppMock.address);
+    });
+
+
 
     it("Should use hasStoredPayload correctly", async () => {
         // set the LzEndpoint for LzApp
@@ -256,7 +274,7 @@ describe("LzApp via LzAppMock", () => {
         await expect(lzAppMock.lzSendMock(depositAvaxPayload)).to.be.revertedWith("LA-DCNT-01");
 
         // set the lzAppMock as a trusted remote
-        await lzAppMock.setLZTrustedRemote(1, lzAppMock.address);
+        await lzAppMock.setLZTrustedRemoteAddress(1, lzAppMock.address);
 
         // now the lzSend should work as expected
         const tx = await lzAppMock.lzSendMock(depositAvaxPayload);

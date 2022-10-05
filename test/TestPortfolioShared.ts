@@ -462,7 +462,7 @@ describe("Portfolio Shared", () => {
 
 
         const srcAddress = "0x6d6f636b00000000000000000000000000000000000000000000000000000000";   // address in bytes for successful test
-        await portfolioBridge.setLZTrustedRemote(1, srcAddress);
+        await portfolioBridge.setLZTrustedRemoteAddress(1, srcAddress);
 
         // fail for non-admin
         await expect(portfolio.connect(trader1).lzRetryPayload(srcChainId, srcAddress, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
