@@ -57,6 +57,7 @@ TestAirdrop.ts
 TestAuction.ts
 TestBytes32LinkedListLibrary.ts
 TestDexalot.ts
+TestDexalotSubnetBalances.ts
 TestDexalotToken.ts
 TestExchangeMain.ts
 TestExchangeShared.ts
