@@ -340,15 +340,6 @@ describe("Portfolio Bridge Main", () => {
                  timestamp
         };
 
-        let xfer5: any = {};
-        xfer5 = {nonce,
-                 transaction: transaction5,
-                 trader,
-                 symbol,
-                 quantity,
-                 timestamp
-        };
-
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.PORTFOLIO_ROLE(), owner.address);
         // fail paused contract
         await portfolioBridgeMain.pause();
@@ -359,9 +350,6 @@ describe("Portfolio Bridge Main", () => {
         await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(bridge0, xfer1)).to.be.revertedWith("AccessControl:");
         // fail for wrong BridgeProvider
         await expect(portfolioBridgeMain.sendXChainMessage(bridge3, xfer1)).to.be.revertedWith("Transaction reverted: function");
-
-        // fail for wrong transaction type
-        await expect(portfolioBridgeMain.sendXChainMessage(bridge0, xfer5)).to.be.revertedWith("P-PTNS-02");
 
         // fail - bridge provider enabled but not implemented
         await portfolioBridgeMain.enableBridgeProvider(bridge1, true);

@@ -19,6 +19,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     uint64 internal lzOutNonce;
     uint64 internal lzInNonce;
 
+    //chainId ==> Remote contract address concatenated with the local contract address, 40 bytes
     mapping(uint16 => bytes) public lzTrustedRemoteLookup;
 
     event LzSetTrustedRemote(uint16 remoteChainId, bytes path);
@@ -65,7 +66,8 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @return  uint256  Message fee
      */
     function lzSend(bytes memory _payload, address payable _refundAddress) internal virtual returns (uint256) {
-        bytes memory trustedRemote = this.getTrustedRemoteAddress(lzRemoteChainId);
+        bytes memory trustedRemote = lzTrustedRemoteLookup[lzRemoteChainId];
+        require(trustedRemote.length != 0, "LA-DCNT-01");
         (uint256 messageFee, bytes memory adapterParams) = lzEstimateFees(_payload);
         // solhint-disable-next-line check-send-result
         lzEndpoint.send{value: messageFee}(
@@ -149,9 +151,9 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     /**
      * @notice  Set the trusted path for the cross-chain communication
-     * @dev     _path = abi.encodePacked(remoteAddress, localAddress)
-     * @param   _srcChainId  Source(Remote) chain id
-     * @param   _path  abi.encodePacked(sourceAddress, localAddress)
+     * @param   _srcChainId Source(Remote) chain id
+     * @param   _path  Remote contract address concatenated with the local contract address, 40 bytes
+     * abi.encodePacked(sourceAddress, localAddress)
      */
     function setLZTrustedRemote(uint16 _srcChainId, bytes calldata _path) external onlyRole(DEFAULT_ADMIN_ROLE) {
         lzTrustedRemoteLookup[_srcChainId] = _path;
@@ -180,7 +182,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @dev     This action is destructive! Please use it only if you know what you are doing.
      * @dev     Only admin can call this
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
      */
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
         external
@@ -195,7 +197,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @notice  Retries the stucked message in the bridge, if any
      * @dev     Only admin can call this
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
      * @param   _payload  Payload to retry
      */
     function retryPayload(
@@ -206,12 +208,12 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
         lzEndpoint.retryPayload(_srcChainId, _srcAddress, _payload);
     }
 
-    //--------------------------- VIEW FUNCTION ----------------------------------------
+    //--------------------------- VIEW FUNCTIONS ----------------------------------------
 
     /**
      * @notice  Gets the Trusted Remote Address per given chainId
      * @param   _srcChainId  Source chain id
-     * @return  bytes  Trusted Source Address
+     * @return  bytes  Trusted Source Remote Address
      */
     function getTrustedRemoteAddress(uint16 _srcChainId) external view returns (bytes memory) {
         bytes memory path = lzTrustedRemoteLookup[_srcChainId];
@@ -221,7 +223,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     /**
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes
      * @return  bool  True if the bridge has stored payload, means it is stuck
      */
     function hasStoredPayload(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (bool) {
@@ -244,5 +246,15 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      */
     function getOutboundNonce(uint16 _dstChainId, address _srcAddress) external view returns (uint64) {
         return lzEndpoint.getOutboundNonce(_dstChainId, _srcAddress);
+    }
+
+    /**
+     * @param   _srcChainId  Source chain id
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes
+     * @return  bool  True if the source address is trusted
+     */
+    function isLZTrustedRemote(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (bool) {
+        bytes memory trustedSource = lzTrustedRemoteLookup[_srcChainId];
+        return keccak256(trustedSource) == keccak256(_srcAddress);
     }
 }

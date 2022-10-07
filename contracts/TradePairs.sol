@@ -676,7 +676,7 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Calculates the commission and updates the oder state after an execution
+     * @notice  Calculates the commission and updates the order state after an execution
      * @dev     Updates the `totalAmount`, `quantityFilled`, `totalFee` and the status of the order.
      * Commissions are rounded down based on evm and display decimals to avoid DUST
      * @param   _orderId  order id to update
@@ -699,7 +699,7 @@ contract TradePairs is
         order.status = order.quantity == order.quantityFilled ? Status.FILLED : Status.PARTIAL;
         uint256 amount = getQuoteAmount(order.tradePairId, _price, _quantity);
         order.totalAmount += amount;
-        //Rounding Down the fee based on display decimals to avoid DUST
+        // Rounding Down the fee based on display decimals to avoid DUST
         uint256 lastFeeRounded = order.side == Side.BUY
             ? UtilsLibrary.floor((_quantity * _rate) / TENK, tradePair.baseDecimals - tradePair.baseDisplayDecimals)
             : UtilsLibrary.floor((amount * _rate) / TENK, tradePair.quoteDecimals - tradePair.quoteDisplayDecimals);
@@ -745,8 +745,8 @@ contract TradePairs is
 
     /**
      * @notice  Emits the Executed Event showing \
-     * `ersion`  event version \
-     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 \
+     * `version`  event version \
+     * `tradePairId`  traded pair from makerOrder, i.e. ALOT/AVAX in bytes32 \
      * `_price`  see below \
      * `_quantity`  see below \
      * `_makerOrderId`  see below \
@@ -760,7 +760,7 @@ contract TradePairs is
      * the taker in Base currency \
      * `execId`  Unique trade id (execution id) assigned by the contract \
      * `addressMaker`  maker traderaddress \
-     * `addressTaker`  taker traderaddress \
+     * `addressTaker`  taker traderaddress
      * @param   _price      executed price
      * @param   _quantity   executed quantity
      * @param   _makerOrderId  Maker Order id
@@ -1060,9 +1060,9 @@ contract TradePairs is
             );
 
             if (tradePair.auctionMode == AuctionMode.MATCHING) {
-                //In the typical flow, takerOrder amounts are all available and not locked
-                //In auction, taker order amounts are locked like a maker oder and
-                //has to be made available before addExecution
+                // In the typical flow, takerOrder amounts are all available and not locked
+                // In auction, taker order amounts are locked like a maker order and
+                // has to be made available before addExecution
                 portfolio.adjustAvailable(
                     IPortfolio.Tx.INCREASEAVAIL,
                     takerOrder.traderaddress,
@@ -1094,7 +1094,7 @@ contract TradePairs is
         if (tradePair.auctionMode == AuctionMode.MATCHING) {
             emitStatusUpdate(takerOrder.id); // EMIT taker order's status update
             if (takerRemainingQuantity == 0) {
-                //Remove the taker auction order from the sell orderbook
+                // Remove the taker auction order from the sell orderbook
                 orderBooks.removeFirstOrder(tradePair.sellBookId, takerOrder.price);
             }
         }
@@ -1126,7 +1126,7 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Cancels an order and immediatly enters a similar order in the same direction.
+     * @notice  Cancels an order and immediately enters a similar order in the same direction.
      * @dev     Only the quantity and the price of the order can be changed. All the other order
      * fields are copied from the canceled order to the new order.
      * The time priority of the original order is lost.

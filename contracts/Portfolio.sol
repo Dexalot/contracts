@@ -122,10 +122,10 @@ abstract contract Portfolio is
     /**
      * @notice  Clears the blocking message in the LZ bridge, if any
      * @dev     Force resume receive action is destructive
-     * should be used only when the bridge is stuck and message is already recovered
-     * @dev    Only callable by admin
+     * should be used only when the bridge is stuck and message is already recovered. \
+     * It is only callable by admin.
      * @param   _srcChainId  LZ Chain ID of the source chain
-     * @param   _srcAddress  Address of the source contract
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
      */
     function lzForceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
         external
@@ -139,7 +139,7 @@ abstract contract Portfolio is
      * @notice  Retries the stuck message in the LZ bridge, if any
      * @dev     Only callable by admin
      * @param   _srcChainId  LZ Chain ID of the source chain
-     * @param   _srcAddress  Address of the source contract
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
      * @param   _payload  Payload of the stucked message
      */
     function lzRetryPayload(
