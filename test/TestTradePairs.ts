@@ -861,7 +861,7 @@ describe("TradePairs", function () {
             const tx2 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1, type2);
             const res2: any = await tx2.wait();
             const id2 = res2.events[1].args.orderId;
-            // 0address oder will revert from ownership check
+            // 0address order will revert from ownership check
             await expect(tradePairs.connect(trader1).cancelOrder(ZERO_BYTES32)).to.be.revertedWith("T-OOCC-01");
             // cannot cancel order for somebody else
             await expect(tradePairs.connect(owner).cancelOrder(id1)).to.be.revertedWith("T-OOCC-01");

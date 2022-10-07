@@ -123,7 +123,7 @@ describe("LZ Recover Functionality", async () => {
     it("Should recover native token sent from mainnet", async () => {
         const { trader1, owner } = await f.getAccounts()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         const tx = await portfolioMain.connect(trader1).depositNative(
             trader1.address,
@@ -160,7 +160,7 @@ describe("LZ Recover Functionality", async () => {
     it("Should recover erc20 token sent from mainnet", async () => {
         const { trader1, owner } = await f.getAccounts()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         const tx = await portfolioMain.connect(trader1).depositToken(
             trader1.address,
@@ -204,7 +204,7 @@ describe("LZ Recover Functionality", async () => {
         )
         await tx.wait()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         tx = await portfolioSub.connect(trader1).withdrawToken(
             trader1.address,
@@ -244,7 +244,7 @@ describe("LZ Recover Functionality", async () => {
         )
         await tx.wait()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         tx = await portfolioSub.connect(trader1).withdrawToken(
             trader1.address,
@@ -275,7 +275,7 @@ describe("LZ Recover Functionality", async () => {
     it("shouldn't recover if the caller is not the owner", async () => {
         const { trader1 } = await f.getAccounts()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         const tx = await portfolioMain.connect(trader1).depositNative(
             trader1.address,
@@ -298,7 +298,7 @@ describe("LZ Recover Functionality", async () => {
     it("shouldn't recover ALOT if the payload is impossible to process", async () => {
         const { trader1 } = await f.getAccounts()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         const tx = await portfolioMain.connect(trader1).depositToken(
             trader1.address,
@@ -328,7 +328,7 @@ describe("LZ Recover Functionality", async () => {
     it("shouldn't recover AVAX if the payload is impossible to process", async () => {
         const { trader1 } = await f.getAccounts()
 
-        await lzEndpointMain.setVariable("nextMsgBLocked", "true")
+        await lzEndpointMain.blockNextMsg()
 
         const tx = await portfolioMain.connect(trader1).depositNative(
             trader1.address,

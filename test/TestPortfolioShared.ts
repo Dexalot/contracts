@@ -394,13 +394,16 @@ describe("Portfolio Shared", () => {
 
         const srcChainId = 1;
 
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000000000000000000000000000";   // address in bytes for successful test
-
+        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
+        await portfolioBridge.setLZTrustedRemoteAddress(1, srcAddress);
+        const trustedRemote = await portfolioBridge.lzTrustedRemoteLookup(1);
         // fail for non-admin
-        await expect(portfolio.connect(trader1).lzForceResumeReceive(1, srcAddress)).to.be.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).lzForceResumeReceive(1, trustedRemote)).to.be.revertedWith("AccessControl: account");
 
         // success for admin
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
+
+
 
         const spPart1 = {
             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
@@ -408,14 +411,14 @@ describe("Portfolio Shared", () => {
             payloadHash: ethers.utils.keccak256(depositAvaxPayload)
         }
         const spPart2: any = {};
-        spPart2[srcAddress] = spPart1;
+        spPart2[trustedRemote] = spPart1;
         const sp: any = {};
         sp[srcChainId] = spPart2;
 
         await lzEndpointMock.setVariable("storedPayload", sp);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddress)).to.be.true;
-        await portfolio.connect(admin).lzForceResumeReceive(srcChainId, srcAddress);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddress)).to.be.false;
+        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
+        await portfolio.connect(admin).lzForceResumeReceive(srcChainId, trustedRemote);
+        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
     });
 
     it("Should use retryPayload correctly", async () => {
@@ -459,13 +462,12 @@ describe("Portfolio Shared", () => {
             [xChainMessageType, depositAvaxMessage]
         )
 
-
-
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000000000000000000000000000";   // address in bytes for successful test
+        //const trustedRemote  = ethers.utils.solidityPack([ "address", "address" ], [ lzAppMock.address, lzAppMock.address ])
+        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
         await portfolioBridge.setLZTrustedRemoteAddress(1, srcAddress);
-
+        const trustedRemote = await portfolioBridge.lzTrustedRemoteLookup(srcChainId);
         // fail for non-admin
-        await expect(portfolio.connect(trader1).lzRetryPayload(srcChainId, srcAddress, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).lzRetryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
 
         // fail as the account does not have money to actually withdraw, the success test is tested elsewhere
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
@@ -476,12 +478,12 @@ describe("Portfolio Shared", () => {
             payloadHash: ethers.utils.keccak256(depositAvaxPayload)
         }
         const spPart2: any = {};
-        spPart2[srcAddress] = spPart1;
+        spPart2[trustedRemote] = spPart1;
         const sp: any = {};
         sp[srcChainId] = spPart2;
 
         await lzEndpointMock.setVariable("storedPayload", sp);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddress)).to.be.true;
-        await expect(portfolio.connect(admin).lzRetryPayload(srcChainId, srcAddress, depositAvaxPayload)).to.be.revertedWith("P-WNFA-01");
+        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
+        await expect(portfolio.connect(admin).lzRetryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("P-WNFA-01");
     });
 });
