@@ -367,9 +367,6 @@ describe("Dexalot", () => {
                 } else if (order["type1"] === "LIMIT") {
                     _type1 =1
 
-                } else if (order["type1"] === "LIMITFOK") {
-                    _type1 =1
-                    _type2 =1
                 }
 
                 if (order["type2"] === "GTC") {
@@ -380,6 +377,9 @@ describe("Dexalot", () => {
 
                 } else if (order["type2"] === "IOC") {
                     _type2 =2
+
+                }else if (order["type2"] === "PO") {
+                    _type2 =3
                 }
 
                 const tx = await tradePair.connect(acc).addOrder(
@@ -460,7 +460,7 @@ describe("Dexalot", () => {
                 }
             }
 
-            console.log("current order ::: ", "clientOrderId =", order["clientOrderId"], ", ", "orderId =", orderMap.get(order["clientOrderId"]).id);
+            console.log("clientOrderId =", order["clientOrderId"], ", ", "orderId =", orderMap.get(order["clientOrderId"]).id);
 
             console.log();
             console.log("price :::", order['price'].toString());
@@ -724,13 +724,6 @@ describe("Dexalot", () => {
             _checkValue = feeLumped[_token];
             doNumberAssert(_checkName, _contractValue, _checkValue);
         }
-
-
-
-
-
-
-
 
         console.log()
     });

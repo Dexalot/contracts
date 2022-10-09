@@ -2,7 +2,7 @@
 
 /* solhint-disable */
 
-pragma solidity 0.8.17;
+pragma solidity >=0.5.0;
 pragma experimental ABIEncoderV2;
 
 /// @title Multicall2 - Aggregate results from multiple read-only function calls
@@ -99,5 +99,3 @@ contract Multicall2 {
         returnData = tryAggregate(requireSuccess, calls);
     }
 }
-
-/* solhint-enable */

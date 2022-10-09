@@ -125,18 +125,11 @@ before(async () => {
   portfolioMain = portfolioM;
   portfolio = portfolioS;
 
-
   orderBooks = await f.deployOrderBooks();
   exchange = await f.deployExchangeSub(portfolio, orderBooks)
   tradePairs = await f.deployTradePairs(orderBooks, portfolio, exchange);
-  // initialize TradePairs contract
-  // console.log();
-  // console.log("=== Initialize TradePairs Contract ===");
 
-  // exchange = await f.deployExchangeSub(portfolio, orderBooks)
-  // tradePairs = await f.deployTradePairs(orderBooks, portfolio, exchange);
 
-  // console.log("TradePairs contract deployed at: ", tradePairs.address)
 
     // initialize address collecting fees
   console.log("=== Set Address Collecting the Fees ===");
@@ -334,9 +327,10 @@ it("Should be able to send orders properly", async () => {
   let side = 1;//SELL
   const type1 = 1;//LIMIT
   const type2 = 0;//GTC
+  const type2toBeReplaced = 3; //PO contract will replace it with GTC
 
   for (let i=0; i<2; i++) {  // 2 sells at 0.01
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "0.01", quantity: "1000", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "0.01", quantity: "1000", side, type1, type2:type2toBeReplaced};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
@@ -451,7 +445,7 @@ it("Should not allow any order operation when mode = 5 (MATCHING)", async () => 
   await expect(cancelAllOrders(wallets[3], orderids, pair, orders)).to.be.revertedWith("T-PPAU-03");
 });
 
-it("Shoulf not allow anyone to withdraw auction token when mode = 5 (MATCHING)", async () => {
+it("Should not allow anyone to withdraw auction token when mode = 5 (MATCHING)", async () => {
   const pair = pairs[0];
   const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
 
@@ -463,6 +457,24 @@ it("Shoulf not allow anyone to withdraw auction token when mode = 5 (MATCHING)",
     await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals) ).to.be.revertedWith("P-AUCT-02");
   }
 });
+
+it("Should not allow anyone to transfer auction token when mode != 0 ", async () => {
+  const pair = pairs[0];
+  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 5)   // auction in mode = 5 (MATCHING)
+  const auctionData = await tradePairs.getAuctionData(tp);
+  expect(auctionData.mode).to.equal(5);
+
+  await expect(portfolio.transferToken(deploymentWallet.address, Utils.fromUtf8(pair.baseSymbol), 100) ).to.be.revertedWith("P-DOTS-01");
+  await expect(portfolio.connect(deploymentWallet).transferToken(accounts[1], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-02");
+  for (let mode=2; mode<=6; mode++) {
+    console.log ("Mode", mode)
+    await exchange.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), mode);
+    await expect(portfolio.connect(wallets[1]).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-02");
+  }
+});
+
 
 it("Should not allow to set the status to LIVETRADING or OFF when order book is crossed", async () => {
   const pair = pairs[0];

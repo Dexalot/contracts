@@ -359,7 +359,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                 orderLog = await tx.wait();
             }
 
-            console.log("current order ::: ", "clientOrderId =", order["clientOrderId"], ", ", "orderId =", orderMap.get(order["clientOrderId"]).id);
+            console.log("clientOrderId =", order["clientOrderId"], ", ", "orderId =", orderMap.get(order["clientOrderId"]).id);
         }
     });
 

@@ -38,7 +38,7 @@
     "P-TAEX-01": "Portfolio: token already exists",
     "P-SCEM-01": "Portfolio: source Chain Id should be the same as specified in Portfolio Main",
 
-    "P-AUCT-02": "Portfolio: can not withdraw auction token before auction is closed",
+    "P-AUCT-02": "Portfolio: can not withdraw/transfer auction token before auction is finalized",
     "P-NZBL-01": "Portfolio: cannot remove token if there is non-zero balance",
     "P-DUTH-01": "Portfolio: deposit under threshold",
     "P-CNFF-01": "Portfolio: collect native fee failed",

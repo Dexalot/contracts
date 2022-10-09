@@ -33,7 +33,7 @@ contract PortfolioBridgeSub is PortfolioBridge {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("2.1.0");
+        return bytes32("2.1.2");
     }
 
     /**
@@ -79,7 +79,7 @@ contract PortfolioBridgeSub is PortfolioBridge {
     }
 
     /**
-     * @notice  Retruns the symbolId used the subnet given the targetChainId
+     * @notice  Returns the symbolId used the subnet given the targetChainId
      * @dev     it uses the defaultTargetChain instead of instead of portfolio.getChainId() that PortfolioBridge uses.
      * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC1337
      * Because the subnet needs to know about different ids from different mainnets.
@@ -91,9 +91,6 @@ contract PortfolioBridgeSub is PortfolioBridge {
     function getTokenId(bytes32 _symbol) internal view override returns (bytes32) {
         return tokenDetailsMapBySymbol[_symbol][defaultTargetChainId];
     }
-
-    //Based on code from CELER GitHub Repo - START
-    //https://github.com/celer-network/sgn-v2-contracts/blob/main/contracts/safeguard/DelayedTransfer.sol
 
     /**
      * @notice  Sets delay thresholds for tokens
@@ -154,7 +151,6 @@ contract PortfolioBridgeSub is PortfolioBridge {
         delete delayedTransfers[_id];
     }
 
-    //https://github.com/celer-network/sgn-v2-contracts/blob/main/contracts/safeguard/VolumeControl.sol
     /**
      * @notice  Sets epoch length for volume control
      * @dev    Only admin can call this function
@@ -211,5 +207,4 @@ contract PortfolioBridgeSub is PortfolioBridge {
         epochVolumes[_token] = volume;
         lastOpTimestamps[_token] = timestamp;
     }
-    //Based on code from CELER GitHub Repo - END
 }

@@ -16,11 +16,11 @@ import "./bridgeApps/LzApp.sol";
  * @notice The default bridge provider is LayerZero and it can't be disabled. Additional bridge providers
  * will be added as needed. This contract encapsulates all bridge provider implementations that Portfolio
  * doesn't need to know about.
- * @dev The information flow for messages between PortfolioMain and PortfolopSub is as follows:
- * PortfolioMain => PortfolioBridgeMain => BridgeProviderA/B/n ====> PortfolioBridgeSub ==> PortfolioSub
- * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n ====> PortfolioBridgeMain ==> PortfolioMain
- * PortfolioBirdge also serves as a symbol mapper to support multichain symbol handling.
- * PortfolioBridgeMain always maps the symbol as SYMBOL+portolio.srcChainId and expects the same back,
+ * @dev The information flow for messages between PortfolioMain and PortfolioSub is as follows: \
+ * PortfolioMain => PortfolioBridgeMain => BridgeProviderA/B/n => PortfolioBridgeSub => PortfolioSub \
+ * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain => PortfolioMain \
+ * PortfolioBridge also serves as a symbol mapper to support multichain symbol handling. \
+ * PortfolioBridgeMain always maps the symbol as SYMBOL + portolio.srcChainId and expects the same back,
  * i.e USDC43114 if USDC is from Avalanche Mainnet. USDC1 if it is from Etherum.
  * PortfolioBridgeSub always maps the symbol that it receives into a common symbol on receipt,
  * i.e USDC43114 is mapped to USDC.
@@ -70,7 +70,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("2.1.0");
+        return bytes32("2.1.2");
     }
 
     /**
@@ -159,7 +159,8 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     /**
      * @notice  Set portfolio address to grant role
-     * @dev     Only admin can set portfolio address. One to one relationship between Portflio and PortfolioBridge
+     * @dev     Only admin can set portfolio address.
+     * There is a one to one relationship between Portfolio and PortfolioBridge.
      * @param   _portfolio  Portfolio address
      */
     function setPortfolio(address _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -202,11 +203,12 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  Adds the given token to the portfoBrige. PortfoBrigeSub the list will be bigger as they could be from
-     * different mainnet chains
-     * @dev     Only callable by admin or from Portfolio when a new common symbol is added for the first time.
-     * @dev     The same common symbol but different symbolId are required when adding a token to PortfoBrigeSub.
-     * @dev     Native symbol is also added as a token with 0 address
+     * @notice  Adds the given token to the portfolioBridge. PortfolioBrigeSub the list will be bigger as they could
+     * be from different mainnet chains
+     * @dev     `addToken` is only callable by admin or from Portfolio when a new common symbol is added for the
+     * first time. The same common symbol but different symbolId are required when adding a token to
+     * PortfolioBrigeSub. \
+     * Native symbol is also added as a token with 0 address
      * @param   _symbol  Symbol of the token
      * @param   _tokenAddress  Mainnet token address the symbol or zero address for AVAX
      * @param   _srcChainId  Source Chain id
@@ -278,7 +280,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  Retruns the symbolId used in the mainnet given the srcChainId
+     * @notice  Returns the symbolId used in the mainnet given the srcChainId
      * @dev     PortfolioBridgeSub uses the defaultTargetChain instead of portfolio.getChainId()
      * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC1337
      * When receiving messages back it expects the same symbolId if USDC1337 sent, USDC1337 to recieve
@@ -291,7 +293,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  Retruns the locally used symbol given the symbolId
+     * @notice  Returns the locally used symbol given the symbolId
      * @dev     Mainnet receives the messages in the same format that it sent out, by symbolId
      * @return  bytes32  symbolId
      */
@@ -476,9 +478,9 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         lzInNonce = xfer.nonce;
 
         emit XChainXFerMessage(XCHAIN_XFER_MESSAGE_VERSION, _bridge, Direction.RECEIVED, _srcChainId, 0, xfer);
-        // Future task for multichain. This is a good place to update update the totals by symbolId.
-        // Add xfer.quantity to the totals. Totals by SymbolId can be used to see how much the user
-        // can withdraw to the target chain.
+        // Future task for multichain. This is a good place to update the totals by symbolId.
+        // Add xfer.quantity to the totals by SymbolId. It can be used to see how much the user
+        // can withdraw from the target chain.
 
         //After the event is raised, replace the symbol with the local symbol that is going to be used.
         xfer.symbol = getSymbolForId(xfer.symbol);
@@ -490,8 +492,8 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     /**
      * @notice  Overriden by PortfolioBridgeSub
-     * @dev     Tresholds not checked in the Mainnet. Neither for Incoming nor outgoing.
-     * But both are checked in the subnet.
+     * @dev     Tresholds are not checked in the Mainnet neither for Incoming nor outgoing messages.
+     * But they are checked in the subnet for both.
      * @return  bool  True
      */
     function checkTreshholds(IPortfolio.XFER memory) internal virtual returns (bool) {
@@ -511,7 +513,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         uint64,
         bytes calldata _payload
     ) external override nonReentrant {
-        bytes memory trustedRemote = this.getTrustedRemoteAddress(_srcChainId);
+        bytes memory trustedRemote = lzTrustedRemoteLookup[_srcChainId];
         require(_msgSender() == address(lzEndpoint), "PB-IVEC-01");
         require(trustedRemote.length != 0 && keccak256(_srcAddress) == keccak256(trustedRemote), "PB-SINA-01");
         processPayload(BridgeProvider.LZ, _srcChainId, _payload);

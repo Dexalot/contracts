@@ -151,7 +151,7 @@ contract PortfolioMain is Portfolio {
     /**
      * @notice  Allows deposits from trusted contracts
      * @dev     Used by Avalaunch for DD deposits and Vesting Contracts.
-                Keepig for backward compatibility instead of using ON_BEHALF_ROLE
+     * Keeping for backward compatibility instead of using ON_BEHALF_ROLE.
      * @param   _from  Address of the depositor
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to deposit
@@ -168,9 +168,9 @@ contract PortfolioMain is Portfolio {
     /**
      * @notice  Processes the message coming from the bridge
      * @dev     Only process WITHDRAW messages as it is the only message that can be sent to the portfolio main
-                Even when the contract is paused, this method is allowed for the messages that
-                are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
-                fligh then upgrade
+     * Even when the contract is paused, this method is allowed for the messages that
+     * are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
+     * flight then upgrade
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol of the token in form of _symbol + chainId
      * @param   _quantity  Amount of token to be withdrawn
@@ -204,8 +204,8 @@ contract PortfolioMain is Portfolio {
 
     /**
      * @notice  Recovers the stucked message from the LZ bridge, returns the funds to the depositor/withdrawer
-     * @dev     Only call this just before calling force resume receive function for the LZ bridge
-     * @dev     Only the owner can call this function
+     * @dev     Only call this just before calling force resume receive function for the LZ bridge. \
+     * Only the DEFAULT_ADMIN can call this function.
      * @param   _payload  Payload of the message
      */
     function lzRecoverPayload(bytes calldata _payload) external override nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {

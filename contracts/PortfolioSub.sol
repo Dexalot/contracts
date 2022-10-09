@@ -10,12 +10,12 @@ import "./interfaces/IPortfolioMinter.sol";
  * @title  Subnet Portfolio
  * @notice Receives messages from mainnet for deposits and sends withdraw requests to mainnet.  It also
    transfers tokens between traders as their orders gets matched.
- * @dev    Allows one to withdraw and deposit native token from/to the subnet wallet. Any other token has be be
+ * @dev    Allows one to withdraw and deposit native token from/to the subnet wallet. Any other token has to be
  * deposited via PortfolioBridge using processXFerPayload function. It can only be invoked by a bridge
- * provider's message receive event.
- * Any other token token including ALOT (native) can be withdrawn to mainnet using withdrawToken that will
- * send the holdings back to the user's wallet in the mainnet.
- * TradePairs needs to have EXECUTOR_ROLE on PortfolioSub contract.
+ * provider's message receive event. \
+ * Any other token including ALOT (native) can be withdrawn to mainnet using withdrawToken that will
+ * send the holdings back to the user's wallet in the mainnet. \
+ * TradePairs needs to have EXECUTOR_ROLE on PortfolioSub contract. \
  * If a trader deposits a token and has 0 ALOT in his subnet wallet, this contract will make a call
  * to GasStation to deposit a small amount of ALOT to the user's wallet to be used for gas.
  * In return, It will deduct a tiny amount of the token transferred.
@@ -61,7 +61,7 @@ contract PortfolioSub is Portfolio {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.1.1");
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -262,8 +262,8 @@ contract PortfolioSub is Portfolio {
 
     /**
      * @notice  Recovers the stucked message from the LZ bridge, returns the funds to the depositor/withdrawer
-     * @dev     Only call this just before calling force resume receive function for the LZ bridge
-     * Only the DEFAULT_ADMIN can call this function
+     * @dev     Only call this just before calling force resume receive function for the LZ bridge. \
+     * Only the DEFAULT_ADMIN can call this function.
      * @param   _payload  Payload of the message
      */
     function lzRecoverPayload(bytes calldata _payload) external override onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -519,6 +519,8 @@ contract PortfolioSub is Portfolio {
     ) external whenNotPaused nonReentrant {
         require(tokenList.contains(_symbol) || _symbol == native, "P-ETNS-01");
         require(_to != msg.sender, "P-DOTS-01");
+        //Can not transfer auction tokens
+        require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-02");
         transferToken(msg.sender, _to, _symbol, _quantity, 0, IPortfolio.Tx.IXFERSENT, false);
     }
 
@@ -662,14 +664,14 @@ contract PortfolioSub is Portfolio {
 
     /**
      * @notice  Adds the given token to the portfolioSub with 0 address in the subnet.
-     * @dev     Only callable by admin
-     * We don't allow tokens with same symbols.
-     * Native symbol is also added as a token with 0 address.
+     * @dev     This function is only callable by admin. \
+     * We don't allow tokens with same symbols. \
+     * Native symbol is also added as a token with 0 address. \
      * PortfolioSub keeps track of total deposited tokens in tokenTotals for sanity checks against mainnet
-     * It has no ERC20 Contracts hence, it overwtires the addresses with address(0).
+     * It has no ERC20 Contracts hence, it overwrites the addresses with address(0). \
      * But PortfolioBridgeSub keeps all the symbols added from all different mainnet chains separately with
      * their original details including the addresses
-     * except AVAX which passed with address(0).
+     * except AVAX which is passed with address(0).
      * @param   _symbol  Symbol of the token
      * @param   _tokenAddress  Address of the token
      * @param   _srcChainId  Source Chain id, overwritten by srcChain of Portolio. Only used by PortfolioBridgeSub.
