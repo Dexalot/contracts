@@ -153,6 +153,11 @@ describe("UtilsLibrary via UtilsLibraryMock", function () {
 	it('Should return slice() correctly', async () => {
 		const testString = "Dexalot is awesome!";
 		const testBytes32 = Utils.fromUtf8(testString);
+		// 0x446578616c6f7420697320617765736f6d652100000000000000000000000000 =  bytes.length = 64
+		// fail - length parameter passed cannot be larger than bytes.length + 31
+		await expect(utilsLibraryMock.slice(testBytes32, 0, 96)).to.be.revertedWith("slice_overflow");
+		// fail - start + length <= bytes.length
+		await expect(utilsLibraryMock.slice(testBytes32, 30, 5)).to.be.revertedWith("slice_outOfBounds");
 		const result = await utilsLibraryMock.slice(testBytes32, 10, 5);
 		expect(result).to.be.equal("0x2061776573");
 	});

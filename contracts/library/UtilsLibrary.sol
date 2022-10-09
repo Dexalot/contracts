@@ -154,7 +154,7 @@ library UtilsLibrary {
         uint256 _length
     ) internal pure returns (bytes memory) {
         // solhint-disable-next-line reason-string
-        require(_length + 31 >= _length, "slice_overflow");
+        require(_bytes.length + 31 >= _length, "slice_overflow");
         // solhint-disable-next-line reason-string
         require(_bytes.length >= _start + _length, "slice_outOfBounds");
 
