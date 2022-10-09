@@ -151,9 +151,11 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     /**
      * @notice  Set the trusted path for the cross-chain communication
+     * @dev     `_path` is 40 bytes data with the remote contract address concatenated with
+     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId Source(Remote) chain id
-     * @param   _path  Remote contract address concatenated with the local contract address, 40 bytes
-     * abi.encodePacked(sourceAddress, localAddress)
+     * @param   _path  Remote contract address concatenated with the local contract address
+     *
      */
     function setLZTrustedRemote(uint16 _srcChainId, bytes calldata _path) external onlyRole(DEFAULT_ADMIN_ROLE) {
         lzTrustedRemoteLookup[_srcChainId] = _path;
@@ -180,9 +182,11 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     /**
      * @notice  Force resumes the stucked bridge
      * @dev     This action is destructive! Please use it only if you know what you are doing.
-     * @dev     Only admin can call this
+     * Only admin can call this function. \
+     * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
+     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address
      */
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
         external
@@ -195,9 +199,11 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     /**
      * @notice  Retries the stucked message in the bridge, if any
-     * @dev     Only admin can call this
+     * @dev     Only admin can call this function \
+     * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
+     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
+     * @param   _srcAddress  Remote contract address concatenated with the local contract addres
      * @param   _payload  Payload to retry
      */
     function retryPayload(
@@ -222,8 +228,10 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
+     * @dev     `_srcAddress` is 40 bytes data with the remote contract address concatenated with
+     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address
      * @return  bool  True if the bridge has stored payload, means it is stuck
      */
     function hasStoredPayload(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (bool) {
@@ -249,8 +257,10 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
+     * @dev     `_srcAddress` is 40 bytes data with the remote contract address concatenated with
+     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address
      * @return  bool  True if the source address is trusted
      */
     function isLZTrustedRemote(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (bool) {

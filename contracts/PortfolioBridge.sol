@@ -16,7 +16,7 @@ import "./bridgeApps/LzApp.sol";
  * @notice The default bridge provider is LayerZero and it can't be disabled. Additional bridge providers
  * will be added as needed. This contract encapsulates all bridge provider implementations that Portfolio
  * doesn't need to know about.
- * @dev The information flow for messages between PortfolioMain and PortfolopSub is as follows: \
+ * @dev The information flow for messages between PortfolioMain and PortfolioSub is as follows: \
  * PortfolioMain => PortfolioBridgeMain => BridgeProviderA/B/n => PortfolioBridgeSub => PortfolioSub \
  * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain => PortfolioMain \
  * PortfolioBridge also serves as a symbol mapper to support multichain symbol handling. \
@@ -203,8 +203,8 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  Adds the given token to the portfoBrige. PortfolioBrigeSub the list will be bigger as they could be
-     * from different mainnet chains
+     * @notice  Adds the given token to the portfolioBridge. PortfolioBrigeSub the list will be bigger as they could
+     * be from different mainnet chains
      * @dev     `addToken` is only callable by admin or from Portfolio when a new common symbol is added for the
      * first time. The same common symbol but different symbolId are required when adding a token to
      * PortfolioBrigeSub. \
@@ -478,9 +478,9 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         lzInNonce = xfer.nonce;
 
         emit XChainXFerMessage(XCHAIN_XFER_MESSAGE_VERSION, _bridge, Direction.RECEIVED, _srcChainId, 0, xfer);
-        // Future task for multichain. This is a good place to update update the totals by symbolId.
-        // Add xfer.quantity to the totals. Totals by SymbolId can be used to see how much the user
-        // can withdraw to the target chain.
+        // Future task for multichain. This is a good place to update the totals by symbolId.
+        // Add xfer.quantity to the totals by SymbolId. It can be used to see how much the user
+        // can withdraw from the target chain.
 
         //After the event is raised, replace the symbol with the local symbol that is going to be used.
         xfer.symbol = getSymbolForId(xfer.symbol);
@@ -492,8 +492,8 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     /**
      * @notice  Overriden by PortfolioBridgeSub
-     * @dev     Tresholds not checked in the Mainnet. Neither for Incoming nor outgoing.
-     * But both are checked in the subnet.
+     * @dev     Tresholds are not checked in the Mainnet neither for Incoming nor outgoing messages.
+     * But they are checked in the subnet for both.
      * @return  bool  True
      */
     function checkTreshholds(IPortfolio.XFER memory) internal virtual returns (bool) {
