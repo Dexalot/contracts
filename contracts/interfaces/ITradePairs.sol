@@ -52,7 +52,7 @@ interface ITradePairs {
     /**
      * @notice  TradePair is the data structure defining a trading pair on Dexalot.
      * @param   baseSymbol  symbol of the base asset
-     * @param   quaoteSymbol  symbol of the quote asset
+     * @param   quoteSymbol  symbol of the quote asset
      * @param   buyBookId  buy book id for the trading pair
      * @param   sellBookId  sell book id for the trading pair
      * @param   minTradeAmount  minimum trade amount
@@ -68,6 +68,7 @@ interface ITradePairs {
      * @param   allowedSlippagePercent allowed slippage percentage for the trading pair
      * @param   addOrderPaused true/false pause state for adding orders on the trading pair
      * @param   pairPaused true/false pause state of the trading pair as a whole
+     * @param   postOnly true/false  Post Only orders type2 = PO allowed when true
      */
     struct TradePair {
         bytes32 baseSymbol;
@@ -87,6 +88,7 @@ interface ITradePairs {
         uint8 allowedSlippagePercent;
         bool addOrderPaused;
         bool pairPaused;
+        bool postOnly;
     }
 
     function pause() external;
@@ -96,6 +98,8 @@ interface ITradePairs {
     function pauseTradePair(bytes32 _tradePairId, bool _pairPause) external;
 
     function pauseAddOrder(bytes32 _tradePairId, bool _allowAddOrder) external;
+
+    function postOnly(bytes32 _tradePairId, bool _postOnly) external;
 
     function addTradePair(
         bytes32 _tradePairId,
@@ -124,11 +128,7 @@ interface ITradePairs {
 
     function removeOrderType(bytes32 _tradePairId, Type1 _type) external;
 
-    function setDisplayDecimals(
-        bytes32 _tradePairId,
-        uint8 _displayDecimals,
-        bool _isBase
-    ) external;
+    function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) external;
 
     function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
 
@@ -136,11 +136,7 @@ interface ITradePairs {
 
     function getSymbol(bytes32 _tradePairId, bool _isBase) external view returns (bytes32);
 
-    function updateRate(
-        bytes32 _tradePairId,
-        uint8 _rate,
-        RateType _rateType
-    ) external;
+    function updateRate(bytes32 _tradePairId, uint8 _rate, RateType _rateType) external;
 
     function getMakerRate(bytes32 _tradePairId) external view returns (uint8);
 
@@ -157,15 +153,7 @@ interface ITradePairs {
         uint256 _nOrder,
         uint256 _lastPrice,
         bytes32 _lastOrder
-    )
-        external
-        view
-        returns (
-            uint256[] memory,
-            uint256[] memory,
-            uint256,
-            bytes32
-        );
+    ) external view returns (uint256[] memory, uint256[] memory, uint256, bytes32);
 
     function getOrder(bytes32 _orderId) external view returns (Order memory);
 
@@ -186,12 +174,7 @@ interface ITradePairs {
 
     function cancelAllOrders(bytes32[] memory _orderIds) external;
 
-    function cancelReplaceOrder(
-        bytes32 _orderId,
-        bytes32 _clientOrderId,
-        uint256 _price,
-        uint256 _quantity
-    ) external;
+    function cancelReplaceOrder(bytes32 _orderId, bytes32 _clientOrderId, uint256 _price, uint256 _quantity) external;
 
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
 
@@ -199,21 +182,13 @@ interface ITradePairs {
 
     function getAuctionData(bytes32 _tradePairId) external view returns (uint8, uint256);
 
-    function unsolicitedCancel(
-        bytes32 _tradePairId,
-        bool _isBuyBook,
-        uint8 _maxCount
-    ) external;
-
-    function getQuoteAmount(
-        bytes32 _tradePairId,
-        uint256 _price,
-        uint256 _quantity
-    ) external view returns (uint256);
+    function unsolicitedCancel(bytes32 _tradePairId, bool _isBuyBook, uint8 _maxCount) external;
 
     function getBookId(bytes32 _tradePairId, Side _side) external view returns (bytes32);
 
     function matchAuctionOrder(bytes32 _takerOrderId, uint8 _maxCount) external returns (uint256);
+
+    function getOrderRemainingQuantity(bytes32 _orderId) external view returns (uint256);
 
     /**
      * @notice  Order Side

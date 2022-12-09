@@ -9,20 +9,18 @@ import "../interfaces/layerZero/ILayerZeroEndpoint.sol";
 import "../library/UtilsLibrary.sol";
 
 /**
- * @title Generic Layer Zero Application Implementation
- * @dev https://github.com/LayerZero-Labs/solidity-examples/blob/main/contracts/lzApp/LzApp.sol
+ * @title Abstract Layer Zero contract
+ * @notice  It is extended by the PortfolioBridge contract for Dexalot specific implementation
+ * @dev  This doesn't support multi mainnet Chain as many functions depend on lzRemoteChainId
+ * Remove lzRemoteChainId and adjust the functions for multichain support.
  */
 
 abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
     ILayerZeroEndpoint internal lzEndpoint;
 
-    uint64 internal lzOutNonce;
-    uint64 internal lzInNonce;
-
     //chainId ==> Remote contract address concatenated with the local contract address, 40 bytes
     mapping(uint16 => bytes) public lzTrustedRemoteLookup;
 
-    event LzSetTrustedRemote(uint16 remoteChainId, bytes path);
     event LzSetTrustedRemoteAddress(uint16 remoteChainId, bytes remoteAddress);
     uint16 internal lzRemoteChainId;
     uint256 public gasForDestinationLzReceive;
@@ -87,11 +85,13 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @return  messageFee  Message fee
      * @return  adapterParams  Adapter parameters
      */
-    function lzEstimateFees(bytes memory _payload)
-        internal
-        view
-        returns (uint256 messageFee, bytes memory adapterParams)
-    {
+    function lzEstimateFees(
+        bytes memory _payload
+    ) internal view returns (uint256 messageFee, bytes memory adapterParams) {
+        // Dexalot sets a higher gasForDestinationLzReceive value for LayerZero in PortfolioBridge extending LzApp
+        // LayerZero needs v1 in adapterParams to specify a higher gas for the destination to receive transaction
+        // For more details refer to LayerZero PingPong example at
+        // https://github.com/LayerZero-Labs/solidity-examples/blob/main/contracts/examples/PingPong.sol
         uint16 version = 1;
         adapterParams = abi.encodePacked(version, gasForDestinationLzReceive);
         (messageFee, ) = lzEndpoint.estimateFees(lzRemoteChainId, address(this), _payload, false, adapterParams);
@@ -150,56 +150,48 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @notice  Set the trusted path for the cross-chain communication
-     * @dev     `_path` is 40 bytes data with the remote contract address concatenated with
-     * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
-     * @param   _srcChainId Source(Remote) chain id
-     * @param   _path  Remote contract address concatenated with the local contract address
-     *
-     */
-    function setLZTrustedRemote(uint16 _srcChainId, bytes calldata _path) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        lzTrustedRemoteLookup[_srcChainId] = _path;
-        lzRemoteChainId = _srcChainId;
-        emit LzSetTrustedRemote(_srcChainId, _path);
-    }
-
-    /**
      * @notice  Sets trusted remote address for the cross-chain communication
      * @dev     Allow DEFAULT_ADMIN to set it multiple times.
      * @param   _srcChainId  Source(Remote) chain id
      * @param   _srcAddress  Source(Remote) contract address
      */
-    function setLZTrustedRemoteAddress(uint16 _srcChainId, bytes calldata _srcAddress)
-        external
-        virtual
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function setLZTrustedRemoteAddress(
+        uint16 _srcChainId,
+        bytes calldata _srcAddress
+    ) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         lzTrustedRemoteLookup[_srcChainId] = abi.encodePacked(_srcAddress, address(this));
         lzRemoteChainId = _srcChainId;
         emit LzSetTrustedRemoteAddress(_srcChainId, _srcAddress);
     }
 
     /**
-     * @notice  Force resumes the stucked bridge
-     * @dev     This action is destructive! Please use it only if you know what you are doing.
-     * Only admin can call this function. \
+     * @notice  Force resumes the stuck bridge by destroying the message blocking it.
+     * @dev     This action is destructive! If retryPayload doesn't work this can be used as a last resort
+     * Do not use this function directly. Use portfolioBridge.lzDestroyAndRecoverFunds() instead
+     * If this function is used directly, destroyed message's funds are processed in the originating chain
+     * properly but they will not be processed in the target chain at all. The funds in storedPayload destroyed
+     * have to be manually provided to the originator of the message.
+     * For example, if the message is destroyed using this function directly
+     * If sending from mainnet to subnet. Funds deposited/locked in the mainnet but they won't show in the subnet
+     * If sending from subnet to mainnet. Funds are withdrawn from the subnet but they won't be deposited into
+     * the user's wallet in the mainnet
+     * Left here in case lzDestroyAndRecoverFunds can't be used
      * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
      * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
      * @param   _srcAddress  Remote contract address concatenated with the local contract address
      */
-    function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
-        external
-        virtual
-        override(ILayerZeroUserApplicationConfig)
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function forceResumeReceive(
+        uint16 _srcChainId,
+        bytes calldata _srcAddress
+    ) external virtual override(ILayerZeroUserApplicationConfig) onlyRole(DEFAULT_ADMIN_ROLE) {
         lzEndpoint.forceResumeReceive(_srcChainId, _srcAddress);
     }
 
     /**
-     * @notice  Retries the stucked message in the bridge, if any
-     * @dev     Only admin can call this function \
+     * @notice  Retries the stuck message in the bridge, if any
+     * @dev     Only DEFAULT_ADMIN_ROLE can call this function
+     * Reverts if there is no storedPayload in the bridge or the supplied payload doesn't match the storedPayload
      * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
      * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
@@ -239,21 +231,26 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Source contract address
-     * @return  uint64  Inbound nonce
+     * @return  bool  True if the bridge has stored payload, means it is stuck
      */
-    function getInboundNonce(uint16 _srcChainId, bytes calldata _srcAddress) external view returns (uint64) {
-        return lzEndpoint.getInboundNonce(_srcChainId, _srcAddress);
+    function hasStoredPayload() external view returns (bool) {
+        return lzEndpoint.hasStoredPayload(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId]);
     }
 
     /**
-     * @param   _dstChainId  Destination chain id
-     * @param   _srcAddress  Source contract address
+     * @dev  Inbound nonce assigned by LZ
+     * @return  uint64  Inbound nonce
+     */
+    function getInboundNonce() internal view returns (uint64) {
+        return lzEndpoint.getInboundNonce(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId]);
+    }
+
+    /**
+     * @dev  Outbound nonce assigned by LZ
      * @return  uint64  Outbound nonce
      */
-    function getOutboundNonce(uint16 _dstChainId, address _srcAddress) external view returns (uint64) {
-        return lzEndpoint.getOutboundNonce(_dstChainId, _srcAddress);
+    function getOutboundNonce() internal view returns (uint64) {
+        return lzEndpoint.getOutboundNonce(lzRemoteChainId, address(this));
     }
 
     /**

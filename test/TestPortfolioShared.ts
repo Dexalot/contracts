@@ -10,34 +10,26 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import {
     ExchangeSub,
     LZEndpointMock,
-    LZEndpointMock__factory,
+    MockToken,
     OrderBooks,
     PortfolioBridge,
     PortfolioBridge__factory,
     PortfolioMain, PortfolioSub,
-    TokenVestingCloneFactory,
-    TokenVestingCloneable,
-    TokenVestingCloneable__factory,
-    PortfolioBridgeSub,
+
+
 } from "../typechain-types";
 
 import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
-import { MockContract, smock } from '@defi-wonderland/smock';
 
 describe("Portfolio Shared", () => {
     let portfolio: PortfolioMain;
     let portfolioSub: PortfolioSub;
-    let portfolioBridge: PortfolioBridge;
-    let portfolioBridgeSub: PortfolioBridgeSub;
     let exchange : ExchangeSub;
     let orderBooks: OrderBooks;
 
-    let factory: TokenVestingCloneFactory;
-    let TokenVestingCloneable: TokenVestingCloneable__factory;
-    let tokenVesting: TokenVestingCloneable;
 
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -45,16 +37,16 @@ describe("Portfolio Shared", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
 
-    let lzEndpointMock: MockContract<LZEndpointMock>;
     let lzEndpoint: LZEndpointMock;
 
+    let alot : MockToken;
+    let avax : MockToken;
     const AVAX: string = Utils.fromUtf8("AVAX");
     const ALOT: string = Utils.fromUtf8("ALOT");
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
     let bridgeFee: string;
 
-    const srcChainId = 1;
     const auctionMode: any = 0;
 
     before(async () => {
@@ -69,9 +61,9 @@ describe("Portfolio Shared", () => {
         console.log("Admin", admin.address );
         console.log("AuctionAdmin", auctionAdmin.address);
         console.log("Trader1", trader1.address);
-        console.log("Trader1", trader2.address);
+        console.log("Trader2", trader2.address);
 
-        TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
+
     })
 
     beforeEach(async function () {
@@ -79,9 +71,9 @@ describe("Portfolio Shared", () => {
         portfolio = portfolioM;
         portfolioSub = portfolioS;
         lzEndpoint = lzEndpointMain;
-        portfolioBridge = pbrigeMain;
         lzEndpoint =lzpoint;
-
+        alot = await f.deployMockToken("ALOT", 18)
+        avax = await f.deployMockToken("AVAX", 18)
         bridgeFee = ethers.utils.parseEther("0.01").toString();
     });
 
@@ -107,6 +99,106 @@ describe("Portfolio Shared", () => {
             .withArgs("PORTFOLIO", "REMOVE-ROLE", NO_ROLE, owner.address);
     });
 
+    it("Should have gas Swap Amount 1 and bridgeFee 0 for ALOT both in PMain and PSub", async () => {
+        //Add alot to main
+        await f.addToken(portfolio, alot, 1);
+        let params =await portfolio.bridgeParams(ALOT);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("1"));
+        expect(params.fee).to.equal(0);
+        expect(params.usedForGasSwap).to.equal(true); // always true for ALOT even in the mainnet (redundant)
+
+
+        let params2 =await portfolioSub.bridgeParams(ALOT);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("1"));
+        expect(params2.fee).to.equal(0);
+        expect(params2.usedForGasSwap).to.equal(true);
+
+        //  ALOT brigeFee can be changed, but Can't change ALOT gasSwapRatio(Silent fail)
+        await portfolio.setBridgeParam(ALOT, Utils.toWei("0.2"), Utils.toWei("0.1"), true)
+        params =await portfolio.bridgeParams(ALOT);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("1"));
+        expect(params.fee).to.equal(Utils.toWei("0.2"));
+        expect(params.usedForGasSwap).to.equal(true);
+
+        await portfolioSub.setBridgeParam(ALOT,  Utils.toWei("0.2"), Utils.toWei("0.1"), true)
+        params2 =await portfolioSub.bridgeParams(ALOT);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("1"));
+        expect(params2.fee).to.equal(Utils.toWei("0.2"));
+        expect(params2.usedForGasSwap).to.equal(true);
+
+        const minAmounts= await portfolio.getMinDepositAmounts();
+        expect(minAmounts[0]).includes(ALOT);
+        expect(minAmounts[0]).includes(AVAX);
+
+
+    });
+
+    it("Should have gas Swap Amount 0.01 and bridgeFee 0 for AVAX both in PMain and PSub", async () => {
+
+        let params =await portfolio.bridgeParams(AVAX);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("0.01"));
+        expect(params.fee).to.equal(0);
+        expect(params.usedForGasSwap).to.equal(false); // always false in the mainnet
+
+        // Avax is added with 0 gas in the subnet
+        let  params2 =await portfolioSub.bridgeParams(AVAX);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("0"));
+        expect(params2.fee).to.equal(0);
+        expect(params2.usedForGasSwap).to.equal(false);
+
+        await expect ( portfolio.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("P-GSRO-01")
+        await portfolio.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0.1"), true)
+        params =await portfolio.bridgeParams(AVAX);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("0.1"));
+        expect(params.fee).to.equal(Utils.toWei("0.3"));
+        expect(params.usedForGasSwap).to.equal(false); // always false in the mainnet
+
+        await expect (portfolioSub.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("P-GSRO-01")
+        await portfolioSub.setBridgeParam(AVAX,  Utils.toWei("0.2"), Utils.toWei("0.1"), true)
+        params2 =await portfolioSub.bridgeParams(AVAX);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("0.1"));
+        expect(params2.fee).to.equal(Utils.toWei("0.2"));
+        expect(params2.usedForGasSwap).to.equal(true); // always false in the mainnet
+
+        const minAmounts= await portfolio.getMinDepositAmounts();
+        expect(minAmounts[0]).not.includes(ALOT);
+        expect(minAmounts[0]).includes(AVAX);
+
+    });
+
+    it("Should be able to set gasSwap Ratio to 0 in PortfolioSub for an auctionToken but not In PortfolioMain", async () => {
+
+        const token_symbol = "USDT";
+        const token_decimals = 6;
+        const usdt = await f.deployMockToken(token_symbol, token_decimals);
+        const USDT = Utils.fromUtf8(await usdt.symbol());
+        // Can not add erc20 to portfolioMain with 0 gasSwapRatio
+        await expect (f.addToken(portfolio, usdt, 0, 0)).to.revertedWith("P-GSRO-01");
+        expect ( (await portfolio.getTokenDetails(USDT)).auctionMode).to.be.equal(0);
+
+        //  add erc20 to portfolioMain with 0.1 gasSwapRatio with an auctionmode 2
+        await f.addToken(portfolio, usdt, 0.1, 2);
+        //  auctionmode 2 ignored in the mainnet
+        expect ( (await portfolio.getTokenDetails(USDT)).auctionMode).to.be.equal(0);
+        const params =await portfolio.bridgeParams(USDT);
+        expect(params.gasSwapRatio).to.equal(Utils.parseUnits('0.1', token_decimals));
+        expect(params.fee).to.equal(0);
+
+        //  add erc20 to portfolioMain with 0.1 gasSwapRatio with an auctionmode 0
+        await f.addToken(portfolioSub, usdt, 0, 2);
+        expect ( (await portfolioSub.getTokenDetails(USDT)).auctionMode).to.be.equal(2);
+        let  params2 =await portfolioSub.bridgeParams(USDT);
+        expect(params2.gasSwapRatio).to.equal(0);
+        expect(params2.fee).to.equal(0);
+
+
+        await portfolioSub.setBridgeParam(USDT, Utils.parseUnits('0.3', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
+        params2 =await portfolioSub.bridgeParams(USDT);
+        expect(params2.gasSwapRatio).to.equal(Utils.parseUnits('0.1', token_decimals));
+        expect(params2.fee).to.equal(Utils.parseUnits('0.3', token_decimals));
+
+    });
+
     it("Should add, check and remove an PORTFOLIO_BRIDGE_ROLE correctly", async function () {
         orderBooks = await f.deployOrderBooks()
         exchange = await f.deployExchangeSub(portfolioSub, orderBooks)
@@ -129,6 +221,9 @@ describe("Portfolio Shared", () => {
     });
 
     it("Should set portfolio bridge correctly", async function () {
+
+        expect(await portfolio.getChainId()).to.be.equal(1)
+
         const PortfolioBridge = await ethers.getContractFactory("PortfolioBridge") as PortfolioBridge__factory;
         const portfolioBridge = await upgrades.deployProxy(
             PortfolioBridge, [lzEndpoint.address]) as PortfolioBridge;
@@ -159,28 +254,70 @@ describe("Portfolio Shared", () => {
 
     it("Should set and get bridgeFee", async () => {
         // fail for non-admin
-        await expect(portfolio.connect(trader1).setBridgeFee(AVAX, 100))
+        await expect(portfolio.connect(trader1).setBridgeParam(AVAX, bridgeFee, 0, true))
         .to.be.revertedWith("AccessControl: account");
 
+        // 0 gasSwapRatio Fail
+        await expect(portfolio.setBridgeParam(AVAX, Utils.toWei("0.1"), 0, true)).to.revertedWith("P-GSRO-01");
+
         // succeed for admin
-        await expect(portfolio.setBridgeFee(AVAX, bridgeFee))
-        .to.emit(portfolio, "ParameterUpdated")
-        .withArgs(AVAX, "P-SET-BRIDGEFEE", 0, bridgeFee)
+        await portfolio.setBridgeParam(AVAX, Utils.toWei("0.1"), Utils.toWei("0.1"), true)
+
+        expect( (await portfolio.bridgeParams(AVAX)).fee).to.be.equal(Utils.toWei("0.1"));
     });
 
-    it("Should set bridge swap amount for Portfolio from the admin account", async function () {
+    it("Should set bridgeParam gas swap amount for Portfolio from the admin account", async function () {
         const { trader1, admin } = await f.getAccounts();
 
         const USDT = Utils.fromUtf8("USDT")
 
         // fail from non admin accounts
-        await expect(portfolio.connect(trader1).setBridgeSwapAmount(USDT, Utils.toWei("0.1"))).to.revertedWith("AccessControl: account");
-        await expect(portfolio.connect(admin).setBridgeSwapAmount(USDT, Utils.toWei("0.1"))).to.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
+        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
         // succeed from admin accounts
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
-        await portfolio.connect(admin).setBridgeSwapAmount(USDT, Utils.toWei("0.1"));
-        expect(await portfolio.getBridgeSwapAmount(USDT)).to.be.equal(Utils.toWei("0.1"));
+        await expect (portfolio.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
+        .to.emit(portfolio, "ParameterUpdated")
+        .withArgs(USDT, "P-SET-BRIDGEPARAM", 0, Utils.toWei("0.1"))
+
+        expect((await portfolio.bridgeParams(USDT)).gasSwapRatio).to.be.equal(Utils.toWei("0.1"));
+
+        await portfolioSub.grantRole(portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
+        await expect (portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
+        .to.emit(portfolioSub, "ParameterUpdated")
+        .withArgs(USDT, "P-SET-BRIDGEPARAM", 0, Utils.toWei("0.1"))
+
+        expect((await portfolioSub.bridgeParams(USDT)).gasSwapRatio).to.be.equal(Utils.toWei("0.1"));
+
+
     });
+
+    it("Should set bridgeParam gas swap amount for Portfolio from the admin account", async function () {
+        const { trader1, admin } = await f.getAccounts();
+
+        const USDT = Utils.fromUtf8("USDT")
+
+        // fail from non admin accounts
+        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
+        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
+        // succeed from admin accounts
+        await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
+        await expect (portfolio.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
+        .to.emit(portfolio, "ParameterUpdated")
+        .withArgs(USDT, "P-SET-BRIDGEPARAM", 0, Utils.toWei("0.1"))
+
+        expect((await portfolio.bridgeParams(USDT)).gasSwapRatio).to.be.equal(Utils.toWei("0.1"));
+
+        await portfolioSub.grantRole(portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
+        await expect (portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
+        .to.emit(portfolioSub, "ParameterUpdated")
+        .withArgs(USDT, "P-SET-BRIDGEPARAM", 0, Utils.toWei("0.1"))
+
+        expect((await portfolioSub.bridgeParams(USDT)).gasSwapRatio).to.be.equal(Utils.toWei("0.1"));
+
+
+    });
+
 
     it("Should pause and unpause Portfolio from the admin account", async function () {
         // fail from non admin accounts
@@ -199,41 +336,43 @@ describe("Portfolio Shared", () => {
 
     it("Should pause and unpause Portfolio deposit from the admin account", async function () {
         const token_symbol = "USDT";
-        const token_decimals = 18;
+        const token_decimals = 6;
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
-        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-        await portfolioSub.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-        await usdt.mint(owner.address, Utils.toWei('1000'));
+        await f.addToken(portfolio, usdt, 0.5, auctionMode);
+        await f.addToken(portfolioSub, usdt, 0.5, auctionMode);
+
+        await usdt.mint(owner.address, Utils.parseUnits('1000', token_decimals));
         // fail from non admin accounts
         await expect(portfolio.connect(trader1).pauseDeposit(true)).to.revertedWith("AccessControl: account");
         await expect(portfolio.connect(admin).pauseDeposit(true)).to.revertedWith("AccessControl: account");
         // succeed from admin accounts
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolio.connect(admin).pauseDeposit(true);
-        // fail when paused
-        await expect(owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.toWei('1000')})).to.revertedWith("P-NTDP-01");
+        // fail when paused for native
+        await expect(owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.parseUnits('10', 18)})).to.revertedWith("P-NTDP-01");
+
         // fail depositToken() when paused
-        await expect(portfolio.connect(owner).depositToken(owner.address, USDT, Utils.toWei('100'), 0)).to.revertedWith("P-ETDP-01");
+        await expect(f.depositToken(portfolio, owner, usdt, token_decimals, USDT,  '10')).to.revertedWith("P-NTDP-01");
 
         // fail depositTokenFromContract() when paused
-
         await portfolio.addTrustedContract(owner.address, "TESTING");
-        await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.toWei('100'))).to.revertedWith("P-ETDP-01");
+        await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.parseUnits('10', token_decimals))).to.revertedWith("P-NTDP-01");
         // allow deposits
         await portfolio.connect(admin).pauseDeposit(false);
         // fail with 0 quantity for depositToken()
-        await expect(portfolio.depositToken(owner.address, USDT, 0, 0)).to.revertedWith("P-ZETD-01");
+        await expect(portfolio.depositToken(owner.address, USDT, 0, 0)).to.revertedWith("P-DUTH-01");
         // fail for non-existent token for depositToken()
-        await expect(portfolio.depositToken(owner.address, Utils.fromUtf8("NONE"), Utils.toWei('100'), 0)).to.revertedWith("P-ETNS-01");
+
+        await expect(portfolio.depositToken(owner.address, Utils.fromUtf8("NONE"), Utils.parseUnits('10', token_decimals), 0)).to.revertedWith("P-ETNS-01");
         // fail for quantity more than balance for depositToken()
         await expect(portfolio.depositToken(owner.address, USDT, Utils.toWei('1001'), 0)).to.revertedWith("P-NETD-01");
         // fail with 0 quantity for depositTokenFromContract()
-        await expect(portfolio.depositTokenFromContract(owner.address, USDT, 0)).to.revertedWith("P-ZETD-01");
+        await expect(portfolio.depositTokenFromContract(owner.address, USDT, 0)).to.revertedWith("P-DUTH-01");
         // fail for non-existent token for depositTokenFromContract()
-        await expect(portfolio.depositTokenFromContract(owner.address, Utils.fromUtf8("NONE"), Utils.toWei('100'))).to.revertedWith("P-ETNS-01");
+        await expect(portfolio.depositTokenFromContract(owner.address, Utils.fromUtf8("NONE"), Utils.parseUnits('10', token_decimals))).to.revertedWith("P-ETNS-01");
         // fail for quantity more than balance for depositTokenFromContract()
-        await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.toWei('1001'))).to.revertedWith("P-NETD-01");
+        await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.parseUnits('1001', token_decimals))).to.revertedWith("P-NETD-01");
         // succeed for native
         await owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.toWei('1000')});
         const bal = await portfolioSub.getBalance(owner.address, AVAX);
@@ -241,104 +380,6 @@ describe("Portfolio Shared", () => {
         expect(bal.available).to.be.equal(Utils.toWei('1000'));
     });
 
-    it("Should add a trusted contract to Portfolio from the admin account", async function () {
-        const start = await f.latestTime() + 10000;
-        const cliff = 20000;
-        const duration = 120000;
-        const startPortfolioDeposits = start - 10000;
-        const revocable = true;
-        const percentage = 15;
-        const period = 0;
-
-        factory = await f.deployTokenVestingCloneFactory();
-        await factory.createTokenVesting(trader2.address, start, cliff, duration, startPortfolioDeposits,
-            revocable, percentage, period, portfolio.address, owner.address);
-        const count = await factory.count();
-        tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
-
-        const token_symbol = "USDT";
-        const token_decimals = 18;
-        const usdt = await f.deployMockToken(token_symbol, token_decimals);
-        await usdt.deployed();
-        const USDT = Utils.fromUtf8(await usdt.symbol());
-
-        // fail from non-privileged account
-        // trader1
-        await expect(portfolio.connect(trader1).addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode)).to.be.revertedWith("AccessControl:");
-        await expect(portfolioSub.connect(trader1).addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode)).to.be.revertedWith("AccessControl:");
-        // auctionAdmin when removed
-        await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), trader2.address);        // adding trader2 so I can remove auctionAdmin
-        await portfolioSub.grantRole(portfolioSub.DEFAULT_ADMIN_ROLE(), trader2.address);  // adding trader2 so I can remove auctionAdmin
-        await portfolio.revokeRole(portfolio.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
-        await portfolioSub.revokeRole(portfolioSub.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
-        await expect(portfolio.connect(auctionAdmin).addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode)).to.be.revertedWith("AccessControl:");
-        await expect(portfolioSub.connect(auctionAdmin).addToken(USDT, usdt.address, auctionMode, await usdt.decimals(), auctionMode)).to.be.revertedWith("AccessControl:");
-        // succeed from privileged account
-        // auctionAdmin when added
-        // await portfolio.grantRole(portfolio.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
-        // await portfolioSub.grantRole(portfolioSub.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
-        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-        await portfolioSub.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-
-        await usdt.mint(owner.address, Utils.toWei('10000'));
-        await expect(usdt.transfer(tokenVesting.address, 1000))
-                .to.emit(usdt, "Transfer")
-                .withArgs(owner.address, tokenVesting.address, 1000);
-
-        // fail from non admin accounts
-        await expect(portfolio.connect(trader1).addTrustedContract(tokenVesting.address, "Dexalot")).to.revertedWith("AccessControl:");
-        expect(await portfolio.isTrustedContract(tokenVesting.address)).to.be.false;
-        // succeed from admin accounts
-        await portfolio.connect(owner).addTrustedContract(tokenVesting.address, "Dexalot");
-        expect(await portfolio.isTrustedContract(tokenVesting.address)).to.be.true;
-
-        await ethers.provider.send("evm_increaseTime", [5000]);
-        await ethers.provider.send("evm_mine", []);
-
-        await usdt.connect(trader2).approve(tokenVesting.address, '150');
-        await usdt.connect(trader2).approve(portfolio.address, '150');
-        await tokenVesting.connect(trader2).releaseToPortfolio(usdt.address);
-        expect((await portfolioSub.getBalance(trader2.address, USDT))[0]).to.equal(150);
-        expect(await usdt.balanceOf(trader2.address)).to.equal(0);
-    });
-
-    it("Should remove a trusted contract from Portfolio from the admin account", async function () {
-        const start = await f.latestTime() + 10000;
-        const cliff = 20000;
-        const duration = 120000;
-        const startPortfolioDeposits = start - 10000;
-        const revocable = true;
-        const percentage = 15;
-        const period = 0;
-
-        factory = await f.deployTokenVestingCloneFactory();
-        await factory.createTokenVesting(trader2.address, start, cliff, duration, startPortfolioDeposits,
-            revocable, percentage, period, portfolio.address, owner.address);
-        const count = await factory.count();
-        tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
-
-        const token_symbol = "USDT";
-        const token_decimals = 18;
-        const usdt = await f.deployMockToken(token_symbol, token_decimals);
-        await usdt.deployed();
-        const USDT = Utils.fromUtf8(await usdt.symbol());
-        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-        await portfolioSub.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
-
-        await usdt.mint(owner.address, Utils.toWei('10000'));
-        await usdt.transfer(tokenVesting.address, 1000);
-
-        // fail too add from non admin accounts
-        await expect(portfolio.connect(trader1).addTrustedContract(tokenVesting.address, "Dexalot")).to.revertedWith("AccessControl:");
-        // succeed to add from admin accounts
-        await portfolio.connect(owner).addTrustedContract(tokenVesting.address, "Dexalot");
-        expect(await portfolio.trustedContracts(tokenVesting.address)).to.be.true;
-        // fail to remove from non admin accounts
-        await expect(portfolio.connect(trader1).removeTrustedContract(tokenVesting.address)).to.revertedWith("AccessControl:");
-        // succeed to add from admin accounts
-        await portfolio.connect(owner).removeTrustedContract(tokenVesting.address);
-        expect(await portfolio.trustedContracts(tokenVesting.address)).to.be.false;
-    });
 
     it("Should return native tokens", async () => {
         expect(await portfolio.getNative()).to.equal(AVAX);
@@ -354,136 +395,4 @@ describe("Portfolio Shared", () => {
         await expect(contract.addMyContract(trader2.address, "SCAMMER")).to.be.revertedWith("");
     });
 
-    it("Should use forceResumeReceive correctly", async () => {
-        const {admin,trader1} = await f.getAccounts();
-
-        const MockLayerZeroEndpoint = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
-        lzEndpointMock = await MockLayerZeroEndpoint.deploy(1);
-
-        const portfolioBridge = await f.deployPortfolioBridge(lzEndpointMock as unknown as LZEndpointMock, portfolio);
-        await portfolioBridge.grantRole(await portfolioBridge.DEFAULT_ADMIN_ROLE(), portfolio.address);
-
-        const nonce = 0;
-        const tx = 1;                // TX = 1 = DEPOSIT [main --> sub]
-
-        const xChainMessageType = 0; // XChainMsgType = 0 = XFER
-
-        const depositAvaxMessage = ethers.utils.defaultAbiCoder.encode(
-            [
-                "uint64",   // nonce,
-                "uint8",    // TX = 1 = DEPOSIT [main --> sub]
-                "address",  // trader
-                "bytes32",  // symbol
-                "uint256",  // quantity
-                "uint256"   // timestamp
-            ] ,
-            [
-                nonce,
-                tx,
-                trader1.address,
-                AVAX,
-                Utils.toWei("10"),
-                await f.latestTime()
-            ]
-        )
-
-        const depositAvaxPayload = ethers.utils.defaultAbiCoder.encode(
-            ["uint8", "bytes"],
-            [xChainMessageType, depositAvaxMessage]
-        )
-
-        const srcChainId = 1;
-
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
-        await portfolioBridge.setLZTrustedRemoteAddress(1, srcAddress);
-        const trustedRemote = await portfolioBridge.lzTrustedRemoteLookup(1);
-        // fail for non-admin
-        await expect(portfolio.connect(trader1).lzForceResumeReceive(1, trustedRemote)).to.be.revertedWith("AccessControl: account");
-
-        // success for admin
-        await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
-
-
-
-        const spPart1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
-            dstAddress: portfolioBridge.address,
-            payloadHash: ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const spPart2: any = {};
-        spPart2[trustedRemote] = spPart1;
-        const sp: any = {};
-        sp[srcChainId] = spPart2;
-
-        await lzEndpointMock.setVariable("storedPayload", sp);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
-        await portfolio.connect(admin).lzForceResumeReceive(srcChainId, trustedRemote);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
-    });
-
-    it("Should use retryPayload correctly", async () => {
-        const {admin,trader1} = await f.getAccounts();
-
-        const MockLayerZeroEndpoint = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
-        lzEndpointMock = await MockLayerZeroEndpoint.deploy(1);
-
-        const portfolioBridge = await f.deployPortfolioBridge(lzEndpointMock as unknown as LZEndpointMock, portfolio);
-        await portfolioBridge.grantRole(await portfolioBridge.DEFAULT_ADMIN_ROLE(), portfolio.address);
-        await portfolioBridge.addToken(AVAX, ZERO_ADDRESS, 1, 18, auctionMode); //Auction mode off
-
-        const nonce = 0;
-        const tx = 0;                // TX = 0 = WITHDRAW [sub --> main]
-        const srcChainId = 1;
-        const symbolId = Utils.fromUtf8("AVAX"+ srcChainId)
-
-        const xChainMessageType = 0; // XChainMsgType = 0 = XFER
-
-        const depositAvaxMessage = ethers.utils.defaultAbiCoder.encode(
-            [
-                "uint64",   // nonce,
-                "uint8",    // TX
-                "address",  // trader
-                "bytes32",  // symbol
-                "uint256",  // quantity
-                "uint256"   // timestamp
-            ] ,
-            [
-                nonce,
-                tx,
-                trader1.address,
-                symbolId,
-                Utils.toWei("10"),
-                await f.latestTime()
-            ]
-        )
-
-        const depositAvaxPayload = ethers.utils.defaultAbiCoder.encode(
-            ["uint8", "bytes"],
-            [xChainMessageType, depositAvaxMessage]
-        )
-
-        //const trustedRemote  = ethers.utils.solidityPack([ "address", "address" ], [ lzAppMock.address, lzAppMock.address ])
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
-        await portfolioBridge.setLZTrustedRemoteAddress(1, srcAddress);
-        const trustedRemote = await portfolioBridge.lzTrustedRemoteLookup(srcChainId);
-        // fail for non-admin
-        await expect(portfolio.connect(trader1).lzRetryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
-
-        // fail as the account does not have money to actually withdraw, the success test is tested elsewhere
-        await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
-
-        const spPart1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
-            dstAddress: portfolioBridge.address,
-            payloadHash: ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const spPart2: any = {};
-        spPart2[trustedRemote] = spPart1;
-        const sp: any = {};
-        sp[srcChainId] = spPart2;
-
-        await lzEndpointMock.setVariable("storedPayload", sp);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
-        await expect(portfolio.connect(admin).lzRetryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("P-WNFA-01");
-    });
 });

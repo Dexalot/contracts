@@ -101,15 +101,7 @@ library Bytes32LinkedListLibrary {
      * @param  self stored linked list from contract
      * @param  _node id of the node to get
      */
-    function getNode(LinkedList storage self, bytes32 _node)
-        internal
-        view
-        returns (
-            bool,
-            bytes32,
-            bytes32
-        )
-    {
+    function getNode(LinkedList storage self, bytes32 _node) internal view returns (bool, bytes32, bytes32) {
         if (!nodeExists(self, _node)) {
             return (false, "", "");
         } else {
@@ -141,12 +133,7 @@ library Bytes32LinkedListLibrary {
      * @param _node first node for linking
      * @param _link  node to link to in the _direction
      */
-    function createLink(
-        LinkedList storage self,
-        bytes32 _node,
-        bytes32 _link,
-        bool _direction
-    ) internal {
+    function createLink(LinkedList storage self, bytes32 _node, bytes32 _link, bool _direction) internal {
         self.list[_link][!_direction] = _node;
         self.list[_node][_direction] = _link;
     }
@@ -158,12 +145,7 @@ library Bytes32LinkedListLibrary {
      * @param _new  new node to insert
      * @param _direction direction to insert node in
      */
-    function insert(
-        LinkedList storage self,
-        bytes32 _node,
-        bytes32 _new,
-        bool _direction
-    ) internal returns (bool) {
+    function insert(LinkedList storage self, bytes32 _node, bytes32 _new, bool _direction) internal returns (bool) {
         if (!nodeExists(self, _new) && nodeExists(self, _node)) {
             bytes32 c = self.list[_node][_direction];
             createLink(self, _node, _new, _direction);
@@ -195,11 +177,7 @@ library Bytes32LinkedListLibrary {
      * @param _node new entry to push to the head
      * @param _direction push to the head (NEXT) or tail (PREV)
      */
-    function push(
-        LinkedList storage self,
-        bytes32 _node,
-        bool _direction
-    ) internal {
+    function push(LinkedList storage self, bytes32 _node, bool _direction) internal {
         insert(self, HEAD, _node, _direction);
     }
 

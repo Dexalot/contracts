@@ -22,7 +22,7 @@ contract GasStation is
     PausableUpgradeable,
     ReentrancyGuardUpgradeable
 {
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.2.0");
 
     bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
     bytes32 public constant SWAPPER_ROLE = keccak256("SWAPPER_ROLE");
@@ -34,20 +34,19 @@ contract GasStation is
 
     /**
      * @notice  Initializer for upgradeable contract.
-     * @dev     Grant admin and pauser role to the sender. Grant swapper role to swapper (portfolio) contract
+     * @dev     Grant admin and pauser role to the sender. Grant swapper role to swapper (portfolio) contract.
+     * 0.1 ALOT gas is hardcoded at initialization to be distrubuted to the users which is enough for roughly
+     * 25 orders + 25 cancels
      * @param   _swapper  Address of the swapper contract (PortfolioSub in our case)
-     * @param   _gasAmount  Amount of gas to be distrubuted to the users
      */
-    function initialize(address _swapper, uint256 _gasAmount) public initializer {
-        require(_gasAmount > 0, "GS-ASBTZ-01");
+    function initialize(address _swapper) public initializer {
         __Pausable_init();
         __AccessControl_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PAUSER_ROLE, msg.sender);
         _grantRole(SWAPPER_ROLE, _swapper);
-
-        gasAmount = _gasAmount;
+        gasAmount = 10 * 10 ** 16; // 0.1 ALOT (max gas deposit amount to User's subnet wallet)
     }
 
     /**
@@ -78,16 +77,18 @@ contract GasStation is
     }
 
     /**
-     * @notice  Swapper contract will request gas after depositing bridge fee to our EOA
+     * @notice  Swapper contract will request gas after depositing equal amount of token transferred to our EOA
      * @dev     Only swapper (Portfolio Sub) can request gas
      * @param   _to  Address of the user to receive gas
+     * @param   _amount  Amount of Gas requested
      */
-    function requestGas(address _to) external onlyRole(SWAPPER_ROLE) whenNotPaused nonReentrant {
-        // nonReentrant ?
+    function requestGas(address _to, uint256 _amount) external onlyRole(SWAPPER_ROLE) whenNotPaused nonReentrant {
+        require(_to != address(0), "GS-ZADDR-01");
+        require(_amount <= gasAmount, "GS-ASBTZ-04");
         // solhint-disable-next-line avoid-low-level-calls
-        (bool sent, ) = _to.call{value: gasAmount}("");
+        (bool sent, ) = _to.call{value: _amount}("");
         require(sent, "GS-FAIL-01");
-        emit GasRequested(_to, gasAmount);
+        emit GasRequested(_to, _amount);
     }
 
     /**

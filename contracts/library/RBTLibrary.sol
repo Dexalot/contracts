@@ -147,17 +147,10 @@ library RBTLibrary {
      * @return  _right  right node for the node being returned
      * @return  _red  red/black state (true/false) for the node being returned
      */
-    function getNode(Tree storage self, uint256 _key)
-        internal
-        view
-        returns (
-            uint256 _returnKey,
-            uint256 _parent,
-            uint256 _left,
-            uint256 _right,
-            bool _red
-        )
-    {
+    function getNode(
+        Tree storage self,
+        uint256 _key
+    ) internal view returns (uint256 _returnKey, uint256 _parent, uint256 _left, uint256 _right, bool _red) {
         require(exists(self, _key), "R-KDNE-01");
         return (_key, self.nodes[_key].parent, self.nodes[_key].left, self.nodes[_key].right, self.nodes[_key].red);
     }
@@ -367,11 +360,7 @@ library RBTLibrary {
      * @param   a  node in the tree
      * @param   b  mode in the tree
      */
-    function replaceParent(
-        Tree storage self,
-        uint256 a,
-        uint256 b
-    ) private {
+    function replaceParent(Tree storage self, uint256 a, uint256 b) private {
         uint256 bParent = self.nodes[b].parent;
         self.nodes[a].parent = bParent;
         if (bParent == EMPTY) {

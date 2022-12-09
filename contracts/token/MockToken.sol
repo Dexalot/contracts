@@ -25,11 +25,7 @@ contract MockToken is ERC20, AccessControlEnumerable {
 
     uint8 private __decimals;
 
-    constructor(
-        string memory _name,
-        string memory _symbol,
-        uint8 _decimals
-    ) ERC20(_name, _symbol) {
+    constructor(string memory _name, string memory _symbol, uint8 _decimals) ERC20(_name, _symbol) {
         __decimals = _decimals;
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(MINTER_ROLE, msg.sender);

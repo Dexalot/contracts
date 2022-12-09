@@ -101,7 +101,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
         deploymentAccount = deploymentWallet.address;
         console.log("deploymentAccount =", deploymentAccount);
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio(false);
+        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio();
         portfolioMain = portfolioM;
         portfolio = portfolioS;
 
@@ -113,7 +113,6 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
         console.log();
         console.log("=== Creating and Minting Mock Tokens ===");
 
-        const srcChainId = 1;
         const auctionMode: any = 0;
 
         for (let j=0; j<tokenList.length; j++) {
@@ -121,8 +120,8 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             _tokenBytes32 = Utils.fromUtf8(_tokenStr);
             _tokenDecimals = decimalsMap[_tokenStr];
             _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
-            await portfolio.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, srcChainId, _tokenDecimals, auctionMode); //Auction mode off
-            await portfolioMain.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, srcChainId, await _token.decimals(), auctionMode); //Auction mode
+            await f.addToken(portfolio, _token, 0.1, auctionMode);
+            await f.addToken(portfolioMain, _token, 0.1, auctionMode);
             for (let i=0; i<numberOfAccounts; i++) {
                 const account = accounts[i];
                 console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
@@ -212,7 +211,6 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
 
         for (const pair of pairs)  {
             const tp = Utils.fromUtf8(pair.id);   // trading pair id needs to be bytes32
-            console.log(pair)
             await exchange.addTradePair(tp,
                                         Utils.fromUtf8(pair.baseSymbol), pair.basePriceDecimal,
                                         Utils.fromUtf8(pair.quoteSymbol),  pair.quotePriceDecimal,

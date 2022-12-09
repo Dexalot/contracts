@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 
 /**
  * @title Distributor for Dexalot Incentive Program (DIP) rewards
@@ -22,7 +23,7 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
 
-contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable {
+contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712Upgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
@@ -46,6 +47,9 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable {
     function initialize(IERC20Upgradeable _alotToken, address __signer) public initializer {
         __Ownable_init();
         __Pausable_init();
+        __EIP712_init("Dexalot", "1.0.0");
+
+        require(__signer != address(0), "ID-ZADDR-01");
 
         uint32 tokenId = ~allTokens & (allTokens + 1);
         tokens[tokenId] = _alotToken;
@@ -61,11 +65,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable {
      * @param  _tokenIds A bitmap representing which tokens to claim
      * @param  _signature A signed claim message to be verified
      */
-    function claim(
-        uint128[] memory _amounts,
-        uint32 _tokenIds,
-        bytes calldata _signature
-    ) external whenNotPaused {
+    function claim(uint128[] memory _amounts, uint32 _tokenIds, bytes calldata _signature) external whenNotPaused {
         require(_tokenIds | allTokens == allTokens, "ID-TDNE-01");
         require(_checkClaim(msg.sender, _tokenIds, _amounts, _signature), "ID-SIGN-01");
 
@@ -113,9 +113,12 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable {
         uint128[] memory _amounts,
         bytes calldata _signature
     ) internal view returns (bool) {
-        bytes32 msgHash = keccak256(abi.encodePacked(_user, _tokenIds, _amounts));
-        bytes32 signedMsg = ECDSAUpgradeable.toEthSignedMessageHash(msgHash);
-        return ECDSAUpgradeable.recover(signedMsg, _signature) == _signer;
+        bytes32 structType = keccak256("Claim(address user,uint32 tokenIds,uint128[] amounts)");
+        bytes32 hashedStruct = keccak256(
+            abi.encode(structType, _user, _tokenIds, keccak256(abi.encodePacked(_amounts)))
+        );
+        bytes32 digest = _hashTypedDataV4(hashedStruct);
+        return ECDSAUpgradeable.recover(digest, _signature) == _signer;
     }
 
     /**

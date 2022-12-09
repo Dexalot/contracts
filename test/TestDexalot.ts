@@ -38,27 +38,27 @@ const takerRate = BigNumber(0.0020);
 
 // initial state
 // do transfers to Portfolio contract as follows before starting tests
-const tokens: string[] = ["AVAX", "USDT", "BUSD"];
+const tokens: string[] = ["AVAX", "USDT", "ALOT"];
 
-const decimalsMap: any = {"AVAX": 18, "USDT": 6, "BUSD": 18, "LINK": 18, "BTC": 8}
+const decimalsMap: any = {"AVAX": 18, "USDT": 6, "ALOT": 18, "LINK": 18, "BTC": 8}
 
 const native = "AVAX";
 
-const tokenList: string[] = ["USDT", "BUSD"];
+const tokenList: string[] = ["USDT", "ALOT"];
 
-const tokenPairs: string[] = ["AVAX/USDT", "AVAX/BUSD"];
+const tokenPairs: string[] = ["AVAX/USDT", "ALOT/USDT"];
 
-const minTradeAmountMap: any = {"AVAX/USDT": 10, "AVAX/BUSD": 10}
+const minTradeAmountMap: any = {"AVAX/USDT": 10, "ALOT/USDT": 10}
 
-const maxTradeAmountMap: any = {"AVAX/USDT": 1000, "AVAX/BUSD": 1000}
+const maxTradeAmountMap: any = {"AVAX/USDT": 1000, "ALOT/USDT": 1000}
 
-const baseDisplayDecimalMap: any = {"AVAX/USDT": 3, "AVAX/BUSD": 3}
+const baseDisplayDecimalMap: any = {"AVAX/USDT": 3, "ALOT/USDT": 3}
 
-const quoteDisplayDecimalMap: any = {"AVAX/USDT": 3, "AVAX/BUSD": 3}
+const quoteDisplayDecimalMap: any = {"AVAX/USDT": 3, "ALOT/USDT": 3}
 
-const initial_mints: any = {AVAX: 3000, USDT: 5000, BUSD: 5000};
+const initial_mints: any = {AVAX: 3000, USDT: 5000, ALOT: 5000};
 
-const initial_portfolio_deposits: any = {AVAX: 1000, USDT: 3000, BUSD: 3000};
+const initial_portfolio_deposits: any = {AVAX: 1000, USDT: 3000, ALOT: 3000};
 
 const options: any = { };
 
@@ -77,7 +77,6 @@ let portfolioMain: PortfolioMain
 let tradePairs: TradePairs
 let orderBooks: OrderBooks
 
-let depositFeeRate: number;
 
 let _tokenStr: string;
 let _tokenDecimals: number;
@@ -113,8 +112,6 @@ describe("Dexalot", () => {
         exchange = await f.deployExchangeSub(portfolio, orderBooks)
         tradePairs = await f.deployTradePairs(orderBooks, portfolio, exchange);
 
-        // get depositFeeRate
-        depositFeeRate = parseFloat((await portfolio.depositFeeRate()).toString())/10000;
 
         // initialize address collecting fees
         console.log("=== Set Address Collecting the Fees ===");
@@ -132,8 +129,8 @@ describe("Dexalot", () => {
             _tokenBytes32 = Utils.fromUtf8(_tokenStr);
             _tokenDecimals = decimalsMap[_tokenStr];
             _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
-            await portfolio.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, srcChainId, _tokenDecimals, auctionMode); //Auction mode off
-            await portfolioMain.addToken(Utils.fromUtf8(await _token.symbol()), _token.address, srcChainId, _tokenDecimals, auctionMode); //Auction mode off
+            await f.addToken(portfolio, _token, 0.1, auctionMode);
+            await f.addToken(portfolioMain, _token, 0.1, auctionMode);
             for (let i=0; i<numberOfAccounts; i++) {
                 const account = accounts[i];
                 //console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
@@ -157,7 +154,6 @@ describe("Dexalot", () => {
 
         console.log();
         console.log("=== Making Initial Portfolio Deposits ===");
-        //await portfolio.addToken(Utils.fromUtf8(native), "0x0000000000000000000000000000000000000000", srcChainId, 18, auctionMode);
         for (let i=0; i<numberOfAccounts; i++) {
             const wallet = wallets[i];
             const account = accounts[i];
@@ -202,7 +198,7 @@ describe("Dexalot", () => {
             }
         }
 
-        // initialize Exchange contract and create the TradePairs  "AVAX/USDT" "AVAX/BUSD" ....
+        // initialize Exchange contract and create the TradePairs  "AVAX/USDT" "ALOT/USDT" ....
         console.log("=== Initialize Exchange Contract ===");
         //exchange = await f.deployExchangeSub(portfolio, tradePairs)
         console.log("ExchangeSub contract deployed at: ", exchange.address)
@@ -223,7 +219,6 @@ describe("Dexalot", () => {
 
         for (const pair of pairs)  {
             const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-            console.log(pair)
             await exchange.addTradePair(tp,
                                         Utils.fromUtf8(pair.baseSymbol), pair.basePriceDecimal,
                                         Utils.fromUtf8(pair.quoteSymbol),  pair.quotePriceDecimal,
@@ -277,7 +272,7 @@ describe("Dexalot", () => {
         // initialize accumulator to check Fee contract state after each order in tests
         const feeLumped: any = {}
         for (let i=0; i<tokens.length; i++) {
-            feeLumped[tokens[i]] = BigNumber(numberOfAccounts * initial_portfolio_deposits[tokens[i]] * depositFeeRate);
+            feeLumped[tokens[i]] = BigNumber(0);
         }
 
         // initialize accumulator to check Portfolio contract state per user per token after each order
@@ -291,8 +286,8 @@ describe("Dexalot", () => {
             for (let j=0; j<tokens.length; j++) {
                 const token = tokens[j];
                 portfolioUser[owner][token] = {};
-                portfolioUser[owner][token]['total'] = BigNumber(initial_portfolio_deposits[token] * (1 - depositFeeRate));
-                portfolioUser[owner][token]['available'] = BigNumber(initial_portfolio_deposits[token] * (1 - depositFeeRate));
+                portfolioUser[owner][token]['total'] = BigNumber(initial_portfolio_deposits[token] );
+                portfolioUser[owner][token]['available'] = BigNumber(initial_portfolio_deposits[token] );
             }
         }
 
@@ -614,19 +609,28 @@ describe("Dexalot", () => {
             _checkValue = portfolioUser[order["owner"]][order["quoteSymbol"]]['available'];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
+            const feeAddress = await portfolio.feeAddress();
             // fail for non-admin
             await portfolio.revokeRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[5].address);
-            await expect(portfolio.connect(wallets[5]).withdrawFees())
+            await expect(portfolio.connect(wallets[5]).withdrawFees(feeAddress, 10))
             .to.be.revertedWith("P-OACC-01");
 
             await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[0].address);
-            await portfolio.connect(wallets[0]).withdrawFees();
+
+            //fail for non-treasury or non-feeAddress
+            await expect(portfolio.connect(wallets[0]).withdrawFees(wallets[0].address, 10))
+            .to.be.revertedWith("P-OWTF-01");
+
+            const treasury = portfolio.getTreasury();
+            await portfolio.connect(wallets[0]).withdrawFees(feeAddress, 10);
+            await portfolio.connect(wallets[0]).withdrawFees(treasury, 10);
+
             // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
             if (order["baseSymbol"] === "AVAX") {
                 _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
             } else {
-                const baseTokenAddr = await portfolio.getToken(Utils.fromUtf8(order["baseSymbol"]));
+                const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(order["baseSymbol"]));
                 const token = MockToken.attach(baseTokenAddr);
                 _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[order["baseSymbol"]]));
             }
@@ -709,8 +713,8 @@ describe("Dexalot", () => {
         // Fees final checks
         console.log()
         console.log("===== FEE CONTRACT LUMPED END STATE =====")
-
-        await portfolio.withdrawFees();
+        const feeAddress = await portfolio.feeAddress();
+        await portfolio.withdrawFees(feeAddress, 10);
 
         for(const _token in feeLumped) {
             _checkName = "Ending Fee balance ::: " + _token;

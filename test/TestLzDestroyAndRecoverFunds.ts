@@ -1,5 +1,5 @@
 /**
- * The test runner for LZ Recover Functionality
+ * The test runner for LZ Recover Funds of Destroyed Message Functionality
  */
 
 import Utils from './utils';
@@ -19,7 +19,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { MockContract, smock } from '@defi-wonderland/smock';
 
-describe("LZ Recover Functionality", async () => {
+describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
     let lzEndpointMain: MockContract<LZEndpointMock>;
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
@@ -39,7 +39,7 @@ describe("LZ Recover Functionality", async () => {
     let avaxPayload: string;
 
     beforeEach(async function () {
-        const {trader1 } = await f.getAccounts()
+        const {owner, trader1 } = await f.getAccounts()
 
         portfolioMain = await f.deployPortfolioMain("AVAX");
         portfolioSub = await f.deployPortfolioSub("ALOT");
@@ -47,7 +47,7 @@ describe("LZ Recover Functionality", async () => {
         const srcChainId = 1;
         const tokenDecimals = 18;
         const auctionMode: any = 0;
-
+        const gasSwapRatioAvax ='0.01'
 
         const MockLayerZeroEndpoint = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
         lzEndpointMain = await MockLayerZeroEndpoint.deploy(1)
@@ -55,7 +55,12 @@ describe("LZ Recover Functionality", async () => {
         //using same endpoint for testing
         portfolioBridgeMain = await f.deployPortfolioBridge(lzEndpointMain as unknown as LZEndpointMock, portfolioMain);
         portfolioBridgeSub = await f.deployPortfolioBridge(lzEndpointMain as unknown as LZEndpointMock, portfolioSub);
-        await portfolioSub.addToken(Utils.fromUtf8("AVAX"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode);
+
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+
+        await portfolioSub.addToken(Utils.fromUtf8("AVAX"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits(gasSwapRatioAvax,token_decimals));
+        await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), '0', Utils.parseUnits('0.01', tokenDecimals ), true);
         await f.setRemoteBridges(portfolioBridgeMain, 1, portfolioBridgeSub, 1, lzEndpointMain as unknown as LZEndpointMock, lzEndpointMain as unknown as LZEndpointMock);
 
         await f.deployGasStation(portfolioSub);
@@ -71,7 +76,7 @@ describe("LZ Recover Functionality", async () => {
         alot = await f.deployMockToken(alot_token_symbol, alot_token_decimals)
         ALOT = Utils.fromUtf8(alot_token_symbol);
 
-        await portfolioMain.addToken(ALOT, alot.address, srcChainId, alot_token_decimals, auctionMode)
+        await portfolioMain.addToken(ALOT, alot.address, srcChainId, alot_token_decimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))
 
         await alot.mint(trader1.address, ethers.utils.parseEther("100"))
         await alot.connect(trader1).approve(portfolioMain.address, ethers.constants.MaxUint256)
@@ -138,14 +143,24 @@ describe("LZ Recover Functionality", async () => {
         const event = iface.parseLog(data);
         const payload = event.args.payload;
 
+
+        expect(await portfolioBridgeSub["hasStoredPayload()"]()).to.be.true;
+
         const beforeBalance = await portfolioSub.getBalance(
             trader1.address,
             Utils.fromUtf8("AVAX")
         )
 
-        await portfolioSub.connect(owner).lzRecoverPayload(
+
+        // fail for non-admin
+        await expect(portfolioBridgeSub.connect(trader1).lzDestroyAndRecoverFunds(payload)).to.be.revertedWith("AccessControl: account");
+
+        await portfolioBridgeSub.connect(owner).lzDestroyAndRecoverFunds(
             payload
         )
+
+        expect(await portfolioBridgeSub["hasStoredPayload()"]()).to.be.false;
+
 
         const afterBalance = await portfolioSub.getBalance(
             trader1.address,
@@ -165,7 +180,7 @@ describe("LZ Recover Functionality", async () => {
         const tx = await portfolioMain.connect(trader1).depositToken(
             trader1.address,
             ALOT,
-            ethers.utils.parseEther("1.0"),
+            ethers.utils.parseEther("3.0"),
             0
         )
         const receipt: any = await tx.wait()
@@ -179,7 +194,7 @@ describe("LZ Recover Functionality", async () => {
             ALOT
         )
 
-        await portfolioSub.connect(owner).lzRecoverPayload(
+        await portfolioBridgeSub.connect(owner).lzDestroyAndRecoverFunds(
             payload
         )
 
@@ -189,7 +204,7 @@ describe("LZ Recover Functionality", async () => {
         )
 
         expect(afterBalance.total.sub(beforeBalance.total)).to.equal(
-            ethers.utils.parseEther("1.0")
+            ethers.utils.parseEther("3.0")
         )
     })
 
@@ -199,7 +214,7 @@ describe("LZ Recover Functionality", async () => {
         let tx = await portfolioMain.connect(trader1).depositToken(
             trader1.address,
             ALOT,
-            ethers.utils.parseEther("1.0"),
+            ethers.utils.parseEther("3.0"),
             0
         )
         await tx.wait()
@@ -209,7 +224,7 @@ describe("LZ Recover Functionality", async () => {
         tx = await portfolioSub.connect(trader1).withdrawToken(
             trader1.address,
             ALOT,
-            ethers.utils.parseEther("1.0"),
+            ethers.utils.parseEther("3.0"),
             0
         )
 
@@ -221,19 +236,139 @@ describe("LZ Recover Functionality", async () => {
 
         const beforeBalance = await alot.balanceOf(trader1.address)
 
-        await portfolioMain.connect(owner).lzRecoverPayload(
+        await portfolioBridgeMain.connect(owner).lzDestroyAndRecoverFunds(
             payload
         )
 
         const afterBalance = await alot.balanceOf(trader1.address)
 
         expect(afterBalance.sub(beforeBalance)).to.equal(
-            ethers.utils.parseEther("1.0")
+            ethers.utils.parseEther("3.0")
         )
     })
 
     it("Should recover AVAX token sent from subnet", async () => {
         const { trader1, owner } = await f.getAccounts()
+
+        //Deposit from mainnet to subnet
+        let tx = await portfolioMain.connect(trader1).depositNative(
+            trader1.address,
+            0,
+            {
+                value: ethers.utils.parseEther("3.0")
+            }
+        )
+        await tx.wait()
+
+        await lzEndpointMain.blockNextMsg()
+        // Withdraw from subnet and set it to blocked
+        tx = await portfolioSub.connect(trader1).withdrawToken(
+            trader1.address,
+            Utils.fromUtf8("AVAX"),
+            ethers.utils.parseEther("3.0"),
+            0
+        )
+
+        const receipt: any = await tx.wait()
+        const data = receipt.events[1]
+        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
+        const event = iface.parseLog(data);
+        const payload = event.args.payload;
+
+        // fail for non-admin, this revert consumes some gas
+        await expect(portfolioBridgeMain.connect(trader1).lzDestroyAndRecoverFunds(payload)).to.be.revertedWith("AccessControl: account");
+
+        const beforeBalance = await trader1.getBalance();
+        //console.log(ethers.utils.formatEther(beforeBalance));
+        // success for admin
+        await portfolioBridgeMain.connect(owner).lzDestroyAndRecoverFunds(payload)
+
+        const afterBalance = await trader1.getBalance()
+        //console.log(ethers.utils.formatEther(afterBalance));
+        expect(afterBalance.sub(beforeBalance)).to.equal(
+            ethers.utils.parseEther("3.0")
+        )
+    })
+
+    it("shouldn't recover if the caller is not the owner", async () => {
+        const { trader1, owner } = await f.getAccounts()
+
+        await lzEndpointMain.blockNextMsg()
+
+        const tx = await portfolioMain.connect(trader1).depositNative(
+            trader1.address,
+            0,
+            {
+                value: ethers.utils.parseEther("3.0")
+            }
+        )
+        const receipt: any = await tx.wait()
+        const data = receipt.events[1]
+        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
+        const event = iface.parseLog(data);
+        const payload = event.args.payload;
+
+        await expect(portfolioBridgeMain.connect(trader1).lzDestroyAndRecoverFunds(
+            payload
+        )).to.be.revertedWith(`AccessControl:`)
+
+        // Revoke BRIDGE_ADMIN_ROLE from the owner and try
+        await portfolioBridgeMain.revokeRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
+        await expect(portfolioBridgeMain.connect(owner).lzDestroyAndRecoverFunds(
+            payload
+        )).to.be.revertedWith(`AccessControl:`)
+
+
+    })
+
+    it("shouldn't recover ALOT if the payload is impossible to process", async () => {
+        const { trader1 } = await f.getAccounts()
+
+        let tx = await portfolioMain.connect(trader1).depositToken(
+            trader1.address,
+            ALOT,
+            ethers.utils.parseEther("3.0"),
+            0
+        )
+        await tx.wait()
+
+        await lzEndpointMain.blockNextMsg()
+
+        tx = await portfolioSub.connect(trader1).withdrawToken(
+            trader1.address,
+            ALOT,
+            ethers.utils.parseEther("3.0"),
+            0
+        )
+
+        const receipt: any = await tx.wait()
+        const data = receipt.events[1]
+        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
+        const event = iface.parseLog(data);
+        const payload = event.args.payload;
+
+        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513)
+
+        const modifiedPayload = payload.slice(0, 384) + "55534454" + payload.slice(392)
+
+        expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
+
+        await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(
+            modifiedPayload
+        )).to.be.revertedWith(`P-ETNS-02`)
+
+        await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(
+            amountModifiedPayload
+        )).to.be.revertedWith(`ERC20: transfer amount exceeds balance`)
+
+
+        // Transaction reverted Payload still present
+        expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
+
+    })
+
+    it("shouldn't recover AVAX if the payload is impossible to process", async () => {
+        const { trader1 } = await f.getAccounts()
 
         let tx = await portfolioMain.connect(trader1).depositNative(
             trader1.address,
@@ -242,8 +377,6 @@ describe("LZ Recover Functionality", async () => {
                 value: ethers.utils.parseEther("1.0")
             }
         )
-        await tx.wait()
-
         await lzEndpointMain.blockNextMsg()
 
         tx = await portfolioSub.connect(trader1).withdrawToken(
@@ -259,94 +392,16 @@ describe("LZ Recover Functionality", async () => {
         const event = iface.parseLog(data);
         const payload = event.args.payload;
 
-        const beforeBalance = await trader1.getBalance()
+        expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
 
-        await portfolioMain.connect(owner).lzRecoverPayload(
-            payload
-        )
-
-        const afterBalance = await trader1.getBalance()
-
-        expect(afterBalance.sub(beforeBalance)).to.equal(
-            ethers.utils.parseEther("1.0")
-        )
-    })
-
-    it("shouldn't recover if the caller is not the owner", async () => {
-        const { trader1 } = await f.getAccounts()
-
-        await lzEndpointMain.blockNextMsg()
-
-        const tx = await portfolioMain.connect(trader1).depositNative(
-            trader1.address,
-            0,
-            {
-                value: ethers.utils.parseEther("1.0")
-            }
-        )
-        const receipt: any = await tx.wait()
-        const data = receipt.events[1]
-        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
-        const event = iface.parseLog(data);
-        const payload = event.args.payload;
-
-        await expect(portfolioMain.connect(trader1).lzRecoverPayload(
-            payload
-        )).to.be.revertedWith(`AccessControl: account ${trader1.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`)
-    })
-
-    it("shouldn't recover ALOT if the payload is impossible to process", async () => {
-        const { trader1 } = await f.getAccounts()
-
-        await lzEndpointMain.blockNextMsg()
-
-        const tx = await portfolioMain.connect(trader1).depositToken(
-            trader1.address,
-            ALOT,
-            ethers.utils.parseEther("1.0"),
-            0
-        )
-        const receipt: any = await tx.wait()
-        const data = receipt.events[2]
-        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
-        const event = iface.parseLog(data);
-        const payload = event.args.payload;
 
         const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513)
 
-        const modifiedPayload = payload.slice(0, 384) + "55534454" + payload.slice(392)
-
-        await expect(portfolioMain.lzRecoverPayload(
-            modifiedPayload
-        )).to.be.revertedWith(`P-ETNS-02`)
-
-        await expect(portfolioMain.lzRecoverPayload(
-            amountModifiedPayload
-        )).to.be.revertedWith(`ERC20: transfer amount exceeds balance`)
-    })
-
-    it("shouldn't recover AVAX if the payload is impossible to process", async () => {
-        const { trader1 } = await f.getAccounts()
-
-        await lzEndpointMain.blockNextMsg()
-
-        const tx = await portfolioMain.connect(trader1).depositNative(
-            trader1.address,
-            0,
-            {
-                value: ethers.utils.parseEther("1.0")
-            }
-        )
-        const receipt: any = await tx.wait()
-        const data = receipt.events[1]
-        const iface = new ethers.utils.Interface(["event PayloadStored(uint16 srcChainId, bytes srcAddress, address dstAddress, uint64 nonce, bytes payload, bytes reason)"]);
-        const event = iface.parseLog(data);
-        const payload = event.args.payload;
-
-        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513)
-
-        await expect(portfolioMain.lzRecoverPayload(
+        await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(
             amountModifiedPayload
         )).to.be.revertedWith(`P-WNFA-01`)
+
+        // Transaction reverted Payload still present
+        expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
     })
 })

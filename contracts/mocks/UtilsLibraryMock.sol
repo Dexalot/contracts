@@ -13,11 +13,7 @@ import "../library/UtilsLibrary.sol";
 // Copyright 2022 Dexalot.
 
 contract UtilsLibraryMock {
-    function decimalsOk(
-        uint256 value,
-        uint8 decimals,
-        uint8 displayDecimals
-    ) external pure returns (bool) {
+    function decimalsOk(uint256 value, uint8 decimals, uint8 displayDecimals) external pure returns (bool) {
         return UtilsLibrary.decimalsOk(value, decimals, displayDecimals);
     }
 
@@ -57,11 +53,7 @@ contract UtilsLibraryMock {
         return UtilsLibrary.stringToBytes32(_string);
     }
 
-    function slice(
-        bytes memory _bytes,
-        uint256 _start,
-        uint256 _length
-    ) external pure returns (bytes memory) {
+    function slice(bytes memory _bytes, uint256 _start, uint256 _length) external pure returns (bytes memory) {
         return UtilsLibrary.slice(_bytes, _start, _length);
     }
 }

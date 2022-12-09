@@ -86,11 +86,7 @@ contract Airdrop is Pausable, Ownable {
      * @param amount total value to airdrop, Percentage and Vesting calculated by it
      * @param merkleProof the proof of merkle
      */
-    function claim(
-        uint256 index,
-        uint256 amount,
-        bytes32[] calldata merkleProof
-    ) external whenNotPaused {
+    function claim(uint256 index, uint256 amount, bytes32[] calldata merkleProof) external whenNotPaused {
         require(token.balanceOf(address(this)) >= (amount - _released[index]), "A-CNET-01");
 
         require(block.timestamp > _start, "A-TOOE-01");

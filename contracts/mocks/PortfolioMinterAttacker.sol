@@ -4,7 +4,7 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-import "contracts/PortfolioMinter.sol";
+import "../PortfolioMinter.sol";
 
 /**
  * @title Mock contract to test reentrancy guard on PortfolioMinter

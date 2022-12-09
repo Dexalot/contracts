@@ -266,11 +266,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
         return mockChainId;
     }
 
-    function retryPayload(
-        uint16 _srcChainId,
-        bytes calldata _path,
-        bytes calldata _payload
-    ) external override {
+    function retryPayload(uint16 _srcChainId, bytes calldata _path, bytes calldata _payload) external override {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
         require(sp.payloadHash != bytes32(0), "LayerZeroMock: no stored payload");
         require(
@@ -312,40 +308,32 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     }
 
     function getConfig(
-        uint16, /*_version*/
-        uint16, /*_chainId*/
-        address, /*_ua*/
+        uint16 /*_version*/,
+        uint16 /*_chainId*/,
+        address /*_ua*/,
         uint256 /*_configType*/
     ) external pure override returns (bytes memory) {
         return "";
     }
 
-    function getSendVersion(
-        address /*_userApplication*/
-    ) external pure override returns (uint16) {
+    function getSendVersion(address /*_userApplication*/) external pure override returns (uint16) {
         return 1;
     }
 
-    function getReceiveVersion(
-        address /*_userApplication*/
-    ) external pure override returns (uint16) {
+    function getReceiveVersion(address /*_userApplication*/) external pure override returns (uint16) {
         return 1;
     }
 
     function setConfig(
-        uint16, /*_version*/
-        uint16, /*_chainId*/
-        uint256, /*_configType*/
+        uint16 /*_version*/,
+        uint16 /*_chainId*/,
+        uint256 /*_configType*/,
         bytes memory /*_config*/
     ) external override {}
 
-    function setSendVersion(
-        uint16 /*version*/
-    ) external override {}
+    function setSendVersion(uint16 /*version*/) external override {}
 
-    function setReceiveVersion(
-        uint16 /*version*/
-    ) external override {}
+    function setReceiveVersion(uint16 /*version*/) external override {}
 
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _path) external override {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
@@ -419,11 +407,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
         }
     }
 
-    function _getProtocolFees(
-        bool _payInZro,
-        uint256 _relayerFee,
-        uint256 _oracleFee
-    ) internal view returns (uint256) {
+    function _getProtocolFees(bool _payInZro, uint256 _relayerFee, uint256 _oracleFee) internal view returns (uint256) {
         if (_payInZro) {
             return protocolFeeConfig.zroFee;
         } else {
@@ -432,9 +416,9 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     }
 
     function _getRelayerFee(
-        uint16, /* _dstChainId */
-        uint16, /* _outboundProofType */
-        address, /* _userApplication */
+        uint16 /* _dstChainId */,
+        uint16 /* _outboundProofType */,
+        address /* _userApplication */,
         uint256 _payloadSize,
         bytes memory _adapterParams
     ) internal view returns (uint256) {
@@ -450,12 +434,12 @@ contract LZEndpointMock is ILayerZeroEndpoint {
 
         // tokenConversionRate = dstPrice / localPrice
         // basePrice = totalRemoteToken * tokenConversionRate
-        uint256 basePrice = (totalRemoteToken * relayerFeeConfig.dstPriceRatio) / 10**10;
+        uint256 basePrice = (totalRemoteToken * relayerFeeConfig.dstPriceRatio) / 10 ** 10;
 
         // pricePerByte = (dstGasPriceInWei * gasPerBytes) * tokenConversionRate
         uint256 pricePerByte = (relayerFeeConfig.dstGasPriceInWei *
             relayerFeeConfig.gasPerByte *
-            relayerFeeConfig.dstPriceRatio) / 10**10;
+            relayerFeeConfig.dstPriceRatio) / 10 ** 10;
 
         return basePrice + _payloadSize * pricePerByte;
     }

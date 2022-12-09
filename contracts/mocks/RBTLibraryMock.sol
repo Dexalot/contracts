@@ -61,18 +61,9 @@ contract RBTLibraryMock {
         return RBTLibrary.getEmpty();
     }
 
-    function getNode(uint256 _key)
-        public
-        view
-        returns (
-            uint256 key,
-            uint256 parent,
-            uint256 left,
-            uint256 right,
-            bool red,
-            uint256 value
-        )
-    {
+    function getNode(
+        uint256 _key
+    ) public view returns (uint256 key, uint256 parent, uint256 left, uint256 right, bool red, uint256 value) {
         (key, parent, left, right, red) = tree.getNode(_key);
         value = values[_key];
     }

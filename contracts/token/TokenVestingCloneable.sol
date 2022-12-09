@@ -8,7 +8,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 
 import "../library/UtilsLibrary.sol";
 
-import "../interfaces/IPortfolio.sol";
+import "../interfaces/IPortfolioMain.sol";
 
 /**
  * @title Flexible, cloneable token vesting contract
@@ -40,7 +40,7 @@ contract TokenVestingCloneable is OwnableUpgradeable {
 
     bool private _revocable;
 
-    IPortfolio private _portfolio;
+    IPortfolioMain private _portfolio;
     uint256 private _totalSupplyBeforeRevoke;
     uint256 private _firstReleasePercentage;
     mapping(address => uint256) private _releasedPercentage;
@@ -100,7 +100,7 @@ contract TokenVestingCloneable is OwnableUpgradeable {
         _startPortfolioDeposits = __startPortfolioDeposits;
         _firstReleasePercentage = __firstReleasePercentage;
         _period = __period;
-        _portfolio = IPortfolio(__portfolio);
+        _portfolio = IPortfolioMain(__portfolio);
 
         transferOwnership(__owner);
     }
@@ -212,7 +212,7 @@ contract TokenVestingCloneable is OwnableUpgradeable {
      */
     function setPortfolio(address __portfolio) external onlyOwner {
         require(__portfolio != address(0), "TVC-PIZA-02");
-        _portfolio = IPortfolio(__portfolio);
+        _portfolio = IPortfolioMain(__portfolio);
         emit PortfolioChanged(__portfolio);
     }
 

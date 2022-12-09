@@ -7,12 +7,12 @@ import Utils from './utils';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
 import type {
-    DexalotToken,
     PortfolioMain,
     PortfolioSub,
     TokenVestingCloneFactory,
     TokenVestingCloneable,
-    TokenVestingCloneable__factory
+    TokenVestingCloneable__factory,
+    MockToken
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -20,11 +20,12 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from 'ethers';
+import { decodeVariable } from '@defi-wonderland/smock/dist/src/utils/storage';
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 
 describe("TokenVestingCloneable", function () {
-    let testToken: DexalotToken;
+    let testToken: MockToken;
     let factory: TokenVestingCloneFactory;
     let TokenVestingCloneable: TokenVestingCloneable__factory;
     let tokenVesting: TokenVestingCloneable;
@@ -53,6 +54,7 @@ describe("TokenVestingCloneable", function () {
     let now: number;
 
     const srcChainId: any = 1;
+    const token_decimals =18
 
     before(async () => {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
@@ -61,12 +63,15 @@ describe("TokenVestingCloneable", function () {
     beforeEach(async function () {
         [owner, investor1] = await ethers.getSigners();
 
-        testToken = await f.deployDexalotToken();
-
+        testToken = await f.deployMockToken("DEG", token_decimals);
+        await testToken.mint(owner.address, Utils.toWei('100000000'));
         const { portfolioMain: portfolioM, portfolioSub: portfolioS } = await f.deployCompletePortfolio();
 
         portfolio = portfolioM;
         portfolioSub = portfolioS;
+
+        // f.addToken(portfolio, testToken, 0.01, 2)
+        f.addToken(portfolioSub, testToken, 0, 2)
 
         factory = await f.deployTokenVestingCloneFactory();
 
@@ -210,7 +215,7 @@ describe("TokenVestingCloneable", function () {
             cliff = 20000;
             duration = 120000;
             percentage = 15;
-            const dt = Utils.fromUtf8("ALOT");
+            const dt = Utils.fromUtf8("DEG");
             const am: any = 0; // auction mode OFF
             let released;
             let vestedAmount;
@@ -227,7 +232,7 @@ describe("TokenVestingCloneable", function () {
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.5',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
@@ -389,8 +394,8 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("ALOT");
-            const am: any = 0; // auction mode OFF
+            const dt = Utils.fromUtf8("DEG");
+            const am: any = 2; // auction mode OFF
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -401,7 +406,7 @@ describe("TokenVestingCloneable", function () {
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // some time before auction
@@ -418,8 +423,9 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("ALOT");
-            const am: any = 0; // auction mode OFF
+            const dt = Utils.fromUtf8("DEG");
+            const am: any = 2; // auction mode OFF
+
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -430,13 +436,14 @@ describe("TokenVestingCloneable", function () {
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // some time during auction
             await ethers.provider.send("evm_increaseTime", [3000]);
             await ethers.provider.send("evm_mine", []);
-
+            expect((await portfolio.getTokenDetails(Utils.fromUtf8("DEG"))).auctionMode).to.be.equal(0);
+            //expect(await portfolio.getMinDepositAmount(Utils.fromUtf8("DEG"))).to.be.equal(Utils.toWei('0.019'))
             // release once
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
             await testToken.connect(investor1).approve(portfolio.address, Utils.toWei('1000'));
@@ -775,8 +782,8 @@ describe("TokenVestingCloneable", function () {
             cliff = 5000;
             duration = 120000;
             period = 0;
-            const dt = Utils.fromUtf8("ALOT");
-            const am: any = 0; // auction mode OFF
+            const dt = Utils.fromUtf8("DEG");
+            const am: any = 2; // auction mode ON
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -798,7 +805,7 @@ describe("TokenVestingCloneable", function () {
             const canFundWallet = await tokenVesting.connect(investor1).canFundWallet(testToken.address, investor1.address);
             expect(canFundWallet).to.equal(false);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
@@ -830,8 +837,8 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("ALOT");
-            const am: any = 0; // auction mode OFF
+            const dt = Utils.fromUtf8("DEG");
+            const am: any = 2; // auction mode ON
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -840,7 +847,7 @@ describe("TokenVestingCloneable", function () {
 
             await testToken.transfer(tokenVesting.address, 1000);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             await ethers.provider.send("evm_increaseTime", [2000]);
@@ -919,7 +926,7 @@ describe("TokenVestingCloneable", function () {
             duration = 120000;
             percentage = 15;
             period = 20000;
-            const dt = Utils.fromUtf8("ALOT");
+            const dt = Utils.fromUtf8("DEG");
             const am: any = 0; // auction mode OFF
             let released;
             let vestedAmount;
@@ -936,7 +943,7 @@ describe("TokenVestingCloneable", function () {
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am);
+            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.5',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
