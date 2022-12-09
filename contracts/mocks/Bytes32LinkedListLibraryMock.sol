@@ -29,15 +29,7 @@ contract Bytes32LinkedListLibraryMock {
         return list.sizeOf();
     }
 
-    function getNode(bytes32 _node)
-        public
-        view
-        returns (
-            bool,
-            bytes32,
-            bytes32
-        )
-    {
+    function getNode(bytes32 _node) public view returns (bool, bytes32, bytes32) {
         return list.getNode(_node);
     }
 
@@ -45,11 +37,7 @@ contract Bytes32LinkedListLibraryMock {
         return list.getAdjacent(_node, _direction);
     }
 
-    function insert(
-        bytes32 _node,
-        bytes32 _new,
-        bool _direction
-    ) public returns (bool) {
+    function insert(bytes32 _node, bytes32 _new, bool _direction) public returns (bool) {
         return list.insert(_node, _new, _direction);
     }
 

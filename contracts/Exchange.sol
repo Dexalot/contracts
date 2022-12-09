@@ -161,34 +161,6 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
     //========== AUCTION ADMIN FUNCTIONS ==================
 
     /**
-     * @notice  Adds trusted contract to portfolio
-     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
-     * @param   _contract  address of trusted contract
-     * @param   _name  name of trusted contract
-     */
-    function addTrustedContract(address _contract, string calldata _name) external onlyRole(AUCTION_ADMIN_ROLE) {
-        portfolio.addTrustedContract(_contract, _name);
-    }
-
-    /**
-     * @param   _contract  address to check
-     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
-     * @return  bool  true if contract is trusted
-     */
-    function isTrustedContract(address _contract) external view returns (bool) {
-        return portfolio.isTrustedContract(_contract);
-    }
-
-    /**
-     * @notice  Removes trusted contract from portfolio
-     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
-     * @param   _contract  address of trusted contract
-     */
-    function removeTrustedContract(address _contract) external onlyRole(AUCTION_ADMIN_ROLE) {
-        portfolio.removeTrustedContract(_contract);
-    }
-
-    /**
      * @notice  Add new token to portfolio
      * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
      * @param   _symbol  symbol of the token
@@ -196,14 +168,18 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  decimals of the token
      * @param   _mode  starting auction mode
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
      */
     function addToken(
         bytes32 _symbol,
         address _tokenaddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode _mode
+        ITradePairs.AuctionMode _mode,
+        uint256 _fee,
+        uint256 _gasSwapRatio
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
-        portfolio.addToken(_symbol, _tokenaddress, _srcChainId, _decimals, _mode);
+        portfolio.addToken(_symbol, _tokenaddress, _srcChainId, _decimals, _mode, _fee, _gasSwapRatio);
     }
 }

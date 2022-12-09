@@ -1,4 +1,3 @@
-// FIXME INCOMPLETE !!!
 /**
  * The test runner for Dexalot PortfolioSub contract
  * Please do not test deposit/withdraw functions inside this test suite.
@@ -10,7 +9,6 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     GasStation,
-    LZEndpointMock,
     MockToken,
     PortfolioMain,
     PortfolioSub
@@ -71,7 +69,7 @@ describe("Portfolio Sub", () => {
         console.log("Admin", admin.address );
         console.log("AuctionAdmin", auctionAdmin.address);
         console.log("Trader1", trader1.address);
-        console.log("Trader1", trader2.address);
+        console.log("Trader2", trader2.address);
     });
 
     beforeEach(async function () {
@@ -99,15 +97,13 @@ describe("Portfolio Sub", () => {
         await expect(portfolio.initialize(ALOT, srcChainId)).to.be.revertedWith("Initializable: contract is already initialized");
     });
 
-    // it("TradePairs Should have EXECUTOR_ROLE on portfolio", async function () {
-    //     expect(await portfolio.hasRole(await portfolio.EXECUTOR_ROLE(), tradePairs.address)).to.be.equal(true);
-    // });
-
     it("Should have starting portfolio with zero total and available balances for native token", async () => {
         const res = await portfolio.getBalance(owner.address, native);
         Utils.printResults(owner.address, "before deposit", res, avax_decimals);
         expect(res.total).to.equal(0);
         expect(res.available).to.equal(0);
+
+
     });
 
     it("Should create ERC20 token", async () => {
@@ -129,12 +125,12 @@ describe("Portfolio Sub", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
 
-        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
+        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
 
         await expect(portfolio.connect(trader1).setAuctionMode(USDT, 1)).to.revertedWith("AccessControl:");
         await expect(portfolio.connect(auctionAdmin).setAuctionMode(USDT, 1)).to.revertedWith("AccessControl:");
 
-        await expect(portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode)).to.revertedWith("P-TAEX-01"); //Auction mode off
+        await expect(portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.revertedWith("P-TAEX-01"); //Auction mode off
 
         // fail from non-privileged account
         // trader1
@@ -150,21 +146,6 @@ describe("Portfolio Sub", () => {
         expect(tokenDetails.auctionMode).to.be.equal(0);
     });
 
-    it("Should update deposit and withdrawal rates by admin correctly", async function () {
-        const dRate = ethers.BigNumber.from(5);
-        const wRate = ethers.BigNumber.from(10);
-        // fail from non admin accounts
-        await expect(portfolio.connect(trader1).updateTransferFeeRate(dRate, 0)).to.revertedWith("AccessControl: account");
-        await expect(portfolio.connect(trader2).updateTransferFeeRate(dRate, 1)).to.revertedWith("AccessControl: account");
-        // succeed from admin accounts
-        await portfolio.updateTransferFeeRate(dRate, 0);
-        expect(await portfolio.depositFeeRate()).to.be.equal(dRate);
-        await portfolio.updateTransferFeeRate(wRate, 1);
-        expect(await portfolio.withdrawFeeRate()).to.be.equal(wRate);
-        // fail for wrong rate type
-        await expect(portfolio.updateTransferFeeRate(dRate, 2)).to.revertedWith("P-WRTT-01");
-    });
-    // TODO: test transferFee functions
 
     it("Should set fee address for Portfolio from the admin account", async function () {
         // fail from non admin accounts
@@ -217,16 +198,6 @@ describe("Portfolio Sub", () => {
         await expect(portfolio.connect(admin).setPortfolioMinter("0x0000000000000000000000000000000000000000")).to.revertedWith("P-OACC-02");
     });
 
-    it("Should set deposit threshold for Portfolio from the admin account", async function () {
-        // fail from non admin accounts
-        await expect(portfolio.connect(trader1).setWalletBalanceDepositThreshold(Utils.toWei("0.1"))).to.revertedWith("P-OACC-01");
-        await expect(portfolio.connect(admin).setWalletBalanceDepositThreshold(Utils.toWei("0.1"))).to.revertedWith("P-OACC-01");
-        // succeed from admin accounts
-        await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
-        await portfolio.connect(admin).setWalletBalanceDepositThreshold(Utils.toWei("0.1"));
-        expect(await portfolio.walletBalanceDepositThreshold()).to.be.equal(Utils.toWei("0.1"));
-    });
-
     it("Should fail addExecution if not called by TradePairs", async function () {
         const takerAddr = trader1.address;
         const baseSymbol = Utils.fromUtf8("AVAX");
@@ -242,23 +213,24 @@ describe("Portfolio Sub", () => {
     });
 
     it("Should fail adjustAvailable()", async function () {
-        await portfolio.addToken(USDT, usdt.address, srcChainId, 6, auctionMode); //Auction mode off
+        await portfolio.addToken(USDT, usdt.address, srcChainId, 6, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         // fail if caller is not tradePairs
-        await expect(portfolio.adjustAvailable(0, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-OACC-03");
+        await expect(portfolio.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-OACC-03");
+
+        await portfolio.grantRole(await portfolio.EXECUTOR_ROLE(), owner.address)
+        //Send with invalid Tx  Only Tx 3 or 4 allowed
+        await expect(portfolio.adjustAvailable(0, owner.address, USDT, Utils.toWei('10'))).to.revertedWith("P-WRTT-02");
     });
 
     it("Should withdraw native tokens from portfolio to subnet", async () => {
-        await f.addToken(portfolioMain, alot, 0); //Auction mode off
+        await f.addToken(portfolioMain, alot, 1); //gasSwapRatio 1
         // alot is already added to subnet during deployment of portfolio
 
         const initial_amount = await trader1.getBalance();
 
-        let tx = await alot.mint(trader1.address, Utils.toWei("1000"));
+        let tx = await alot.mint(trader1.address, Utils.toWei(deposit_amount));
 
-        tx = await alot.connect(trader1).approve(portfolioMain.address, Utils.toWei(deposit_amount));
-        const tx_2:any = await tx.wait();
-
-        tx = await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount);
+        tx = await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
         const tx_3:any = await tx.wait()
 
         // fail for account other then msg.sender
@@ -285,7 +257,6 @@ describe("Portfolio Sub", () => {
         expect((await trader1.getBalance()).toString().slice(0, 6)).to.equal(
             initial_amount
             .add(Utils.toWei('100'))
-            .sub(tx_2.effectiveGasPrice.mul(tx_2.gasUsed))
             .sub(tx_3.effectiveGasPrice.mul(tx_3.gasUsed))
             .sub(tx_4.effectiveGasPrice.mul(tx_4.gasUsed))
             .toString().slice(0, 6)
@@ -457,10 +428,473 @@ describe("Portfolio Sub", () => {
         .to.be.revertedWith("P-NTDP-01");
     })
 
+    it("Should get gas Token with autoFill using erc20 ", async () => {
+        const { other2 } = await f.getAccounts();
+
+
+        //Set GasStation Gas Amount to 0.5 instead of 0.025
+        await expect(gasStation.setGasAmount(ethers.utils.parseEther("0.5")))
+        .to.emit(gasStation, "GasAmountChanged")
+
+
+        const gasSwapRatioUsdt = 0.5; // 0.5 usdt per 1 ALOT
+        const usdtDepositAmount = Utils.parseUnits(deposit_amount, token_decimals)
+
+        await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
+
+        await f.addToken(portfolioMain, usdt, gasSwapRatioUsdt); //gasSwapRatio 1
+        await f.addToken(portfolio, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 1
+
+
+        //Deposit tokens for trader1
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount, 0);
+
+        let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+        const usdtTransferAmnt= Utils.parseUnits("10", token_decimals);
+
+        // Transfer USDT to other2 when it has enough gas his wallet
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+
+
+        //Check to see it had no impact
+        // other2's portfolio usdt balanced should be transfered amount
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt);
+        // No treasury bal change
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(0);
+        // No bal change in gas station
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+
+        let newBalance = ethers.utils.parseEther('0.30');
+        let newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+        other2.address,
+        newBalanceHex, // 0.30 ALOT
+        ]);
+
+        // fail due to paused portfolio
+        await portfolio.pause()
+        await expect(portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")})).to.revertedWith("Pausable: paused");
+        await portfolio.unpause()
+
+        // fail due to missing EXECUTOR_ROLE
+        await expect(portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")})).to.revertedWith("P-OACC-03");
+        await portfolio.grantRole(await portfolio.EXECUTOR_ROLE(), other2.address);
+        expect(await portfolio.hasRole(await portfolio.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
+
+        const gasDeposited = await gasStation.gasAmount();
+        const usdtSwappedAmnt = (await portfolio.bridgeParams(USDT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+        const beforeBalance = await other2.getBalance();
+
+        let tx: any = await portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+        let receipt = await tx.wait();
+
+        let gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
+
+        expect((await ethers.provider.getBalance(other2.address)).sub(beforeBalance.add(gasDeposited))).to.lte(gasUsedInTx);
+        // other2's portfolio usdt balanced should be transfered amount - swaped amount  (10 - 0.5)
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.sub(usdtSwappedAmnt));
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+        // gas station  should have a decrease of gasStationGas(default 0.025)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+        // Set the wallet balance to 1
+        newBalance = ethers.utils.parseEther('1');
+        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+        other2.address,
+        newBalanceHex, // 1 ALOT
+        ]);
+
+        gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+        tx = await portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+        receipt = await tx.wait();
+
+        gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
+
+        // No Change in the balances except the gas consumption of the tx
+        expect((await ethers.provider.getBalance(other2.address)).sub(newBalance)).to.lte(gasUsedInTx);
+        // No Change i other2's portfolio usdt balance
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.sub(usdtSwappedAmnt));
+        // No Change in treasury balance
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+        // No Change in gas station balance gas station
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+    })
+
+
+    it("Should get gas Token with autoFill using Alot ", async () => {
+        const { other2 } = await f.getAccounts();
+
+        //Set GasStation Gas Amount to 0.5 instead of 0.025
+        await expect(gasStation.setGasAmount(ethers.utils.parseEther("0.5")))
+        .to.emit(gasStation, "GasAmountChanged")
+
+        const gasSwapRatioAlot = 1;
+        const alotDepositAmount = Utils.parseUnits(deposit_amount, alot_decimals)
+
+        await f.addToken(portfolioMain, alot, gasSwapRatioAlot); //gasSwapRatio 1
+        await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount, 0);
+
+        let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+
+        const alotTransferAmnt= Utils.parseUnits("10", alot_decimals);
+
+        // Now transfer Native Token ALOT
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+
+        //Check to see it had no impact
+        // other2's portfolio usdt balanced should be transfered amount
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt);
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(0);
+        // gas station  should have a decrease of gasStationGas(default 0.025)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+
+        let newBalance = ethers.utils.parseEther('0.30');
+        let newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+        other2.address,
+        newBalanceHex, // 0.30 ALOT
+        ]);
+
+        const gasDeposited = await gasStation.gasAmount();
+        const alotSwappedAmnt = (await portfolio.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+
+        await expect(portfolio.connect(other2).autoFill(ALOT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")})).to.revertedWith("P-OACC-03");
+        await portfolio.grantRole(await portfolio.EXECUTOR_ROLE(), other2.address);
+        expect(await portfolio.hasRole(await portfolio.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
+
+
+        const beforeBalance = await other2.getBalance();
+
+        let tx: any = await portfolio.connect(other2).autoFill(ALOT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+        let receipt = await tx.wait();
+
+
+        let gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
+
+        expect((await ethers.provider.getBalance(other2.address)).sub(beforeBalance.add(gasDeposited))).to.lte(gasUsedInTx);
+        // other2's portfolio ALOT balanced should be transfered amount - swaped amount  (10 - 0.5)
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.sub(alotSwappedAmnt));
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+        // gas station  should have a decrease of gasStationGas(default 0.025)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+
+        newBalance = ethers.utils.parseEther('1');
+        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+        other2.address,
+        newBalanceHex, // 1 ALOT
+        ]);
+
+        gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+        tx = await portfolio.connect(other2).autoFill(ALOT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+        receipt = await tx.wait();
+
+        gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
+
+        // No Change in the balances except the gas consumption of the tx
+        expect((await ethers.provider.getBalance(other2.address)).sub(newBalance)).to.lte(gasUsedInTx);
+         // No Change i other2's portfolio usdt balance
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.sub(alotSwappedAmnt));
+         // No Change in treasury balance
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+         // No Change in gas station balance gas station
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0)
+
+
+    })
+
+    it("Should get gas Token from protfolio ALOT when sending erc20 using autoFill if portfolio(ALOT) > gasSwapRatio", async () => {
+        const { other2 } = await f.getAccounts();
+
+        //Set GasStation Gas Amount to 0.5 instead of 0.0255
+        await expect(gasStation.setGasAmount(ethers.utils.parseEther("0.5")))
+        .to.emit(gasStation, "GasAmountChanged")
+
+        const gasSwapRatioAlot = 1;
+        const gasSwapRatioUsdt = 0.5;
+
+        const usdtDepositAmount = Utils.parseUnits(deposit_amount, token_decimals)
+        const alotDepositAmount = Utils.parseUnits(deposit_amount, alot_decimals)
+
+        await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
+
+        await f.addToken(portfolioMain, usdt, gasSwapRatioUsdt); //gasSwapRatio 0.5
+        await f.addToken(portfolio, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 0.5
+
+
+        await f.addToken(portfolioMain, alot, gasSwapRatioAlot); //gasSwapRatio 1
+        await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount, 0);
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount, 0);
+
+        const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+
+        const usdtTransferAmnt= Utils.parseUnits("10", token_decimals);
+        const alotTransferAmnt= Utils.parseUnits("10", alot_decimals);
+
+        // Transfer USDT to other2 when he has 0 ALOT in his wallet
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+
+        //Check to see it had no impact
+        // other2's portfolio usdt balanced should be transfered amount
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt);
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt);
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(0);
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(0);
+        // gas station  should have a decrease of gasStationGas(default 0.025)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+
+
+        const newBalance = ethers.utils.parseEther('0.30');
+        const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+        other2.address,
+        newBalanceHex, // 0.30 ALOT
+        ]);
+
+
+        await expect(portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")})).to.revertedWith("P-OACC-03");
+        await portfolio.grantRole(await portfolio.EXECUTOR_ROLE(), other2.address);
+        expect(await portfolio.hasRole(await portfolio.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
+
+        const beforeBalance = await other2.getBalance();
+
+        const gasDeposited = await gasStation.gasAmount();
+        const alotSwappedAmnt = (await portfolio.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+
+        const tx: any = await portfolio.connect(other2).autoFill(USDT, {gasLimit: 200000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+        const receipt = await tx.wait();
+
+        const gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
+
+        expect((await ethers.provider.getBalance(other2.address)).sub(beforeBalance.add(gasDeposited))).to.lte(gasUsedInTx);
+        // no change on other2's portfolio usdt balance
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt);
+        // treasury should have an increase by alotSwappedAmnt
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+        // gas station  should have a decrease of gasDeposited
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+    })
+
+    it("Should get gas Token when sending erc20 using transferToken ", async () => {
+        const { other2 } = await f.getAccounts();
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            "0x0"
+          ]);
+
+        const gasSwapRatioUsdt = 5;
+        const usdtDepositAmount = Utils.parseUnits(deposit_amount, token_decimals)
+
+        await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
+
+        await f.addToken(portfolioMain, usdt, gasSwapRatioUsdt); //gasSwapRatio 5
+        await f.addToken(portfolio, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
+
+        // Start with 0 wallet balance
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(ethers.BigNumber.from(0));
+
+        //Deposit tokens for trader1
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount, 0);
+
+        const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+        const usdtTransferAmnt= Utils.parseUnits("10", token_decimals);
+
+        const gasDeposited = await gasStation.gasAmount();
+        const usdtSwappedAmnt = (await portfolio.bridgeParams(USDT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+
+        // Transfer USDT to other2 when he has 0 ALOT in his wallet
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+
+
+        // other2 should have gasStationGas(default 0.025)  ALOT in his wallet
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        // other2's portfolio usdt balanced should be transfered amount - swaped amount  (10 - 0.5)
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.sub(usdtSwappedAmnt));
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+        // gas station  should have a decrease of gasStationGas(default 0.025)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+        // Transfer same amount of USDT again. Other2 already has ALOT in his wallet. Should not deposit ALOT again
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+
+        // No impact on Wallet
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        //Other2's USDT balance is transferamount *2 - swaped amount  (20 - 0.5)
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.mul(2).sub(usdtSwappedAmnt));
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+
+        //Set the other2's wallet to half of gasStationGas(default 0.025)
+        const WalBaltoReset =gasDeposited.div(2);
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            WalBaltoReset.toHexString(),
+          ]);
+
+       await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+       // Only 0.025 should be added
+       expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited.add(WalBaltoReset));
+       //Other2's USDT balance is transferamount *3 - swaped amount  (20 - 0.5- 0.5)
+       expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.mul(3).sub(usdtSwappedAmnt.mul(2)));
+       // treasury should have an increase of swaped amount  by 0.5 total 1
+       expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt.mul(2));
+        // gas station  should have a decrease of another 0.025  gasStationGas(default 0.025)
+       expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited.mul(2));
+
+    })
+
+    it("Should get gas Token sending ALOT using transferToken", async () => {
+        const { other2 } = await f.getAccounts();
+        //Reset wallet balance to 0
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            "0x0", // 0 ALOT
+        ]);
+        const gasSwapRatioAlot = 1;
+        const alotDepositAmount = Utils.parseUnits(deposit_amount, alot_decimals)
+
+        await f.addToken(portfolioMain, alot, gasSwapRatioAlot); //gasSwapRatio 1
+        await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
+
+        // Start with 0 wallet balance
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(ethers.BigNumber.from(0));
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount, 0);
+
+        const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+
+        const alotTransferAmnt= Utils.parseUnits("10", alot_decimals);
+        const gasDeposited = await gasStation.gasAmount();
+
+
+        // Now transfer Native Token ALOT
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+        const alotSwappedAmnt = (await portfolio.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18));
+        // No Impact on the numbers other than Other2's portfolio ALOT balance
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.sub(alotSwappedAmnt));
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+        // Should not deposit ALOT again
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.mul(2).sub(alotSwappedAmnt));
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+        const WalBaltoReset = gasDeposited.div(2);
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            WalBaltoReset.toHexString(), // 0.025 ALOT
+        ]);
+
+
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+        // gasDeposited fully
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited.add(WalBaltoReset));
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.mul(3).sub(alotSwappedAmnt.mul(2)));
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt.mul(2));
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited.mul(2));
+
+
+    })
+
+    it("Should get gas Token from protfolio ALOT when sending erc20 using transferToken if portfolio(ALOT) > gasSwapRatio", async () => {
+        const { other2 } = await f.getAccounts();
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            "0x0",
+          ]);
+
+        const gasSwapRatioAlot = 1;
+        const gasSwapRatioUsdt = 5;
+
+        const usdtDepositAmount = Utils.parseUnits(deposit_amount, token_decimals)
+        const alotDepositAmount = Utils.parseUnits(deposit_amount, alot_decimals)
+
+        await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
+
+        await f.addToken(portfolioMain, usdt, gasSwapRatioUsdt); //gasSwapRatio 5
+        await f.addToken(portfolio, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
+
+
+        await f.addToken(portfolioMain, alot, gasSwapRatioAlot); //gasSwapRatio 1
+        await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
+
+        // Start with 0 wallet balance
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(ethers.BigNumber.from(0));
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount, 0);
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount, 0);
+
+        const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+
+        const usdtTransferAmnt= Utils.parseUnits("10", token_decimals);
+        const alotTransferAmnt= Utils.parseUnits("10", alot_decimals);
+
+        // Transfer USDT to other2 when he has 0 ALOT in his wallet
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+
+        const gasDeposited = await gasStation.gasAmount();
+
+        const usdtSwappedAmnt = (await portfolio.bridgeParams(USDT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+
+        // other2 should have gasStationGas(default 0.025)  ALOT in his wallet
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        // other2's portfolio usdt balanced should be transfered amount - swaped amount  (10 - 0.5)
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.sub(usdtSwappedAmnt));
+        // treasury should have an increase of swaped amount  0.5
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+        // gas station  should have a decrease of gasStationGas(default 0.1)
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
+
+        const alotSwappedAmnt = (await portfolio.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18));
+
+        // Now transfer Native Token ALOT for other2 to have ALOT i his portfolio- No gas swap expected
+        await portfolio.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
+
+        //Reset wallet balance
+        await ethers.provider.send("hardhat_setBalance", [
+            other2.address,
+            "0x0", // 0 ALOT
+            ]);
+
+        // Now transfering USDT but other2 already has ALOT in his portfolio. So we only use his ALOT and we don't swap
+        await portfolio.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
+        // other2 should have gasStationGas(default 0.025)  ALOT in his wallet
+        expect((await ethers.provider.getBalance(other2.address))).to.equal(gasDeposited);
+        // other2's portfolio ALOT balance should be transfered amount - swaped amount  (10 - 0.025)
+        expect((await portfolio.getBalance(other2.address, ALOT)).total).to.equal(alotTransferAmnt.sub(alotSwappedAmnt));
+        // treasury should have an increase of swaped amount  0.025
+        expect((await portfolio.getBalance(foundationSafe.address, ALOT)).total).to.equal(alotSwappedAmnt);
+        // gas station  should have a decrease of gasStationGas(default 0.025) * 2
+        expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited.mul(2));
+
+        // other2's portfolio usdt balanced should be transfered amount *2  - swaped amount  (20 - 0.5) No change from before
+        expect((await portfolio.getBalance(other2.address, USDT)).total).to.equal(usdtTransferAmnt.mul(2).sub(usdtSwappedAmnt));
+        // treasury should have no change on usdt balances
+        expect((await portfolio.getBalance(foundationSafe.address, USDT)).total).to.equal(usdtSwappedAmnt);
+    })
+
     it("Should transfer token from portfolio to portfolio", async () => {
-        alot = await f.deployMockToken("ALOT", 18)
+
         await alot.mint(trader1.address, (BigNumber.from(2)).mul(Utils.parseUnits(deposit_amount, 18)));
-        await portfolioMain.addToken(ALOT, alot.address, srcChainId, tokenDecimals, auctionMode);
+        await portfolioMain.addToken(ALOT, alot.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals));
 
         await f.depositNative(portfolioMain, trader1, deposit_amount);
         await f.depositToken(portfolioMain, trader1, alot, 18, ALOT, deposit_amount, 0);
@@ -514,39 +948,54 @@ describe("Portfolio Sub", () => {
 
         await expect(portfolio.connect(trader1).transferToken(trader2.address, AVAX, Utils.toWei(deposit_amount).add(1)))
         .to.be.revertedWith("P-AFNE-02");
+
+        await portfolio.setAuctionMode(AVAX, 2);
+        await expect(portfolio.connect(trader1).transferToken(trader2.address, AVAX, Utils.toWei(deposit_amount)))
+        .to.be.revertedWith("P-AUCT-01");
+        await portfolio.setAuctionMode(AVAX, 0);
+
+        await portfolio.connect(trader1).transferToken(trader2.address, AVAX, Utils.toWei(deposit_amount));
+
+        expect((await portfolio.getBalance(trader2.address, AVAX)).total).to.equal(Utils.toWei(deposit_amount));
+
+
     })
 
     it("Should add and remove ERC20 token to portfolio sub", async () => {
         // fail for non-admin
-        await expect(portfolio.connect(trader1).addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode)).to.be.revertedWith("AccessControl:");
+        await expect(portfolio.connect(trader1).addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
         // succeed for admin
-        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode); //Auction mode off
+        await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         const tokens = await portfolio.getTokenList();
         expect(tokens[2]).to.equal(USDT);
 
-        await expect(portfolio.removeToken(USDT)).to.be.revertedWith("Pausable: not paused");
+        await expect(portfolio.removeToken(USDT, srcChainId)).to.be.revertedWith("Pausable: not paused");
         await portfolio.pause();
-        await expect(portfolio.connect(trader1).removeToken(USDT)).to.be.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).removeToken(USDT, srcChainId)).to.be.revertedWith("AccessControl: account");
 
-        await expect(portfolio.removeToken(USDT))
+        await expect(portfolio.removeToken(USDT, srcChainId))
         .to.emit(portfolio, "ParameterUpdated")
         .withArgs(USDT, "P-REMOVETOKEN", 0, 0);
 
         // do nothing for non-existent token
-        await portfolio.removeToken(Utils.fromUtf8("MOCK"))
+        await portfolio.removeToken(Utils.fromUtf8("MOCK"), srcChainId)
+
+        // can't remove ALOT token
+        await portfolio.removeToken(Utils.fromUtf8("ALOT"), srcChainId)
+
     });
 
     it("Should not remove erc20 if it has deposits", async () => {
         await usdt.mint(trader1.address, ethers.utils.parseEther("100"))
 
-        await f.addToken(portfolioMain, usdt, 0);
-        await f.addToken(portfolio, usdt, 0);
+        await f.addToken(portfolioMain, usdt, 0.5);
+        await f.addToken(portfolio, usdt, 0.5);
 
         await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, "100")
 
         expect((await portfolio.getBalance(trader1.address, USDT)).total.toString()).to.equal(Utils.parseUnits("100", token_decimals));
         await portfolio.pause();
-        await expect(portfolio.removeToken(USDT)).to.be.revertedWith("P-TTNZ-01");
+        await expect(portfolio.removeToken(USDT, srcChainId)).to.be.revertedWith("P-TTNZ-01");
     });
 
     it("Should get token details", async () => {
@@ -554,8 +1003,8 @@ describe("Portfolio Sub", () => {
         const token_decimals = 18;
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
-        await f.addToken(portfolioMain, usdt, 0);
-        await f.addToken(portfolio, usdt, 0);
+        await f.addToken(portfolioMain, usdt, 0.5);
+        await f.addToken(portfolio, usdt, 0.5);
 
         let tokenDetails = await portfolio.getTokenDetails(USDT);
         expect(tokenDetails.tokenAddress).to.equal(ZERO_ADDRESS);
@@ -612,6 +1061,11 @@ describe("Portfolio Sub", () => {
         Tx = 0;  // WITHDRAW
         await expect(portfolio.processXFerPayload(trader2.address, AVAX, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-PTNS-02");
 
+        // fail with 0 quantity
+        await expect(portfolio.processXFerPayload(trader2.address, AVAX, 0, Tx)).to.be.revertedWith("P-ZETD-01");
+        // fail due to non existent token
+        await expect(portfolio.processXFerPayload(trader2.address, Utils.fromUtf8("NOT_EXISTING_TOKEN"), Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-ETNS-01");
+
         // try as many path ways as possible making sure they don't revert
         Tx = 1;  // DEPOSIT
         // funded account
@@ -653,56 +1107,37 @@ describe("Portfolio Sub", () => {
         expect(tokenList.length).to.be.equal(2);
 
         // fail not paused
-        await expect(portfolio.removeToken(SYMBOL)).to.be.revertedWith("Pausable: not paused");
+        await expect(portfolio.removeToken(SYMBOL, srcChainId)).to.be.revertedWith("Pausable: not paused");
 
         // silent fail if token is not in the token list
         await portfolio.pause();
-        await portfolio.removeToken(SYMBOL);
+        await portfolio.removeToken(SYMBOL, srcChainId);
         tokenList = await portfolio.getTokenList();
         expect(tokenList.length).to.be.equal(2);
         // fail adding 0 decimals native
-        await expect(portfolio.addToken(Utils.fromUtf8(native), ZERO_ADDRESS, srcChainId, 0, auctionMode)).to.be.revertedWith("P-CNAT-01");
+        await expect(portfolio.addToken(Utils.fromUtf8(native), ZERO_ADDRESS, srcChainId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-CNAT-01");
 
         // fail with decimals 0 token
-        await expect(portfolio.addToken(SYMBOL, t.address, srcChainId, 0, auctionMode)).to.be.revertedWith("P-CNAT-01");
-
+        await expect(portfolio.addToken(SYMBOL, t.address, srcChainId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-CNAT-01");
         // check AVAX
         tokenList = await portfolio.getTokenList();
         expect(tokenList.includes(AVAX)).to.be.true;
 
         // succeed adding MOCK
-        await portfolio.addToken(SYMBOL, t.address, srcChainId, tokenDecimals, auctionMode);
+        await portfolio.addToken(SYMBOL, t.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals));
         tokenList = await portfolio.getTokenList();
         expect(tokenList.includes(SYMBOL)).to.be.true;
 
         // succeed removing AVAX
-        await portfolio.removeToken(AVAX);
+        await portfolio.removeToken(AVAX, srcChainId);
         tokenList = await portfolio.getTokenList();
         expect(tokenList.includes(AVAX)).to.be.false;
 
         // succeed removing AVAX
-        await portfolio.removeToken(SYMBOL);
+        await portfolio.removeToken(SYMBOL, srcChainId);
         tokenList = await portfolio.getTokenList();
         expect(tokenList.includes(SYMBOL)).to.be.false;
     });
 
-    it("Should return zero address on subnet by running getToken()", async () => {
 
-        const token = await portfolio.getToken(AVAX);
-        expect(token).to.be.equal(ZERO_ADDRESS);
-    });
-
-    it("Should have no effect on subnet by running depositToken()", async () => {
-        const tx = await portfolio.depositToken(owner.address, AVAX, Utils.toWei("0.01"), 0);
-        const receipt = await tx.wait()
-        expect(receipt.logs.length).to.be.equal(0);
-        expect(receipt.events?.length).to.be.equal(0);
-    });
-
-    it("Should have no effect on subnet by running depositTokenFromContract()", async () => {
-        const tx = await portfolio.depositTokenFromContract(owner.address, AVAX, Utils.toWei("0.01"));
-        const receipt = await tx.wait()
-        expect(receipt.logs.length).to.be.equal(0);
-        expect(receipt.events?.length).to.be.equal(0);
-    });
 });

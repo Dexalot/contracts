@@ -1,4 +1,3 @@
-// FIXME INCOMPLETE !!!
 /**
  * The test runner for Dexalot Subnet Gas Station
  */
@@ -6,11 +5,7 @@
 import Utils from './utils';
 
 import {
-    PortfolioBridge,
-    PortfolioMain,
     PortfolioSub,
-    LZEndpointMock,
-    PortfolioBridgeSub,
     GasStation,
     GasStation__factory
 } from '../typechain-types'
@@ -24,36 +19,27 @@ import { ethers, upgrades } from "hardhat";
      let GasStation: GasStation__factory;
 
      let portfolioSub: PortfolioSub;
-     let portfolioMain: PortfolioMain;
-
-     let portfolioBridgeSub: PortfolioBridge;
-     let portfolioBridgeMain: PortfolioBridge;
 
      let gasStation: GasStation;
 
-     const AVAX: string = Utils.fromUtf8("AVAX");
 
      beforeEach(async function () {
         GasStation = await ethers.getContractFactory("GasStation") as GasStation__factory;
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
+        const {portfolioSub: portfolioS, gasStation: gStation} = await f.deployCompletePortfolio();
+
         portfolioSub = portfolioS;
-
-        portfolioBridgeMain = pbrigeMain;
-        portfolioBridgeSub =pbrigeSub;
-
         gasStation= gStation;
      });
 
     it("Should not initialize again after deployment", async function () {
-        await expect(gasStation.initialize(portfolioSub.address, ethers.utils.parseEther("0.1")))
+        await expect(gasStation.initialize(portfolioSub.address))
             .to.be.revertedWith("Initializable: contract is already initialized");
     });
 
     it("Should deploy correctly", async () => {
         const {admin, foundationSafe} = await f.getAccounts();
-        const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolioSub.address, ethers.utils.parseEther("0.1")]) as GasStation;
+        const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolioSub.address]) as GasStation;
 
         await portfolioSub.setGasStation(gasStation.address);
 
@@ -70,9 +56,6 @@ import { ethers, upgrades } from "hardhat";
         expect(await portfolioSub.getGasStation()).to.eq(gasStation.address);
         expect(await portfolioSub.getTreasury()).to.eq(foundationSafe.address);
 
-        // fail for 0 gas amount
-        await expect(upgrades.deployProxy(GasStation, [portfolioSub.address, ethers.utils.parseEther("0")]))
-        .to.be.revertedWith("GS-ASBTZ-01");
     })
 
     it("Should set gas amount", async () => {
@@ -105,28 +88,55 @@ import { ethers, upgrades } from "hardhat";
 
     it("Should request gas", async () => {
         const { trader1, trader2 } = await f.getAccounts();
-
-        await expect(gasStation.connect(trader1).requestGas(trader1.address))
+        const defaultGas = await gasStation.gasAmount();
+        await expect(gasStation.connect(trader1).requestGas(trader1.address, defaultGas))
         .to.be.revertedWith("AccessControl: account")
 
         await gasStation.grantRole(await gasStation.SWAPPER_ROLE(), trader1.address);
 
         const beforeBalance = await trader2.getBalance();
-        await expect(gasStation.connect(trader1).requestGas(trader2.address))
+
+        const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+        await expect(gasStation.connect(trader1).requestGas(ZERO_ADDRESS, defaultGas))
+        .to.be.revertedWith("GS-ZADDR-01")
+
+        await expect(gasStation.connect(trader1).requestGas(trader2.address, defaultGas))
         .to.emit(gasStation, "GasRequested")
         const afterBalance = await trader2.getBalance();
 
         expect(afterBalance.sub(beforeBalance)).to.eq(await gasStation.gasAmount());
     })
 
-    it("Should fail if balance is not sufficient", async () => {
+    it("Should request gas different than default gas amount", async () => {
         const { trader1, trader2 } = await f.getAccounts();
 
-        await gasStation.setGasAmount(ethers.utils.parseEther("1000"));
+        const defaultGas = await gasStation.gasAmount();
+        const gasRequested = defaultGas.div(2);
+
+        await expect(gasStation.connect(trader1).requestGas(trader1.address, gasRequested))
+        .to.be.revertedWith("AccessControl: account")
 
         await gasStation.grantRole(await gasStation.SWAPPER_ROLE(), trader1.address);
 
-        await expect(gasStation.connect(trader1).requestGas(trader2.address))
+        await expect(gasStation.connect(trader1).requestGas(trader2.address, defaultGas.add(gasRequested)))
+        .to.be.revertedWith("GS-ASBTZ-04")
+
+        const beforeBalance = await trader2.getBalance();
+        await expect(gasStation.connect(trader1).requestGas(trader2.address, gasRequested))
+        .to.emit(gasStation, "GasRequested")
+        const afterBalance = await trader2.getBalance();
+
+        expect(afterBalance.sub(beforeBalance)).to.eq(gasRequested);
+    })
+
+
+    it("Should fail if balance is not sufficient", async () => {
+        const { trader1, trader2 } = await f.getAccounts();
+        const gasAmount = ethers.utils.parseEther("1000");
+        await gasStation.setGasAmount(gasAmount);
+        await gasStation.grantRole(await gasStation.SWAPPER_ROLE(), trader1.address);
+
+        await expect(gasStation.connect(trader1).requestGas(trader2.address, gasAmount))
         .to.be.revertedWith("GS-FAIL-01")
 
         await expect(gasStation.withdrawNative(ethers.utils.parseEther("10000")))
@@ -135,7 +145,7 @@ import { ethers, upgrades } from "hardhat";
 
     it("Should pause and unpause", async () => {
         const { trader1 } = await f.getAccounts();
-
+        const defaultGas = await gasStation.gasAmount();
         await gasStation.grantRole(await gasStation.SWAPPER_ROLE(), trader1.address);
 
         // fail for others not in pauser role
@@ -144,7 +154,7 @@ import { ethers, upgrades } from "hardhat";
         // succeed for pausers
         await gasStation.pause();
         expect(await gasStation.paused()).to.eq(true);
-        await expect(gasStation.connect(trader1).requestGas(trader1.address))
+        await expect(gasStation.connect(trader1).requestGas(trader1.address,defaultGas))
         .to.be.revertedWith("Pausable: paused")
 
         // fail for others not in pauser role
@@ -153,7 +163,7 @@ import { ethers, upgrades } from "hardhat";
         // succeed for pausers
         await gasStation.unpause();
         expect(await gasStation.paused()).to.eq(false);
-        await expect(gasStation.connect(trader1).requestGas(trader1.address))
+        await expect(gasStation.connect(trader1).requestGas(trader1.address, defaultGas))
         .to.emit(gasStation, "GasRequested")
     })
 

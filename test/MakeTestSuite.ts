@@ -4,7 +4,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import { PromiseOrValue } from "../typechain-types/common";
 
-import type {
+import {
     DexalotToken,
     OrderBooks,
     PortfolioBridge,
@@ -12,6 +12,7 @@ import type {
     PortfolioSub,
     TradePairs,
     MockToken,
+    BannedAccounts,
     PortfolioMinterMock,
     GasStation,
     LZEndpointMock,
@@ -87,6 +88,14 @@ export const deployMockToken = async (tokenStr: PromiseOrValue<string>, tokenDec
     return mockToken;
 }
 
+export const deployBannedAccounts = async (): Promise<BannedAccounts> => {
+    const { admin } = await getAccounts();
+    const BannedAccounts = await ethers.getContractFactory("BannedAccounts");
+    const bannedAccounts: BannedAccounts = await upgrades.deployProxy(BannedAccounts, [admin.address]) as BannedAccounts;
+
+    return bannedAccounts;
+}
+
 export const deployLZEndpoint = async (sourceChainID: number): Promise<LZEndpointMock> => {
     const LZEndpointMock = await ethers.getContractFactory("LZEndpointMock");
     const lzEndpointMock: LZEndpointMock = await LZEndpointMock.deploy(
@@ -101,12 +110,13 @@ export const deployOrderBooks = async (): Promise<OrderBooks> => {
     return orderBook;
 }
 
-
 export const deployPortfolioMain = async (native: string,): Promise<PortfolioMain> => { // FIXME not complete !!!
     const srcChainId = 1;
 
     const PortfolioMain = await ethers.getContractFactory("PortfolioMain") as PortfolioMain__factory;
     const portfolioMain: PortfolioMain = await upgrades.deployProxy(PortfolioMain, [Utils.fromUtf8(native), srcChainId]) as PortfolioMain;
+    const bannedAccounts: BannedAccounts = await deployBannedAccounts();
+    await portfolioMain.setBannedAccounts(bannedAccounts.address);
 
     return portfolioMain;
 }
@@ -122,13 +132,15 @@ export const deployPortfolioSub = async (native: string): Promise<PortfolioSub> 
     return portfolioSub;
 }
 
-export const addToken = async (portfolio: PortfolioMain | PortfolioSub, token: MockToken, bridgeSwapAmount: number, srcChainId=1): Promise<void> => {
-
-    const auctionMode: any = 0;
-
-    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, srcChainId, await token.decimals(), auctionMode);
-    if (bridgeSwapAmount > 0) {
-        await (portfolio as PortfolioSub).setBridgeSwapAmount(Utils.fromUtf8(await token.symbol()), Utils.parseUnits(bridgeSwapAmount.toString(), await token.decimals()));
+export const addToken = async (portfolio: PortfolioMain | PortfolioSub, token: MockToken, gasSwapRatio: number, auctionMode = 0, usedForGasSwap=false): Promise<void> => {
+    const srcChainId=1;
+    const tokenDecimals = await token.decimals();
+    const bridgeFee = '0'
+    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, srcChainId, tokenDecimals, auctionMode
+            , Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatio.toString(),tokenDecimals) );
+    if(usedForGasSwap) {
+        await portfolio.setBridgeParam(Utils.fromUtf8(await token.symbol()), Utils.parseUnits(bridgeFee,tokenDecimals),
+                Utils.parseUnits(gasSwapRatio.toString(),tokenDecimals) , usedForGasSwap)
     }
 }
 
@@ -143,13 +155,16 @@ export const deployPortfolioBridge = async (remoteLZEndpoint: LZEndpointMock, po
         portfolioBridge = await upgrades.deployProxy(
             PortfolioBridge, [remoteLZEndpoint.address]) as PortfolioBridgeSub;
 
+        await portfolioBridge.setDefaultTargetChain(srcChainId);
+
     } else {
+
         PortfolioBridge = await ethers.getContractFactory("PortfolioBridge") as PortfolioBridge__factory;
         portfolioBridge = await upgrades.deployProxy(
             PortfolioBridge, [remoteLZEndpoint.address]) as PortfolioBridge;
+
     }
 
-    await portfolioBridge.setDefaultTargetChain(srcChainId);
     await portfolioBridge.setPortfolio(portfolio.address)
 
     await admin.sendTransaction({
@@ -235,7 +250,7 @@ export const deployGasStation = async (portfolio: PortfolioSub): Promise<GasStat
     const {admin, foundationSafe} = await getAccounts();
 
     const GasStation = await ethers.getContractFactory("GasStation") as GasStation__factory;
-    const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolio.address, ethers.utils.parseEther("0.1")]) as GasStation;
+    const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolio.address]) as GasStation;
 
     await portfolio.setGasStation(gasStation.address);
 
@@ -283,7 +298,6 @@ export const deployExchangeMain = async (portfolio: PortfolioMain): Promise<Exch
     await exchangeMain.addAdmin(foundationSafe.address);
 
     await exchangeMain.addAuctionAdmin(foundationSafe.address);
-
     return exchangeMain;
 }
 
@@ -301,11 +315,12 @@ export const deployTokenVestingCloneFactory = async (): Promise<TokenVestingClon
     return tokenVestingCloneFactory;
 }
 
-export const deployCompletePortfolio = async (addAlot=true): Promise<PortfolioContracts> => {
+export const deployCompletePortfolio = async (): Promise<PortfolioContracts> => {
     const srcChainId = 1;
     const tokenDecimals = 18;
     const auctionMode: any = 0;
-
+    const gasSwapRatioAvax = 0.01;
+    const bridgeFee = '0' ;
     const portfolioMain = await deployPortfolioMain("AVAX");
     const portfolioSub = await deployPortfolioSub("ALOT");
 
@@ -316,11 +331,14 @@ export const deployCompletePortfolio = async (addAlot=true): Promise<PortfolioCo
     const portfolioBridgeSub = await deployPortfolioBridge(lzEndpointMain, portfolioSub, srcChainId) as PortfolioBridgeSub;
 
     await setRemoteBridges(portfolioBridgeMain, 1, portfolioBridgeSub, 1, lzEndpointMain, lzEndpointMain);
-    await portfolioSub.addToken(Utils.fromUtf8("AVAX"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode);
+    // Set the swap Ratio for AVAX in main at deployment
+    await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatioAvax.toString(), tokenDecimals ), true);
+    // Add Avax to portfolioSub that also sets its gasSwapRatio
+    await portfolioSub.addToken(Utils.fromUtf8("AVAX"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode
+        , Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatioAvax.toString(), tokenDecimals ));
 
-    if (addAlot) { //Technically we should add alot with an address to portfolioMain & portfolioSub for completeness
-        await portfolioSub.addToken(Utils.fromUtf8("ALOT"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode);
-    }
+    //ALOT is automatically added and its swap ratio set to 1 in the Portfoliosub contract initialization
+    //ALOT needs to be added to PortfolioMain with the proper address which will also set its gasSwapRatio to 1
 
     const gasStation = await deployGasStation(portfolioSub);
     const portfolioMinter = await deployPortfolioMinterMock(portfolioSub, "0x0000000000000000000000000000000000000000");
@@ -343,33 +361,48 @@ export const addBaseAndQuoteTokens = async (portfolioMain: PortfolioMain, portfo
     // add token to portfolio subnet - don't add if it is the native ALOT or AVAX on subnet as they are already added
     if (baseSymbol != Utils.fromUtf8("ALOT") && baseSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding base to Sub" , baseSymbol);
-        await portfolioSub.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode);
+        await portfolioSub.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',baseDecimals));
     }
     if (quoteSymbol != Utils.fromUtf8("ALOT") && quoteSymbol != Utils.fromUtf8("AVAX")){
         //console.log ("Adding quote to Sub" , quoteSymbol);
-        await portfolioSub.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode);
+        await portfolioSub.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
     }
 
     // add token to portfolio mainnet - don't add if it is the native AVAX on mainnet as they are already added
     if (baseSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding base to Main" , baseSymbol);
-        await portfolioMain.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode);
+        await portfolioMain.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',baseDecimals));
     }
     if (quoteSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding quote to Main" , quoteSymbol);
-        await portfolioMain.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode);
+        await portfolioMain.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
     }
 
 }
+
+//Using auctionadmin Account
+export const addTradePairFromExchange = async (exchange: ExchangeSub, pair: any, pairSettings: any) => {
+    const { auctionAdmin} = await getAccounts()
+    const { baseSymbol, baseDecimals, quoteSymbol, quoteDecimals, tradePairId } = pair
+    const { minTradeAmount, maxTradeAmount, mode } = pairSettings
+
+    await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDecimals,
+            quoteSymbol, quoteDecimals, Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+            Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+
+}
+
 
 export const addTradePair = async (tradePairs: TradePairs, pair: any, pairSettings: any) => {
     const { owner } = await getAccounts()
     const { baseSymbol, baseDecimals, baseDisplayDecimals, quoteSymbol, quoteDisplayDecimals, quoteDecimals, tradePairId } = pair
     const { minTradeAmount, maxTradeAmount, mode } = pairSettings
+
     await tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol, baseDecimals, baseDisplayDecimals,
         quoteSymbol, quoteDecimals, quoteDisplayDecimals,
         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
         Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+
 }
 
 export const depositNative = async (portfolio: PortfolioMain, from:SignerWithAddress, amount: string): Promise<any> => {

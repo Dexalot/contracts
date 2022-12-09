@@ -25,11 +25,8 @@ import { ethers } from "hardhat";
 describe("Exchange Shared", function () {
     let MockToken: MockToken__factory;
     let exchange: ExchangeMain;
-    let exchangeSub: ExchangeSub;
     let portfolio: PortfolioMain;
-    let portfolioSub: PortfolioSub;
-    let tradePairs: TradePairs;
-    let orderBooks: OrderBooks;
+
     let quoteToken: MockToken;
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -45,14 +42,9 @@ describe("Exchange Shared", function () {
     beforeEach(async function () {
         [owner, admin, auctionAdmin, trader1, trader2, foundationSafe] = await ethers.getSigners();
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS} = await f.deployCompletePortfolio();
+        const {portfolioMain: portfolioM} = await f.deployCompletePortfolio();
         portfolio = portfolioM;
-        portfolioSub = portfolioS
-        orderBooks = await f.deployOrderBooks()
-
         exchange = await f.deployExchangeMain(portfolio)
-        exchangeSub = await f.deployExchangeSub(portfolioSub, orderBooks)
-        tradePairs = await f.deployTradePairs(orderBooks, portfolioSub, exchangeSub);
 
     });
 
@@ -97,24 +89,7 @@ describe("Exchange Shared", function () {
             expect(await exchange.isAuctionAdmin(trader2.address)).to.be.false;
         });
 
-        it("Should set, check and remove trusted contract address ONLY from Auction Admin correctly", async function () {
-            const auction_role_admin = exchange.AUCTION_ADMIN_ROLE();
-            // ADD exchange as a default admin to portfolio,
-            await portfolio.grantRole(auction_role_admin, exchange.address)
-            // fail for non admin account
-            await expect(exchange.connect(trader1).addTrustedContract(tradePairs.address, "TestingTrusted")).to.be.revertedWith("AccessControl:");
-            // succeed for auction admin account
-            //Add an auction admin to Exchange
-            await exchange.addAuctionAdmin(auctionAdmin.address)
-            await exchange.connect(auctionAdmin).addTrustedContract(tradePairs.address, "TestingTrusted");
-            expect(await exchange.isTrustedContract(tradePairs.address)).to.be.true;
-            // REMOVE
-            // fail for non admin account
-            await expect(exchange.connect(trader1).removeTrustedContract(tradePairs.address)).to.be.revertedWith("AccessControl:");
-            // succeed for admin account
-            await exchange.connect(auctionAdmin).removeTrustedContract(tradePairs.address);
-            expect(await exchange.isTrustedContract(tradePairs.address)).to.be.false;
-        });
+
 
         it("Should not accept via fallback()", async function () {
             const ABI = ["function NOT_EXISTING_FUNCTION(address,uint256)"]
@@ -135,12 +110,12 @@ describe("Exchange Shared", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
 
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode)).to.revertedWith("AccessControl:");
-            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode)).to.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
+            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
             //Add an auction admin to Exchange
             await exchange.addAuctionAdmin(auctionAdmin.address)
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode);
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
             const tokenList = await portfolio.getTokenList();
 
             expect(tokenList.length).to.be.equal(2);

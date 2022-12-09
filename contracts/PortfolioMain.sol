@@ -7,6 +7,8 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20Metadat
 
 import "./Portfolio.sol";
 import "./interfaces/ITradePairs.sol";
+import "./interfaces/IPortfolioMain.sol";
+import "./interfaces/IBannedAccounts.sol";
 
 /**
  * @title Mainnet Portfolio
@@ -18,63 +20,98 @@ import "./interfaces/ITradePairs.sol";
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
 
-contract PortfolioMain is Portfolio {
+contract PortfolioMain is Portfolio, IPortfolioMain {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.2.0");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
 
     // bytes32 symbols to amount of bridge fee collected
     mapping(bytes32 => uint256) public bridgeFeeCollected;
+    // contract address that we trust to perform limited functions like deposit DD symbol
+    mapping(address => bool) public trustedContracts;
+    // contract address to integrator organization name
+    mapping(address => string) public trustedContractToIntegrator;
+
+    // banned accounts contract address set externally with setBannedAccounts as part of deployment
+    IBannedAccounts internal bannedAccounts;
 
     function initialize(bytes32 _native, uint32 _chainId) public override initializer {
         Portfolio.initialize(_native, _chainId);
+        // Always Add native with 0 Bridge Fee and 0.01 gasSwapRatio (1 AVAX for 1 ALOT)
+        // This value will be adjusted periodically
+        addTokenInternal(native, address(0), _chainId, 18, ITradePairs.AuctionMode.OFF, 0, 1 * 10 ** 16);
     }
 
     /**
-     * @notice  Add IERC20 token to the tokenMap. Only in the mainnet
-     * @param   _symbol   symbol of the token
-     * @param   _tokenaddress  address of the token
-     * @param   _decimals  decimals of the token
+     * @notice  Internal function that implements the token addition
+     * @dev     Unlike in the subnet it doesn't add the token to the PortfolioBridgeMain as it is redundant
+     * Sample Token List in PortfolioMain: \
+     * Symbol, SymbolId, Decimals, address, auction mode (43114: Avalache C-ChainId) \
+     * ALOT ALOT43114 18 0x5FbDB2315678afecb367f032d93F642f64180aa3 0 (Avalanche ALOT) \
+     * AVAX AVAX43114 18 0x0000000000000000000000000000000000000000 0 (Avalanche Native AVAX) \
+     * BTC.b BTC.b43114 8 0x59b670e9fA9D0A427751Af201D676719a970857b 0 \
+     * DEG DEG43114 18 0x99bbA657f2BbC93c02D617f8bA121cB8Fc104Acf 2 \
+     * LOST LOST43114 18 0x162A433068F51e18b7d13932F27e66a3f99E6890 0 \
+     * SLIME SLIME43114 18 0x2B0d36FACD61B71CC05ab8F3D2355ec3631C0dd5 0 \
+     * USDC USDC43114 6 0xD5ac451B0c50B9476107823Af206eD814a2e2580 0 \
+     * USDt USDt43114 6 0x38a024C0b412B9d1db8BC398140D00F5Af3093D4 0 \
+     * @param   _symbol  Symbol of the token
+     * @param   _tokenAddress  Address of the token
+     * @param   _srcChainId  Source Chain id
+     * @param   _decimals  Decimals of the token
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
      */
-    function addIERC20(
+    function addTokenInternal(
         bytes32 _symbol,
-        address _tokenaddress,
+        address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode
+        ITradePairs.AuctionMode, // not relevant in the mainnet
+        uint256 _fee,
+        uint256 _gasSwapRatio
     ) internal override {
         //In the mainnet sourceChain should be the same as the chainId specified in the contract
         require(_srcChainId == chainId, "P-SCEM-01");
 
+        super.addTokenInternal(
+            _symbol,
+            _tokenAddress,
+            _srcChainId,
+            _decimals,
+            ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
+            _fee,
+            _gasSwapRatio
+        );
+        // Tokens can't be used to swap gas by default
+        setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, _symbol == bytes32("ALOT") ? true : false);
         if (_symbol != native) {
-            require(_tokenaddress != address(0), "P-CNAT-01");
-            IERC20MetadataUpgradeable assetIERC20 = IERC20MetadataUpgradeable(_tokenaddress);
+            require(_tokenAddress != address(0), "P-ZADDR-01");
+            IERC20MetadataUpgradeable assetIERC20 = IERC20MetadataUpgradeable(_tokenAddress);
             require(UtilsLibrary.stringToBytes32(assetIERC20.symbol()) == _symbol, "P-TSDM-01");
             require(assetIERC20.decimals() == _decimals, "P-TDDM-01");
-            tokenMap[_symbol] = IERC20MetadataUpgradeable(_tokenaddress);
-        } else {
-            // Both Avax & ALOT has 18 decimals
-            require(_decimals == 18 && _tokenaddress == address(0), "P-CNAT-01");
+            tokenMap[_symbol] = IERC20MetadataUpgradeable(_tokenAddress);
         }
     }
 
     /**
-     * @notice  Remove IERC20 token from the tokenMap
-     * @dev     tokenMap balance for the symbol should be 0 before it can be removed.
-                Make sure that there are no in-flight withdraw messages coming from the subnet
-     * @param   _symbol  symbol of the token
+     * @notice  Removes the given token from the portfolio
+     * @dev     Only callable by admin and portfolio should be paused. Makes sure there are no
+     * in-flight deposit/withdraw messages
+     * @param   _symbol  Symbol of the token
      */
-    function removeIERC20(bytes32 _symbol) internal override {
+    function removeToken(bytes32 _symbol, uint32) public virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
         if (tokenList.contains(_symbol) && _symbol != native) {
-            // Native doesn't exist in tokenMap
+            // Native doesn't exist in tokenMap as it is not an ERC20
             require(tokenMap[_symbol].balanceOf(address(this)) == 0, "P-NZBL-01");
             delete (tokenMap[_symbol]);
         }
+        super.removeToken(_symbol, chainId); // Can only remove the local chain's tokens in the mainnet
     }
 
     /**
@@ -90,30 +127,12 @@ contract PortfolioMain is Portfolio {
      * @param   _from  Address of the depositor
      * @param   _bridge  Enum for bridge type
      */
-    function depositNative(address payable _from, IPortfolioBridge.BridgeProvider _bridge)
-        external
-        payable
-        override
-        whenNotPaused
-        nonReentrant
-    {
+    function depositNative(
+        address payable _from,
+        IPortfolioBridge.BridgeProvider _bridge
+    ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
-        require(allowDeposit, "P-NTDP-01");
-        require(msg.value >= bridgeSwapAmount[native], "P-DUTH-01");
-        require(msg.value > bridgeFee[native], "PB-RALB-01");
-        bridgeFeeCollected[native] += bridgeFee[native];
-        emitPortfolioEvent(_from, native, msg.value, bridgeFee[native], IPortfolio.Tx.DEPOSIT);
-        portfolioBridge.sendXChainMessage(
-            _bridge,
-            XFER(
-                0, // Nonce to be assigned in PBridge
-                IPortfolio.Tx.DEPOSIT,
-                _from,
-                native,
-                msg.value - bridgeFee[native],
-                block.timestamp
-            )
-        );
+        deposit(_from, native, msg.value, _bridge);
     }
 
     /**
@@ -127,25 +146,117 @@ contract PortfolioMain is Portfolio {
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolioBridge.BridgeProvider _bridge
-    ) external override whenNotPaused nonReentrant {
+    ) external whenNotPaused nonReentrant {
         require(
             _from == msg.sender ||
-                msg.sender == address(this) || // calls made by depsitfromContract
+                msg.sender == address(this) || // allow calls made by depositTokenFromContract
                 trustedContracts[msg.sender], // keeping it for backward compatibility
             "P-OODT-01"
         );
         require(tokenList.contains(_symbol), "P-ETNS-01");
-        depositTokenChecks(_quantity);
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
-        require(_quantity >= bridgeSwapAmount[_symbol], "P-DUTH-01");
-        require(_quantity > bridgeFee[_symbol], "PB-RALB-01");
+
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
-        bridgeFeeCollected[_symbol] += bridgeFee[_symbol];
-        emitPortfolioEvent(_from, _symbol, _quantity, bridgeFee[_symbol], IPortfolio.Tx.DEPOSIT);
+        deposit(_from, _symbol, _quantity, _bridge);
+    }
+
+    function deposit(
+        address _from,
+        bytes32 _symbol,
+        uint256 _quantity,
+        IPortfolioBridge.BridgeProvider _bridge
+    ) private {
+        require(allowDeposit, "P-NTDP-01");
+        require(_quantity > this.getMinDepositAmount(_symbol), "P-DUTH-01");
+        require(!bannedAccounts.isBanned(_from), "P-BANA-01");
+        BridgeParams storage bridgeParam = bridgeParams[_symbol];
+        bridgeFeeCollected[_symbol] += bridgeParam.fee;
+        emitPortfolioEvent(_from, _symbol, _quantity, bridgeParam.fee, Tx.DEPOSIT);
+        // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage(
             _bridge,
-            XFER(0, IPortfolio.Tx.DEPOSIT, _from, _symbol, _quantity - bridgeFee[_symbol], block.timestamp)
+            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp)
         );
+    }
+
+    /**
+     * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token and usedForGasSwap flag
+     * @dev     Called by PortfolioSub.initialize() as well as setBridgeParam()
+     * We can never set a token gasSwapRatio to 0 in the mainnet
+     * @param   _symbol  Symbol of the token
+     * @param   _fee  Fee to be set
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT. Used to control min deposit amount in the mainnet
+     * Because we want users to deposit more than whats going to be swapped out for them to end up a portion of their
+     * token in their subnet portfolio after the swap. gasSwapRatio will be updated daily with an offchain app with
+     * the current market pricesexcept for ALOT which is always 1 to 1. Daily update is sufficient as it is multiplied
+     * by 1.9 to calculate the min deposit Amount.
+     * _usedForGasSwap  not used in the mainnet
+     */
+    function setBridgeParamInternal(bytes32 _symbol, uint256 _fee, uint256 _gasSwapRatio, bool) internal override {
+        require(_gasSwapRatio > 0, "P-GSRO-01");
+        super.setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, false);
+    }
+
+    /**
+     * @notice  Minimum Transaction Amount in deposits
+     * @dev     The user has to have at least 1.9 as much for bridge fee (if set) + any potential gas token swap
+     * For ALOT this will be 1.9 by default, so we are allowing 2 ALOT to be deposited easily
+     * @param   _symbol  Symbol of the token
+     * @return  uint256  Minimum DepositAmount
+     */
+    function getMinDepositAmount(bytes32 _symbol) external view returns (uint256) {
+        BridgeParams storage bridgeParam = bridgeParams[_symbol];
+        return ((bridgeParam.fee + bridgeParam.gasSwapRatio) * 19) / 10;
+    }
+
+    /**
+     * @notice  List of Minimum Deposit Amounts
+     * @dev     The user has to have at least 1.9 as much for bridge fee (if set) + any potential gas token swap
+     * @return  bytes32[]  tokens uint256[] amounts  .
+     */
+    function getMinDepositAmounts() external view returns (bytes32[] memory, uint256[] memory) {
+        bytes32[] memory tokens = new bytes32[](tokenList.length());
+        uint256[] memory amounts = new uint256[](tokenList.length());
+
+        for (uint256 i = 0; i < tokenList.length(); i++) {
+            BridgeParams storage bridgeParam = bridgeParams[tokenList.at(i)];
+            tokens[i] = tokenList.at(i);
+            amounts[i] = ((bridgeParam.fee + bridgeParam.gasSwapRatio) * 19) / 10;
+        }
+        return (tokens, amounts);
+    }
+
+    /**
+     * @notice  Adds the given contract to trusted contracts in order to provide excluded functionality
+     * @dev     Only callable by admin
+     * @param   _contract  Address of the contract to be added
+     * @param   _organization  Organization of the contract to be added
+     */
+    function addTrustedContract(
+        address _contract,
+        string calldata _organization
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        trustedContracts[_contract] = true;
+        trustedContractToIntegrator[_contract] = _organization;
+        emit AddressSet(_organization, "P-ADD-TRUSTEDCONTRACT", _contract, _contract);
+    }
+
+    /**
+     * @param   _contract  Address of the contract
+     * @return  bool  True if the contract is trusted
+     */
+    function isTrustedContract(address _contract) external view override returns (bool) {
+        return trustedContracts[_contract];
+    }
+
+    /**
+     * @notice  Removes the given contract from trusted contracts
+     * @dev     Only callable by admin
+     * @param   _contract  Address of the contract to be removed
+     */
+    function removeTrustedContract(address _contract) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        trustedContracts[_contract] = false;
+        emit AddressSet(trustedContractToIntegrator[_contract], "P-REMOVE-TRUSTED-CONTRACT", _contract, _contract);
     }
 
     /**
@@ -156,19 +267,30 @@ contract PortfolioMain is Portfolio {
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to deposit
      */
-    function depositTokenFromContract(
-        address _from,
-        bytes32 _symbol,
-        uint256 _quantity
-    ) external override {
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external override {
         require(trustedContracts[msg.sender], "P-AOTC-01"); // keeping it for backward compatibility
         this.depositToken(_from, _symbol, _quantity, portfolioBridge.getDefaultBridgeProvider());
     }
 
     /**
+     * @notice  Sets banned accounts contract address
+     * @param  _address  address of the banned accounts contract
+     */
+    function setBannedAccounts(address _address) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        bannedAccounts = IBannedAccounts(_address);
+    }
+
+    /**
+     * @return  IBannedAccounts  banned accounts contract
+     */
+    function getBannedAccounts() external view returns (IBannedAccounts) {
+        return bannedAccounts;
+    }
+
+    /**
      * @notice  Processes the message coming from the bridge
-     * @dev     Only process WITHDRAW messages as it is the only message that can be sent to the portfolio main
-     * Even when the contract is paused, this method is allowed for the messages that
+     * @dev     Only process WITHDRAW or RECOVERFUNDS messages as it is the only messages that can be sent to the
+     * portfolio main. Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
      * flight then upgrade
      * @param   _trader  Address of the trader
@@ -180,9 +302,10 @@ contract PortfolioMain is Portfolio {
         address _trader,
         bytes32 _symbol,
         uint256 _quantity,
-        IPortfolio.Tx _transaction
+        Tx _transaction
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        if (_transaction == Tx.WITHDRAW) {
+        if (_transaction == Tx.WITHDRAW || _transaction == Tx.RECOVERFUNDS) {
+            require(_trader != address(0), "P-ZADDR-02");
             require(_quantity > 0, "P-ZETD-01");
             if (_symbol == native) {
                 //Withdraw native
@@ -196,32 +319,10 @@ contract PortfolioMain is Portfolio {
                 require(tokenList.contains(_symbol), "P-ETNS-02");
                 tokenMap[_symbol].safeTransfer(_trader, _quantity);
             }
-            emitPortfolioEvent(_trader, _symbol, _quantity, 0, IPortfolio.Tx.WITHDRAW);
+            emitPortfolioEvent(_trader, _symbol, _quantity, 0, _transaction);
         } else {
             revert("P-PTNS-01");
         }
-    }
-
-    /**
-     * @notice  Recovers the stucked message from the LZ bridge, returns the funds to the depositor/withdrawer
-     * @dev     Only call this just before calling force resume receive function for the LZ bridge. \
-     * Only the DEFAULT_ADMIN can call this function.
-     * @param   _payload  Payload of the message
-     */
-    function lzRecoverPayload(bytes calldata _payload) external override nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
-        (address trader, bytes32 symbol, uint256 quantity) = getXFer(_payload);
-
-        if (symbol == native) {
-            //Withdraw native
-            // solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = trader.call{value: quantity}("");
-            require(success, "P-WNFA-01");
-        } else {
-            //Withdraw Token
-            require(tokenList.contains(symbol), "P-ETNS-02");
-            tokenMap[symbol].safeTransfer(trader, quantity);
-        }
-        emitPortfolioEvent(trader, symbol, quantity, 0, IPortfolio.Tx.RECOVER);
     }
 
     /**
@@ -234,8 +335,10 @@ contract PortfolioMain is Portfolio {
         for (uint256 i = 0; i < _symbols.length; i++) {
             require(tokenList.contains(_symbols[i]), "P-ETNS-02");
             uint256 bcf = bridgeFeeCollected[_symbols[i]];
-            bridgeFeeCollected[_symbols[i]] = 0;
-            tokenMap[_symbols[i]].safeTransfer(msg.sender, bcf);
+            if (bcf > 0) {
+                bridgeFeeCollected[_symbols[i]] = 0;
+                tokenMap[_symbols[i]].safeTransfer(msg.sender, bcf);
+            }
         }
     }
 
@@ -265,62 +368,8 @@ contract PortfolioMain is Portfolio {
         bytes32 _symbol,
         uint256 _quantity,
         uint256 _feeCharged,
-        IPortfolio.Tx transaction
+        Tx transaction
     ) private {
-        emit IPortfolio.PortfolioUpdated(transaction, _trader, _symbol, _quantity, _feeCharged, 0, 0);
+        emit PortfolioUpdated(transaction, _trader, _symbol, _quantity, _feeCharged, 0, 0);
     }
-
-    // solhint-disable no-empty-blocks
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function updateTransferFeeRate(uint256 _rate, Tx _rateType) external override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function withdrawNative(address payable _to, uint256 _quantity) external override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function withdrawToken(
-        address _to,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider
-    ) external override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function adjustAvailable(
-        IPortfolio.Tx _transaction,
-        address _trader,
-        bytes32 _symbol,
-        uint256 _amount
-    ) external override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function addExecution(
-        ITradePairs.Side _makerSide,
-        address _makerAddr,
-        address _takerAddr,
-        bytes32 _baseSymbol,
-        bytes32 _quoteSymbol,
-        uint256 _baseAmount,
-        uint256 _quoteAmount,
-        uint256 _makerfeeCharged,
-        uint256 _takerfeeCharged
-    ) external override {}
-
-    // solhint-enable no-empty-blocks
 }

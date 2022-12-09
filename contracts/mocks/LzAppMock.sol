@@ -22,12 +22,8 @@ contract LzAppMock is LzApp {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    function lzReceive(
-        uint16,
-        bytes memory,
-        uint64,
-        bytes memory
-    ) external override {} // solhint-disable-line no-empty-blocks
+    // solhint-disable-next-line no-empty-blocks
+    function lzReceive(uint16, bytes memory, uint64, bytes memory) external override {}
 
     function lzSend(bytes memory _payload) private returns (uint256) {
         return super.lzSend(_payload, payable(this));
@@ -35,6 +31,14 @@ contract LzAppMock is LzApp {
 
     function lzSendMock(bytes memory _payload) external returns (uint256) {
         return lzSend(_payload);
+    }
+
+    function getInboundNonceMock() external view returns (uint64) {
+        return super.getInboundNonce();
+    }
+
+    function getOutboundNonceMock() external view returns (uint64) {
+        return super.getOutboundNonce();
     }
 
     // solhint-disable-next-line no-empty-blocks

@@ -29,7 +29,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
     using RBTLibrary for RBTLibrary.Tree;
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
     // version
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.2.0");
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -73,14 +73,12 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
 
     /**
      * @notice  Adds OrderBook with its side
-     * @param   _orderBookID  .
+     * @param   _orderBookID  Order Book ID assigned by the tradePairs based on the tradepair symbol
      * @param   _side  BuyBook or SellBook
      */
     function addToOrderbooks(bytes32 _orderBookID, ITradePairs.Side _side) external onlyRole(EXECUTOR_ROLE) {
         OrderBook storage orderBook = orderBookMap[_orderBookID];
         orderBook.side = _side;
-        //orderBook.orderBook;
-        //orderBook.orderList
     }
 
     /**
@@ -127,6 +125,19 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
     function getTopOfTheBook(bytes32 _orderBookID) external view returns (uint256 price, bytes32 orderId) {
         OrderBook storage orderBook = orderBookMap[_orderBookID];
         price = orderBook.side == ITradePairs.Side.BUY ? orderBook.orderBook.last() : orderBook.orderBook.first();
+        (, orderId, ) = orderBook.orderList[price].getNode("");
+    }
+
+    /**
+     * @notice  Returns the OrderId of the Worst Bid or Worst ASK depending on the OrderBook side
+     * @dev     Called by TradePairs UnsolicitedCancel
+     * @param   _orderBookID   Order book ID
+     * @return  price  Worst Bid or Worst ASK
+     * @return  orderId  Order Id of the Worst Bid or Worst ASK
+     */
+    function getBottomOfTheBook(bytes32 _orderBookID) external view returns (uint256 price, bytes32 orderId) {
+        OrderBook storage orderBook = orderBookMap[_orderBookID];
+        price = orderBook.side == ITradePairs.Side.BUY ? orderBook.orderBook.first() : orderBook.orderBook.last();
         (, orderId, ) = orderBook.orderList[price].getNode("");
     }
 
@@ -183,18 +194,13 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @return  head  Head price
      * @return  size  Size of the tree
      */
-    function getNode(bytes32 _orderBookID, uint256 _price)
+    function getNode(
+        bytes32 _orderBookID,
+        uint256 _price
+    )
         external
         view
-        returns (
-            uint256 price,
-            uint256 parent,
-            uint256 left,
-            uint256 right,
-            bool red,
-            bytes32 head,
-            uint256 size
-        )
+        returns (uint256 price, uint256 parent, uint256 left, uint256 right, bool red, bytes32 head, uint256 size)
     {
         OrderBook storage orderBookStruct = orderBookMap[_orderBookID];
         if (orderBookStruct.orderBook.exists(_price)) {
@@ -216,8 +222,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
         uint256[] memory quantities = new uint256[](size);
         OrderBook storage orderBook = orderBookMap[_orderBookID];
         for (uint256 i = 0; i < size; i++) {
-            ITradePairs.Order memory order = tradePairs.getOrder(head);
-            quantities[i] = UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled);
+            quantities[i] = tradePairs.getOrderRemainingQuantity(head);
             (, head) = orderBook.orderList[_price].getAdjacent(head, false);
         }
         return quantities;
@@ -247,11 +252,11 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @dev `( , bytes32 head) = orderBookMap[_orderBookID].orderList[price].getAdjacent('', false)`
      * will give the Same result as this function
      * @param   _orderBookID  Order book ID
-     * @param   price  Price
+     * @param   _price  Price
      * @return  head  The id of the earliest order entered at the price level.
      */
-    function getHead(bytes32 _orderBookID, uint256 price) external view returns (bytes32 head) {
-        (, head, ) = orderBookMap[_orderBookID].orderList[price].getNode("");
+    function getHead(bytes32 _orderBookID, uint256 _price) external view returns (bytes32 head) {
+        (, head, ) = orderBookMap[_orderBookID].orderList[_price].getNode("");
     }
 
     /**
@@ -261,11 +266,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @param   _orderId  Order ID
      * @return  nextId  Next order ID
      */
-    function nextOrder(
-        bytes32 _orderBookID,
-        uint256 _price,
-        bytes32 _orderId
-    ) external view returns (bytes32 nextId) {
+    function nextOrder(bytes32 _orderBookID, uint256 _price, bytes32 _orderId) external view returns (bytes32 nextId) {
         (, nextId) = orderBookMap[_orderBookID].orderList[_price].getAdjacent(_orderId, false);
     }
 
@@ -302,16 +303,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
         uint256 _nOrder,
         uint256 _lastPrice,
         bytes32 _lastOrder
-    )
-        external
-        view
-        returns (
-            uint256[] memory prices,
-            uint256[] memory quantities,
-            uint256,
-            bytes32
-        )
-    {
+    ) external view returns (uint256[] memory prices, uint256[] memory quantities, uint256, bytes32) {
         if ((_nPrice == 0) || (root(_orderBookID) == 0) || (_lastPrice > 0 && !this.exists(_orderBookID, _lastPrice))) {
             return (new uint256[](1), new uint256[](1), _lastPrice, _lastOrder);
         }
@@ -330,8 +322,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
             prices[i] = _lastPrice;
             (, _lastOrder) = orderBook.orderList[_lastPrice].getAdjacent(_lastOrder, false);
             while (_lastOrder != "" && _nOrder > 0) {
-                ITradePairs.Order memory order = tradePairs.getOrder(_lastOrder);
-                quantities[i] += UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled);
+                quantities[i] += tradePairs.getOrderRemainingQuantity(_lastOrder);
                 (, _lastOrder) = orderBook.orderList[_lastPrice].getAdjacent(_lastOrder, false);
                 _nOrder--;
             }
@@ -375,8 +366,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
             prices[i] = price;
             (bool ex, bytes32 a) = orderBook.orderList[price].getAdjacent("", true);
             while (a != "") {
-                ITradePairs.Order memory order = tradePairs.getOrder(a);
-                quantities[i] += UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled);
+                quantities[i] += tradePairs.getOrderRemainingQuantity(a);
                 (ex, a) = orderBook.orderList[price].getAdjacent(a, true);
             }
             i++;
@@ -403,7 +393,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
         quantity = UtilsLibrary.min(_takerOrderRemainingQuantity, _makerOrderRemainingQuantity);
         if ((_makerOrderRemainingQuantity - quantity) == 0) {
             // this order has been filled. it can be removed from the orderbook
-            removeFirstOrder(_orderBookID, _price);
+            removeFirstOrderPrivate(_orderBookID, _price);
         }
         return quantity;
     }
@@ -415,11 +405,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @param   _orderUid  Order UID
      * @param   _price  Price
      */
-    function addOrder(
-        bytes32 _orderBookID,
-        bytes32 _orderUid,
-        uint256 _price
-    ) external onlyRole(EXECUTOR_ROLE) {
+    function addOrder(bytes32 _orderBookID, bytes32 _orderUid, uint256 _price) external onlyRole(EXECUTOR_ROLE) {
         if (!this.exists(_orderBookID, _price)) {
             orderBookMap[_orderBookID].orderBook.insert(_price);
         }
@@ -432,11 +418,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @param   _orderUid  Order UID
      * @param   _price  Price
      */
-    function removeOrder(
-        bytes32 _orderBookID,
-        bytes32 _orderUid,
-        uint256 _price
-    ) external onlyRole(EXECUTOR_ROLE) {
+    function removeOrder(bytes32 _orderBookID, bytes32 _orderUid, uint256 _price) external onlyRole(EXECUTOR_ROLE) {
         orderBookMap[_orderBookID].orderList[_price].remove(_orderUid);
         if (!orderBookMap[_orderBookID].orderList[_price].listExists()) {
             orderBookMap[_orderBookID].orderBook.remove(_price);
@@ -448,13 +430,20 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @param   _price  Price
      * @return  bool  True if exists
      */
-    function orderListExists(bytes32 _orderBookID, uint256 _price)
-        external
-        view
-        onlyRole(EXECUTOR_ROLE)
-        returns (bool)
-    {
+    function orderListExists(
+        bytes32 _orderBookID,
+        uint256 _price
+    ) external view onlyRole(EXECUTOR_ROLE) returns (bool) {
         return orderBookMap[_orderBookID].orderList[_price].listExists();
+    }
+
+    /**
+     * @notice  Removes the first order from the order book called by Auction Process
+     * @param   _orderBookID  Order book ID
+     * @param   _price  Price
+     */
+    function removeFirstOrder(bytes32 _orderBookID, uint256 _price) external onlyRole(EXECUTOR_ROLE) {
+        removeFirstOrderPrivate(_orderBookID, _price);
     }
 
     /**
@@ -462,7 +451,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      * @param   _orderBookID  Order book ID
      * @param   _price  Price
      */
-    function removeFirstOrder(bytes32 _orderBookID, uint256 _price) public onlyRole(EXECUTOR_ROLE) {
+    function removeFirstOrderPrivate(bytes32 _orderBookID, uint256 _price) private {
         if (orderBookMap[_orderBookID].orderList[_price].listExists()) {
             orderBookMap[_orderBookID].orderList[_price].pop(false);
         }

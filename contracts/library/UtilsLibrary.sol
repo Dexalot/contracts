@@ -23,12 +23,8 @@ library UtilsLibrary {
      * @param   _displayDecimals  base or quote display decimals
      * @return  bool  true if ok
      */
-    function decimalsOk(
-        uint256 _value,
-        uint8 _decimals,
-        uint8 _displayDecimals
-    ) internal pure returns (bool) {
-        return (_value - (_value - ((_value % 10**_decimals) % 10**(_decimals - _displayDecimals)))) == 0;
+    function decimalsOk(uint256 _value, uint8 _decimals, uint8 _displayDecimals) internal pure returns (bool) {
+        return (_value - (_value - ((_value % 10 ** _decimals) % 10 ** (_decimals - _displayDecimals)))) == 0;
     }
 
     /**
@@ -85,7 +81,7 @@ library UtilsLibrary {
      * @return  uint256  .
      */
     function floor(uint256 _a, uint256 _m) internal pure returns (uint256) {
-        return (_a / 10**_m) * 10**_m;
+        return (_a / 10 ** _m) * 10 ** _m;
     }
 
     /**
@@ -148,11 +144,7 @@ library UtilsLibrary {
      * @param   _length Length
      * @return  bytes   Bytes returned
      */
-    function slice(
-        bytes memory _bytes,
-        uint256 _start,
-        uint256 _length
-    ) internal pure returns (bytes memory) {
+    function slice(bytes memory _bytes, uint256 _start, uint256 _length) internal pure returns (bytes memory) {
         // solhint-disable-next-line reason-string
         require(_bytes.length + 31 >= _length, "slice_overflow");
         // solhint-disable-next-line reason-string

@@ -6,33 +6,38 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioBridge.sol";
+
 import "./bridgeApps/LzApp.sol";
 
 /**
- * @title Bridge aggregator and message relayer for multiple different bridges
+ * @title PortfolioBridgeMain. Bridge aggregator and message relayer for mainnet using multiple different bridges
  * @notice The default bridge provider is LayerZero and it can't be disabled. Additional bridge providers
  * will be added as needed. This contract encapsulates all bridge provider implementations that Portfolio
- * doesn't need to know about.
+ * doesn't need to know about. \
+ * This contract does not hold any users funds. it is responsible for paying the bridge fees in form of
+ * the chain’s gas token to 3rd party bridge providers whenever a new cross chain message is sent out by
+ * the user. Hence the project deposit gas tokens to this contract. And the project can withdraw
+ * the gas tokens from this contract whenever it finds it necessary.
  * @dev The information flow for messages between PortfolioMain and PortfolioSub is as follows: \
  * PortfolioMain => PortfolioBridgeMain => BridgeProviderA/B/n => PortfolioBridgeSub => PortfolioSub \
  * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain => PortfolioMain \
- * PortfolioBridge also serves as a symbol mapper to support multichain symbol handling. \
+ * PortfolioBridgeMain also serves as a symbol mapper to support multichain symbol handling.
  * PortfolioBridgeMain always maps the symbol as SYMBOL + portolio.srcChainId and expects the same back,
- * i.e USDC43114 if USDC is from Avalanche Mainnet. USDC1 if it is from Etherum.
- * PortfolioBridgeSub always maps the symbol that it receives into a common symbol on receipt,
- * i.e USDC43114 is mapped to USDC.
- * When sending back to the target chain, it maps it back to the expected symbol by the target chain,
- * i.e USDC to USDC1 if sent back to Etherum, USDC43114 if sent to Avalache.
+ * i.e USDC43114 if USDC is from Avalanche Mainnet.
+ * It makes use of the PortfolioMain's tokenDetailsMap when mapping symbol to symbolId back
+ * and forth as token details can not be different when in the mainnet.
  * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getTokenId that has
  * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol mapping
  * will happen in different functions, either in processPayload or in getXFerMessage.
  * We need to raise the XChainXFerMessage before xfer.symbol is mapped in processPayload function so the
- * incoming and the outgoing xfer messages always contain the symbolId rather than symbol.
- * getXFerMessage is called by the portfolio to recover a stucked message from the LZ bridge, and to return
- * the funds to the depositor/withdrawer. Hence, getXFerMessage maps the symbolId to symbol.
+ * incoming and the outgoing xfer messages always contain the symbolId rather than symbol. \
+ * getXFerMessage is called by lzDestroyAndRecoverFunds to handle a stuck message from the LZ bridge,
+ * and to return the funds to the depositor/withdrawer. Hence, getXFerMessage maps the symbolId to symbol.
+ * Use multiple inheritence to add additional bridge implementations in the future. Currently LzApp only.
  */
 
 // The code in this file is part of Dexalot project.
@@ -46,23 +51,14 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 1;
 
-    bytes32 public constant PORTFOLIO_ROLE = keccak256("PORTFOLIO_ROLE");
-
     mapping(BridgeProvider => bool) public bridgeEnabled;
 
-    // key is symbolId (symbol + srcChainId)
-    mapping(bytes32 => IPortfolio.TokenDetails) public tokenDetailsMapById;
-
-    // Will be more relevant once the same token symbol from different mainnet chains are sent to subnet
-    // key is common symbol in the subnet (local symbol in the mainnet), then chainid of the
-    // mainnet the token is added from.
-    // symbol => chain => symbolId
-    mapping(bytes32 => mapping(uint32 => bytes32)) public tokenDetailsMapBySymbol;
-
-    // Add by symbolId rather than symbol
-    EnumerableSetUpgradeable.Bytes32Set internal tokenList;
-    uint32 public defaultTargetChainId; //PortfolioBridge = Dexalot Subnet,   PortfolioBridgeSub = Avalanche
     BridgeProvider internal defaultBridgeProvider; //Layer0
+
+    // Controls actions that can be executed the the PORTFOLIO
+    bytes32 public constant PORTFOLIO_ROLE = keccak256("PORTFOLIO_ROLE");
+    // Controls all bridge implementations access. Currenty only LZ
+    bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
 
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event GasForDestinationLzReceiveUpdated(uint256 gasForDestinationLzReceive);
@@ -70,7 +66,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("2.1.2");
+        return bytes32("2.2.0");
     }
 
     /**
@@ -84,6 +80,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         __ReentrancyGuard_init();
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
+
         //Max Gas amount to be used at the destination chain after delivered by Layer0
         gasForDestinationLzReceive = 450000;
         lzEndpoint = ILayerZeroEndpoint(_endpoint);
@@ -136,15 +133,15 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     /**
      * @notice  Wrapper for revoking roles
-     * @dev     Only admin can revoke role
+     * @dev     Only admin can revoke role. BRIDGE_ADMIN_ROLE will remove additional roles to the parent contract(s)
+     * Currenly LZ_BRIDGE_ADMIN_ROLE is removed from the LzApp
      * @param   _role  Role to revoke
      * @param   _address  Address to revoke role from
      */
-    function revokeRole(bytes32 _role, address _address)
-        public
-        override(AccessControlUpgradeable, IAccessControlUpgradeable)
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function revokeRole(
+        bytes32 _role,
+        address _address
+    ) public override(AccessControlUpgradeable, IAccessControlUpgradeable) onlyRole(DEFAULT_ADMIN_ROLE) {
         // We need to have at least one admin in DEFAULT_ADMIN_ROLE
         if (_role == DEFAULT_ADMIN_ROLE) {
             require(getRoleMemberCount(_role) > 1, "PB-ALOA-01");
@@ -181,14 +178,14 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     /**
      * @notice  Increments bridge nonce
      * @dev     Only portfolio can call
-     * @param   _bridge  Bridge to increment nonce for. For future use for multiple bridge use
+     * @param   _bridge  Bridge to increment nonce for. Placeholder for multiple bridge implementation
      * @return  nonce  New nonce
      */
-    function incrementOutNonce(BridgeProvider _bridge) private returns (uint64 nonce) {
+    function incrementOutNonce(BridgeProvider _bridge) private view returns (uint64 nonce) {
         // Not possible to send any messages from a bridge other than LZ
-        // because no other is implemented.
+        // because no other is implemented. Add other bridge nonce functions here.
         if (_bridge == BridgeProvider.LZ) {
-            nonce = ++lzOutNonce;
+            nonce = getOutboundNonce() + 1; // LZ generated nonce
         }
     }
 
@@ -197,99 +194,25 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
      * @dev     Only admin can set gas for destination chain
      * @param   _gas  Gas for destination chain
      */
-    function setGasForDestinationLzReceive(uint256 _gas) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setGasForDestinationLzReceive(uint256 _gas) external onlyRole(BRIDGE_ADMIN_ROLE) {
+        require(_gas >= 200000, "PB-MING-01");
         gasForDestinationLzReceive = _gas;
         emit GasForDestinationLzReceiveUpdated(gasForDestinationLzReceive);
     }
 
     /**
-     * @notice  Adds the given token to the portfolioBridge. PortfolioBrigeSub the list will be bigger as they could
-     * be from different mainnet chains
-     * @dev     `addToken` is only callable by admin or from Portfolio when a new common symbol is added for the
-     * first time. The same common symbol but different symbolId are required when adding a token to
-     * PortfolioBrigeSub. \
-     * Native symbol is also added as a token with 0 address
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenAddress  Mainnet token address the symbol or zero address for AVAX
-     * @param   _srcChainId  Source Chain id
-     * @param   _decimals  Decimals of the token
-     */
-    function addToken(
-        bytes32 _symbol,
-        address _tokenAddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode
-    ) external override {
-        require(
-            hasRole(PORTFOLIO_ROLE, msg.sender) ||
-                hasRole(DEFAULT_ADMIN_ROLE, msg.sender) ||
-                msg.sender == address(this), // called by addNativeToken function
-            "PB-OACC-01"
-        );
-
-        IPortfolio.TokenDetails memory commonToken = portfolio.getTokenDetails(_symbol);
-        //commonToken.symbol from Portfolio is the common symbol in all mappings in the PortfolioBridgeSub
-        require(commonToken.symbol == _symbol, "PB-SDMP-01");
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
-
-        if (!tokenList.contains(symbolId)) {
-            tokenList.add(symbolId);
-
-            IPortfolio.TokenDetails storage tokenDetails = tokenDetailsMapById[symbolId];
-            require(tokenDetails.symbol == "", "PB-TAEX-01");
-            //tokenDetails.auctionMode = _mode; //irrelavant in this context
-            tokenDetails.decimals = _decimals;
-            tokenDetails.tokenAddress = _tokenAddress;
-            tokenDetails.srcChainId = _srcChainId;
-            tokenDetails.symbol = _symbol;
-            tokenDetails.symbolId = symbolId;
-
-            tokenDetailsMapBySymbol[_symbol][_srcChainId] = symbolId;
-        }
-    }
-
-    /**
-     * @notice  private function that handles the addition of native token
-     * @dev     gets the native token details from portfolio
-     */
-    function addNativeToken() private {
-        IPortfolio.TokenDetails memory t = portfolio.getTokenDetails(portfolio.getNative());
-        this.addToken(t.symbol, t.tokenAddress, t.srcChainId, t.decimals, ITradePairs.AuctionMode.OFF);
-    }
-
-    /**
-     * @notice  Remove the token from the tokenDetailsMapById and tokenDetailsMapBySymbol
-     * @dev     Make sure that there are no in-flight messages
-     * @param   _symbol  symbol of the token
-     * @param   _srcChainId  Source Chain id
-     */
-    function removeToken(bytes32 _symbol, uint32 _srcChainId) external override whenPaused {
-        require(hasRole(PORTFOLIO_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "PB-OACC-01");
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
-        if (
-            // We can't remove the native that was added from current chainId,
-            // but the native symbol added from a mainnet can be removed.
-            // ALOT added from Avalanche ALOT43114 can be removed not ALOT added from the subnet
-            tokenList.contains(symbolId) && !(_symbol == portfolio.getNative() && _srcChainId == portfolio.getChainId())
-        ) {
-            delete (tokenDetailsMapById[symbolId]);
-            delete (tokenDetailsMapBySymbol[_symbol][_srcChainId]);
-            tokenList.remove(symbolId);
-        }
-    }
-
-    /**
      * @notice  Returns the symbolId used in the mainnet given the srcChainId
-     * @dev     PortfolioBridgeSub uses the defaultTargetChain instead of portfolio.getChainId()
+     * @dev     It uses PortfolioMain's token list to get the symbolId,
+     * On the other hand, PortfolioBridgeSub uses its internal list & the defaultTargetChain
      * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC1337
      * When receiving messages back it expects the same symbolId if USDC1337 sent, USDC1337 to recieve
      * Because the subnet needs to know about different ids from different mainnets.
      * @param   _symbol  symbol of the token
      * @return  bytes32  symbolId
      */
+
     function getTokenId(bytes32 _symbol) internal view virtual returns (bytes32) {
-        return tokenDetailsMapBySymbol[_symbol][portfolio.getChainId()];
+        return portfolio.getTokenDetails(_symbol).symbolId;
     }
 
     /**
@@ -297,42 +220,8 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
      * @dev     Mainnet receives the messages in the same format that it sent out, by symbolId
      * @return  bytes32  symbolId
      */
-    function getSymbolForId(bytes32 _id) internal view returns (bytes32) {
-        return tokenDetailsMapById[_id].symbol;
-    }
-
-    /**
-     * @notice  Returns the token details.
-     * @dev     Will always return here as actionMode.OFF as auctionMode is controlled in PortfolioSub.
-     * Subnet does not have any ERC20s, hence the tokenAddress is token's mainnet address.
-     * See the TokenDetails struct in IPortfolio for the full type information of the return variable.
-     * @param   _symbolId  SymbolId of the token.
-     * @return  TokenDetails decimals (Identical to mainnet), tokenAddress (Token address at the mainnet)
-     */
-    function getTokenDetails(bytes32 _symbolId) external view returns (IPortfolio.TokenDetails memory) {
-        return tokenDetailsMapById[_symbolId];
-    }
-
-    /**
-     * @notice  Sets the default target chain id. To be extended with multichain implementation
-     * @dev   Only admin can call this function
-     * @param   _chainId  Default Chainid to use
-     */
-    function setDefaultTargetChain(uint32 _chainId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        defaultTargetChainId = _chainId;
-        emit DefaultChainIdUpdated(defaultTargetChainId);
-    }
-
-    /**
-     * @notice  Frontend function to get all the tokens in the portfolio
-     * @return  bytes32[]  Array of symbols of the tokens
-     */
-    function getTokenList() external view returns (bytes32[] memory) {
-        bytes32[] memory tokens = new bytes32[](tokenList.length());
-        for (uint256 i = 0; i < tokenList.length(); i++) {
-            tokens[i] = tokenList.at(i);
-        }
-        return tokens;
+    function getSymbolForId(bytes32 _symbolId) internal view virtual returns (bytes32) {
+        return portfolio.getTokenDetailsById(_symbolId).symbol;
     }
 
     /**
@@ -348,6 +237,25 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
                 _payload, // bytes payload
                 payable(this)
             );
+    }
+
+    /**
+     * @notice  Unpacks XFER message from the payload and replaces the symbol with the local symbol
+     * @dev     It is called by lzDestroyAndRecoverFunds to handle a stucked message
+     * @param   _payload  Payload passed from the bridge
+     * @return  address  Address of the trader
+     * @return  bytes32  Symbol of the token
+     * @return  uint256  Amount of the token
+     */
+    function getXFerMessage(bytes calldata _payload) external view returns (address, bytes32, uint256) {
+        // There is only a single type in the XChainMsgType enum.
+        (, bytes memory msgdata) = unpackMessage(_payload);
+        // unpackMessage will revert if anything else other than XChainMsgType.XFER is in the _payload
+        // to support additional message types in the future implement something
+        // like if (xchainMsgType == XChainMsgType.XFER) ...
+        IPortfolio.XFER memory xfer = unpackXFerMessage(msgdata);
+        xfer.symbol = getSymbolForId(xfer.symbol);
+        return (xfer.trader, xfer.symbol, xfer.quantity);
     }
 
     /**
@@ -368,15 +276,12 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     /**
      * @notice  Decodes XChainMsgType from the message
      * @param   _data  Encoded message that has the msg type + msg
-     * @return  _xchainMsgType  XChainMsgType
-     * @return  msgdata  Still encoded message data. XFER in our case. Other message type not supported yet.
+     * @return  _xchainMsgType  XChainMsgType. Currenly only XChainMsgType.XFER possible
+     * @return  msgdata  Still encoded message data. XFER in our case. Other message types not supported yet.
      */
-    function unpackMessage(bytes calldata _data)
-        public
-        pure
-        override
-        returns (XChainMsgType _xchainMsgType, bytes memory msgdata)
-    {
+    function unpackMessage(
+        bytes calldata _data
+    ) private pure returns (XChainMsgType _xchainMsgType, bytes memory msgdata) {
         (_xchainMsgType, msgdata) = abi.decode(_data, (XChainMsgType, bytes));
     }
 
@@ -391,27 +296,15 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  Unpacks XFER message and replaces the symbol with the local symbol
-     * @param   _data  XFER message
-     * @return  xfer  Unpacked XFER message
-     */
-    function getXFerMessage(bytes memory _data) external view override returns (IPortfolio.XFER memory xfer) {
-        xfer = unpackXFerMessage(_data);
-        xfer.symbol = getSymbolForId(xfer.symbol);
-    }
-
-    /**
      * @notice  Wrapper function to send message to destination chain via bridge
      * @dev     Only PORTFOLIO_ROLE can call
      * @param   _bridge  Bridge to send message to
      * @param   _xfer XFER message to send
      */
-    function sendXChainMessage(BridgeProvider _bridge, IPortfolio.XFER memory _xfer)
-        external
-        virtual
-        override
-        onlyRole(PORTFOLIO_ROLE)
-    {
+    function sendXChainMessage(
+        BridgeProvider _bridge,
+        IPortfolio.XFER memory _xfer
+    ) external virtual override onlyRole(PORTFOLIO_ROLE) {
         sendXChainMessageInternal(_bridge, _xfer);
     }
 
@@ -420,11 +313,10 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
      * @param   _bridge  Bridge to send message to
      * @param   _xfer XFER message to send
      */
-    function sendXChainMessageInternal(BridgeProvider _bridge, IPortfolio.XFER memory _xfer)
-        internal
-        nonReentrant
-        whenNotPaused
-    {
+    function sendXChainMessageInternal(
+        BridgeProvider _bridge,
+        IPortfolio.XFER memory _xfer
+    ) internal nonReentrant whenNotPaused {
         require(bridgeEnabled[_bridge], "PB-RBNE-01");
 
         if (_xfer.nonce == 0) {
@@ -445,8 +337,39 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
             );
         } else {
             // Just in case a bridge other than LZ is enabled accidentally
-            require(1 == 0, "PB-RBNE-02");
+            revert("PB-RBNE-02");
         }
+    }
+
+    /**
+     * @notice  Retries the stuck message in the bridge, if any
+     * @dev     Only BRIDGE_ADMIN_ROLE can call this function
+     * Reverts if there is no storedPayload in the bridge or the supplied payload doesn't match the storedPayload
+     * @param   _payload  Payload to retry
+     */
+    function lzRetryPayload(bytes calldata _payload) external onlyRole(BRIDGE_ADMIN_ROLE) {
+        lzEndpoint.retryPayload(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId], _payload);
+    }
+
+    /**
+     * @notice  This is a destructive, last resort option, Always try lzRetryPayload first.
+     * Destroys the message that is blocking the bridge and calls portfolio.processXFerPayload
+     * Effectively completing the message trajectory from originating chain to the target chain.
+     * if sucessfull, the funds are processed at the target chain. If not no funds are recovered and
+     * the bridge is still in blocked status and additional messages are queued behind.
+     * @dev     Only recover/process message if forceResumeReceive() succesfully completes.
+     * Only the BRIDGE_ADMIN_ROLE can call this function.
+     * If there is no storedpaylod (stuck message), this function will revert, _payload parameter will be ignored and
+     * will not be processed. If this function keeps failing due to an error condition after the forceResumeReceive call
+     * then forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) has to be called directly with
+     * DEFAULT_ADMIN_ROLE and the funds will have to be recovered manually
+     * @param   _payload  Payload of the message
+     */
+    function lzDestroyAndRecoverFunds(bytes calldata _payload) external nonReentrant onlyRole(BRIDGE_ADMIN_ROLE) {
+        // Destroys the message. This will revert if no message is blocking the bridge
+        lzEndpoint.forceResumeReceive(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId]);
+        (address trader, bytes32 symbol, uint256 quantity) = this.getXFerMessage(_payload);
+        portfolio.processXFerPayload(trader, symbol, quantity, IPortfolio.Tx.RECOVERFUNDS); //Recover it
     }
 
     /**
@@ -457,25 +380,18 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
      * @param   _srcChainId  Source chain ID
      * @param   _payload  Payload received
      */
-    function processPayload(
-        BridgeProvider _bridge,
-        uint32 _srcChainId,
-        bytes calldata _payload
-    ) private {
-        //Get the message Type
-        (XChainMsgType _xchainMsgType, bytes memory msgdata) = unpackMessage(_payload);
-        IPortfolio.XFER memory xfer;
-        if (_xchainMsgType == XChainMsgType.XFER) {
-            xfer = unpackXFerMessage(msgdata);
-        }
+    function processPayload(BridgeProvider _bridge, uint32 _srcChainId, bytes calldata _payload) private {
+        //Get the message Type & the msgdata but there is only a single type in the XChainMsgType enum.
+        (, bytes memory msgdata) = unpackMessage(_payload);
 
-        //For future use
+        // unpackMessage will revert if anything else other than XChainMsgType.XFER is in the _payload
+        // to support additional message types in the future implement something like
+        // if (_xchainMsgType == XChainMsgType.XFER) {
+        // }
         // else if (_xchainMsgType == XChainMsgType.GAS) {
         // }
-
-        // Not possible to receive any messages from a bridge other than LZ
-        // because no other is implemented. Add inside of an if statement in the future
-        lzInNonce = xfer.nonce;
+        IPortfolio.XFER memory xfer = unpackXFerMessage(msgdata);
+        bytes32 symbol = getSymbolForId(xfer.symbol);
 
         emit XChainXFerMessage(XCHAIN_XFER_MESSAGE_VERSION, _bridge, Direction.RECEIVED, _srcChainId, 0, xfer);
         // Future task for multichain. This is a good place to update the totals by symbolId.
@@ -483,7 +399,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         // can withdraw from the target chain.
 
         //After the event is raised, replace the symbol with the local symbol that is going to be used.
-        xfer.symbol = getSymbolForId(xfer.symbol);
+        xfer.symbol = symbol;
 
         if (checkTreshholds(xfer)) {
             portfolio.processXFerPayload(xfer.trader, xfer.symbol, xfer.quantity, xfer.transaction);
@@ -543,29 +459,10 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     // solhint-disable no-empty-blocks
 
     /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
+     * @notice  private function that handles the addition of native token
+     * @dev     gets the native token details from portfolio
      */
-    function executeDelayedTransfer(bytes32 _id) external virtual override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function setDelayThresholds(bytes32[] calldata _tokens, uint256[] calldata _thresholds) external virtual override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function setDelayPeriod(uint256 _period) external virtual override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function setEpochLength(uint256 _length) external virtual override {}
-
-    /**
-     * @dev     Only valid for the subnet. Implemented with an empty block here.
-     */
-    function setEpochVolumeCaps(bytes32[] calldata _tokens, uint256[] calldata _caps) external virtual override {}
+    function addNativeToken() internal virtual {}
 
     // solhint-enable no-empty-blocks
 

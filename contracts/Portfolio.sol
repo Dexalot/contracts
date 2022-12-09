@@ -11,7 +11,6 @@ import "./library/UtilsLibrary.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/ITradePairs.sol";
 import "./interfaces/IPortfolioBridge.sol";
-import "./interfaces/layerZero/ILayerZeroEndpoint.sol";
 
 /**
  * @title Abstract contract to be inherited in PortfolioMain and PortfolioSub
@@ -52,25 +51,26 @@ abstract contract Portfolio is
     uint256 public constant TENK = 10000;
     // boolean to control deposit functionality
     bool public allowDeposit;
-    uint32 internal chainId;
-    // bytes32 array of all ERC20 tokens traded on DEXALOT
-    EnumerableSetUpgradeable.Bytes32Set internal tokenList;
-    // contract address that we trust to perform limited functions like deposit DD symbol
-    mapping(address => bool) public trustedContracts;
-    // contract address to integrator organization name
-    mapping(address => string) public trustedContractToIntegrator;
-    // used to swap gas fees during bridge operation, set each token per alot
-    mapping(bytes32 => uint256) internal bridgeSwapAmount;
-    mapping(bytes32 => uint256) public bridgeFee;
+
+    // used to swap gas amount & bridge fees  during bridge operation
+    mapping(bytes32 => BridgeParams) public bridgeParams; //Key symbol
+    //mapping(bytes32 => uint256) public bridgeFee;
     IPortfolioBridge public portfolioBridge;
 
-    bytes32 public constant PBRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    // bytes32 variable to hold native token of ALOT or AVAX
+    // bytes32 variable to hold native token of the chain it is deployed to. ALOT or AVAX currently
     bytes32 public native;
+    //chainid of the blockchain it is deployed to
+    uint32 internal chainId;
 
-    mapping(bytes32 => TokenDetails) public tokenDetailsMap; //// key is symbol
+    // bytes32 array of all ERC20 tokens traded on DEXALOT
+    EnumerableSetUpgradeable.Bytes32Set internal tokenList;
+    // key is symbol
+    mapping(bytes32 => TokenDetails) public tokenDetailsMap;
+    // key is symbolId (symbol + srcChainId)
+    mapping(bytes32 => bytes32) public tokenDetailsMapById;
 
     bytes32 public constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
+
     event ParameterUpdated(bytes32 indexed pair, string _param, uint256 _oldValue, uint256 _newValue);
     event AddressSet(string indexed name, string actionName, address oldAddress, address newAddress);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -90,7 +90,6 @@ abstract contract Portfolio is
         allowDeposit = true;
         native = _native;
         chainId = _chainId;
-        addTokenInternal(_native, address(0), _chainId, 18, ITradePairs.AuctionMode.OFF);
     }
 
     /**
@@ -120,95 +119,16 @@ abstract contract Portfolio is
     }
 
     /**
-     * @notice  Clears the blocking message in the LZ bridge, if any
-     * @dev     Force resume receive action is destructive
-     * should be used only when the bridge is stuck and message is already recovered. \
-     * It is only callable by admin.
-     * @param   _srcChainId  LZ Chain ID of the source chain
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
-     */
-    function lzForceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        ILayerZeroEndpoint(address(portfolioBridge)).forceResumeReceive(_srcChainId, _srcAddress);
-    }
-
-    /**
-     * @notice  Retries the stuck message in the LZ bridge, if any
-     * @dev     Only callable by admin
-     * @param   _srcChainId  LZ Chain ID of the source chain
-     * @param   _srcAddress  Remote contract address concatenated with the local contract address, 40 bytes.
-     * @param   _payload  Payload of the stucked message
-     */
-    function lzRetryPayload(
-        uint16 _srcChainId,
-        bytes calldata _srcAddress,
-        bytes calldata _payload
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        ILayerZeroEndpoint(address(portfolioBridge)).retryPayload(_srcChainId, _srcAddress, _payload);
-    }
-
-    // helper functions
-    /**
-     * @notice  Parses XFER message coming from the bridge
-     * @param   _payload  Payload passed from the bridge
-     * @return  address  Address of the trader
-     * @return  bytes32  Symbol of the token
-     * @return  uint256  Amount of the token
-     */
-    function getXFer(bytes calldata _payload)
-        internal
-        view
-        returns (
-            address,
-            bytes32,
-            uint256
-        )
-    {
-        (IPortfolioBridge.XChainMsgType xchainMsgType, bytes memory msgdata) = portfolioBridge.unpackMessage(_payload);
-        XFER memory xfer;
-        if (xchainMsgType == IPortfolioBridge.XChainMsgType.XFER) {
-            xfer = portfolioBridge.getXFerMessage(msgdata);
-        }
-
-        return (xfer.trader, xfer.symbol, xfer.quantity);
-    }
-
-    /**
-     * @notice  Recovers the stuck message in the LZ bridge, if any
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _payload  Payload of the stucked message
-     */
-    function lzRecoverPayload(bytes calldata _payload) external virtual;
-
-    /**
-     * @notice  Processes the XFER message coming from the bridge
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _transaction  Transaction type Enum
-     */
-    function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolio.Tx _transaction
-    ) external virtual override;
-
-    /**
      * @notice  Revoke access control role wrapper
      * @dev     Only callable by admin. Can't revoke itself's role, can't remove the only admin.
      * @param   _role  Role to be revoked
      * @param   _address  Address to be revoked
      */
-    function revokeRole(bytes32 _role, address _address)
-        public
-        override(AccessControlUpgradeable, IAccessControlUpgradeable)
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
+    function revokeRole(
+        bytes32 _role,
+        address _address
+    ) public override(AccessControlUpgradeable, IAccessControlUpgradeable) onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_address != address(0), "P-OACC-02");
         // We need to have at least one admin in DEFAULT_ADMIN_ROLE
         if (_role == DEFAULT_ADMIN_ROLE) {
             require(getRoleMemberCount(_role) > 1, "P-ALOA-01");
@@ -267,100 +187,49 @@ abstract contract Portfolio is
     }
 
     /**
-     * @notice  Sets the bridge provider fee for the given token
+     * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token and usedForGasSwap flag
+     * @dev     External function to be called by ADMIN
      * @param   _symbol  Symbol of the token
      * @param   _fee  Fee to be set
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT. Always set it to equivalent of 1 ALOT.
+     * @param   _usedForGasSwap  bool to control the list of tokens that can be used for gas swap. Mostly majors
      */
-    function setBridgeFee(bytes32 _symbol, uint256 _fee) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        emit ParameterUpdated(_symbol, "P-SET-BRIDGEFEE", bridgeFee[_symbol], _fee);
-        bridgeFee[_symbol] = _fee;
-    }
-
-    /**
-     * @notice  Adds the given contract to trusted contracts in order to provide excluded functionality
-     * @dev     Only callable by admin
-     * @param   _contract  Address of the contract to be added
-     * @param   _organization  Organization of the contract to be added
-     */
-    function addTrustedContract(address _contract, string calldata _organization)
-        external
-        override
-        onlyRole(DEFAULT_ADMIN_ROLE)
-    {
-        trustedContracts[_contract] = true;
-        trustedContractToIntegrator[_contract] = _organization;
-        emit AddressSet(_organization, "P-ADD-TRUSTEDCONTRACT", _contract, _contract);
-    }
-
-    /**
-     * @param   _contract  Address of the contract
-     * @return  bool  True if the contract is trusted
-     */
-    function isTrustedContract(address _contract) external view override returns (bool) {
-        return trustedContracts[_contract];
-    }
-
-    /**
-     * @notice  Removes the given contract from trusted contracts
-     * @dev     Only callable by admin
-     * @param   _contract  Address of the contract to be removed
-     */
-    function removeTrustedContract(address _contract) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        trustedContracts[_contract] = false;
-        emit AddressSet(trustedContractToIntegrator[_contract], "P-REMOVE-TRUSTED-CONTRACT", _contract, _contract);
-    }
-
-    /**
-     * @notice  Returns the bridge swap amount for the given token
-     * @param   _symbol  Symbol of the token
-     * @return  uint256  Bridge swap amount
-     */
-    function getBridgeSwapAmount(bytes32 _symbol) external view returns (uint256) {
-        return bridgeSwapAmount[_symbol];
-    }
-
-    /**
-     * @notice  Sets the bridge swap amount for the given token
-     * @dev     Always set it to equivalent of 1 ALOT. Only callable by admin.
-     * @param   _symbol  Symbol of the token
-     * @param   _amount  Amount of token to be set
-     */
-    function setBridgeSwapAmount(bytes32 _symbol, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 _oldAmount = bridgeSwapAmount[_symbol];
-        bridgeSwapAmount[_symbol] = _amount; // per ALOT
-        emit ParameterUpdated(_symbol, "P-SET-BRIDGESWAPAMOUNT", _oldAmount, _amount);
-    }
-
-    /**
-     * @notice  Function to add IERC20 token to the portfolio
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenaddress  Address of the token
-     * @param   _srcChainId  Source Chain Id
-     * @param   _decimals  Decimals of the token
-     * @param   _mode  Starting auction mode of the token
-     */
-    function addIERC20(
+    function setBridgeParam(
         bytes32 _symbol,
-        address _tokenaddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode
-    ) internal virtual;
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bool _usedForGasSwap
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, _usedForGasSwap);
+    }
 
     /**
-     * @notice  Function to remove IERC20 token from the portfolio
-     * @dev     Implemented in the child contract, as the logic differs.
+     * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token
+     * @dev     Called by Portfolio.initialize() addTokenInternal
      * @param   _symbol  Symbol of the token
+     * @param   _fee  Fee to be set
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT. Always set it to equivalent of 1 ALOT.
+     * @param   _usedForGasSwap  bool to control the list of tokens that can be used for gas swap. Mostly majors
      */
-    function removeIERC20(bytes32 _symbol) internal virtual;
+    function setBridgeParamInternal(
+        bytes32 _symbol,
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bool _usedForGasSwap
+    ) internal virtual {
+        emit ParameterUpdated(_symbol, "P-SET-BRIDGEPARAM", bridgeParams[_symbol].gasSwapRatio, _gasSwapRatio);
+        BridgeParams storage bridgeParam = bridgeParams[_symbol];
+        bridgeParam.fee = _fee;
 
-    /**
-     * @notice  Frontend function to get the IERC20 token
-     * @param   _symbol  Symbol of the token
-     * @return  IERC20Upgradeable  IERC20 token
-     */
-    function getToken(bytes32 _symbol) external view virtual returns (IERC20Upgradeable);
+        if (_symbol != bytes32("ALOT")) {
+            bridgeParam.gasSwapRatio = _gasSwapRatio;
+            bridgeParam.usedForGasSwap = _usedForGasSwap;
+        } else if (_symbol == bytes32("ALOT") && bridgeParam.gasSwapRatio == 0) {
+            // For ALOT gasSwapFee can only be set to 1 ( 1 to 1 ratio at all times) and can't be changed
+            bridgeParam.gasSwapRatio = 1 * 10 ** 18;
+            bridgeParam.usedForGasSwap = true;
+        }
+    }
 
     /**
      * @notice  Adds the given token to the portfolio
@@ -372,16 +241,21 @@ abstract contract Portfolio is
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  Decimals of the token
      * @param   _mode  Starting auction mode of the token
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
      */
     function addToken(
         bytes32 _symbol,
         address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode _mode
-    ) public virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_symbol != native || (_symbol == native && _tokenAddress != address(0))) {
-            addTokenInternal(_symbol, _tokenAddress, _srcChainId, _decimals, _mode);
+        ITradePairs.AuctionMode _mode,
+        uint256 _fee,
+        uint256 _gasSwapRatio
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        // Can't add Native Token because it has already been added in the Portfolio initialization
+        if (_symbol != native) {
+            addTokenInternal(_symbol, _tokenAddress, _srcChainId, _decimals, _mode, _fee, _gasSwapRatio);
         }
     }
 
@@ -389,51 +263,56 @@ abstract contract Portfolio is
      * @notice  Actual private function that implements the token addition
      * @param   _symbol  Symbol of the token
      * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain id
      * @param   _decimals  Decimals of the token
      * @param   _mode  Starting auction mode of the token
+     *  _fee  Bridge Fee (child implementation)
+     *  _gasSwapRatio  Amount of token to swap per ALOT (child implementation)
      */
     function addTokenInternal(
         bytes32 _symbol,
         address _tokenAddress,
-        uint32 _srcChainId,
+        uint32, // it can only be the mainnet's chain id
         uint8 _decimals,
-        ITradePairs.AuctionMode _mode
-    ) private {
+        ITradePairs.AuctionMode _mode,
+        uint256,
+        uint256
+    ) internal virtual {
         require(!tokenList.contains(_symbol), "P-TAEX-01");
         require(_decimals > 0, "P-CNAT-01");
 
         TokenDetails storage tokenDetails = tokenDetailsMap[_symbol];
-        tokenDetails.auctionMode = ITradePairs.AuctionMode.OFF;
+        tokenDetails.auctionMode = _mode;
         tokenDetails.decimals = _decimals;
         tokenDetails.tokenAddress = _tokenAddress;
         tokenDetails.srcChainId = chainId; // always add with the chain id of the Portfolio
         tokenDetails.symbol = _symbol;
-        tokenDetails.symbolId = getIdForToken(_symbol);
-
-        addIERC20(_symbol, _tokenAddress, _srcChainId, _decimals, _mode);
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, chainId);
+        tokenDetails.symbolId = symbolId;
         //add to the list by symbol
         tokenList.add(_symbol);
-        if (_symbol != native || (_symbol == native && _tokenAddress != address(0))) {
-            //Adding to portfolioBridge with the proper mainnet address and srcChainId
-            portfolioBridge.addToken(_symbol, _tokenAddress, _srcChainId, _decimals, _mode);
-        }
+        //add to the list by symbolId
+        tokenDetailsMapById[symbolId] = _symbol;
         emit ParameterUpdated(_symbol, "P-ADDTOKEN", _decimals, uint256(_mode));
     }
 
     /**
      * @notice  Removes the given token from the portfolio
-     * @dev     Only callable by admin and portfolio should be paused. Makes sure there are no
-     * in-flight deposit/withdraw messages
+     * @dev     Only callable by admin and portfolio should be paused. Make sure there are no
+     * in-flight deposit/withdraw messages.
      * @param   _symbol  Symbol of the token
+     * @param   _srcChainId  Source Chain id
+     * _srcChainId  Source Chain id is always the mainnet chainid for PortfolioMain
      */
-    function removeToken(bytes32 _symbol) public virtual override whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
-        // removeIERC20 makes sanity checks before removal
-        removeIERC20(_symbol);
+    function removeToken(
+        bytes32 _symbol,
+        uint32 _srcChainId
+    ) public virtual override whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_symbol != native) {
             tokenList.remove(_symbol);
-            portfolioBridge.removeToken(_symbol, chainId);
             delete (tokenDetailsMap[_symbol]);
+            bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
+            delete (tokenDetailsMapById[symbolId]);
+            delete (bridgeParams[_symbol]);
             emit ParameterUpdated(_symbol, "P-REMOVETOKEN", 0, 0);
         }
     }
@@ -455,14 +334,22 @@ abstract contract Portfolio is
      * @dev     Subnet does not have any ERC20s, hence the tokenAddress is token's mainnet address.
      * See the TokenDetails struct in IPortfolio for the full type information of the return variable.
      * @param   _symbol  Symbol of the token. Identical to mainnet
-     * @return  TokenDetails decimals (Identical to mainnet), tokenAddress (Token address at the mainnet)
+     * @return  TokenDetails decimals : Identical both in the mainnet and the subnet
+     * tokenAddress : Token address at the mainnet , zeroaddress at the subnet
+     * symbolId : symbol + chainId
+     * native coin : it will always have zeroaddress both in the mainnet and the subnet
      */
     function getTokenDetails(bytes32 _symbol) external view override returns (TokenDetails memory) {
         return tokenDetailsMap[_symbol];
     }
 
-    function getIdForToken(bytes32 _symbol) internal view returns (bytes32 symbolId) {
-        symbolId = UtilsLibrary.getIdForToken(_symbol, chainId);
+    /**
+     * @notice  Returns the token details.
+     * @param   _symbolId  symbolId of the token.
+     * @return  TokenDetails  see getTokenDetails
+     */
+    function getTokenDetailsById(bytes32 _symbolId) external view override returns (TokenDetails memory) {
+        return tokenDetailsMap[tokenDetailsMapById[_symbolId]];
     }
 
     /**
@@ -481,122 +368,27 @@ abstract contract Portfolio is
     }
 
     /**
-     * @notice  Checks if the deposit is valid
-     * @param   _quantity  Amount to be deposited
-     */
-    function depositTokenChecks(uint256 _quantity) internal virtual {
-        require(allowDeposit, "P-ETDP-01");
-        require(_quantity > 0, "P-ZETD-01");
-    }
-
-    /**
-     * @notice  Updates the transfer fee rate
-     * @param   _rate  New transfer fee rate
-     * @param   _rateType  Enum for transfer type
-     */
-    function updateTransferFeeRate(uint256 _rate, Tx _rateType) external virtual override;
-
-    /**
-     * @notice  Sets the auction mode for the token
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _symbol  Symbol of the token
-     * @param   _mode  New auction mode to be set
-     */
-    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external virtual override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _from  Address of the depositor
-     * @param   _bridge  Enum for bridge type
-     */
-    function depositNative(address payable _from, IPortfolioBridge.BridgeProvider _bridge)
-        external
-        payable
-        virtual
-        override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _to  Address of the withdrawer
-     * @param   _quantity  Amount to be withdrawn
-     */
-    function withdrawNative(address payable _to, uint256 _quantity) external virtual override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _from  Address of the depositor
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount to be deposited
-     * @param   _bridge  Enum for bridge type
-     */
-    function depositToken(
-        address _from,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
-    ) external virtual override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _from  Address of the depositor
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount to be deposited
-     */
-    function depositTokenFromContract(
-        address _from,
-        bytes32 _symbol,
-        uint256 _quantity
-    ) external virtual override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _to  Address of the withdrawer
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount to be withdrawn
-     * @param   _bridge  Enum for bridge type
-     */
-    function withdrawToken(
-        address _to,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
-    ) external virtual override;
-
-    /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _transaction  Enum for transaction type
+     * @notice  Processes the XFER message coming from the bridge
+     * @dev     Overridden in the child contracts, as the logic differs.
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol of the token
-     * @param   _amount  Amount to be adjusted
+     * @param   _quantity  Amount of the token
+     * @param   _transaction  Transaction type Enum
      */
-    function adjustAvailable(
-        Tx _transaction,
+    function processXFerPayload(
         address _trader,
         bytes32 _symbol,
-        uint256 _amount
+        uint256 _quantity,
+        Tx _transaction
     ) external virtual override;
 
     /**
-     * @dev     Implemented in the child contract, as the logic differs.
-     * @param   _makerSide  Side of the maker
-     * @param   _makerAddr  Address of the maker
-     * @param   _takerAddr  Address of the taker
-     * @param   _baseSymbol  Symbol of the base token
-     * @param   _quoteSymbol  Symbol of the quote token
-     * @param   _baseAmount  Amount of base token
-     * @param   _quoteAmount  Amount of quote token
-     * @param   _makerfeeCharged  Fee charged to the maker
-     * @param   _takerfeeCharged  Fee charged to the taker
+     * @dev     Overridden in the child contracts, as the logic differs.
+     * @param   _from  Address of the depositor
+     * @param   _bridge  Enum for bridge type
      */
-    function addExecution(
-        ITradePairs.Side _makerSide,
-        address _makerAddr,
-        address _takerAddr,
-        bytes32 _baseSymbol,
-        bytes32 _quoteSymbol,
-        uint256 _baseAmount,
-        uint256 _quoteAmount,
-        uint256 _makerfeeCharged,
-        uint256 _takerfeeCharged
-    ) external virtual override;
+    function depositNative(
+        address payable _from,
+        IPortfolioBridge.BridgeProvider _bridge
+    ) external payable virtual override;
 }

@@ -30,6 +30,8 @@ describe("Exchange Sub", function () {
     let orderBooks: OrderBooks;
     let baseToken: MockToken;
     let quoteToken: MockToken;
+    let auctionToken: MockToken;
+
 
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -51,8 +53,16 @@ describe("Exchange Sub", function () {
     const quoteDecimals = 6;
     const quoteDisplayDecimals = 3;
 
+    const auctionTokenStr = "Aucion Token";
+    const auctionSymbolStr = "AT"
+    const auctionSymbol = Utils.fromUtf8(auctionSymbolStr);
+    const auctionDecimals = 18;
+    const auctionDisplayDecimals = 3;
+
     const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
     const tradePairId = Utils.fromUtf8(tradePairStr);
+
+    const auctionTradePairId = Utils.fromUtf8(`${auctionSymbolStr}/${quoteSymbolStr}`);
 
     const srcChainId = 1;
     const minTradeAmount = 10;
@@ -74,6 +84,24 @@ describe("Exchange Sub", function () {
         maxTradeAmount,
         mode
     }
+
+    const auctionPair = {
+        baseSymbol: auctionSymbol,
+        baseDecimals: auctionDecimals,
+        baseDisplayDecimals: auctionDisplayDecimals,
+        quoteSymbol,
+        quoteDecimals,
+        quoteDisplayDecimals,
+        tradePairId: auctionTradePairId
+    }
+
+    const auctionPairSettings = {
+        minTradeAmount,
+        maxTradeAmount,
+        mode: 2
+    }
+
+
 
     before(async function () {
         const { owner: owner1, admin: admin1, auctionAdmin: admin2, trader1: t1, trader2: t2 } = await f.getAccounts();
@@ -100,6 +128,11 @@ describe("Exchange Sub", function () {
         exchange = await f.deployExchangeSub(portfolioSub, orderBooks)
         tradePairs = await f.deployTradePairs(orderBooks, portfolioSub, exchange);
         await exchange.addAuctionAdmin(auctionAdmin.address);
+
+        baseToken = await MockToken.deploy(baseTokenStr, baseSymbolStr, baseDecimals);
+        quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
+
+
     });
 
     describe("Exchange", function () {
@@ -127,16 +160,14 @@ describe("Exchange Sub", function () {
             const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
             await expect(exchange.setOrderBooks(ZERO_ADDRESS)).to.revertedWith("E-OIZA-01");
             // succeed from admin account
-            await exchange.setOrderBooks(orderBooks.address);  // FIXME emit event in contract and check here
+            await exchange.setOrderBooks(orderBooks.address);
+            //.to.emit(Exchange, "GasAmountChanged");  // FIXME emit event in contract and check here
+            expect(await exchange.getOrderBooks()).to.be.equal(orderBooks.address);
         });
 
         it("Should check if the base and quote assets are already added in addTradePair", async function () {
-            baseToken = await MockToken.deploy(baseTokenStr, quoteSymbolStr, baseDecimals);
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-
-            await portfolioSub.addToken(baseSymbol, baseToken.address, srcChainId, baseDecimals, mode);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
             // non existing base symbol
             await expect(exchange.connect(auctionAdmin).addTradePair(tradePairId, Utils.fromUtf8("BTWD"), baseDisplayDecimals,
                                                quoteSymbol, quoteDisplayDecimals,
@@ -152,18 +183,36 @@ describe("Exchange Sub", function () {
                 .to.be.revertedWith("E-TNAP-01");
         });
 
+        it("Should check if the base and quote display decimals <= evm decimals ", async function () {
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
+            // base symbol with 19 display decimals
+            await expect(exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, 19,
+                                               quoteSymbol, quoteDisplayDecimals,
+                                               Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+                                               Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode))
+                  .to.be.revertedWith("E-TNAP-01");
+
+            // quote symbol with 19 display decimals
+            await expect(exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
+                                               quoteSymbol, 7,
+                                               Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
+                                               Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode))
+                .to.be.revertedWith("E-TNAP-01");
+        });
+
+
         it("Should check if the base and quote assets are in correct auction modes in addTradePair", async function () {
             const mode2: any = 2;  // auction on
 
-            baseToken = await MockToken.deploy(baseTokenStr, quoteSymbolStr, baseDecimals);
-            const baseTokenWA = await MockToken.deploy("BToken WA", Utils.fromUtf8("BTWA"), baseDecimals);   // for wrong auction mode
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            const quoteTokenWA = await MockToken.deploy("QToken WA", Utils.fromUtf8("QTWA"), quoteDecimals); // for wrong auction mode
+            await f.addToken(portfolioSub, baseToken, 0.1, mode2);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
 
-            await portfolioSub.addToken(baseSymbol, baseToken.address, srcChainId, baseDecimals, mode2);                  // auction on
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);                // auction off
-            await portfolioSub.addToken(Utils.fromUtf8("BTWA"), baseTokenWA.address, srcChainId, baseDecimals, mode);     // auction off
-            await portfolioSub.addToken(Utils.fromUtf8("QTWA"), quoteTokenWA.address, srcChainId, quoteDecimals, mode2);  // auction on
+            const baseTokenWA = await MockToken.deploy("BToken WA", "BTWA", baseDecimals);   // for wrong auction mode
+            const quoteTokenWA = await MockToken.deploy("QToken WA", "QTWA", quoteDecimals); // for wrong auction mode
+
+            await f.addToken(portfolioSub, baseTokenWA, 0.1, mode);
+            await f.addToken(portfolioSub, quoteTokenWA, 0.1, mode2);
 
             // fail due to non zero auction mode for quote
             await expect(exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
@@ -192,8 +241,8 @@ describe("Exchange Sub", function () {
             const baseDecimals = 18;
             const baseDisplayDecimals = 3;
 
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
+
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
 
             // fail from non-privileged account
             // trader1
@@ -237,30 +286,11 @@ describe("Exchange Sub", function () {
         });
 
         it("Should be able to add ERC20 as base asset and ERC20 as quote asset", async function () {
-            // const baseTokenStr = "Base Token";
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
-
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
-
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
 
             const minTradeAmount = 10;
             const maxTradeAmount = 100000;
-
-            // baseToken = await MockToken.deploy(baseTokenStr, baseSymbolStr, baseDecimals);
-            // await portfolioSub.addToken(baseSymbol, baseToken.address, srcChainId, baseDecimals, mode);
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
             await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
                                         quoteSymbol, quoteDisplayDecimals,
                                         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
@@ -283,11 +313,6 @@ describe("Exchange Sub", function () {
         });
 
         it("Should be able to add ERC20 as base asset and native as quote asset", async function () {
-            const baseTokenStr = "Base Token";
-            const baseSymbolStr = "BT";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            const baseDecimals = 6;
-            const baseDisplayDecimals = 3;
 
             const quoteSymbolStr = "AVAX"
             const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
@@ -299,9 +324,7 @@ describe("Exchange Sub", function () {
 
             const minTradeAmount = 10;
             const maxTradeAmount = 100000;
-
-            baseToken = await MockToken.deploy(baseTokenStr, baseSymbolStr, baseDecimals);
-            await portfolioSub.addToken(baseSymbol, baseToken.address, srcChainId, baseDecimals, mode);
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
 
             await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
                                         quoteSymbol, quoteDisplayDecimals,
@@ -325,93 +348,66 @@ describe("Exchange Sub", function () {
         });
 
         it("Should update maker and taker fee rates from the auction admin", async function () {
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            quoteAssetAddr = quoteToken.address;
 
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
+
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
             const tRate = ethers.BigNumber.from(10);
             // fail from non owner accounts
-            await expect(exchange.connect(trader1).updateRate(tradePairId, mRate, 0)).to.be.revertedWith("AccessControl:");
-            await expect(exchange.connect(trader2).updateRate(tradePairId, tRate, 1)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).updateRate(auctionTradePairId, mRate, 0)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader2).updateRate(auctionTradePairId, tRate, 1)).to.be.revertedWith("AccessControl:");
+
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).updateRate(tradePairId, mRate, 0)).to.be.revertedWith("E-OACC-04");
+            await expect(exchange.connect(auctionAdmin).updateRate(tradePairId, tRate, 1)).to.be.revertedWith("E-OACC-04");
+
             // succeed from owner accounts
-            await exchange.connect(auctionAdmin).updateRate(tradePairId, mRate, 0);
-            expect(await tradePairs.getMakerRate(tradePairId)).to.be.equal(mRate);
-            await exchange.connect(auctionAdmin).updateRate(tradePairId, tRate, 1);
-            expect(await tradePairs.getTakerRate(tradePairId)).to.be.equal(tRate);
+            await exchange.connect(auctionAdmin).updateRate(auctionTradePairId, mRate, 0);
+            expect(await tradePairs.getMakerRate(auctionTradePairId)).to.be.equal(mRate);
+            await exchange.connect(auctionAdmin).updateRate(auctionTradePairId, tRate, 1);
+            expect(await tradePairs.getTakerRate(auctionTradePairId)).to.be.equal(tRate);
 
             // call with wrong rate type
-            await expect(tradePairs.connect(owner).updateRate(tradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
+            await expect(tradePairs.connect(owner).updateRate(auctionTradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
         });
 
         it("Should update maker and taker fee rates simultaneously with updateRates() from the auction admin account", async function () {
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
 
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
-
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
             const tRate = ethers.BigNumber.from(10);
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).updateRates(tradePairId, mRate, tRate)).to.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).updateRates(auctionTradePairId, mRate, tRate)).to.revertedWith("AccessControl:");
             // auctionAdmin when removed
             await exchange.removeAdmin(auctionAdmin.address);
             await exchange.removeAuctionAdmin(auctionAdmin.address);
-            await expect(exchange.connect(auctionAdmin).updateRates(tradePairId, mRate, tRate)).to.revertedWith("AccessControl:");
+            await expect(exchange.connect(auctionAdmin).updateRates(auctionTradePairId, mRate, tRate)).to.revertedWith("AccessControl:");
+
             // succeed from admin accounts
             await exchange.addAuctionAdmin(auctionAdmin.address);  // add auctionAdmin as well
             // auctionAdmin
-            await exchange.connect(auctionAdmin).updateRates(tradePairId, mRate.mul(2), tRate.mul(2));
-            expect(await tradePairs.getMakerRate(tradePairId)).to.be.equal(mRate.mul(2));
-            expect(await tradePairs.getTakerRate(tradePairId)).to.be.equal(tRate.mul(2));
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).updateRates(tradePairId, mRate, tRate)).to.revertedWith("E-OACC-04");
+            await exchange.connect(auctionAdmin).updateRates(auctionTradePairId, mRate.mul(2), tRate.mul(2));
+            expect(await tradePairs.getMakerRate(auctionTradePairId)).to.be.equal(mRate.mul(2));
+            expect(await tradePairs.getTakerRate(auctionTradePairId)).to.be.equal(tRate.mul(2));
         });
 
         it("Should update all maker and taker fee rates from the admin account", async function () {
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
 
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
-
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
-
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
             const tRate = ethers.BigNumber.from(10);
@@ -425,31 +421,40 @@ describe("Exchange Sub", function () {
 
         it("Should set min trade amount from the auction admin", async function () {
 
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            quoteAssetAddr = quoteToken.address;
-
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
+
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const minTradeAmount1 = Utils.parseUnits('50', quoteDecimals);
             // fail from non owner accounts
-            await expect(exchange.connect(trader1).setMinTradeAmount(tradePairId, minTradeAmount1)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).setMinTradeAmount(auctionTradePairId, minTradeAmount1)).to.be.revertedWith("AccessControl:");
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).setMinTradeAmount(tradePairId, minTradeAmount1)).to.revertedWith("E-OACC-04");
             // succeed from owner accounts
-            await exchange.connect(auctionAdmin).setMinTradeAmount(tradePairId, minTradeAmount1);
-            expect(await exchange.getMinTradeAmount(tradePairId)).to.be.equal(minTradeAmount1);
+            await exchange.connect(auctionAdmin).setMinTradeAmount(auctionTradePairId, minTradeAmount1);
+            expect(await exchange.getMinTradeAmount(auctionTradePairId)).to.be.equal(minTradeAmount1);
         });
 
         it("Should set max trade amount from the auction admin", async function () {
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            quoteAssetAddr = quoteToken.address;
 
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
+
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const maxTradeAmount1 = Utils.parseUnits('250', quoteDecimals);
             // fail from non owner accounts
-            await expect(exchange.connect(trader1).setMaxTradeAmount(tradePairId, maxTradeAmount1)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).setMaxTradeAmount(auctionTradePairId, maxTradeAmount1)).to.be.revertedWith("AccessControl:");
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).setMaxTradeAmount(tradePairId, maxTradeAmount1)).to.revertedWith("E-OACC-04");
             // succeed from owner accounts
-            await exchange.connect(auctionAdmin).setMaxTradeAmount(tradePairId, maxTradeAmount1);
-            expect(await exchange.getMaxTradeAmount(tradePairId)).to.be.equal(maxTradeAmount1);
+            await exchange.connect(auctionAdmin).setMaxTradeAmount(auctionTradePairId, maxTradeAmount1);
+            expect(await exchange.getMaxTradeAmount(auctionTradePairId)).to.be.equal(maxTradeAmount1);
         });
 
         it("Should set and get tradepairs contract address correctly", async function () {
@@ -461,18 +466,13 @@ describe("Exchange Sub", function () {
         });
 
         it("Should add token from the auction admin account", async function () {
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteDecimals = 6;
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
 
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
 
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode)).to.revertedWith("AccessControl:");
-            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
+            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("AccessControl:");
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode);
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
             const tokenList = await portfolioSub.getTokenList();
 
             // AVAX is the first token in the list, refer deployPortfolioComplete
@@ -482,112 +482,64 @@ describe("Exchange Sub", function () {
         });
 
         it("Should set auction mode from the auction admin account", async function () {
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
 
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
 
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const auctionMode = 4;
-
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).setAuctionMode(tradePairId, baseSymbol, auctionMode)).to.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).setAuctionMode(auctionTradePairId, auctionSymbol, auctionMode)).to.revertedWith("AccessControl:");
 
             // fail for the wrong base symbol
-            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, Utils.fromUtf8("ALOT"), auctionMode)).to.be.revertedWith("E-BSNM-01");
+            await expect(exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, Utils.fromUtf8("ALOT"), auctionMode)).to.be.revertedWith("E-BSNM-01");
+
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, auctionSymbol, auctionMode)).to.revertedWith("E-OACC-04");
 
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).setAuctionMode(tradePairId, baseSymbol, auctionMode);
-            const auctionData = await tradePairs.getAuctionData(tradePairId);
+            await exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, auctionSymbol, auctionMode);
+            const auctionData = await tradePairs.getAuctionData(auctionTradePairId);
             expect(auctionData[0]).to.be.equal(auctionMode);
         });
 
         it("Should set auction price from the auction admin account", async function () {
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
 
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
 
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const auctionPrice = Utils.parseUnits("4.16", quoteDecimals);
 
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).setAuctionPrice(tradePairId, auctionPrice)).to.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).setAuctionPrice(auctionTradePairId, auctionPrice)).to.revertedWith("AccessControl:");
+
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).setAuctionPrice(tradePairId, auctionPrice)).to.revertedWith("E-OACC-04");
+
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).setAuctionPrice(tradePairId, auctionPrice);
-            const auctionData = await tradePairs.getAuctionData(tradePairId);
-            expect(auctionData[0]).to.be.equal(mode);
+            await exchange.connect(auctionAdmin).setAuctionPrice(auctionTradePairId, auctionPrice);
+            const auctionData = await tradePairs.getAuctionData(auctionTradePairId);
+            expect(auctionData[0]).to.be.equal(auctionPairSettings.mode);
             expect(auctionData[1]).to.be.equal(auctionPrice);
-            //expect(auctionData[2]).to.be.equal(auctionPct);
+
             // fail matchAuctionOrders() if not auction admin
-            await expect(exchange.connect(admin).matchAuctionOrders(tradePairId, 10)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(admin).matchAuctionOrders(auctionTradePairId, 10)).to.be.revertedWith("AccessControl:");
         });
 
         it("Should pause and unpause all trading from the admin account", async function () {
             const {trader1} = await f.getAccounts();
 
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
-
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
-
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
-
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            quoteAssetAddr = quoteToken.address;
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
             // fail from non admin accounts
             await expect(exchange.connect(trader1).pauseTrading(true)).to.be.revertedWith("AccessControl:");
@@ -600,30 +552,13 @@ describe("Exchange Sub", function () {
         });
 
         it("Should pause a specific trade pair from admin or auctionAdmin accounts based on mode", async function () {
-            const baseSymbolStr = "AVAX";
-            const baseSymbol = Utils.fromUtf8(baseSymbolStr);
-            // const baseDecimals = 18;
-            const baseDisplayDecimals = 3;
 
-            const quoteTokenStr = "Quote Token";
-            const quoteSymbolStr = "QT"
-            const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const quoteDecimals = 6;
-            const quoteDisplayDecimals = 3;
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            const tradePairStr = `${baseSymbolStr}/${quoteSymbolStr}`;
-            const tradePairId = Utils.fromUtf8(tradePairStr);
-
-            const minTradeAmount = 10;
-            const maxTradeAmount = 100000;
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            await portfolioSub.addToken(quoteSymbol, quoteToken.address, srcChainId, quoteDecimals, mode);
-
-            await exchange.connect(auctionAdmin).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                        quoteSymbol, quoteDisplayDecimals,
-                                        Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
-                                        Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
+            auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
+            await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             // fail as only admin can pause when audtion is off (mode = 0)
             await exchange.removeAdmin(auctionAdmin.address);
@@ -636,11 +571,14 @@ describe("Exchange Sub", function () {
             await exchange.connect(admin).pauseTradePair(tradePairId, true);
             // set auction mode to 4 (paused) by auction admin
             await expect(exchange.connect(admin).setAuctionMode(tradePairId, baseSymbol, 4)).to.be.revertedWith("AccessControl:");
-            await exchange.connect(auctionAdmin).setAuctionMode(tradePairId, baseSymbol, 4);
+            // Fail for non-auction pair
+            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, baseSymbol, 4)).to.revertedWith("E-OACC-04");
+
+
             // with auction mode set to 4 (paused) auction admin can pause a trade pair
-            await expect(exchange.connect(admin).pauseTradePair(tradePairId, false)).to.be.revertedWith("E-OACC-03");
-            await exchange.connect(auctionAdmin).pauseTradePair(tradePairId, false);
-            await exchange.connect(auctionAdmin).pauseTradePair(tradePairId, true);
+            await expect(exchange.connect(admin).pauseTradePair(auctionTradePairId, false)).to.be.revertedWith("E-OACC-03");
+            await exchange.connect(auctionAdmin).pauseTradePair(auctionTradePairId, false);
+            await exchange.connect(auctionAdmin).pauseTradePair(auctionTradePairId, true);
         });
 
         it("Should fail matchAuctionOrder() for unuathorized access", async function () {
@@ -649,8 +587,6 @@ describe("Exchange Sub", function () {
             const baseDecimals = 18;
             const baseDisplayDecimals = 3;
             const baseAssetAddr = "0x0000000000000000000000000000000000000000";
-
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
             // mint some tokens for trader1

@@ -2,8 +2,6 @@
 
 pragma solidity 0.8.17;
 
-import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-
 import "./ITradePairs.sol";
 import "./IPortfolioBridge.sol";
 
@@ -22,68 +20,19 @@ interface IPortfolio {
 
     function pauseDeposit(bool _pause) external;
 
-    function updateTransferFeeRate(uint256 _rate, Tx _rateType) external;
-
     function addToken(
         bytes32 _symbol,
         address _tokenaddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode _mode
+        ITradePairs.AuctionMode _mode,
+        uint256 _fee,
+        uint256 _gasSwapRatio
     ) external;
 
-    function removeToken(bytes32 _symbol) external;
-
-    function adjustAvailable(
-        Tx _transaction,
-        address _trader,
-        bytes32 _symbol,
-        uint256 _amount
-    ) external;
-
-    function addExecution(
-        ITradePairs.Side _makerSide,
-        address _makerAddr,
-        address _taker,
-        bytes32 _baseSymbol,
-        bytes32 _quoteSymbol,
-        uint256 _baseAmount,
-        uint256 _quoteAmount,
-        uint256 _makerfeeCharged,
-        uint256 _takerfeeCharged
-    ) external;
+    function removeToken(bytes32 _symbol, uint32 _srcChainId) external;
 
     function depositNative(address payable _from, IPortfolioBridge.BridgeProvider _bridge) external payable;
-
-    function withdrawNative(address payable _to, uint256 _quantity) external;
-
-    function depositToken(
-        address _from,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
-    ) external;
-
-    function withdrawToken(
-        address _to,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
-    ) external;
-
-    function depositTokenFromContract(
-        address _from,
-        bytes32 _symbol,
-        uint256 _quantity
-    ) external;
-
-    function addTrustedContract(address _contract, string calldata _organization) external;
-
-    function isTrustedContract(address _contract) external view returns (bool);
-
-    function removeTrustedContract(address _contract) external;
-
-    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external;
 
     function processXFerPayload(
         address _trader,
@@ -98,26 +47,7 @@ interface IPortfolio {
 
     function getTokenDetails(bytes32 _symbol) external view returns (TokenDetails memory);
 
-    function lzForceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) external;
-
-    function lzRetryPayload(
-        uint16 _srcChainId,
-        bytes calldata _srcAddress,
-        bytes calldata _payload
-    ) external;
-
-    //function defaultBridgeProvider() external view returns (BridgeProvider);
-
-    enum Tx {
-        WITHDRAW,
-        DEPOSIT,
-        EXECUTION,
-        INCREASEAVAIL,
-        DECREASEAVAIL,
-        IXFERSENT,
-        IXFERREC,
-        RECOVER
-    }
+    function getTokenDetailsById(bytes32 _symbolId) external view returns (TokenDetails memory);
 
     event PortfolioUpdated(
         Tx indexed transaction,
@@ -128,6 +58,12 @@ interface IPortfolio {
         uint256 total,
         uint256 available
     );
+
+    struct BridgeParams {
+        uint256 fee; // Bridge Fee
+        uint256 gasSwapRatio;
+        bool usedForGasSwap; //bool to control the list of tokens that can be used for gas swap. Mostly majors
+    }
 
     struct XFER {
         uint64 nonce;
@@ -145,5 +81,16 @@ interface IPortfolio {
         uint32 srcChainId; //4
         bytes32 symbol;
         bytes32 symbolId;
+    }
+
+    enum Tx {
+        WITHDRAW,
+        DEPOSIT,
+        EXECUTION,
+        INCREASEAVAIL,
+        DECREASEAVAIL,
+        IXFERSENT,
+        IXFERREC,
+        RECOVERFUNDS
     }
 }

@@ -1,17 +1,13 @@
-// (c) 2022-2023, Ava Labs, Inc. All rights reserved.
-// See the file LICENSE for licensing terms.
-
 // SPDX-License-Identifier: MIT
 
 pragma solidity 0.8.17;
 
+// (c) 2022-2023, Ava Labs, Inc. All rights reserved.
+// See the file LICENSE for licensing terms.
+
 /**
  * @title Interface of NativeMinter
  */
-
-// The code in this file is part of Dexalot project.
-// Please see the LICENSE.txt file for licensing info.
-// Copyright 2022 Dexalot.
 
 interface NativeMinterInterface {
     // Set `addr` to have the admin role over the minter list

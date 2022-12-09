@@ -4,9 +4,10 @@ pragma solidity 0.8.17;
 
 import "./library/UtilsLibrary.sol";
 
+import "./interfaces/IPortfolioSub.sol";
+
 import "./Exchange.sol";
 import "./OrderBooks.sol";
-import "./interfaces/IPortfolio.sol";
 
 /**
  * @title Subnet Exchange
@@ -21,7 +22,7 @@ import "./interfaces/IPortfolio.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.2.0");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -46,6 +47,14 @@ contract ExchangeSub is Exchange {
     function setOrderBooks(address _orderbooks) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_orderbooks != address(0), "E-OIZA-01");
         orderBooks = OrderBooks(_orderbooks);
+    }
+
+    /**
+     * @notice  Gest the address of the OrderBooks contract
+     * @return  address  Address of the OrderBooks contract
+     */
+    function getOrderBooks() external view returns (address) {
+        return address(orderBooks);
     }
 
     /**
@@ -134,7 +143,10 @@ contract ExchangeSub is Exchange {
 
         IPortfolio.TokenDetails memory baseTokenDetails = portfolio.getTokenDetails(_baseSymbol);
         IPortfolio.TokenDetails memory quoteTokenDetails = portfolio.getTokenDetails(_quoteSymbol);
-        require(baseTokenDetails.decimals != 0 && quoteTokenDetails.decimals != 0, "E-TNAP-01");
+        require(
+            baseTokenDetails.decimals >= _baseDisplayDecimals && quoteTokenDetails.decimals >= _quoteDisplayDecimals,
+            "E-TNAP-01"
+        );
         require(
             baseTokenDetails.auctionMode == _mode && quoteTokenDetails.auctionMode == ITradePairs.AuctionMode.OFF,
             "E-TNSA-01"
@@ -165,23 +177,27 @@ contract ExchangeSub is Exchange {
         bytes32 _baseSymbol,
         ITradePairs.AuctionMode _mode
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
         require(_baseSymbol == tradePairs.getSymbol(_tradePairId, true), "E-BSNM-01");
         tradePairs.setAuctionMode(_tradePairId, _mode);
-        portfolio.setAuctionMode(_baseSymbol, _mode);
+        IPortfolioSub(address(portfolio)).setAuctionMode(_baseSymbol, _mode);
     }
 
     /**
      * @notice  Update maker and taker fee rates for execution
-     * @param   _tradePair  id of the trading pair
+     * @param   _tradePairId  id of the trading pair
      * @param   _rate   fee rate
      * @param   _rateType  rate type, maker or taker
      */
     function updateRate(
-        bytes32 _tradePair,
+        bytes32 _tradePairId,
         uint8 _rate,
         ITradePairs.RateType _rateType
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
-        tradePairs.updateRate(_tradePair, _rate, _rateType);
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
+        tradePairs.updateRate(_tradePairId, _rate, _rateType);
     }
 
     /**
@@ -195,6 +211,8 @@ contract ExchangeSub is Exchange {
         uint8 _makerRate,
         uint8 _takerRate
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
         tradePairs.updateRate(_tradePairId, _makerRate, ITradePairs.RateType.MAKER);
         tradePairs.updateRate(_tradePairId, _takerRate, ITradePairs.RateType.TAKER);
     }
@@ -205,6 +223,8 @@ contract ExchangeSub is Exchange {
      * @param   _price  price
      */
     function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external onlyRole(AUCTION_ADMIN_ROLE) {
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
         tradePairs.setAuctionPrice(_tradePairId, _price);
     }
 
@@ -214,6 +234,8 @@ contract ExchangeSub is Exchange {
      * @param   _minTradeAmount  minimum trade amount
      */
     function setMinTradeAmount(bytes32 _tradePairId, uint256 _minTradeAmount) external onlyRole(AUCTION_ADMIN_ROLE) {
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
         tradePairs.setMinTradeAmount(_tradePairId, _minTradeAmount);
     }
 
@@ -231,6 +253,8 @@ contract ExchangeSub is Exchange {
      * @param   _maxTradeAmount  maximum trade amount
      */
     function setMaxTradeAmount(bytes32 _tradePairId, uint256 _maxTradeAmount) external onlyRole(AUCTION_ADMIN_ROLE) {
+        (uint8 mode, ) = tradePairs.getAuctionData(_tradePairId);
+        require(mode != 0, "E-OACC-04");
         tradePairs.setMaxTradeAmount(_tradePairId, _maxTradeAmount);
     }
 
@@ -244,17 +268,29 @@ contract ExchangeSub is Exchange {
 
     /**
      * @notice  Matches auction orders once the auction is closed and auction price is set
-     * @dev     Takes the top of the book sell order, (bestAsk), and matches it with the buy orders sequantially.
+     * @dev     Takes the top of the book sell order(bestAsk), and matches it with the buy orders sequantially.
      * An auction mode can safely be changed to AUCTIONMODE.OFF only when this function returns false.
+     * High Level Auction Logic
+     * Auction Token & An auction pair(Base is the auction) gets added with AUCTION_MODE==PAUSED
+     * Nobody can enter orders on this pair, and nobody can transfer/withdraw their auction token
+     * when AUCTION_MODE != OFF
+     * Auction starts with AUCTION_MODE==ON. Participants can enter any buy or sell orders at any price
+     * The order books will not match any orders and it will stay crossed
+     * An off-chain app calculates the match price and quantities and dissamiates this infromation in
+     * real time for participant to adjust their orders accordingly.
+     * When the predetermined auction end time is reached AUCTION_MODE is set to CLOSING. This is the
+     * Randomized Closing Sequence as explained in ExchangeMain.flipCoin()
+     * When auction is closed, the AUCTION_MODE is set to MATCHING.
+     * The auction price is set from the off-chain app. At this point no actions are allowed on this trade pair:
+     * no new orders, cancels, cancel-replaces, deposits, withdraws or transfers until all matching is done.
      * @param   _tradePairId  id of the trading pair
      * @param   _maxCount  controls max number of fills an order can get at a time to avoid running out of gas
      * @return  bool  true if more matches are possible. false if no more possible matches left in the orderbook.
      */
-    function matchAuctionOrders(bytes32 _tradePairId, uint8 _maxCount)
-        external
-        onlyRole(AUCTION_ADMIN_ROLE)
-        returns (bool)
-    {
+    function matchAuctionOrders(
+        bytes32 _tradePairId,
+        uint8 _maxCount
+    ) external onlyRole(AUCTION_ADMIN_ROLE) returns (bool) {
         bytes32 bookId = tradePairs.getBookId(_tradePairId, ITradePairs.Side.SELL);
         (, bytes32 takerOrderId) = orderBooks.getTopOfTheBook(bookId);
         if (takerOrderId != "") {
