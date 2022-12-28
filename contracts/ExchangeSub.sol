@@ -31,7 +31,7 @@ contract ExchangeSub is Exchange {
     event AuctionMatchFinished(bytes32 indexed pair);
 
     /**
-     * @notice  (Un)pauses portoflioSub and portfolioBridgeSub and TradePairs contracts for upgrade
+     * @notice  (Un)pauses portfolioSub and portfolioBridgeSub and TradePairs contracts for upgrade
      * @param   _pause  true to pause, false to unpause
      */
     function pauseForUpgrade(bool _pause) external override {
@@ -74,7 +74,7 @@ contract ExchangeSub is Exchange {
     }
 
     /**
-     * @notice  Un(pause) trading functionality. Affects both addorder and cancelorder funcs.
+     * @notice  Un(pause) trading functionality. Affects both addorder and cancelorder functions.
      * @param   _tradingPause  true to pause trading, false to unpause
      */
     function pauseTrading(bool _tradingPause) public onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -86,7 +86,7 @@ contract ExchangeSub is Exchange {
     }
 
     /**
-     * @notice  Un(pause) trading functionality for a trade pair. Affects both addorder and cancelorder funcs.
+     * @notice  Un(pause) trading functionality for a trade pair. Affects both addorder and cancelorder functions.
      * @param   _tradePairId  id of the trading pair
      * @param   _tradePairPause  true to pause trading, false to unpause
      */
@@ -253,7 +253,7 @@ contract ExchangeSub is Exchange {
 
     /**
      * @notice  Matches auction orders once the auction is closed and auction price is set
-     * @dev     Takes the top of the book sell order(bestAsk), and matches it with the buy orders sequantially.
+     * @dev     Takes the top of the book sell order(bestAsk), and matches it with the buy orders sequentially.
      * An auction mode can safely be changed to AUCTIONMODE.OFF only when this function returns false.
      * High Level Auction Logic
      * Auction Token & An auction pair(Base is the auction) gets added with AUCTION_MODE==PAUSED
@@ -261,7 +261,7 @@ contract ExchangeSub is Exchange {
      * when AUCTION_MODE != OFF
      * Auction starts with AUCTION_MODE==ON. Participants can enter any buy or sell orders at any price
      * The order books will not match any orders and it will stay crossed
-     * An off-chain app calculates the match price and quantities and dissamiates this infromation in
+     * An off-chain app calculates the match price and quantities and disseminates this information in
      * real time for participant to adjust their orders accordingly.
      * When the predetermined auction end time is reached AUCTION_MODE is set to CLOSING. This is the
      * Randomized Closing Sequence as explained in ExchangeMain.flipCoin()

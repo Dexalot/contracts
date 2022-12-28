@@ -17,7 +17,7 @@ pragma solidity 0.8.17;
  * https://github.com/Modular-network/ethereum-libraries/blob/master/LICENSE
  *
  * The LinkedListLib provides functionality for implementing data indexing using
- * a circlular linked list
+ * a circular linked list
  *
  * Modular provides smart contract services and security reviews for contract
  * deployments in addition to working on open source projects in the Ethereum
@@ -38,7 +38,7 @@ pragma solidity 0.8.17;
 
 /**
  * @title Circular FIFO LinkedList library for bytes32 values.
- * @notice  Provides functionality for implementing data indexing using a circlular linked list of bytes32 values.
+ * @notice  Provides functionality for implementing data indexing using a circular linked list of bytes32 values.
  * @dev The original library was forked by Modular.network from
  * [github.com/o0ragman0o/LibCLL](https://github.com/o0ragman0o/LibCLL)
  * into the Modular-Network ethereum-libraries repo at
@@ -46,7 +46,7 @@ pragma solidity 0.8.17;
  * It has been updated to add additional functionality and be more compatible with solidity 0.4.18
  * coding patterns.
  * It has been further updated by Dexalot team to handle a FIFO LinkedList of bytes32 values and be more
- * compatible with solidity 0.8.x. Documenention has also been modified to align with project's style guide.
+ * compatible with solidity 0.8.x. Documentation has also been modified to align with project's style guide.
  */
 
 library Bytes32LinkedListLibrary {
@@ -172,7 +172,7 @@ library Bytes32LinkedListLibrary {
     }
 
     /**
-     * @dev Pushes an enrty to the head of the linked list
+     * @dev Pushes an entry to the head of the linked list
      * @param self stored linked list from contract
      * @param _node new entry to push to the head
      * @param _direction push to the head (NEXT) or tail (PREV)

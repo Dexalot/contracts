@@ -194,7 +194,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
      * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id
-     * @param   _srcAddress  Remote contract address concatenated with the local contract addres
+     * @param   _srcAddress  Remote contract address concatenated with the local contract address
      * @param   _payload  Payload to retry
      */
     function retryPayload(

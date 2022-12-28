@@ -84,7 +84,7 @@ contract TradePairs is
         __Pausable_init();
         __ReentrancyGuard_init();
 
-        // intitialize deployment account to have DEFAULT_ADMIN_ROLE
+        // initialize deployment account to have DEFAULT_ADMIN_ROLE
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         idCounter = block.timestamp;
         maxNbrOfFills = 100;
@@ -915,7 +915,7 @@ contract TradePairs is
      * price is around 100 gwei (3-4 times of the minimum gas price) and your transaction maximum gas is set
      * to be 50 gwei(normal level). Your transaction will wait in the mempool until the blockchain gas price
      * goes back to normal levels. \
-     * @dev     `_clientoOderId` is sent by the owner of an order and it is returned in responses for
+     * @dev     `_clientOrderId` is sent by the owner of an order and it is returned in responses for
      * reference. It must be unique per traderaddress. \
      * @dev     Price for market Orders are set to 0 internally (type1=0). Valid price decimals and evm decimals
      * can be obtained by calling `getTradePair(..)` and accessing baseDisplayDecimals and baseDecimals respectively. \
@@ -925,7 +925,7 @@ contract TradePairs is
      * Here are the other SubTypes: \
      * 0 = GTC : Good Till Cancel \
      * 1 = FOK : FIll or Kill (Will fill entirely or will revert with "T-FOKF-01") \
-     * 2 = IOC : Immedidate or Cancel  (Will fill partially or fully, will get status=CANCELED if filled partially) \
+     * 2 = IOC : Immediate or Cancel  (Will fill partially or fully, will get status=CANCELED if filled partially) \
      * 3 = PO  : Post Only (Will either go in the orderbook or revert with "T-T2PO-01" if it has a potential match)
      * @param   _trader  address of the trader. If msg.sender is not the `_trader` the tx will revert.
      * @param   _clientOrderId unique id provided by the owner of an order
@@ -1195,7 +1195,7 @@ contract TradePairs is
      * This function will technically accept the same clientOrderId as the previous because when the previous order
      * is cancelled it is removed from the mapping and the previous clientOrderId is now available. Not recommended!
      * @param   _orderId  order id to cancel
-     * @param   _clientOrderId  clinent order id of the new order
+     * @param   _clientOrderId  client order id of the new order
      * @param   _price  price of the new order
      * @param   _quantity  quantity of the new order
      */
@@ -1256,7 +1256,7 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Cancels an order and makes the locked amount available in the porftolio
+     * @notice  Cancels an order and makes the locked amount available in the portfolio
      * @param   _orderId  order id to cancel
      * true by default but false when called by cancelReplaceOrder function
      */

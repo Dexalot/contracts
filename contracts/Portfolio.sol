@@ -25,7 +25,7 @@ import "./interfaces/IPortfolioBridge.sol";
  * else. That's why the subnet wallet is referred to as the “Gas Tank”. All assets will be
  * handled inside the PortfolioSub smart contract in the subnet.
  * PortfolioBridge and PortfolioBridgeSub are bridge aggregators in charge of sending/receiving messages
- * via generic messaging using ative bridge transports.
+ * via generic messaging using active bridge transports.
  * @dev This contract contains shared logic for PortfolioMain and PortfolioSub.
  * It is perfectly sufficient for your trading application to interface with only the Dexalot Subnet
  * and use Dexalot frontend to perform deposit/withdraw operations manually for cross chain bridging.
@@ -85,7 +85,7 @@ abstract contract Portfolio is
         __Pausable_init();
         __ReentrancyGuard_init();
 
-        // intitialize the admins
+        // initialize the admins
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender); // set deployment account to have DEFAULT_ADMIN_ROLE
         allowDeposit = true;
         native = _native;

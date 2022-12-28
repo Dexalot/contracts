@@ -236,11 +236,11 @@ interface ITradePairs {
      * @dev     GTC is the default Type2 \
      * 0: GTC  – Good Till Cancel \
      * 1: FOK  – Fill or Kill. The order is required to get an immediate FILLED status or reverts with *T-FOKF-01*.
-     * If reverted, no transaction is commited to the blockchain) \
+     * If reverted, no transaction is committed to the blockchain) \
      * 2: IOC  – Immediate or Cancel. The order is required to get either a FILLED status or a PARTIAL
      * status fallowed by an automatic CANCELED. If PARTIAL, the remaining will not go in the orderbook) \
      * 3: PO   – Post Only. The order is required to go in the orderbook without any fills or reverts with
-     * T-T2PO-01. If reverted, no transaction is commited to the blockchain)
+     * T-T2PO-01. If reverted, no transaction is committed to the blockchain)
      */
     enum Type2 {
         GTC,

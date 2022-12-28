@@ -32,7 +32,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     uint256 public oracleFee;
     bytes public defaultAdapterParams;
 
-    // path = remote addrss + local address
+    // path = remote address + local address
     // inboundNonce = [srcChainId][path].
     mapping(uint16 => mapping(bytes => uint64)) public inboundNonce;
     //todo: this is a hack
@@ -337,7 +337,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
 
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _path) external override {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
-        // revert if no messages are cached. safeguard malicious UA behaviour
+        // revert if no messages are cached. safeguard malicious UA behavior
         require(sp.payloadHash != bytes32(0), "LayerZeroMock: no stored payload");
         require(sp.dstAddress == msg.sender, "LayerZeroMock: invalid caller");
 

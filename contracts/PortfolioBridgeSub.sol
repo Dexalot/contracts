@@ -16,7 +16,7 @@ import "./PortfolioBridge.sol";
  * expects. i.e USDC43114 is mapped to USDC. Similarly USDC1 can also be mapped to USDC. This way liquidity can
  * be combined and traded together in a multichain implementation.
  * When sending back to the target chain, it maps it back to the expected symbol by the target chain,
- * i.e USDC to USDC1 if sent back to Ethereum, USDC43114 if sent to Avalache. \
+ * i.e USDC to USDC1 if sent back to Ethereum, USDC43114 if sent to Avalanche. \
  * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getTokenId that has
  * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol mapping
  * will happen in different functions, either in processPayload or in getXFerMessage.
@@ -65,14 +65,14 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Adds the given token to the portfolioBridge. PortfolioBrigeSub the list will be bigger as they could
+     * @notice  Adds the given token to the portfolioBridge. PortfolioBridgeSub the list will be bigger as they could
      * be from different mainnet chains
      * @dev     `addToken` is only callable by admin or from Portfolio when a new subnet symbol is added for the
      * first time. The same subnet symbol but different symbolId are required when adding a token to
-     * PortfolioBrigeSub. \
+     * PortfolioBridgeSub. \
      * Sample Token List in PortfolioBridgeSub: (BTC & ALOT Listed twice with 2 different chain ids) \
      * Native symbol is also added as a token with 0 address \
-     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId, 43114: Avalache C-ChainId) \
+     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId, 43114: Avalanche C-ChainId) \
      * ALOT ALOT432204 18 0x0000000000000000000000000000000000000000 0 (Native ALOT) \
      * ALOT ALOT43114 18 0x5FbDB2315678afecb367f032d93F642f64180aa3 0 (Avalanche ALOT) \
      * AVAX AVAX43114 18 0x0000000000000000000000000000000000000000 0 (Avalanche Native AVAX) \
@@ -120,7 +120,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
 
             IPortfolio.TokenDetails storage tokenDetails = tokenDetailsMapById[symbolId];
             require(tokenDetails.symbol == "", "PB-TAEX-01");
-            //tokenDetails.auctionMode = _mode; //irrelavant in this context
+            //tokenDetails.auctionMode = _mode; //irrelevant in this context
             tokenDetails.decimals = _decimals;
             tokenDetails.tokenAddress = _tokenAddress;
             tokenDetails.srcChainId = _srcChainId;
@@ -236,7 +236,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
         updateVolume(_xfer.symbol, _xfer.quantity); // Reverts if breached. Does not add to delayTranfer.
 
         //Check individual treasholds again for withdrawals. And set them in delayed transfer if necessary.
-        if (checkTreshholds(_xfer)) {
+        if (checkTresholds(_xfer)) {
             sendXChainMessageInternal(_bridge, _xfer);
         }
     }
@@ -250,7 +250,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      * @param   _xfer  XFER message
      * @return  bool  True if the transfer can be executed immediately, false if it is delayed
      */
-    function checkTreshholds(IPortfolio.XFER memory _xfer) internal override returns (bool) {
+    function checkTresholds(IPortfolio.XFER memory _xfer) internal override returns (bool) {
         uint256 delayThreshold = delayThresholds[_xfer.symbol];
         if (delayThreshold > 0 && _xfer.quantity > delayThreshold) {
             bytes32 id = keccak256(
@@ -361,7 +361,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
         }
         uint256 cap = epochVolumeCaps[_token];
         if (cap == 0) {
-            // Default behaviour no cap on any tokens
+            // Default behavior no cap on any tokens
             return;
         }
         uint256 volume = epochVolumes[_token];

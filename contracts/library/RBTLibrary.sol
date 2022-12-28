@@ -12,7 +12,7 @@ pragma solidity 0.8.17;
 // https://github.com/bokkypoobah/BokkyPooBahsRedBlackTreeLibrary
 //
 //
-// Enjoy. (c) BokkyPooBah / Bok Consulting Pty Ltd 2020. The MIT Licence.
+// Enjoy. (c) BokkyPooBah / Bok Consulting Pty Ltd 2020. The MIT License.
 // ----------------------------------------------------------------------------
 
 /**
@@ -24,7 +24,7 @@ pragma solidity 0.8.17;
  * [BokkyPooBahsRedBlackTreeLibrary](https://github.com/bokkypoobah/BokkyPooBahsRedBlackTreeLibrary).
  * The library was modified with code optimization as per a PR submitted by user nremond.
  * The variable names for function arguments are updated to start with an underscore char.
- * Documenention has been added.
+ * Documentation has been added.
  */
 
 library RBTLibrary {

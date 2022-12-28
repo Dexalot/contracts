@@ -13,7 +13,7 @@ import "./interfaces/IPortfolioBridgeSub.sol";
  * @notice Receives messages from mainnet for deposits and sends withdraw requests to mainnet.  It also
    transfers tokens between traders as their orders gets matched.
  * @dev    Allows only the native token to be withdrawn and deposited from/to the subnet wallet. Any other
- * token has to be deposited via PortfoliMain deposit functions that sends a message via the bridge.
+ * token has to be deposited via PortfolioMain deposit functions that sends a message via the bridge.
  * When the bridge's message receive event emitted PortfolioBridgeSub invokes processXFerPayload \
  * All tokens including ALOT (native) can be withdrawn to mainnet using withdrawToken that will
  * send the holdings back to the user's wallet in the mainnet. \
@@ -21,7 +21,7 @@ import "./interfaces/IPortfolioBridgeSub.sol";
  * If a trader deposits a token and has 0 ALOT in his subnet wallet, this contract will make a call
  * to GasStation to deposit a small amount of ALOT to the user's wallet to be used for gas.
  * In return, It will deduct a tiny amount of the token transferred. This feature is called AutoFill
- * and it aims shield the clients from gas Token managment in the subnet.
+ * and it aims shield the clients from gas Token management in the subnet.
  * It is suffice to set usedForGasSwap=false for all tokens to disable autofill using tokens. ALOT can and
  * will always be used for this purpose.
  */
@@ -83,7 +83,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * PortfolioSub keeps track of total deposited tokens in tokenTotals for sanity checks against mainnet.
      * It has no ERC20 Contracts hence, it overwrites the addresses with address(0). \
      * It also adds the token to the PortfolioBridgeSub with the proper sourceChainid
-     * Tokens in PorfolioSub has ZeroAddress but PortfolioBridge has the proper address from each chain
+     * Tokens in PortfolioSub has ZeroAddress but PortfolioBridge has the proper address from each chain
      * Sample Token List in PortfolioSub: \
      * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId) \
      * ALOT ALOT432204 18 0x0000000000000000000000000000000000000000 0 \
@@ -224,9 +224,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     /**
      * @notice  Function for TradePairs to transfer tokens between addresses as a result of an execution
-     * @dev     WHEN Increasing in addExectuion the amount is applied to both total and available
+     * @dev     WHEN Increasing in addExecution the amount is applied to both total and available
      * (so SafeIncrease can be used) as opposed to
-     * WHEN Decreasing in addExectuion the amount is only applied to total. (SafeDecrease
+     * WHEN Decreasing in addExecution the amount is only applied to total. (SafeDecrease
      * can NOT be used, so we have safeDecreaseTotal instead)
      * i.e. (USDT 100 Total, 50 Available after we send a BUY order of 10 avax at 5$.
      * Partial Exec 5 at $5. Total goes down to 75. Available stays at 50)
@@ -322,7 +322,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * Minimal use of require statements, and lots of if checks to avoid blocking the bridge as it is
      * also called by processXFerPayload \
      * Users will always have some ALOT deposited to their gasTank if they start from the mainnet with any token
-     * Hence it is not possible to have a porfolioSub holding without gas in the GasTank
+     * Hence it is not possible to have a portfolioSub holding without gas in the GasTank
      * In other words: if assets[_trader][_symbol].available > 0 then _trader.balance will be > 0 \
      * Same in the scenario when person A sends tokens to person B who has no gas in his gasTank
      * using transferToken in the subnet because autoFillPrivate is also called
@@ -332,10 +332,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol of the token. ALOT or any other
      * @param   _transaction  Transaction type
-     * @return  tankFull  Tranders Gas Tank status
+     * @return  tankFull  Trader's Gas Tank status
      */
     function autoFillPrivate(address _trader, bytes32 _symbol, Tx _transaction) private returns (bool tankFull) {
-        // Default amount of ALOT to be transfered into traders Subnet Wallet(Gas Tank)
+        // Default amount of ALOT to be transferred into traders Subnet Wallet(Gas Tank)
         uint256 gasAmount = gasStation.gasAmount();
 
         if (_trader.balance < gasAmount) {
@@ -361,8 +361,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                     }
 
                     // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
-                    // We don't want the user to through the hassle of aquiring our subnet gas token ALOT first in
-                    // order to initiate a transaction. This is equivelant of an airdrop
+                    // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
+                    // order to initiate a transaction. This is equivalent of an airdrop
                     // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
                     // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
                 } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
@@ -616,7 +616,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws collected fees from the feeAdress or treasury to the mainnet
+     * @notice  Withdraws collected fees from the feeAddress or treasury to the mainnet
      * @dev     Only admin can call this function
      * @param   _from  address that can withdraw collected fees
      * @param   _maxCount  maximum number of ERC20 tokens with a non-zero balance to process at one time

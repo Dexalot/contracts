@@ -53,7 +53,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @notice  Internal function that implements the token addition
      * @dev     Unlike in the subnet it doesn't add the token to the PortfolioBridgeMain as it is redundant
      * Sample Token List in PortfolioMain: \
-     * Symbol, SymbolId, Decimals, address, auction mode (43114: Avalache C-ChainId) \
+     * Symbol, SymbolId, Decimals, address, auction mode (43114: Avalanche C-ChainId) \
      * ALOT ALOT43114 18 0x5FbDB2315678afecb367f032d93F642f64180aa3 0 (Avalanche ALOT) \
      * AVAX AVAX43114 18 0x0000000000000000000000000000000000000000 0 (Avalanche Native AVAX) \
      * BTC.b BTC.b43114 8 0x59b670e9fA9D0A427751Af201D676719a970857b 0 \
@@ -212,9 +212,9 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     }
 
     /**
-     * @notice  Sets the minimum deposit multipler
-     * @dev     The multipler entered will always be devided by 10
-     * @param   _minDepositMultiplier  multipler for minimum deposits
+     * @notice  Sets the minimum deposit multiplier
+     * @dev     The multiplier entered will always be divided by 10
+     * @param   _minDepositMultiplier  multiplier for minimum deposits
      */
     function setMinDepositMultiplier(uint8 _minDepositMultiplier) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_minDepositMultiplier >= 10, "P-MDML-01"); // min 10 ==> 10/10

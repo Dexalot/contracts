@@ -26,7 +26,7 @@ contract ExchangeMain is Exchange {
     event CoinFlipped(uint80 roundid, int256 price, bool outcome);
 
     /**
-     * @notice  (Un)pauses portoflioMain and portfolioBridgeMain for upgrade
+     * @notice  (Un)pauses portfolioMain and portfolioBridgeMain for upgrade
      * @param   _pause  true to pause, false to unpause
      */
     function pauseForUpgrade(bool _pause) external override {
