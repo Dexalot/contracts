@@ -43,7 +43,7 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      */
     function initialize() public virtual initializer {
         __AccessControlEnumerable_init();
-        // intitialize deployment account to have DEFAULT_ADMIN_ROLE
+        // initialize deployment account to have DEFAULT_ADMIN_ROLE
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 

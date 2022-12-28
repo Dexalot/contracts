@@ -48,7 +48,7 @@ interface IPortfolioBridge {
         IPortfolio.XFER xfer
     );
 
-    // CELER Not used but keeping it to run tests for enabeling/disabeling bridge providers
+    // CELER Not used but keeping it to run tests for enabling/disabling bridge providers
     enum BridgeProvider {
         LZ,
         CELER

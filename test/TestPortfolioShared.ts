@@ -86,6 +86,9 @@ describe("Portfolio Shared", () => {
         expect(await portfolio.hasRole(role, trader1.address)).to.be.true;
         // fail for non-admin
         await expect(portfolio.connect(trader2).revokeRole(role, trader1.address)).to.be.revertedWith("AccessControl: account");
+
+        // fail for zero address
+        await expect(portfolio.revokeRole(role, ZERO_ADDRESS)).to.revertedWith("P-OACC-02");
         // succeed for admin
         await portfolio.revokeRole(role, trader1.address)
         expect(await portfolio.hasRole(role, trader1.address)).to.be.false;
@@ -350,7 +353,7 @@ describe("Portfolio Shared", () => {
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolio.connect(admin).pauseDeposit(true);
         // fail when paused for native
-        await expect(owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.parseUnits('10', 18)})).to.revertedWith("P-NTDP-01");
+        await expect(owner.sendTransaction({to: portfolio.address, value: Utils.parseUnits('10', 18)})).to.revertedWith("P-NTDP-01");
 
         // fail depositToken() when paused
         await expect(f.depositToken(portfolio, owner, usdt, token_decimals, USDT,  '10')).to.revertedWith("P-NTDP-01");
@@ -374,7 +377,7 @@ describe("Portfolio Shared", () => {
         // fail for quantity more than balance for depositTokenFromContract()
         await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.parseUnits('1001', token_decimals))).to.revertedWith("P-NETD-01");
         // succeed for native
-        await owner.sendTransaction({from: owner.address, to: portfolio.address, value: Utils.toWei('1000')});
+        await owner.sendTransaction({to: portfolio.address, value: Utils.toWei('1000')});
         const bal = await portfolioSub.getBalance(owner.address, AVAX);
         expect(bal.total).to.be.equal(Utils.toWei('1000'));
         expect(bal.available).to.be.equal(Utils.toWei('1000'));

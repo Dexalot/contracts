@@ -1,0 +1,51 @@
+--------------------------------------|----------|----------|----------|----------|----------------|
+File                                  |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
+--------------------------------------|----------|----------|----------|----------|----------------|
+ contracts\                           |      100 |     94.9 |      100 |      100 |                |
+  BannedAccounts.sol                  |      100 |      100 |      100 |      100 |                |
+  Exchange.sol                        |      100 |      100 |      100 |      100 |                |
+  ExchangeMain.sol                    |      100 |      100 |      100 |      100 |                |
+  ExchangeSub.sol                     |      100 |      100 |      100 |      100 |                |
+  GasStation.sol                      |      100 |    93.33 |      100 |      100 |                |
+  OrderBooks.sol                      |      100 |      100 |      100 |      100 |                |
+  Portfolio.sol                       |      100 |    95.65 |      100 |      100 |                |
+  PortfolioBridge.sol                 |      100 |    90.91 |      100 |      100 |                |
+  PortfolioBridgeSub.sol              |      100 |    91.94 |      100 |      100 |                |
+  PortfolioMain.sol                   |      100 |     91.3 |      100 |      100 |                |
+  PortfolioMinter.sol                 |      100 |      100 |      100 |      100 |                |
+  PortfolioSub.sol                    |      100 |    93.21 |      100 |      100 |                |
+  TradePairs.sol                      |      100 |    95.58 |      100 |      100 |                |
+ contracts\bridgeApps\                |      100 |      100 |      100 |      100 |                |
+  LzApp.sol                           |      100 |      100 |      100 |      100 |                |
+ contracts\interfaces\                |      100 |      100 |      100 |      100 |                |
+  IBannedAccounts.sol                 |      100 |      100 |      100 |      100 |                |
+  IGasStation.sol                     |      100 |      100 |      100 |      100 |                |
+  INativeMinter.sol                   |      100 |      100 |      100 |      100 |                |
+  IPortfolio.sol                      |      100 |      100 |      100 |      100 |                |
+  IPortfolioBridge.sol                |      100 |      100 |      100 |      100 |                |
+  IPortfolioBridgeSub.sol             |      100 |      100 |      100 |      100 |                |
+  IPortfolioMain.sol                  |      100 |      100 |      100 |      100 |                |
+  IPortfolioMinter.sol                |      100 |      100 |      100 |      100 |                |
+  IPortfolioSub.sol                   |      100 |      100 |      100 |      100 |                |
+  ITradePairs.sol                     |      100 |      100 |      100 |      100 |                |
+ contracts\interfaces\layerZero\      |      100 |      100 |      100 |      100 |                |
+  ILayerZeroEndpoint.sol              |      100 |      100 |      100 |      100 |                |
+  ILayerZeroReceiver.sol              |      100 |      100 |      100 |      100 |                |
+  ILayerZeroUserApplicationConfig.sol |      100 |      100 |      100 |      100 |                |
+ contracts\library\                   |      100 |    99.11 |      100 |      100 |                |
+  Bytes32LinkedListLibrary.sol        |      100 |    92.86 |      100 |      100 |                |
+  RBTLibrary.sol                      |      100 |      100 |      100 |      100 |                |
+  UtilsLibrary.sol                    |      100 |      100 |      100 |      100 |                |
+ contracts\others\                    |      100 |      100 |      100 |      100 |                |
+  Multicall2.sol                      |      100 |      100 |      100 |      100 |                |
+ contracts\token\                     |      100 |    95.91 |      100 |      100 |                |
+  Airdrop.sol                         |      100 |      100 |      100 |      100 |                |
+  DexalotToken.sol                    |      100 |      100 |      100 |      100 |                |
+  IncentiveDistributor.sol            |      100 |      100 |      100 |      100 |                |
+  MockToken.sol                       |      100 |      100 |      100 |      100 |                |
+  Staking.sol                         |      100 |    88.71 |      100 |      100 |                |
+  TokenVestingCloneFactory.sol        |      100 |      100 |      100 |      100 |                |
+  TokenVestingCloneable.sol           |      100 |    96.67 |      100 |      100 |                |
+--------------------------------------|----------|----------|----------|----------|----------------|
+All files                             |      100 |    95.57 |      100 |      100 |                |
+--------------------------------------|----------|----------|----------|----------|----------------|

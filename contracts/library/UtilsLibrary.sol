@@ -85,7 +85,7 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  Returns the minuimum of the two uint256 arguments
+     * @notice  Returns the minimum of the two uint256 arguments
      * @param   _a  A
      * @param   _b  B
      * @return  uint256  Min of a and b

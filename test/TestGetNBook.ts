@@ -58,8 +58,6 @@ const initial_portfolio_deposits: any = {AVAX: 9000, USDT: 14000, BUSD: 45000};
 
 const options: any = { };
 
-// address (a multisig in production) that collects the fees
-const foundationSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
 
 let wallets: Array<SignerWithAddress>;
 let accounts: Array<string>;
@@ -157,8 +155,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             Utils.printBalances(account, _bal, 18);
             if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
                 const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
-                await wallet.sendTransaction({from: account,
-                                              to: portfolioMain.address,
+                await wallet.sendTransaction({to: portfolioMain.address,
                                               value: Utils.toWei(_deposit_amount.toString())});
                 //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
                 _bal = await portfolio.getBalance(account, _nativeBytes32);
@@ -306,8 +303,8 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             const tradePair: TradePairs = new ethers.Contract(tradePairs.address, TradePairsAbi.abi, wallets[order["ownerIndex"]]) as TradePairs;
             const tradePairId = Utils.fromUtf8(order["tradePair"]);
 
-            const baseDecimals = await tradePair.getDecimals(tradePairId, true);
-            const quoteDecimals = await tradePair.getDecimals(tradePairId, false);
+            const baseDecimals = (await tradePair.getTradePair(tradePairId)).baseDecimals;
+            const quoteDecimals = (await tradePair.getTradePair(tradePairId)).quoteDecimals;
 
             // ADD NEW ORDERS TO TRADEPAIR
             if (order["action"] === "ADD") {

@@ -141,6 +141,29 @@ describe("Portfolio Main", () => {
         .to.be.revertedWith("P-NZBL-01");
     });
 
+    it("Should set Minimum Deposit Multipler", async () => {
+        const token_symbol = "USDT";
+        const token_decimals = 18;
+        const usdt = await f.deployMockToken(token_symbol, token_decimals);
+        const USDT = Utils.fromUtf8(await usdt.symbol());
+        const gasSwapRatio= 0.5
+        await f.addToken(portfolioMain, usdt, gasSwapRatio);
+        await f.addToken(portfolioSub, usdt, gasSwapRatio);
+
+        const currMultp = 19 // always divided by 10 (making it 1.9)
+        expect(await portfolioMain.minDepositMultiplier()).to.equal(currMultp);
+        const minDepAmount =  Utils.parseUnits(gasSwapRatio.toString(),tokenDecimals).mul(currMultp).div(10);
+
+        expect(await portfolioMain.getMinDepositAmount(USDT)).to.equal(minDepAmount);
+
+        await expect(portfolioMain.connect(trader1).setMinDepositMultiplier(15)).to.be.revertedWith("AccessControl");
+        await expect(portfolioMain.setMinDepositMultiplier(9)).to.be.revertedWith("P-MDML-01");
+        await expect(portfolioMain.setMinDepositMultiplier(10))
+        .to.emit(portfolioMain, "ParameterUpdated")
+        .withArgs(Utils.fromUtf8("PortfolioMain"), "P-MINDEP-MULT", currMultp, 10);
+
+    });
+
     it("Should get token details", async () => {
         const token_symbol = "USDT";
         const token_decimals = 18;
@@ -163,7 +186,11 @@ describe("Portfolio Main", () => {
         expect(tokenDetails.tokenAddress).to.equal("0x0000000000000000000000000000000000000000");
         expect(tokenDetails.auctionMode).to.equal(0);
         expect(tokenDetails.decimals).to.equal(0);
+
+
     });
+
+
 
     it("Should use processXFerPayload() correctly", async () => {
         const { owner, trader2 } = await f.getAccounts();

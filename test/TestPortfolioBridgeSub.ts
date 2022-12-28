@@ -34,6 +34,7 @@ describe("Portfolio Bridge Sub", () => {
     let delayThreshold: BigNumber;
     let volumeCap: BigNumber;
     let trader1: SignerWithAddress;
+    let trader2: SignerWithAddress;
     let owner: SignerWithAddress;
 
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
@@ -42,9 +43,10 @@ describe("Portfolio Bridge Sub", () => {
     const ALOT: string = Utils.fromUtf8("ALOT");
 
     before(async function () {
-        const { owner: owner1, trader1: t1} = await f.getAccounts();
+        const { owner: owner1, trader1: t1, trader2: t2} = await f.getAccounts();
         owner = owner1;
         trader1 = t1;
+        trader2 = t2;
         console.log("Owner", owner.address);
         console.log("Trader1", trader1.address);
         mock = await f.deployMockToken("MOCK", 18);
@@ -175,25 +177,32 @@ describe("Portfolio Bridge Sub", () => {
         await expect(portfolioBridgeSub.connect(trader1).removeToken(ALOT, srcChainId))
             .to.be.revertedWith("Pausable: not paused");
 
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), trader1.address);
+        await portfolioBridgeSub.connect(trader1).pause();
+
         // fail for non-privileged role
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address);
-        await portfolioBridgeSub.pause();
-        await expect(portfolioBridgeSub.connect(trader1).removeToken(ALOT, srcChainId))
+        await expect(portfolioBridgeSub.connect(trader2).removeToken(ALOT, srcChainId))
             .to.be.revertedWith("PB-OACC-01");
 
-        // silent fail for default admin role as you cannot remove native token
-        await portfolioBridgeSub.removeToken(Utils.fromUtf8("ALOT" + srcChainId), srcChainId);
-        expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + srcChainId));
+        //Add ALOT with the mainnet chain id  (use portfolioBridgeMain.address to mock ALOT address)
+        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode);
 
-        //Add ALOT with the mainnet chain id (use portfolioBridgeMain.address to mock ALOT address)
+        //Remove with PORTFOLIO_ROLE
+        await portfolioBridgeSub.connect(trader1).removeToken(ALOT, 5555);
+        expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("ALOT" + '5555'));
+
+        //Add ALOT with the mainnet chain id again (use portfolioBridgeMain.address to mock ALOT address)
         await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode);
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + '5555'));
-        // Remove ALOT from chain 5555
+        // Remove ALOT from chain 5555 with DEFAULT_ADMIN_ROLE
         await portfolioBridgeSub.removeToken(ALOT, 5555);
         expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("ALOT" + '5555'));
         //Slient fail for ALOT with non-existent chain
         await portfolioBridgeSub.removeToken(ALOT, 888);
 
+        // silent fail for default admin role as you cannot remove native token
+        await portfolioBridgeSub.removeToken(Utils.fromUtf8("ALOT" + srcChainId), srcChainId);
+        expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + srcChainId));
 
     });
 

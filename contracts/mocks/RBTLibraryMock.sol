@@ -14,7 +14,7 @@ import "../library/RBTLibrary.sol";
 // https://github.com/bokkypoobah/BokkyPooBahsRedBlackTreeLibrary
 //
 //
-// Enjoy. (c) BokkyPooBah / Bok Consulting Pty Ltd 2020. The MIT Licence.
+// Enjoy. (c) BokkyPooBah / Bok Consulting Pty Ltd 2020. The MIT License.
 // ----------------------------------------------------------------------------
 
 /**

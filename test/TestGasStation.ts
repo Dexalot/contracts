@@ -38,12 +38,12 @@ import { ethers, upgrades } from "hardhat";
     });
 
     it("Should deploy correctly", async () => {
-        const {admin, foundationSafe} = await f.getAccounts();
+        const {admin, treasurySafe} = await f.getAccounts();
         const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolioSub.address]) as GasStation;
 
         await portfolioSub.setGasStation(gasStation.address);
 
-        await portfolioSub.setTreasury(foundationSafe.address);
+        await portfolioSub.setTreasury(treasurySafe.address);
 
         await admin.sendTransaction({
             to: gasStation.address,
@@ -54,7 +54,7 @@ import { ethers, upgrades } from "hardhat";
         expect(await gasStation.gasAmount()).to.eq(ethers.utils.parseEther("0.1"));
         expect(await gasStation.hasRole(await gasStation.SWAPPER_ROLE(), portfolioSub.address)).to.eq(true);
         expect(await portfolioSub.getGasStation()).to.eq(gasStation.address);
-        expect(await portfolioSub.getTreasury()).to.eq(foundationSafe.address);
+        expect(await portfolioSub.getTreasury()).to.eq(treasurySafe.address);
 
     })
 

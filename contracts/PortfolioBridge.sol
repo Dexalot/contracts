@@ -37,7 +37,7 @@ import "./bridgeApps/LzApp.sol";
  * incoming and the outgoing xfer messages always contain the symbolId rather than symbol. \
  * getXFerMessage is called by lzDestroyAndRecoverFunds to handle a stuck message from the LZ bridge,
  * and to return the funds to the depositor/withdrawer. Hence, getXFerMessage maps the symbolId to symbol.
- * Use multiple inheritence to add additional bridge implementations in the future. Currently LzApp only.
+ * Use multiple inheritance to add additional bridge implementations in the future. Currently LzApp only.
  */
 
 // The code in this file is part of Dexalot project.
@@ -57,7 +57,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     // Controls actions that can be executed the the PORTFOLIO
     bytes32 public constant PORTFOLIO_ROLE = keccak256("PORTFOLIO_ROLE");
-    // Controls all bridge implementations access. Currenty only LZ
+    // Controls all bridge implementations access. Currently only LZ
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
 
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -134,7 +134,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     /**
      * @notice  Wrapper for revoking roles
      * @dev     Only admin can revoke role. BRIDGE_ADMIN_ROLE will remove additional roles to the parent contract(s)
-     * Currenly LZ_BRIDGE_ADMIN_ROLE is removed from the LzApp
+     * Currently LZ_BRIDGE_ADMIN_ROLE is removed from the LzApp
      * @param   _role  Role to revoke
      * @param   _address  Address to revoke role from
      */
@@ -201,11 +201,19 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
+     * @notice   List of the tokens in the portfolioBridge
+     * @return  bytes32[]  Array of symbols of the tokens
+     */
+    function getTokenList() external view virtual returns (bytes32[] memory) {
+        return portfolio.getTokenList();
+    }
+
+    /**
      * @notice  Returns the symbolId used in the mainnet given the srcChainId
      * @dev     It uses PortfolioMain's token list to get the symbolId,
      * On the other hand, PortfolioBridgeSub uses its internal list & the defaultTargetChain
      * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC1337
-     * When receiving messages back it expects the same symbolId if USDC1337 sent, USDC1337 to recieve
+     * When receiving messages back it expects the same symbolId if USDC1337 sent, USDC1337 to receive
      * Because the subnet needs to know about different ids from different mainnets.
      * @param   _symbol  symbol of the token
      * @return  bytes32  symbolId
@@ -241,7 +249,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     /**
      * @notice  Unpacks XFER message from the payload and replaces the symbol with the local symbol
-     * @dev     It is called by lzDestroyAndRecoverFunds to handle a stucked message
+     * @dev     It is called by lzDestroyAndRecoverFunds to handle a stuck message
      * @param   _payload  Payload passed from the bridge
      * @return  address  Address of the trader
      * @return  bytes32  Symbol of the token
@@ -276,7 +284,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     /**
      * @notice  Decodes XChainMsgType from the message
      * @param   _data  Encoded message that has the msg type + msg
-     * @return  _xchainMsgType  XChainMsgType. Currenly only XChainMsgType.XFER possible
+     * @return  _xchainMsgType  XChainMsgType. Currently only XChainMsgType.XFER possible
      * @return  msgdata  Still encoded message data. XFER in our case. Other message types not supported yet.
      */
     function unpackMessage(
@@ -352,14 +360,15 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  This is a destructive, last resort option, Always try lzRetryPayload first.
+     * @notice  This is a destructive, secondary option. Always try lzRetryPayload first.
+     * if this function still fails call LzApp.forceResumeReceive directly with DEFAULT_ADMIN_ROLE as the last resort
      * Destroys the message that is blocking the bridge and calls portfolio.processXFerPayload
      * Effectively completing the message trajectory from originating chain to the target chain.
-     * if sucessfull, the funds are processed at the target chain. If not no funds are recovered and
+     * if successful, the funds are processed at the target chain. If not no funds are recovered and
      * the bridge is still in blocked status and additional messages are queued behind.
-     * @dev     Only recover/process message if forceResumeReceive() succesfully completes.
+     * @dev     Only recover/process message if forceResumeReceive() successfully completes.
      * Only the BRIDGE_ADMIN_ROLE can call this function.
-     * If there is no storedpaylod (stuck message), this function will revert, _payload parameter will be ignored and
+     * If there is no storedpayload (stuck message), this function will revert, _payload parameter will be ignored and
      * will not be processed. If this function keeps failing due to an error condition after the forceResumeReceive call
      * then forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) has to be called directly with
      * DEFAULT_ADMIN_ROLE and the funds will have to be recovered manually
@@ -401,18 +410,18 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         //After the event is raised, replace the symbol with the local symbol that is going to be used.
         xfer.symbol = symbol;
 
-        if (checkTreshholds(xfer)) {
+        if (checkTresholds(xfer)) {
             portfolio.processXFerPayload(xfer.trader, xfer.symbol, xfer.quantity, xfer.transaction);
         }
     }
 
     /**
-     * @notice  Overriden by PortfolioBridgeSub
+     * @notice  Overridden by PortfolioBridgeSub
      * @dev     Tresholds are not checked in the Mainnet neither for Incoming nor outgoing messages.
      * But they are checked in the subnet for both.
      * @return  bool  True
      */
-    function checkTreshholds(IPortfolio.XFER memory) internal virtual returns (bool) {
+    function checkTresholds(IPortfolio.XFER memory) internal virtual returns (bool) {
         return true;
     }
 

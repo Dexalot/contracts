@@ -49,7 +49,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
      */
     function initialize() public initializer {
         __AccessControlEnumerable_init();
-        // intitialize deployment account to have DEFAULT_ADMIN_ROLE
+        // initialize deployment account to have DEFAULT_ADMIN_ROLE
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
