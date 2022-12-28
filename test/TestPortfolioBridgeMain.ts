@@ -173,6 +173,8 @@ describe("Portfolio Bridge Main", () => {
         const tokenDetails = await portfolioMain.getTokenDetailsById(Utils.fromUtf8("AVAX" + srcChainId));
 
         expect(tokenDetails.symbol).to.be.equal(Utils.fromUtf8("AVAX"))
+        expect((await portfolioBridgeMain.getTokenList()).length).to.equal(1);
+
     });
 
     it("Should not revoke role if it is the only member or portfolio", async () => {

@@ -122,7 +122,7 @@ describe("Portfolio Interactions", () => {
 
     // AVAX
     it("Should deposit native tokens to portfolio", async () => {
-        await owner.sendTransaction({from: owner.address, to: portfolioMain.address, value: Utils.toWei(deposit_amount)});
+        await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei(deposit_amount)});
         const res = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
         Utils.printResults(owner.address, "after deposit", res, avax_decimals);
         expect(res.total).to.equal(Utils.toWei(deposit_amount_less_fee));
@@ -134,8 +134,8 @@ describe("Portfolio Interactions", () => {
         console.log();
         const { owner, trader2 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
@@ -168,8 +168,8 @@ describe("Portfolio Interactions", () => {
         console.log();
         const { owner, trader2 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
@@ -191,8 +191,8 @@ describe("Portfolio Interactions", () => {
         console.log();
         const { owner, trader2 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
         //"PB-SINA-01"
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
@@ -227,7 +227,7 @@ describe("Portfolio Interactions", () => {
 
         const initial_amount = await owner.getBalance();
 
-        const tx: any = await owner.sendTransaction({from: owner.address, to: portfolioMain.address, value: Utils.toWei(deposit_amount)});
+        const tx: any = await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei(deposit_amount)});
         const txRes: any = await tx.wait()
 
         const withdrawal_amount = '100';
@@ -258,7 +258,7 @@ describe("Portfolio Interactions", () => {
     // Works individually but not works in coverage
     it("Should send Gas Token if it is not enough", async () => {
         const { owner, other1 } = await f.getAccounts();
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
         await f.addToken(portfolioSub, usdt, 0.01, 0, true); //gasSwapRatio 0.01
         await usdt.mint(other1.address, ethers.utils.parseEther("1000"));
         await gasStation.setGasAmount(ethers.utils.parseEther("10"))
@@ -455,8 +455,8 @@ describe("Portfolio Interactions", () => {
     })
 
     it("Should pause and unpause Portfolio deposit from the admin account", async function () {
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
         // fail from non admin accounts
@@ -466,7 +466,7 @@ describe("Portfolio Interactions", () => {
         await portfolioMain.grantRole(await portfolioMain.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolioMain.connect(admin).pauseDeposit(true);
         // fail when paused
-        await expect(owner.sendTransaction({from: owner.address, to: portfolioMain.address, value: Utils.toWei('1000')})).to.revertedWith("P-NTDP-01");
+        await expect(owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei('1000')})).to.revertedWith("P-NTDP-01");
         // fail depositToken() when paused
         await expect(f.depositToken(portfolioMain, owner, usdt, token_decimals, USDT,  '10')).to.revertedWith("P-NTDP-01");
         // fail depositTokenFromContract() when paused
@@ -487,7 +487,7 @@ describe("Portfolio Interactions", () => {
         // fail for quantity more than balance for depositTokenFromContract()
         await expect(portfolioMain.depositTokenFromContract(owner.address, USDT, Utils.toWei('1001'))).to.revertedWith("P-NETD-01");
         // succeed for native
-        await owner.sendTransaction({from: owner.address, to: portfolioMain.address, value: Utils.toWei('1000')});
+        await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei('1000')});
         const bal = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
         expect(bal.total).to.be.equal(Utils.toWei('1000'));
         expect(bal.available).to.be.equal(Utils.toWei('1000'));
@@ -508,8 +508,8 @@ describe("Portfolio Interactions", () => {
         const count = await factory.count();
         const tokenVesting: TokenVestingCloneable = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
 
@@ -549,8 +549,8 @@ describe("Portfolio Interactions", () => {
         const count = await factory.count();
         const tokenVesting: TokenVestingCloneable = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0
+        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
         await usdt.transfer(tokenVesting.address, 1000);

@@ -86,7 +86,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      * WETH.e WETH.e43114 18 0x02b0B4EFd909240FCB2Eb5FAe060dC60D112E3a4 0 \
      * Note:
      * ALOT from the Avalanche Mainnet (Line 2 in the list) will be added with a direct function call
-     * to PortfolioBridgeSub.addToken as a part of the deployment script. All other tokens have be 
+     * to PortfolioBridgeSub.addToken as a part of the deployment script. All other tokens have be
      * added via PortfolioSub.addToken which also calls the same PortfolioBridgeSub function. \
      * Similarly, ALOT from the Avalanche Mainnet can only be removed by PortfolioBridgeSub.removeToken
      * if it was added by mistake. All other tokens should be removed with PortfolioSub.removeToken.
@@ -210,10 +210,10 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Frontend function to get all the tokens in the portfolio
+     * @notice  List of the tokens in the portfolioBridge
      * @return  bytes32[]  Array of symbols of the tokens
      */
-    function getTokenList() external view returns (bytes32[] memory) {
+    function getTokenList() external view override returns (bytes32[] memory) {
         bytes32[] memory tokens = new bytes32[](tokenListById.length());
         for (uint256 i = 0; i < tokenListById.length(); i++) {
             tokens[i] = tokenListById.at(i);

@@ -201,6 +201,14 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
+     * @notice   List of the tokens in the portfolioBridge
+     * @return  bytes32[]  Array of symbols of the tokens
+     */
+    function getTokenList() external view virtual returns (bytes32[] memory) {
+        return portfolio.getTokenList();
+    }
+
+    /**
      * @notice  Returns the symbolId used in the mainnet given the srcChainId
      * @dev     It uses PortfolioMain's token list to get the symbolId,
      * On the other hand, PortfolioBridgeSub uses its internal list & the defaultTargetChain
@@ -352,10 +360,11 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
     }
 
     /**
-     * @notice  This is a destructive, last resort option, Always try lzRetryPayload first.
+     * @notice  This is a destructive, secondary option. Always try lzRetryPayload first.
+     * if this function still fails call LzApp.forceResumeReceive directly with DEFAULT_ADMIN_ROLE as the last resort
      * Destroys the message that is blocking the bridge and calls portfolio.processXFerPayload
      * Effectively completing the message trajectory from originating chain to the target chain.
-     * if sucessfull, the funds are processed at the target chain. If not no funds are recovered and
+     * if successful, the funds are processed at the target chain. If not no funds are recovered and
      * the bridge is still in blocked status and additional messages are queued behind.
      * @dev     Only recover/process message if forceResumeReceive() succesfully completes.
      * Only the BRIDGE_ADMIN_ROLE can call this function.

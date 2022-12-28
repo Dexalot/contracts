@@ -39,9 +39,11 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
 
     // banned accounts contract address set externally with setBannedAccounts as part of deployment
     IBannedAccounts internal bannedAccounts;
+    uint8 public minDepositMultiplier;
 
     function initialize(bytes32 _native, uint32 _chainId) public override initializer {
         Portfolio.initialize(_native, _chainId);
+        minDepositMultiplier = 19; // 19/10 1.9 times
         // Always Add native with 0 Bridge Fee and 0.01 gasSwapRatio (1 AVAX for 1 ALOT)
         // This value will be adjusted periodically
         addTokenInternal(native, address(0), _chainId, 18, ITradePairs.AuctionMode.OFF, 0, 1 * 10 ** 16);
@@ -206,7 +208,18 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      */
     function getMinDepositAmount(bytes32 _symbol) external view returns (uint256) {
         BridgeParams storage bridgeParam = bridgeParams[_symbol];
-        return ((bridgeParam.fee + bridgeParam.gasSwapRatio) * 19) / 10;
+        return ((bridgeParam.fee + bridgeParam.gasSwapRatio) * minDepositMultiplier) / 10;
+    }
+
+    /**
+     * @notice  Sets the minimum deposit multipler
+     * @dev     The multipler entered will always be devided by 10
+     * @param   _minDepositMultiplier  multipler for minimum deposits
+     */
+    function setMinDepositMultiplier(uint8 _minDepositMultiplier) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_minDepositMultiplier >= 10, "P-MDML-01"); // min 10 ==> 10/10
+        emit ParameterUpdated(bytes32("PortfolioMain"), "P-MINDEP-MULT", minDepositMultiplier, _minDepositMultiplier);
+        minDepositMultiplier = _minDepositMultiplier;
     }
 
     /**
@@ -221,7 +234,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         for (uint256 i = 0; i < tokenList.length(); i++) {
             BridgeParams storage bridgeParam = bridgeParams[tokenList.at(i)];
             tokens[i] = tokenList.at(i);
-            amounts[i] = ((bridgeParam.fee + bridgeParam.gasSwapRatio) * 19) / 10;
+            amounts[i] = ((bridgeParam.fee + bridgeParam.gasSwapRatio) * minDepositMultiplier) / 10;
         }
         return (tokens, amounts);
     }

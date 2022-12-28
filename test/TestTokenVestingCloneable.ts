@@ -20,7 +20,6 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from 'ethers';
-import { decodeVariable } from '@defi-wonderland/smock/dist/src/utils/storage';
 
 const ZERO = '0x0000000000000000000000000000000000000000';
 

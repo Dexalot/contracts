@@ -49,8 +49,8 @@ describe("Multicall2", function () {
 		await mock.connect(owner).addAdmin(admin.address);
 		await mock.connect(admin).addMinter(minter.address);
 		await mock.connect(minter).mint(owner.address, Utils.toWei('100000'));
-		await owner.sendTransaction({from: owner.address, to: alice.address, value: Utils.toWei('500')})
-		await owner.sendTransaction({from: owner.address, to: bob.address, value: Utils.toWei('500')})
+		await owner.sendTransaction({to: alice.address, value: Utils.toWei('500')})
+		await owner.sendTransaction({to: bob.address, value: Utils.toWei('500')})
 		await mock.connect(owner).transfer(alice.address, Utils.parseUnits('500', 18))
 		await mock.connect(owner).transfer(bob.address, Utils.parseUnits('500', 18))
 	});

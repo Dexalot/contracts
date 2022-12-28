@@ -104,25 +104,21 @@ interface ITradePairs {
     function addTradePair(
         bytes32 _tradePairId,
         bytes32 _baseSymbol,
-        uint8 _baseDecimals,
         uint8 _baseDisplayDecimals,
         bytes32 _quoteSymbol,
-        uint8 _quoteDecimals,
         uint8 _quoteDisplayDecimals,
         uint256 _minTradeAmount,
         uint256 _maxTradeAmount,
         AuctionMode _mode
     ) external;
 
+    function removeTradePair(bytes32 _tradePairId) external;
+
     function getTradePairs() external view returns (bytes32[] memory);
 
     function setMinTradeAmount(bytes32 _tradePairId, uint256 _minTradeAmount) external;
 
-    function getMinTradeAmount(bytes32 _tradePairId) external view returns (uint256);
-
     function setMaxTradeAmount(bytes32 _tradePairId, uint256 _maxTradeAmount) external;
-
-    function getMaxTradeAmount(bytes32 _tradePairId) external view returns (uint256);
 
     function addOrderType(bytes32 _tradePairId, Type1 _type) external;
 
@@ -130,21 +126,11 @@ interface ITradePairs {
 
     function setDisplayDecimals(bytes32 _tradePairId, uint8 _displayDecimals, bool _isBase) external;
 
-    function getDisplayDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
-
-    function getDecimals(bytes32 _tradePairId, bool _isBase) external view returns (uint8);
-
-    function getSymbol(bytes32 _tradePairId, bool _isBase) external view returns (bytes32);
+    function getTradePair(bytes32 _tradePairId) external view returns (TradePair memory);
 
     function updateRate(bytes32 _tradePairId, uint8 _rate, RateType _rateType) external;
 
-    function getMakerRate(bytes32 _tradePairId) external view returns (uint8);
-
-    function getTakerRate(bytes32 _tradePairId) external view returns (uint8);
-
     function setAllowedSlippagePercent(bytes32 _tradePairId, uint8 _allowedSlippagePercent) external;
-
-    function getAllowedSlippagePercent(bytes32 _tradePairId) external view returns (uint8);
 
     function getNBook(
         bytes32 _tradePairId,
@@ -180,13 +166,11 @@ interface ITradePairs {
 
     function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external;
 
-    function getAuctionData(bytes32 _tradePairId) external view returns (uint8, uint256);
-
-    function unsolicitedCancel(bytes32 _tradePairId, bool _isBuyBook, uint8 _maxCount) external;
+    function unsolicitedCancel(bytes32 _tradePairId, bool _isBuyBook, uint256 _maxCount) external;
 
     function getBookId(bytes32 _tradePairId, Side _side) external view returns (bytes32);
 
-    function matchAuctionOrder(bytes32 _takerOrderId, uint8 _maxCount) external returns (uint256);
+    function matchAuctionOrder(bytes32 _takerOrderId, uint256 _maxNbrOfFills) external returns (uint256);
 
     function getOrderRemainingQuantity(bytes32 _orderId) external view returns (uint256);
 

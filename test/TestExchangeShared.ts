@@ -33,14 +33,14 @@ describe("Exchange Shared", function () {
     let auctionAdmin: SignerWithAddress;
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
-    let foundationSafe: SignerWithAddress;
+    let treasurySafe: SignerWithAddress;
 
     before(async function () {
         MockToken = await ethers.getContractFactory("MockToken");
     });
 
     beforeEach(async function () {
-        [owner, admin, auctionAdmin, trader1, trader2, foundationSafe] = await ethers.getSigners();
+        [owner, admin, auctionAdmin, trader1, trader2, treasurySafe] = await ethers.getSigners();
 
         const {portfolioMain: portfolioM} = await f.deployCompletePortfolio();
         portfolio = portfolioM;
@@ -70,7 +70,7 @@ describe("Exchange Shared", function () {
             await exchange.connect(trader1).removeAdmin(trader1.address);
             expect(await exchange.isAdmin(trader1.address)).to.be.false;
             // fail to remove last admin
-            await exchange.removeAdmin(foundationSafe.address)
+            await exchange.removeAdmin(treasurySafe.address)
             await exchange.removeAdmin(admin.address)
             await expect(exchange.removeAdmin(owner.address)).to.be.revertedWith("E-ALOA-01");
             expect(await exchange.isAdmin(owner.address)).to.be.true;
@@ -150,8 +150,7 @@ describe("Exchange Shared", function () {
             const balBefore = await ethers.provider.getBalance(owner.address);
             const msg = "Transaction reverted:";
             try {
-                await owner.sendTransaction({from: owner.address,
-                                             to: exchange.address,
+                await owner.sendTransaction({to: exchange.address,
                                              value: Utils.toWei('1')})
             } catch(err: any) {
                 expect(err.message.includes(msg)).to.be.true;

@@ -321,7 +321,7 @@ abstract contract Portfolio is
      * @notice  Frontend function to get all the tokens in the portfolio
      * @return  bytes32[]  Array of symbols of the tokens
      */
-    function getTokenList() external view returns (bytes32[] memory) {
+    function getTokenList() external view override returns (bytes32[] memory) {
         bytes32[] memory tokens = new bytes32[](tokenList.length());
         for (uint256 i = 0; i < tokenList.length(); i++) {
             tokens[i] = tokenList.at(i);

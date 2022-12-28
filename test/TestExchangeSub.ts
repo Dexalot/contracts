@@ -272,17 +272,17 @@ describe("Exchange Sub", function () {
             expect(await exchange.getTradePairsAddr()).to.be.equal(tradePairs.address);
             expect((await tradePairs.getTradePairs())[0]).to.be.equal(tradePairId);
 
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(1))).to.be.equal(baseSymbol);
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(0))).to.be.equal(quoteSymbol);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(1))).to.be.equal(baseDecimals);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(1))).to.be.equal(baseDisplayDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseSymbol).to.be.equal(baseSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteSymbol).to.be.equal(quoteSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDecimals).to.be.equal(baseDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDecimals).to.be.equal(quoteDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDisplayDecimals).to.be.equal(baseDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDisplayDecimals).to.be.equal(quoteDisplayDecimals);
 
-            expect(await tradePairs.getMinTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
-            expect(await tradePairs.getMaxTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).minTradeAmount).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).maxTradeAmount).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
 
-            expect((await tradePairs.getAuctionData(tradePairId))[0]).to.be.equal(mode);
+            expect((await tradePairs.getTradePair(tradePairId)).auctionMode).to.be.equal(mode);
         });
 
         it("Should be able to add ERC20 as base asset and ERC20 as quote asset", async function () {
@@ -299,17 +299,17 @@ describe("Exchange Sub", function () {
             expect(await exchange.getTradePairsAddr()).to.be.equal(tradePairs.address);
             expect((await tradePairs.getTradePairs())[0]).to.be.equal(tradePairId);
 
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(1))).to.be.equal(baseSymbol);
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(0))).to.be.equal(quoteSymbol);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(1))).to.be.equal(baseDecimals);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(1))).to.be.equal(baseDisplayDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseSymbol).to.be.equal(baseSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteSymbol).to.be.equal(quoteSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDecimals).to.be.equal(baseDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDecimals).to.be.equal(quoteDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDisplayDecimals).to.be.equal(baseDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDisplayDecimals).to.be.equal(quoteDisplayDecimals);
 
-            expect(await tradePairs.getMinTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
-            expect(await tradePairs.getMaxTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).minTradeAmount).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).maxTradeAmount).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
 
-            expect((await tradePairs.getAuctionData(tradePairId))[0]).to.be.equal(mode);
+            expect((await tradePairs.getTradePair(tradePairId)).auctionMode).to.be.equal(mode);
         });
 
         it("Should be able to add ERC20 as base asset and native as quote asset", async function () {
@@ -334,21 +334,22 @@ describe("Exchange Sub", function () {
             expect(await exchange.getTradePairsAddr()).to.be.equal(tradePairs.address);
             expect((await tradePairs.getTradePairs())[0]).to.be.equal(tradePairId);
 
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(1))).to.be.equal(baseSymbol);
-            expect(await tradePairs.getSymbol(tradePairId, Boolean(0))).to.be.equal(quoteSymbol);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(1))).to.be.equal(baseDecimals);
-            expect(await tradePairs.getDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(1))).to.be.equal(baseDisplayDecimals);
-            expect(await tradePairs.getDisplayDecimals(tradePairId, Boolean(0))).to.be.equal(quoteDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseSymbol).to.be.equal(baseSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteSymbol).to.be.equal(quoteSymbol);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDecimals).to.be.equal(baseDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDecimals).to.be.equal(quoteDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).baseDisplayDecimals).to.be.equal(baseDisplayDecimals);
+            expect((await tradePairs.getTradePair(tradePairId)).quoteDisplayDecimals).to.be.equal(quoteDisplayDecimals);
 
-            expect(await tradePairs.getMinTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
-            expect(await tradePairs.getMaxTradeAmount(tradePairId)).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).minTradeAmount).to.be.equal(Utils.parseUnits(minTradeAmount.toString(), quoteDecimals));
+            expect((await tradePairs.getTradePair(tradePairId)).maxTradeAmount).to.be.equal(Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals));
 
-            expect((await tradePairs.getAuctionData(tradePairId))[0]).to.be.equal(mode);
+            expect((await tradePairs.getTradePair(tradePairId)).auctionMode).to.be.equal(mode);
         });
 
         it("Should update maker and taker fee rates from the auction admin", async function () {
 
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -368,16 +369,16 @@ describe("Exchange Sub", function () {
 
             // succeed from owner accounts
             await exchange.connect(auctionAdmin).updateRate(auctionTradePairId, mRate, 0);
-            expect(await tradePairs.getMakerRate(auctionTradePairId)).to.be.equal(mRate);
+            expect((await tradePairs.getTradePair(auctionTradePairId)).makerRate).to.be.equal(mRate);
             await exchange.connect(auctionAdmin).updateRate(auctionTradePairId, tRate, 1);
-            expect(await tradePairs.getTakerRate(auctionTradePairId)).to.be.equal(tRate);
+            expect((await tradePairs.getTradePair(auctionTradePairId)).takerRate).to.be.equal(tRate);
 
             // call with wrong rate type
             await expect(tradePairs.connect(owner).updateRate(auctionTradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
         });
 
         it("Should update maker and taker fee rates simultaneously with updateRates() from the auction admin account", async function () {
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -400,12 +401,14 @@ describe("Exchange Sub", function () {
             // Fail for non-auction pair
             await expect(exchange.connect(auctionAdmin).updateRates(tradePairId, mRate, tRate)).to.revertedWith("E-OACC-04");
             await exchange.connect(auctionAdmin).updateRates(auctionTradePairId, mRate.mul(2), tRate.mul(2));
-            expect(await tradePairs.getMakerRate(auctionTradePairId)).to.be.equal(mRate.mul(2));
-            expect(await tradePairs.getTakerRate(auctionTradePairId)).to.be.equal(tRate.mul(2));
+            expect((await tradePairs.getTradePair(auctionTradePairId)).makerRate).to.be.equal(mRate.mul(2));
+            expect((await tradePairs.getTradePair(auctionTradePairId)).takerRate).to.be.equal(tRate.mul(2));
+
         });
 
         it("Should update all maker and taker fee rates from the admin account", async function () {
 
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
             await f.addToken(portfolioSub, quoteToken, 0.1, mode);
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -415,12 +418,12 @@ describe("Exchange Sub", function () {
             await expect(exchange.connect(trader1).updateAllRates(mRate, tRate)).to.revertedWith("AccessControl:");
             // succeed from admin accounts
             await exchange.updateAllRates(mRate, tRate);
-            expect(await tradePairs.getMakerRate(tradePairId)).to.be.equal(mRate);
-            expect(await tradePairs.getTakerRate(tradePairId)).to.be.equal(tRate);
+            expect((await tradePairs.getTradePair(tradePairId)).makerRate).to.be.equal(mRate);
+            expect((await tradePairs.getTradePair(tradePairId)).takerRate).to.be.equal(tRate);
         });
 
         it("Should set min trade amount from the auction admin", async function () {
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -439,7 +442,7 @@ describe("Exchange Sub", function () {
         });
 
         it("Should set max trade amount from the auction admin", async function () {
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -483,7 +486,7 @@ describe("Exchange Sub", function () {
 
         it("Should set auction mode from the auction admin account", async function () {
 
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -503,13 +506,13 @@ describe("Exchange Sub", function () {
 
             // succeed from admin accounts
             await exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, auctionSymbol, auctionMode);
-            const auctionData = await tradePairs.getAuctionData(auctionTradePairId);
-            expect(auctionData[0]).to.be.equal(auctionMode);
+            const tradePairData = await tradePairs.getTradePair(auctionTradePairId) ;
+            expect(tradePairData.auctionMode).to.be.equal(auctionMode);
         });
 
         it("Should set auction price from the auction admin account", async function () {
 
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -527,9 +530,10 @@ describe("Exchange Sub", function () {
 
             // succeed from admin accounts
             await exchange.connect(auctionAdmin).setAuctionPrice(auctionTradePairId, auctionPrice);
-            const auctionData = await tradePairs.getAuctionData(auctionTradePairId);
-            expect(auctionData[0]).to.be.equal(auctionPairSettings.mode);
-            expect(auctionData[1]).to.be.equal(auctionPrice);
+
+            const tradePairData = await tradePairs.getTradePair(auctionTradePairId);
+            expect(tradePairData.auctionMode).to.be.equal(auctionPairSettings.mode);
+            expect(tradePairData.auctionPrice).to.be.equal(auctionPrice);
 
             // fail matchAuctionOrders() if not auction admin
             await expect(exchange.connect(admin).matchAuctionOrders(auctionTradePairId, 10)).to.be.revertedWith("AccessControl:");
@@ -537,7 +541,8 @@ describe("Exchange Sub", function () {
 
         it("Should pause and unpause all trading from the admin account", async function () {
             const {trader1} = await f.getAccounts();
-
+            await f.addToken(portfolioSub, baseToken, 0.1, mode);
+            await f.addToken(portfolioSub, quoteToken, 0.1, mode);
             quoteAssetAddr = quoteToken.address;
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -552,7 +557,7 @@ describe("Exchange Sub", function () {
         });
 
         it("Should pause a specific trade pair from admin or auctionAdmin accounts based on mode", async function () {
-
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals))
             await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 

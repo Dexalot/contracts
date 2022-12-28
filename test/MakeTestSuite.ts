@@ -49,7 +49,8 @@ interface Signers {
     auctionAdmin: SignerWithAddress,
     trader1: SignerWithAddress,
     trader2: SignerWithAddress,
-    foundationSafe: SignerWithAddress,
+    treasurySafe: SignerWithAddress,
+    feeSafe: SignerWithAddress,
     other1: SignerWithAddress,
     other2: SignerWithAddress
 }
@@ -71,8 +72,8 @@ interface PortfolioContracts {
 */
 
 export const getAccounts = async (): Promise<Signers> => {
-    const [owner, admin, auctionAdmin, trader1, trader2, foundationSafe, other1, other2] = await ethers.getSigners();
-    return {owner, admin, auctionAdmin, trader1, trader2, foundationSafe, other1, other2}
+    const [owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2] = await ethers.getSigners();
+    return {owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2}
 }
 
 export const deployDexalotToken = async (): Promise<DexalotToken> => {
@@ -122,12 +123,12 @@ export const deployPortfolioMain = async (native: string,): Promise<PortfolioMai
 }
 
 export const deployPortfolioSub = async (native: string): Promise<PortfolioSub> => { // FIXME not complete !!!
-    const {foundationSafe} = await getAccounts();
+    const {feeSafe} = await getAccounts();
     const srcChainId = 1;
 
     const PortfolioSub = await ethers.getContractFactory("PortfolioSub") as PortfolioSub__factory;
     const portfolioSub: PortfolioSub = await upgrades.deployProxy(PortfolioSub, [Utils.fromUtf8(native), srcChainId]) as PortfolioSub;
-    await portfolioSub.setFeeAddress(foundationSafe.address);
+    await portfolioSub.setFeeAddress(feeSafe.address);
 
     return portfolioSub;
 }
@@ -247,14 +248,14 @@ export const deployPortfolioMinterReal = async (portfolio: PortfolioSub): Promis
 }
 
 export const deployGasStation = async (portfolio: PortfolioSub): Promise<GasStation> => {
-    const {admin, foundationSafe} = await getAccounts();
+    const {admin, treasurySafe} = await getAccounts();
 
     const GasStation = await ethers.getContractFactory("GasStation") as GasStation__factory;
     const gasStation: GasStation = await upgrades.deployProxy(GasStation, [portfolio.address]) as GasStation;
 
     await portfolio.setGasStation(gasStation.address);
 
-    await portfolio.setTreasury(foundationSafe.address);
+    await portfolio.setTreasury(treasurySafe.address);
 
     await admin.sendTransaction({
         to: gasStation.address,
@@ -265,7 +266,7 @@ export const deployGasStation = async (portfolio: PortfolioSub): Promise<GasStat
 }
 
 export const deployExchangeSub = async (portfolio: PortfolioSub, orderBooks: OrderBooks): Promise<ExchangeSub> => {
-    const {admin, foundationSafe} = await getAccounts();
+    const {admin, treasurySafe} = await getAccounts();
 
     const ExchangeSub = await ethers.getContractFactory("ExchangeSub") as ExchangeSub__factory;
     const exchangeSub: ExchangeSub = await upgrades.deployProxy(ExchangeSub) as ExchangeSub;
@@ -275,9 +276,9 @@ export const deployExchangeSub = async (portfolio: PortfolioSub, orderBooks: Ord
     await exchangeSub.setPortfolio(portfolio.address);
 
     exchangeSub.addAdmin(admin.address);
-    exchangeSub.addAdmin(foundationSafe.address);
+    exchangeSub.addAdmin(treasurySafe.address);
 
-    await exchangeSub.addAuctionAdmin(foundationSafe.address);
+    await exchangeSub.addAuctionAdmin(treasurySafe.address);
 
     await exchangeSub.setPortfolio(portfolio.address);
     await exchangeSub.setOrderBooks(orderBooks.address);
@@ -286,7 +287,7 @@ export const deployExchangeSub = async (portfolio: PortfolioSub, orderBooks: Ord
 }
 
 export const deployExchangeMain = async (portfolio: PortfolioMain): Promise<ExchangeMain> => {
-    const {admin, foundationSafe} = await getAccounts();
+    const {admin, treasurySafe} = await getAccounts();
 
     const ExchangeMain = await ethers.getContractFactory("ExchangeMain") as ExchangeMain__factory;
     const exchangeMain: ExchangeMain = await upgrades.deployProxy(ExchangeMain) as ExchangeMain;
@@ -295,9 +296,9 @@ export const deployExchangeMain = async (portfolio: PortfolioMain): Promise<Exch
     await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), exchangeMain.address);
 
     await exchangeMain.addAdmin(admin.address);
-    await exchangeMain.addAdmin(foundationSafe.address);
+    await exchangeMain.addAdmin(treasurySafe.address);
 
-    await exchangeMain.addAuctionAdmin(foundationSafe.address);
+    await exchangeMain.addAuctionAdmin(treasurySafe.address);
     return exchangeMain;
 }
 
@@ -395,18 +396,18 @@ export const addTradePairFromExchange = async (exchange: ExchangeSub, pair: any,
 
 export const addTradePair = async (tradePairs: TradePairs, pair: any, pairSettings: any) => {
     const { owner } = await getAccounts()
-    const { baseSymbol, baseDecimals, baseDisplayDecimals, quoteSymbol, quoteDisplayDecimals, quoteDecimals, tradePairId } = pair
+    const { baseSymbol,  baseDisplayDecimals, quoteSymbol, quoteDisplayDecimals, quoteDecimals, tradePairId } = pair
     const { minTradeAmount, maxTradeAmount, mode } = pairSettings
 
-    await tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol, baseDecimals, baseDisplayDecimals,
-        quoteSymbol, quoteDecimals, quoteDisplayDecimals,
+    await tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
+        quoteSymbol, quoteDisplayDecimals,
         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
         Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
 
 }
 
 export const depositNative = async (portfolio: PortfolioMain, from:SignerWithAddress, amount: string): Promise<any> => {
-    return await from.sendTransaction({from: from.address, to: portfolio.address, value: Utils.toWei(amount)});
+    return await from.sendTransaction({to: portfolio.address, value: Utils.toWei(amount)});
 
 }
 

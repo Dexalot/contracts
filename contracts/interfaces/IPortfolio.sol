@@ -49,6 +49,8 @@ interface IPortfolio {
 
     function getTokenDetailsById(bytes32 _symbolId) external view returns (TokenDetails memory);
 
+    function getTokenList() external view returns (bytes32[] memory);
+
     event PortfolioUpdated(
         Tx indexed transaction,
         address indexed wallet,

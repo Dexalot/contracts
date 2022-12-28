@@ -40,5 +40,5 @@ interface IPortfolioSub {
 
     function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external;
 
-    function autoFill(bytes32 _symbol) external;
+    function autoFill(address _trader, bytes32 _symbol) external;
 }

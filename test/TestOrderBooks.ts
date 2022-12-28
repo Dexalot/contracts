@@ -228,6 +228,14 @@ describe("OrderBooks", () => {
     expect(sellExists).to.be.true;
     expect(buyNotExists).to.be.false;
     expect(sellNotExists).to.be.false;
+
+
+    expect(await orderBooks.orderListExists(buyBook, Utils.parseUnits('0.002', 18)))
+    .to.be.true;
+    expect(await orderBooks.orderListExists(sellBook, Utils.parseUnits('0.002', 18)))
+    .to.be.true;
+
+
   });
 
   it("Should get Node correctly", async () => {

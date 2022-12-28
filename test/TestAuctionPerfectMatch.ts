@@ -56,7 +56,7 @@ const initial_portfolio_deposits: any = {AVAX: 9000, LFG: 14000, SER: 45000};
 const startAuctionMode: any = 2;
 
 // address (a multisig in production) that collects the fees
-const foundationSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
+const feeSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
 
 let wallets: Array<SignerWithAddress>;
 let accounts: Array<string>;
@@ -134,7 +134,7 @@ before(async () => {
 
     // initialize address collecting fees
   console.log("=== Set Address Collecting the Fees ===");
-  await portfolio.setFeeAddress(foundationSafe);
+  await portfolio.setFeeAddress(feeSafe);
   console.log("Called setFeeAddress on Portfolio ");
 
   console.log();
@@ -187,8 +187,7 @@ before(async () => {
       Utils.printBalances(account, _bal, 18);
       if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
         const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
-          await wallet.sendTransaction({from: account,
-                                        to: portfolioMain.address,
+          await wallet.sendTransaction({to: portfolioMain.address,
                                         value: Utils.toWei(_deposit_amount.toString())});
           //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
           _bal = await portfolio.getBalance(account, _nativeBytes32);
@@ -305,10 +304,10 @@ it("Should set up auction properly", async () => {
 
   await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 3)
   await exchangeSub.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0.03', pair.quoteDecimals));
-  const auctionData = await tradePairs.getAuctionData(tp);
-  expect(auctionData.mode).to.equal(3);
-  expect(auctionData.price).to.equal(Utils.parseUnits('0.03', pair.quoteDecimals));
-  //console.log (`${pair.id} Auction Mode ${auctionData.mode},  price ${auctionData.price.toString()}` )
+  const tradePairData = await tradePairs.getTradePair(tp);
+  expect(tradePairData.auctionMode).to.equal(3);
+  expect(tradePairData.auctionPrice).to.equal(Utils.parseUnits('0.03', pair.quoteDecimals));
+  //console.log (`${pair.id} Auction Mode ${tradePairData.auctionMode},  price ${tradePairData.auctionPrice.toString()}` )
 });
 
 
@@ -362,9 +361,9 @@ it("Should do the actual matching exact buys with sells", async () => {
 
   await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 5)
   await exchangeSub.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('1.5', pair.quoteDecimals));
-  const auctionData = await tradePairs.getAuctionData(tp);
-  expect(auctionData.mode).to.equal(5);
-  expect(Utils.formatUnits(auctionData.price, pair.quoteDecimals)).to.equal('1.5');
+  const tradePairData = await tradePairs.getTradePair(tp);
+  expect(tradePairData.auctionMode).to.equal(5);
+  expect(Utils.formatUnits(tradePairData.auctionPrice, pair.quoteDecimals)).to.equal('1.5');
 
 
   await exchangeSub.connect(auctionAdminWallet).matchAuctionOrders(tp, 30);

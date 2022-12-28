@@ -166,16 +166,15 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     /**
      * @notice  Force resumes the stuck bridge by destroying the message blocking it.
-     * @dev     This action is destructive! If retryPayload doesn't work this can be used as a last resort
-     * Do not use this function directly. Use portfolioBridge.lzDestroyAndRecoverFunds() instead
+     * @dev     This action is destructive! Use this as the last resort!
+     * Use this function directly only when portfolioBridge.lzDestroyAndRecoverFunds() fails
      * If this function is used directly, destroyed message's funds are processed in the originating chain
      * properly but they will not be processed in the target chain at all. The funds in storedPayload destroyed
-     * have to be manually provided to the originator of the message.
-     * For example, if the message is destroyed using this function directly
+     * have to be manually sent to the originator of the message.
+     * For example, if the message is destroyed using this function the end state will be:
      * If sending from mainnet to subnet. Funds deposited/locked in the mainnet but they won't show in the subnet
      * If sending from subnet to mainnet. Funds are withdrawn from the subnet but they won't be deposited into
      * the user's wallet in the mainnet
-     * Left here in case lzDestroyAndRecoverFunds can't be used
      * `_srcAddress` is 40 bytes data with the remote contract address concatenated with
      * the local contract address via `abi.encodePacked(sourceAddress, localAddress)`
      * @param   _srcChainId  Source chain id

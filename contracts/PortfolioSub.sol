@@ -305,13 +305,14 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * held in the trader's portfolio. (It can by any token including ALOT)
      * @dev     Only called by TradePairs from doCancelOrder. Cancels makes tokens available.
      * doCancelOrder is a good place to auto Fill Gas Tank with newly available funds.
+     * @param   _trader  Address of the trader
      * @param   _symbol  Symbol to be used in exchange of Gas Token. ALOT or any other
      */
-    function autoFill(bytes32 _symbol) external override whenNotPaused {
+    function autoFill(address _trader, bytes32 _symbol) external override whenNotPaused {
         require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
-        // Trade pairs listed in TradePairs are guaanteed to be synched with Portfolio tokens at
+        // Trade pairs listed in TradePairs are guaranteed to be synched with Portfolio tokens at
         // when adding exchange.addTradePair. No need for a require check here.
-        autoFillPrivate(msg.sender, _symbol, Tx.IXFERSENT);
+        autoFillPrivate(_trader, _symbol, Tx.IXFERSENT);
     }
 
     /**
@@ -360,6 +361,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                     }
 
                     // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
+                    // We don't want the user to through the hassle of aquiring our subnet gas token ALOT first in
+                    // order to initiate a transaction. This is equivelant of an airdrop
+                    // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
+                    // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
                 } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
                     gasStation.requestGas(_trader, gasAmount);
                     tankFull = true;
@@ -380,8 +385,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
         require(allowDeposit, "P-NTDP-01");
-        // balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.05 ALOT
-        require(msg.value < _from.balance && _from.balance - msg.value >= gasStation.gasAmount() * 2, "P-BLTH-01");
+        // the ending balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.1*2 ALOT
+        require(_from.balance >= msg.value + gasStation.gasAmount() * 2, "P-BLTH-01");
 
         //We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
         // solhint-disable-next-line avoid-low-level-calls

@@ -11,8 +11,6 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import {
     MockToken,
     MockToken__factory,
-    LZEndpointMock,
-    PortfolioBridge,
     ExchangeSub,
     PortfolioMain,
     PortfolioSub,
@@ -63,7 +61,7 @@ const initial_portfolio_deposits: any = {AVAX: 1000, USDT: 3000, ALOT: 3000};
 const options: any = { };
 
 // address (a multisig in production) that collects the fees
-const foundationSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
+const feeSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
 
 let wallets: Array<SignerWithAddress>;
 let accounts: Array<string>;
@@ -115,7 +113,7 @@ describe("Dexalot", () => {
 
         // initialize address collecting fees
         console.log("=== Set Address Collecting the Fees ===");
-        await portfolio.setFeeAddress(foundationSafe);
+        await portfolio.setFeeAddress(feeSafe);
         console.log("Called setFeeAddress on Portfolio ");
 
         console.log();
@@ -165,8 +163,7 @@ describe("Dexalot", () => {
             Utils.printBalances(account, _bal, 18);
             if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
                 const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
-                await wallet.sendTransaction({from: account,
-                                              to: portfolioMain.address,
+                await wallet.sendTransaction({to: portfolioMain.address,
                                               value: Utils.toWei(_deposit_amount.toString())});
                 //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
                 _bal = await portfolio.getBalance(account, _nativeBytes32);
@@ -344,8 +341,8 @@ describe("Dexalot", () => {
             const tradePair: TradePairs = new ethers.Contract(tradePairs.address, TradePairsAbi.abi, wallets[order["ownerIndex"]]) as TradePairs;
             const tradePairId = Utils.fromUtf8(order["tradePair"]);
 
-            const baseDecimals = await tradePair.getDecimals(tradePairId, true);
-            const quoteDecimals = await tradePair.getDecimals(tradePairId, false);
+            const baseDecimals = (await tradePair.getTradePair(tradePairId)).baseDecimals;
+            const quoteDecimals = (await tradePair.getTradePair(tradePairId)).quoteDecimals;
 
             // ADD NEW ORDERS TO TRADEPAIR
             if (order["action"] === "ADD") {
@@ -628,11 +625,11 @@ describe("Dexalot", () => {
             // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
             if (order["baseSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
             } else {
                 const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(order["baseSymbol"]));
                 const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[order["baseSymbol"]]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[order["baseSymbol"]]));
             }
             _checkValue = feeLumped[order["baseSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
@@ -640,11 +637,11 @@ describe("Dexalot", () => {
             // check fee balance for quote symbol
             _checkName = "Fee balance ::: " + order["quoteSymbol"];
             if (order["quoteSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
             } else {
                 const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(order["quoteSymbol"]));
                 const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[order["quoteSymbol"]]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[order["quoteSymbol"]]));
             }
             _checkValue = feeLumped[order["quoteSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
@@ -719,11 +716,11 @@ describe("Dexalot", () => {
         for(const _token in feeLumped) {
             _checkName = "Ending Fee balance ::: " + _token;
             if (_token === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(foundationSafe), decimalsMap['AVAX']));
+                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
             } else {
                 const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_token));
                 const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(foundationSafe), decimalsMap[_token]));
+                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[_token]));
             }
             _checkValue = feeLumped[_token];
             doNumberAssert(_checkName, _contractValue, _checkValue);
