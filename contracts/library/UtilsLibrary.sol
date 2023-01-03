@@ -58,7 +58,7 @@ library UtilsLibrary {
     /**
      * @notice  Checks if the order is cancelable.
      * @dev     For an order _quantityFilled < _quantity and its status should be PARTIAL or NEW
-                to be eligable for cancelation
+                to be eligible for cancelation
      * @param   _quantity  quantity of the order
      * @param   _quantityFilled  quantityFilled of the order
      * @param   _orderStatus  status of the order

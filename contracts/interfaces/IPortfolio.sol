@@ -93,6 +93,9 @@ interface IPortfolio {
         DECREASEAVAIL,
         IXFERSENT,
         IXFERREC,
-        RECOVERFUNDS
+        RECOVERFUNDS,
+        ADDGAS,
+        REMOVEGAS,
+        AUTOFILL
     }
 }

@@ -41,6 +41,19 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // account address to assets map
     mapping(address => mapping(bytes32 => AssetEntry)) public assets;
     // bytes32 symbols to uint256(total) token map
+    // Used for sanity checks that periodically compares subnet balances to the Mainnet balances.
+    // Incremented only with Tx.DEPOSIT and Tx.RECOVERFUNDS
+    // Decremented only with Tx.WITHDRAW.
+    // It assumes all funds originate from the mainnet without any exceptions. As a result, amounts
+    // transferred from/to wallet in the subnet are ignored (add/remove gas)
+    // as well as autofill and account to account subnet transfers and Executions(token swaps)
+    // 100 ALOT transferred from the mainnet
+    // 100 ALOT is logged in tokenTotals. Any autofill that this may trigger(0.1) or any add/remove gas
+    // using some of this ALOT(10 AddGas) or tx.IXFERSENT (toAddress: 20) does not change the fact that subnet has
+    // 69.99(PortfolioSub) + 0.01(wallet) + 10(again same wallet) + 20(toAddress) = 100 ALOT in total.
+    // tokenTotals does not keep track of ALOT being burned as gas. It assumes they are readily available in the
+    // users wallet to be redoposited back to PortfolioSub.
+    // GasStation & PortfolioBridgeSub should always be funded with ALOT that is sent from the mainnet.
     mapping(bytes32 => uint256) public tokenTotals;
 
     IGasStation private gasStation;
@@ -61,7 +74,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.0");
+    bytes32 public constant VERSION = bytes32("2.2.1");
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -133,7 +146,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         }
 
         tokenTotals[_symbol] = 0; //set totals to 0
-        // Don't add native here as portfolioBridge may not be initalized yet
+        // Don't add native here as portfolioBridge may not be initialized yet
         // Native added when portfolioBridgeSub.SetPortfolio
         if (_symbol != native && address(portfolioBridge) != address(0)) {
             //Adding to portfolioBridge with the proper mainnet address and srcChainId
@@ -312,7 +325,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
         // Trade pairs listed in TradePairs are guaranteed to be synched with Portfolio tokens at
         // when adding exchange.addTradePair. No need for a require check here.
-        autoFillPrivate(_trader, _symbol, Tx.IXFERSENT);
+        autoFillPrivate(_trader, _symbol, Tx.AUTOFILL);
     }
 
     /**
@@ -376,7 +389,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice   This function is only used to deposit native ALOT from the subnet wallet
+     * @notice   This function is only used to deposit native ALOT from the subnet wallet to
+     * the portfolio. Also referred as RemoveGas
      * @param   _from  Address of the depositor
      */
     function depositNative(
@@ -388,25 +402,25 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // the ending balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.1*2 ALOT
         require(_from.balance >= msg.value + gasStation.gasAmount() * 2, "P-BLTH-01");
 
-        //We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
+        // We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
         // solhint-disable-next-line avoid-low-level-calls
         (bool sent, ) = address(0).call{value: msg.value}("");
         require(sent, "P-BF-01");
 
         totalNativeBurned += msg.value;
-        safeIncrease(_from, native, msg.value, 0, Tx.DEPOSIT);
+        safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS);
     }
 
     /**
-     * @notice   This function is used to withdraw only native ALOT to the subnet wallet
+     * @notice   This function is used to withdraw only native ALOT from the portfolio
+     * into the subnet wallet. Also referred as AddGas
      * @dev      This function decreases ALOT balance of the user and calls the PortfolioMinter to mint the native ALOT
      * @param   _to  Address of the withdrawer
      * @param   _quantity  Amount of the native ALOT to withdraw
      */
     function withdrawNative(address payable _to, uint256 _quantity) external override whenNotPaused nonReentrant {
         require(_to == msg.sender, "P-OOWN-01");
-        //We are not charging any fees for withdrawing native tokens
-        safeDecrease(_to, native, _quantity, 0, Tx.WITHDRAW); // does not decrease if transfer fails
+        safeDecrease(_to, native, _quantity, 0, Tx.ADDGAS);
         portfolioMinter.mint(_to, _quantity);
     }
 
@@ -430,14 +444,6 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // bridgeFee = bridge Fees both in the Mainnet the subnet
         // no bridgeFees for treasury and feeCollector
         uint256 bridgeFee = (_to != feeAddress && _to != treasury) ? bridgeParams[_symbol].fee : 0;
-        require(_quantity > bridgeFee, "P-WUTH-01");
-
-        if (bridgeFee > 0) {
-            safeIncrease(treasury, _symbol, bridgeFee, 0, Tx.DEPOSIT);
-        }
-
-        // we decrease the total quantity from the user balances. bridgeFee is for information purposes
-        // in safeDecrease. The value gets emitted in an event but not used for any other purpose
         safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW);
         portfolioBridge.sendXChainMessage(
             _bridge,
@@ -477,7 +483,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         asset.total += quantityLessFee;
         asset.available += quantityLessFee;
         //Commissions are always taken from incoming currency. This takes care of ALL EXECUTION and DEPOSIT and INTXFER
-        safeTransferFee(_symbol, _feeCharged);
+        safeTransferFee(feeAddress, _symbol, _feeCharged);
         if (_transaction == Tx.DEPOSIT || _transaction == Tx.RECOVERFUNDS) {
             tokenTotals[_symbol] += _amount;
         }
@@ -503,13 +509,16 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         Tx _transaction
     ) private {
         AssetEntry storage asset = assets[_trader][_symbol];
+        require(_amount > 0 && _amount >= _feeCharged, "P-WUTH-01");
         require(_amount <= asset.total, "P-TFNE-01");
+        // decrease the total quantity from the user balances.
         asset.total -= _amount;
-
+        // This is bridge fee going to treasury. Commissions go to feeAddress
+        safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
-            //c probably redundant check
+            //cd probably redundant check because _amount can never be > tokenTotals amount
             require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
-            tokenTotals[_symbol] -= _amount;
+            tokenTotals[_symbol] -= (_amount - _feeCharged); // _feeCharged is still left in the subnet
         }
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction);
     }
@@ -575,12 +584,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         Tx _transaction,
         bool _decreaseTotalOnly
     ) private {
-        //_feeCharged is always in incoming currency when transfering as a part of EXECUTION
+        // _feeCharged is always in incoming currency when transferring as a part of EXECUTION
         // Hence both safeDecreaseTotal and safeDecrease that handle outgoing currency, overwrite _feeCharged to 0.
         _decreaseTotalOnly
             ? safeDecreaseTotal(_from, _symbol, _quantity, 0, _transaction)
             : safeDecrease(_from, _symbol, _quantity, 0, _transaction);
 
+        // Replaced with IXFERREC in SafeIncrease because we want this event to be captured and showed to the recipient
         _transaction == Tx.IXFERSENT
             ? safeIncrease(_to, _symbol, _quantity, _feeCharged, Tx.IXFERREC)
             : safeIncrease(_to, _symbol, _quantity, _feeCharged, _transaction);
@@ -599,17 +609,18 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         //Can not transfer auction tokens
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         transferToken(msg.sender, _to, _symbol, _quantity, 0, Tx.IXFERSENT, false);
-        autoFillPrivate(_to, _symbol, Tx.IXFERSENT);
+        autoFillPrivate(_to, _symbol, Tx.AUTOFILL);
     }
 
     /**
-     * @notice  Transfers the fees collected to the fee address
+     * @notice  Transfers the fees collected to the fee or treasury address
+     * @param   _to  fee or treasury address
      * @param   _symbol  Symbol of the token
      * @param   _feeCharged  Fee charged for the transaction
      */
-    function safeTransferFee(bytes32 _symbol, uint256 _feeCharged) private {
+    function safeTransferFee(address _to, bytes32 _symbol, uint256 _feeCharged) private {
         if (_feeCharged > 0) {
-            AssetEntry storage asset = assets[feeAddress][_symbol];
+            AssetEntry storage asset = assets[_to][_symbol];
             asset.total += _feeCharged;
             asset.available += _feeCharged;
         }
