@@ -2,8 +2,6 @@
 
 ## *Please read the entire README before running any commands.*
 
-<br>
-
 ## Set up the development environment
 
 - Install the latest version of VS Code
@@ -12,13 +10,13 @@
 
 ## Get the code
 
-```
+```sh
 git clone https://github.com/Dexalot/contracts.git
 ```
 
 ## Project setup
 
-```
+```sh
 yarn install
 ```
 
@@ -28,7 +26,7 @@ yarn install
 
 This script creates a Hardhat Development blockchain that you can interact with.
 
-```
+```sh
 yarn hh-start-clean
 ```
 
@@ -36,14 +34,14 @@ yarn hh-start-clean
 
 The `run_tests.sh` script runs one or more tests fitting a pattern on the Hardhat Development blockchain.  You need to have a running ```yarn hh-start-clean``` process first. You can use it as follows from the project's root folder:
 
-```
+```sh
 ./test/run_test.sh            [run each test with pauses or all in one go]
 ./test/run_test.sh Portfolio  [run all tests with a Portfolio prefix]
 ```
 
-The above commands would work in a unix-like shell environment.  On other platforms you can call individul tests as below:
+The above commands would work in a unix-like shell environment.  On other platforms you can call individual tests as below:
 
-```
+```sh
 npx hardhat test test/<TEST_FILE_NAME>.ts
 
 Example:
@@ -52,12 +50,13 @@ npx hardhat test test/TestAirdrop.ts
 
 Available tests are as follows:
 
-```
+```sh
 TestAirdrop.ts
 TestAuction.ts
+TestAuctionPerfectMatch.ts
+TestBannedAccounts.ts
 TestBytes32LinkedListLibrary.ts
 TestDexalot.ts
-TestDexalotSubnetBalances.ts
 TestDexalotToken.ts
 TestExchangeMain.ts
 TestExchangeShared.ts
@@ -66,7 +65,7 @@ TestGasStation.ts
 TestGetNBook.ts
 TestIncentiveDistributor.ts
 TestLzApp.ts
-TestLZRecover.ts
+TestLzDestroyAndRecoverFunds.ts
 TestMockToken.ts
 TestMulticall2.ts
 TestOrderBooks.ts
@@ -93,7 +92,7 @@ The hardhat environment has the solidity-coverage plugin installed during the in
 
 You can run it as below to get a Solidity coverage report.
 
-```
+```sh
 yarn hh-coverage
 ```
 
