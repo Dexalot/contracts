@@ -52,8 +52,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     mapping(bytes32 => uint256) public epochVolumeCaps; // key is token
     mapping(bytes32 => uint256) public lastOpTimestamps; // key is token
 
-    event DelayedTransferAdded(bytes32 id);
-    event DelayedTransferExecuted(bytes32 id, IPortfolio.XFER xfer);
+    event DelayedTransfer(string action, bytes32 id, IPortfolio.XFER xfer);
     event DelayPeriodUpdated(uint256 period);
     event DelayThresholdUpdated(bytes32 symbol, uint256 threshold);
     event EpochLengthUpdated(uint256 length);
@@ -61,7 +60,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("2.2.0");
+        return bytes32("2.2.1");
     }
 
     /**
@@ -298,7 +297,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     function addDelayedTransfer(bytes32 _id, IPortfolio.XFER memory _xfer) private {
         require(delayedTransfers[_id].timestamp == 0, "PB-DTAE-01");
         delayedTransfers[_id] = _xfer;
-        emit DelayedTransferAdded(_id);
+        emit DelayedTransfer("ADDED", _id, _xfer);
     }
 
     /**
@@ -317,7 +316,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
             sendXChainMessageInternal(defaultBridgeProvider, xfer);
         }
 
-        emit DelayedTransferExecuted(_id, xfer);
+        emit DelayedTransfer("EXECUTED", _id, xfer);
         delete delayedTransfers[_id];
     }
 

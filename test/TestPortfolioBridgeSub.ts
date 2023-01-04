@@ -453,8 +453,14 @@ describe("Portfolio Bridge Sub", () => {
 
         const tx = await f.depositNative(portfolioMain, owner, "0.51")
         const receipt = await tx.wait();
-        const id = receipt.logs[2].data
-        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(id)
+        const log = receipt.logs[2]
+
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
+
+        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
         expect(delayedTransfer.trader).to.equal(owner.address);
         expect(delayedTransfer.symbol).to.equal(AVAX);
         expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
@@ -505,7 +511,7 @@ describe("Portfolio Bridge Sub", () => {
         dt[symbol] = delayThreshold;
         await portfolioBridgeSubMock.setVariable("delayThresholds", dt);
 
-        // quantity 10 > delayThreshoold 1 so it will create a delayedTransfer
+        // quantity 10 > delayThreshold 1 so it will create a delayedTransfer
         await portfolioBridgeSubMock.sendXChainMessage(bridge, xfer);
 
         // same message sent again will trigger the require for the same id
@@ -546,16 +552,20 @@ describe("Portfolio Bridge Sub", () => {
         await f.depositNative(portfolioMain, admin, "0.3");
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        // quantity 0.51 > delayThreshoold 0.50 so it will create a delayedTransfer
+        // quantity 0.51 > delayThreshold 0.50 so it will create a delayedTransfer
         let tx = await portfolioSub.connect(admin).withdrawToken(admin.address, AVAX, ethers.utils.parseEther("0.51"), bridge);
         let receipt: any = await tx.wait();
-        const id = receipt.logs[1].data;
+        const log = receipt.logs[1]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
 
         await ethers.provider.send("evm_increaseTime", [delayPeriod]);
         await ethers.provider.send("evm_mine", []);
 
         // execute delayed withdraw transaction after delayedPeriod
-        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(id);
+        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]);
         receipt = await tx.wait();
         expect(receipt.events[2].args.xfer.nonce).to.be.equal(1);       // nonce is 1
         expect(receipt.events[2].args.xfer.transaction).to.be.equal(0); // withdraw
@@ -579,15 +589,20 @@ describe("Portfolio Bridge Sub", () => {
 
         const tx = await f.depositNative(portfolioMain, admin, "0.51")
         const receipt = await tx.wait();
-        const id = receipt.logs[2].data
+        const log = receipt.logs[2]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
+
 
         await ethers.provider.send("evm_increaseTime", [delayPeriod]);
         await ethers.provider.send("evm_mine", []);
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(id))
-        .to.emit(portfolioBridgeSub, "DelayedTransferExecuted")
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
+        .to.emit(portfolioBridgeSub, "DelayedTransfer")
 
-        expect((await portfolioBridgeSub.connect(admin).delayedTransfers(id)).trader).to.equal("0x0000000000000000000000000000000000000000");
+        expect((await portfolioBridgeSub.connect(admin).delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
 
         expect((await portfolioSub.getBalance(admin.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
     });
@@ -607,9 +622,14 @@ describe("Portfolio Bridge Sub", () => {
 
         const tx = await f.depositNative(portfolioMain, admin, "0.51")
         const receipt = await tx.wait();
-        const id = receipt.logs[2].data
+        const log = receipt.logs[2]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
+
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(id))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
         .to.be.revertedWith("PB-DTSL-01");
     });
 
@@ -648,9 +668,13 @@ describe("Portfolio Bridge Sub", () => {
 
         const tx = await f.depositNative(portfolioMain, owner, "0.51")
         const receipt = await tx.wait();
-        const id = receipt.logs[2].data
+        const log = receipt.logs[2]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
 
-        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(id))
+        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(data[1]))
         .to.be.revertedWith("AccessControl: account");
     });
 
@@ -923,7 +947,13 @@ describe("Portfolio Bridge Sub", () => {
             0
         )
         const receipt = await tx.wait();
-        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(receipt.logs[1].data)
+        const log = receipt.logs[1]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
+
+        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
         expect(delayedTransfer.trader).to.equal(owner.address);
         expect(delayedTransfer.symbol).to.equal(AVAX);
         expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
@@ -962,17 +992,21 @@ describe("Portfolio Bridge Sub", () => {
         )
         receipt = await tx.wait();
         const gasUsed3 = (receipt.gasUsed).mul(receipt.effectiveGasPrice);
-        const id = receipt.logs[1].data
 
+        const log = receipt.logs[1]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
         await ethers.provider.send("evm_increaseTime", [delayPeriod]);
         await ethers.provider.send("evm_mine", []);
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(id))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
         .to.emit(portfolioBridgeSub, "DelayedTransferExecuted")
         .to.emit(portfolioMain, "PortfolioUpdated")
         .withArgs(0, trader1.address, AVAX, ethers.utils.parseEther("0.68"), 0, 0, 0)
 
-        expect((await portfolioBridgeSub.delayedTransfers(id)).trader).to.equal("0x0000000000000000000000000000000000000000");
+        expect((await portfolioBridgeSub.delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
 
         const mainnetAfterBalance = await trader1.getBalance()
 

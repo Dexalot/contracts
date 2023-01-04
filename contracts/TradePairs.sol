@@ -237,7 +237,7 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Returns the correspoding TradePair struct for the trade pair id.
+     * @notice  Returns the corresponding TradePair struct for the trade pair id.
      * @param   _tradePairId  id of the trading pair
      * @return  TradePair  Trade pair data structure
      */
@@ -997,23 +997,23 @@ contract TradePairs is
         order.price = _price;
         order.quantity = _quantity;
         if (_side != Side.BUY) {
-            //evm intialized to BUY already
+            // evm initialized to BUY already
             order.side = _side;
         }
         if (_type1 != Type1.MARKET) {
-            //evm intialized to MARKET already
+            // evm initialized to MARKET already
             order.type1 = _type1;
             if (_type2 != Type2.GTC) {
-                // evm intialized to GTC already
+                // evm initialized to GTC already
                 // MARKET orders can only be GTC
                 // All auction orders have to be LIMIT & GTC
                 order.type2 = UtilsLibrary.matchingAllowed(tradePair.auctionMode) ? _type2 : Type2.GTC;
             }
         }
-        //order.totalAmount= 0;         // evm intialized
-        //order.quantityFilled= 0;      // evm intialized
-        //order.status= Status.NEW;     // evm intialized
-        //order.totalFee= 0;            // evm intialized
+        //order.totalAmount= 0;         // evm initialized
+        //order.quantityFilled= 0;      // evm initialized
+        //order.status= Status.NEW;     // evm initialized
+        //order.totalFee= 0;            // evm initialized
 
         //Skip matching if in Auction Mode
         if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
