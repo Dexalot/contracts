@@ -182,8 +182,6 @@ describe("TradePairs", function () {
         });
 
         it("Should fail for mirror pair", async function () {
-            // const quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
 
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
@@ -202,18 +200,12 @@ describe("TradePairs", function () {
             const type2 = 0 ;  // GTC
             const type1 = 1;   // market orders not enabled
 
-            // const quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
 
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            //await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -264,8 +256,6 @@ describe("TradePairs", function () {
             // non existent tradepair
             await expect(tradePairs.removeTradePair(Utils.fromUtf8("TK1/TK2")))
             .to.not.emit(tradePairs, "ParameterUpdated");
-
-
 
         });
 
@@ -348,7 +338,6 @@ describe("TradePairs", function () {
         it("Should set max trade amount from the owner account", async function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
-
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
             const maxTradeAmount1 = Utils.parseUnits('250', quoteDecimals);
@@ -379,7 +368,6 @@ describe("TradePairs", function () {
         it("Should set allowed slippage percentage from the owner account", async function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
-
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
             const allowedSlippagePercent = 25;
@@ -403,18 +391,11 @@ describe("TradePairs", function () {
                 mode: mode,
             }
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
             expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
             expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-
-            // add token to portfolio
-            //await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -432,10 +413,6 @@ describe("TradePairs", function () {
             const tx = await tradePairs.connect(trader1)
                     .addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, type1, type2);
             const res:any = await tx.wait();
-
-
-
-
 
             expect(res.events[1].event).to.be.equal('OrderStatusChanged');
             expect(res.events[1].args.clientOrderId).to.be.equal(clientOrderid);
@@ -520,14 +497,8 @@ describe("TradePairs", function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             let type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -576,18 +547,12 @@ describe("TradePairs", function () {
         it("Should be able to send addLimitOrderList", async function () {
             const type2 = 0 ;  // GTC
 
-            // const quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
 
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -617,7 +582,6 @@ describe("TradePairs", function () {
 
             expect(buybook.length).to.equal(6);
             expect(sellbook.length).to.equal(0);
-
 
             clientOrderIds=[];
 
@@ -711,17 +675,12 @@ describe("TradePairs", function () {
         it("Should get unsolicited cancel when maxNbrOfFills reached", async function () {
             const type2 = 0 ;  // GTC
 
-            // const quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
             //console.log (Utils.toUtf8((await tradePairs.getTradePairs())[0]))
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
             // deposit some tokens to portfolio for trader1
             await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
@@ -823,15 +782,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -861,14 +813,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -882,7 +828,7 @@ describe("TradePairs", function () {
 
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            // add a sell order because it is AVAX/QT and when cancelled We make AVAX available to get gas for
+            // add a buy order because it is AVAX/QT and when cancelled We make QT available to get gas for
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
             , Utils.parseUnits('10', baseDecimals), 0, 1, type2);
             const res1: any = await tx1.wait();
@@ -930,7 +876,94 @@ describe("TradePairs", function () {
             expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited);
 
             //Reset trader1 balances for later tests
-            const newBalance = ethers.utils.parseEther('100000');
+            const newBalance = ethers.utils.parseEther('1000000');
+            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                newBalanceHex,
+              ]);
+        });
+
+        it("Should autofill kick-in using ALOT when canceling an order if ALOT is available", async function () {
+            const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
+            const type2=0 ;// GTC
+            const ALOT =Utils.fromUtf8("ALOT")
+            const alot_decimals =18;
+            const alot = await f.deployMockToken("ALOT", alot_decimals)
+            const deposit_amount = '100'
+
+            await f.addToken(portfolioMain, alot, 1);
+            await alot.mint(trader1.address, Utils.toWei(deposit_amount));
+            await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
+
+            expect((await portfolio.getBalance(trader1.address, ALOT))[0]).to.equal(Utils.parseUnits(deposit_amount, alot_decimals));
+            expect((await portfolio.getBalance(trader1.address, ALOT))[1]).to.equal(Utils.parseUnits(deposit_amount, alot_decimals));
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
+
+            // deposit some native to portfolio for trader1
+            await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
+            expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
+            expect((await portfolio.getBalance(trader1.address, baseSymbol))[1]).to.equal(Utils.parseUnits('3000', baseDecimals));
+
+            // deposit some tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
+            expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
+            expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
+
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+
+            // add a sell order because it is AVAX/QT
+            const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
+            , Utils.parseUnits('10', baseDecimals), 1, 1, type2);
+            const res1: any = await tx1.wait();
+            // get if of the order
+            const id = res1.events[1].args.orderId;
+
+            const AVAX = baseSymbol;
+            const QT = quoteSymbol;
+            await portfolio.setBridgeParam(QT, 0, Utils.parseUnits('1', quoteDecimals), true)
+            await portfolio.setBridgeParam(AVAX, 0, Utils.toWei("0.1"), true)
+
+            const params =await portfolio.bridgeParams(QT);
+            expect(params.gasSwapRatio).to.equal(Utils.parseUnits('1', quoteDecimals));
+            expect(params.fee).to.equal(0);
+            expect(params.usedForGasSwap).to.equal(true);
+
+            const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+            const gasDeposited = await gasStation.gasAmount();
+            //const qtSwappedAmnt = (await portfolio.bridgeParams(QT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+
+            // console.log ("gasStationBeforeBal", gasStationBeforeBal.toString(), "avaxswaped", qtSwappedAmnt.toString())
+            // console.log ("wallet bal before", (await ethers.provider.getBalance(trader1.address)).toString())
+            const WalBaltoReset =gasDeposited.div(2);
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                WalBaltoReset.toHexString(),
+              ]);
+
+            //console.log ("wallet bal after",(await ethers.provider.getBalance(trader1.address)).toString())
+            // cancel the order
+            const tx2 = await tradePairs.connect(trader1).cancelOrder(id ,{gasLimit: 500000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+            const res: any = await tx2.wait();
+            expect(res.events[1].args.status).to.be.equal(4);           // status is CANCELED = 4
+            const gasUsedInTx = res.cumulativeGasUsed.mul(res.effectiveGasPrice);
+
+            expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset.add(gasDeposited))).to.lte(gasUsedInTx);
+
+            // gasDeposited fully for QT
+            // console.log ("wallet bal after2",(await ethers.provider.getBalance(trader1.address)).toString())
+            // console.log ((await portfolio.getBalance(trader1.address, QT)).total.toString())
+            // console.log ((await portfolio.getBalance(treasurySafe.address, QT)).total.toString())
+
+            // No change in QT
+            expect((await portfolio.getBalance(trader1.address, QT)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
+            // No impact on treasury nor Gas Station
+            expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(0);
+            expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+
+            //Reset trader1 balances for later tests
+            const newBalance = ethers.utils.parseEther('1000000');
             const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
             await ethers.provider.send("hardhat_setBalance", [
                 trader1.address,
@@ -942,14 +975,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1020,15 +1047,9 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
             await quoteToken.mint(trader2.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1112,15 +1133,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -1141,15 +1155,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -1207,17 +1214,11 @@ describe("TradePairs", function () {
                 mode: mode,
             }
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
             expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
             expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1259,15 +1260,9 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             let type2=0; // GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
             await quoteToken.mint(trader2.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1298,15 +1293,8 @@ describe("TradePairs", function () {
         it("Should pause a trade pair from owner account", async function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
-
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1342,14 +1330,8 @@ describe("TradePairs", function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1375,15 +1357,8 @@ describe("TradePairs", function () {
         });
 
         it("Should use setAuctionPrice correctly", async function () {
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -1404,7 +1379,7 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(owner).setAuctionPrice(tradePairId, Utils.parseUnits('4.1234', quoteDecimals)))
                          .to.be.revertedWith("T-AUCT-02");
 
-            // succeeed for owner
+            // succeed for owner
             await tradePairs.connect(owner).setAuctionPrice(tradePairId, Utils.parseUnits('4.1', quoteDecimals))
             expect((await tradePairs.getTradePair(tradePairId)).auctionPrice).to.equal(Utils.parseUnits('4.1', quoteDecimals))
         });
@@ -1441,16 +1416,8 @@ describe("TradePairs", function () {
         it("Should be able to cancel orders", async function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
-
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -1489,15 +1456,8 @@ describe("TradePairs", function () {
         it("Should be able to use cancelOrder(), cancelAllOrders() and cancelReplaceOrders() correctly", async function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             let type2=0 ;// GTC
-
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1577,15 +1537,8 @@ describe("TradePairs", function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit only 100 native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, '100')
             let prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
@@ -1657,16 +1610,8 @@ describe("TradePairs", function () {
         it("Should be able to use unsolicitedCancel() correctly", async function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
-
-            // quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
-            // quoteAssetAddr = quoteToken.address;
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
-
-            // add token to portfolio
-            // await f.addBaseAndQuoteTokens(portfolioMain, portfolio, baseSymbol, baseAssetAddr, baseDecimals, quoteSymbol, quoteAssetAddr, quoteDecimals, mode)
-
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
 

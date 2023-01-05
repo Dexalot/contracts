@@ -259,7 +259,7 @@ describe("Portfolio Interactions", () => {
     it("Should send Gas Token if it is not enough", async () => {
         const { owner, other1 } = await f.getAccounts();
         await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.01, 0, true); //gasSwapRatio 0.01
+        await f.addToken(portfolioSub, usdt, 0.1, 0, true); //gasSwapRatio 0.1
         await usdt.mint(other1.address, ethers.utils.parseEther("1000"));
         await gasStation.setGasAmount(ethers.utils.parseEther("10"))
 
@@ -271,6 +271,8 @@ describe("Portfolio Interactions", () => {
             gasPrice: ethers.utils.parseUnits('8', 'gwei')
         })
 
+        expect((await portfolioSub.getBalance(other1.address, ALOT)).total).to.be.equal(0)
+
         const beforeBalance = await other1.getBalance()
         await usdt.connect(other1).approve(portfolioMain.address, Utils.parseUnits("500", token_decimals));
         const tx = await portfolioMain.connect(other1).depositToken(other1.address, USDT, Utils.parseUnits("500", token_decimals), 0);
@@ -279,11 +281,11 @@ describe("Portfolio Interactions", () => {
         console.log ("cur bal", ethers.utils.formatEther(await other1.getBalance()),"bef" , ethers.utils.formatEther(beforeBalance)
                  , "gused", ethers.utils.formatEther(receipt.effectiveGasPrice.mul(receipt.gasUsed)) )
 
-        expect((await other1.getBalance()).add(receipt.effectiveGasPrice.mul(receipt.gasUsed)).gt(beforeBalance.toString())).to.be.true
+        expect((await other1.getBalance()).add(receipt.effectiveGasPrice.mul(receipt.gasUsed))).to.be.lt(beforeBalance.toString())
 
-        expect((await portfolioSub.getBalance(other1.address, USDT)).total).to.lt(ethers.utils.parseEther("500").toString())
+        expect((await portfolioSub.getBalance(other1.address, USDT)).total).to.be.equal(Utils.parseUnits("500", token_decimals))
 
-        expect((await portfolioSub.getBalance(await portfolioSub.getTreasury(), USDT)).available.gt(ethers.utils.parseEther("0"))).to.be.true
+        expect((await portfolioSub.getBalance(await portfolioSub.getTreasury(), USDT)).available).to.be.equal(0)
     });
 
 
