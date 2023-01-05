@@ -407,7 +407,8 @@ export const addTradePair = async (tradePairs: TradePairs, pair: any, pairSettin
 }
 
 export const depositNative = async (portfolio: PortfolioMain, from:SignerWithAddress, amount: string): Promise<any> => {
-    return await from.sendTransaction({to: portfolio.address, value: Utils.toWei(amount)});
+    return await from.sendTransaction({to: portfolio.address, value: Utils.toWei(amount),
+        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei")});
 
 }
 
@@ -419,11 +420,11 @@ export const depositNativeWithContractCall = async (portfolio: PortfolioMain, fr
 
 export const depositToken = async (portfolio: PortfolioMain, from:SignerWithAddress, token: MockToken, tokenDecimals: number, tokenSymbol: string, amount: string, bridgeProvider =0): Promise<any> => {
     await token.connect(from).approve(portfolio.address, Utils.parseUnits(amount, tokenDecimals), {
-        gasPrice: ethers.utils.parseUnits("8", "gwei"),
+        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
     });
 
     return await portfolio.connect(from).depositToken(from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider, {
-        gasPrice: ethers.utils.parseUnits("8", "gwei"),
+        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
     });
 }
 

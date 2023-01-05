@@ -350,37 +350,37 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function autoFillPrivate(address _trader, bytes32 _symbol, Tx _transaction) private returns (bool tankFull) {
         // Default amount of ALOT to be transferred into traders Subnet Wallet(Gas Tank)
         uint256 gasAmount = gasStation.gasAmount();
-
-        if (_trader.balance < gasAmount) {
+        // Start refilling at 50%
+        if (_trader.balance <= ((gasAmount * 5) / 10)) {
             if (address(gasStation).balance >= gasAmount) {
                 // User has enough ALOT in his portfolio, no need to swap ALOT with the token sent
-                // Overwrite to symbol with native so we can effectively transfer
-                // ALOT from his portfolio to his wallet
-                if (_symbol != native && gasAmount <= assets[_trader][native].available) {
-                    _symbol = native;
-                }
+                // Just withdraw ALOT from his portfolio to his wallet
+                if (gasAmount <= assets[_trader][native].available) {
+                    withdrawNativePrivate(_trader, gasAmount);
+                    tankFull = true;
+                } else {
+                    // if the swap rate is not set for the token or canUseForSwap is false then getSwapAmount returns 0
+                    // and no gas is deposited to the users wallet Unless it is a DEPOSIT transaction from the mainnet
+                    // amountToSwap : Amount of token to be deducted from trader's portfolio and transferred to treasury
+                    // in exchange for the replenishmentAmount(ALOT) deposited in trader's wallet
+                    uint256 amountToSwap = getSwapAmount(_symbol, gasAmount);
 
-                // if the swap rate is not set for the token or canUseForSwap is false then getSwapAmount returns 0
-                // and no gas is deposited to the users wallet Unless it is a DEPOSIT transaction from the mainnet
-                // amountToSwap : Amount of token to be deducted from trader's portfolio and transferred to treasury
-                // in exchange for the replenishmentAmount(ALOT) deposited in trader's wallet
-                uint256 amountToSwap = _symbol == native ? gasAmount : getSwapAmount(_symbol, gasAmount);
+                    if (amountToSwap > 0) {
+                        if (amountToSwap <= assets[_trader][_symbol].available) {
+                            transferToken(_trader, treasury, _symbol, amountToSwap, 0, Tx.AUTOFILL, false);
+                            gasStation.requestGas(_trader, gasAmount);
+                            tankFull = true;
+                        }
 
-                if (amountToSwap > 0) {
-                    if (amountToSwap <= assets[_trader][_symbol].available) {
-                        transferToken(_trader, treasury, _symbol, amountToSwap, 0, _transaction, false);
+                        // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
+                        // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
+                        // order to initiate a transaction. This is equivalent of an airdrop
+                        // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
+                        // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
+                    } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
                         gasStation.requestGas(_trader, gasAmount);
                         tankFull = true;
                     }
-
-                    // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
-                    // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
-                    // order to initiate a transaction. This is equivalent of an airdrop
-                    // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
-                    // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
-                } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
-                    gasStation.requestGas(_trader, gasAmount);
-                    tankFull = true;
                 }
             }
         } else {
@@ -400,7 +400,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
         require(allowDeposit, "P-NTDP-01");
         // the ending balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.1*2 ALOT
-        require(_from.balance >= msg.value + gasStation.gasAmount() * 2, "P-BLTH-01");
+        require(_from.balance >= msg.value + (gasStation.gasAmount() * 2), "P-BLTH-01");
 
         // We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
         // solhint-disable-next-line avoid-low-level-calls
@@ -420,6 +420,15 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      */
     function withdrawNative(address payable _to, uint256 _quantity) external override whenNotPaused nonReentrant {
         require(_to == msg.sender, "P-OOWN-01");
+        withdrawNativePrivate(_to, _quantity);
+    }
+
+    /**
+     * @notice  See withdrawNative
+     * @param   _to  Address of the withdrawer
+     * @param   _quantity  Amount of the native ALOT to withdraw
+     */
+    function withdrawNativePrivate(address _to, uint256 _quantity) private {
         safeDecrease(_to, native, _quantity, 0, Tx.ADDGAS);
         portfolioMinter.mint(_to, _quantity);
     }
