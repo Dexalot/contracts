@@ -53,7 +53,7 @@ describe("Exchange Sub", function () {
     const quoteDecimals = 6;
     const quoteDisplayDecimals = 3;
 
-    const auctionTokenStr = "Aucion Token";
+    const auctionTokenStr = "Auction Token";
     const auctionSymbolStr = "AT"
     const auctionSymbol = Utils.fromUtf8(auctionSymbolStr);
     const auctionDecimals = 18;
@@ -496,16 +496,13 @@ describe("Exchange Sub", function () {
 
             const auctionMode = 4;
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).setAuctionMode(auctionTradePairId, auctionSymbol, auctionMode)).to.revertedWith("AccessControl:");
-
-            // fail for the wrong base symbol
-            await expect(exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, Utils.fromUtf8("ALOT"), auctionMode)).to.be.revertedWith("E-BSNM-01");
+            await expect(exchange.connect(trader1).setAuctionMode(auctionTradePairId, auctionMode)).to.revertedWith("AccessControl:");
 
             // Fail for non-auction pair
-            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, auctionSymbol, auctionMode)).to.revertedWith("E-OACC-04");
+            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, auctionMode)).to.revertedWith("E-OACC-04");
 
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, auctionSymbol, auctionMode);
+            await exchange.connect(auctionAdmin).setAuctionMode(auctionTradePairId, auctionMode);
             const tradePairData = await tradePairs.getTradePair(auctionTradePairId) ;
             expect(tradePairData.auctionMode).to.be.equal(auctionMode);
         });
@@ -565,19 +562,19 @@ describe("Exchange Sub", function () {
             await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals));
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
-            // fail as only admin can pause when audtion is off (mode = 0)
+            // fail as only admin can pause when auction is off (mode = 0)
             await exchange.removeAdmin(auctionAdmin.address);
             await expect(exchange.connect(trader1).pauseTradePair(tradePairId, false)).to.be.revertedWith("E-OACC-02");
-            // fail as only admin can pause when audtion is off (mode = 0)
+            // fail as only admin can pause when auction is off (mode = 0)
             await expect(exchange.connect(auctionAdmin).pauseTradePair(tradePairId, false)).to.be.revertedWith("E-OACC-02");
-            // succeed as only admin can pause when audtion is off (mode = 0)
+            // succeed as only admin can pause when auction is off (mode = 0)
             await exchange.addAdmin(admin.address);
             await exchange.connect(admin).pauseTradePair(tradePairId, false);
             await exchange.connect(admin).pauseTradePair(tradePairId, true);
             // set auction mode to 4 (paused) by auction admin
-            await expect(exchange.connect(admin).setAuctionMode(tradePairId, baseSymbol, 4)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(admin).setAuctionMode(tradePairId,  4)).to.be.revertedWith("AccessControl:");
             // Fail for non-auction pair
-            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId, baseSymbol, 4)).to.revertedWith("E-OACC-04");
+            await expect(exchange.connect(auctionAdmin).setAuctionMode(tradePairId,  4)).to.revertedWith("E-OACC-04");
 
 
             // with auction mode set to 4 (paused) auction admin can pause a trade pair
@@ -586,7 +583,7 @@ describe("Exchange Sub", function () {
             await exchange.connect(auctionAdmin).pauseTradePair(auctionTradePairId, true);
         });
 
-        it("Should fail matchAuctionOrder() for unuathorized access", async function () {
+        it("Should fail matchAuctionOrder() for unauthorized access", async function () {
             const baseSymbolStr = "AVAX";
             const baseSymbol = Utils.fromUtf8(baseSymbolStr);
             const baseDecimals = 18;

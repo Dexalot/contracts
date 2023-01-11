@@ -248,7 +248,35 @@ interface ITradePairs {
         IOC,
         PO
     }
-
+    /**
+     * @notice  Auction Mode of a token
+     * @dev     Only the baseToken of a TradePair can be in an auction mode other than OFF
+     * When a token is in auction, it can not be withdrawn or transfeered as a Protection againt rouge AMM Pools
+     * popping up during auction and distorting the fair auction price. \
+     * Auction tokens can only be deposited by the contracts in the addTrustedContracts list. They are currently
+     * Avalaunch and Dexalot TokenVesting contracts. These contracts allow the deposits to Dexalot Discovery Auction
+     * before TGE
+     * ***Transitions ***
+     * AUCTION_ADMIN enters the tradepair in PAUSED mode \
+     * Changes it to OPEN at pre-announced auction start date/time \
+     * Changes it to CLOSING at pre-announced Randomized Auction Closing Sequence date/time
+     * ExchangeMain.flipCoin() are called for the randomization \
+     * Changes it to MATCHING when the flipCoin condition is satisfied. And proceeds with setting the auction Price
+     * and ExchangeSub.matchAuctionOrders until all the crossed orders are matched and removed from the orderbook \
+     * Changes it to LIVETRADING if pre-announced token release date/time is NOT reached, so regular trading can start
+     * without allowing tokens to be retrieved/transferred  \
+     * Changes it to OFF when the pre-announced token release time is reached. Regular trading in effect and tokens
+     * can be withdrawn or transferred \
+     * 0: OFF  – Used for the Regular Listing of a token. Default \
+     * 1: LIVETRADING  – Token is in auction. Live trading in effect but tokens can't be withdrawn or transferred \
+     * 2: OPEN  – Ongoing auction. Orders can be entered/cancelled freely. Orders will not match. \
+     * 3: CLOSING   – Randomized Auction Closing Sequence before the auction is closed, new orders/cancels allowed
+     * but auction can close at any time \
+     * 4: PAUSED   – Auction paused, no new orders/cancels allowed \
+     * 5: MATCHING   – Auction closed. Final Auction Price is determined and set. No new orders/cancels allowed.
+     * orders matching starts \
+     * 6: RESTRICTED   – Functionality Reserved for future use \
+     */
     enum AuctionMode {
         OFF,
         LIVETRADING,

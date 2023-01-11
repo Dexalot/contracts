@@ -302,7 +302,7 @@ it("Should set up auction properly", async () => {
   expect(await exchangeSub.isAuctionAdmin(auctionAdminWallet.address) ).to.equal(true);
   expect(await exchangeSub.hasRole(await exchangeSub.AUCTION_ADMIN_ROLE(), auctionAdminWallet.address) ).to.equal(true);
 
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 3)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 3)
   await exchangeSub.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0.03', pair.quoteDecimals));
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(3);
@@ -359,7 +359,7 @@ it("Should do the actual matching exact buys with sells", async () => {
   const pair = pairs[0];
   const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
 
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 5)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 5)
   await exchangeSub.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('1.5', pair.quoteDecimals));
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(5);
@@ -388,7 +388,7 @@ it("Should do the actual matching exact buys with sells", async () => {
 it("More buys than sells ", async () => {
   const pair = pairs[0];
   const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 2)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 2)
 
   const side = 0;//BUY
   for (let i=3; i<5; i++) {  // 2 buys  at 5000000
@@ -409,7 +409,7 @@ it("More buys than sells ", async () => {
   expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('10.0');
   expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('10.0');
 
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 5)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 5)
 
   await exchangeSub.connect(auctionAdminWallet).matchAuctionOrders(tp, 30);
   await expect(exchangeSub.connect(auctionAdminWallet).matchAuctionOrders(tp, 30))
@@ -424,7 +424,7 @@ it("More buys than sells ", async () => {
 it("More sells than buys ", async () => {
   const pair = pairs[0];
   const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 2)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 2)
 
   const side = 1;//SELL
   for (let i=0; i<2; i++) {  // 2 buys  at 5000000
@@ -445,7 +445,7 @@ it("More sells than buys ", async () => {
   expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('20.0');
   expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('20.0');
 
-  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, Utils.fromUtf8(pair.baseSymbol), 5)
+  await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 5)
 
   await exchangeSub.connect(auctionAdminWallet).matchAuctionOrders(tp, 30);
   await expect(exchangeSub.connect(auctionAdminWallet).matchAuctionOrders(tp, 30))

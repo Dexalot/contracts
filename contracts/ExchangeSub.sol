@@ -154,19 +154,12 @@ contract ExchangeSub is Exchange {
     /**
      * @notice  Sets auction mode for a trading pair and its basetoken in the PortfolioSUb.
      * @param   _tradePairId  id of the trading pair
-     * @param   _baseSymbol  symbol of the base token
      * @param   _mode  auction mode
      */
-    function setAuctionMode(
-        bytes32 _tradePairId,
-        bytes32 _baseSymbol,
-        ITradePairs.AuctionMode _mode
-    ) external onlyRole(AUCTION_ADMIN_ROLE) {
+    function setAuctionMode(bytes32 _tradePairId, ITradePairs.AuctionMode _mode) external onlyRole(AUCTION_ADMIN_ROLE) {
         ITradePairs.AuctionMode mode = tradePairs.getTradePair(_tradePairId).auctionMode;
         require(mode != ITradePairs.AuctionMode.OFF, "E-OACC-04");
-        require(_baseSymbol == tradePairs.getTradePair(_tradePairId).baseSymbol, "E-BSNM-01");
         tradePairs.setAuctionMode(_tradePairId, _mode);
-        IPortfolioSub(address(portfolio)).setAuctionMode(_baseSymbol, _mode);
     }
 
     /**
