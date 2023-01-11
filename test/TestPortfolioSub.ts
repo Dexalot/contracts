@@ -131,14 +131,14 @@ describe("Portfolio Sub", () => {
 
         await portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
 
-        await expect(portfolio.connect(trader1).setAuctionMode(USDT, 1)).to.revertedWith("AccessControl:");
-        await expect(portfolio.connect(auctionAdmin).setAuctionMode(USDT, 1)).to.revertedWith("AccessControl:");
 
         await expect(portfolio.addToken(USDT, usdt.address, srcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.revertedWith("P-TAEX-01"); //Auction mode off
 
         // fail from non-privileged account
         // trader1
-        await expect(portfolio.connect(trader1).setAuctionMode(USDT, 1)).to.revertedWith("AccessControl:");
+        await expect(portfolio.connect(trader1).setAuctionMode(USDT, 1)).to.revertedWith("P-OACC-04");
+        // auction admin can only change it from ExchangeSub , not from portfolio directly
+        await expect(portfolio.connect(auctionAdmin).setAuctionMode(USDT, 1)).to.revertedWith("P-OACC-04");
         // succeed from privileged account
         // auctionAdmin
         await portfolio.connect(owner).setAuctionMode(USDT, 1);
@@ -148,6 +148,11 @@ describe("Portfolio Sub", () => {
         await portfolio.connect(owner).setAuctionMode(USDT, 0);
         tokenDetails = await portfolio.getTokenDetails(USDT);
         expect(tokenDetails.auctionMode).to.be.equal(0);
+        // Test with TradePairs EXECUTOR_ROLE
+        await portfolio.grantRole(portfolio.EXECUTOR_ROLE(), trader1.address);
+        await portfolio.connect(trader1).setAuctionMode(USDT, 3);
+        tokenDetails = await portfolio.getTokenDetails(USDT);
+        expect(tokenDetails.auctionMode).to.be.equal(3);
     });
 
 
@@ -213,7 +218,7 @@ describe("Portfolio Sub", () => {
         // fail from non TradePairs addresses
         await expect(portfolio.connect(trader1)
             .addExecution(0, trader1.address, takerAddr, baseSymbol, quoteSymbol, baseAmount, quoteAmount, makerfeeCharged, takerfeeCharged))
-            .to.revertedWith("P-OACC-04");
+            .to.revertedWith("P-OACC-03");
     });
 
     it("Should fail adjustAvailable()", async function () {

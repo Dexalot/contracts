@@ -202,11 +202,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     /**
      * @notice  Set auction mode for a token
-     * @dev   Only callable by the default admin
+     * @dev   Only callable by the default admin or TradePairs
      * @param   _symbol  Symbol of the token
      * @param   _mode  New auction mode
      */
-    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external {
+        require(hasRole(EXECUTOR_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-04");
         uint256 oldValue = uint256(tokenDetailsMap[_symbol].auctionMode);
         tokenDetailsMap[_symbol].auctionMode = _mode;
         emit ParameterUpdated(_symbol, "P-AUCTION", oldValue, uint256(_mode));
@@ -265,7 +266,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         uint256 _takerfeeCharged
     ) external override {
         // Only TradePairs can call PORTFOLIO addExecution
-        require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-04");
+        require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
         // if _maker.side = BUY then _taker.side = SELL
         if (_makerSide == ITradePairs.Side.BUY) {
             // decrease maker quote and incrase taker quote
@@ -352,35 +353,31 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         uint256 gasAmount = gasStation.gasAmount();
         // Start refilling at 50%
         if (_trader.balance <= ((gasAmount * 5) / 10)) {
-            if (address(gasStation).balance >= gasAmount) {
-                // User has enough ALOT in his portfolio, no need to swap ALOT with the token sent
-                // Just withdraw ALOT from his portfolio to his wallet
-                if (gasAmount <= assets[_trader][native].available) {
-                    withdrawNativePrivate(_trader, gasAmount);
-                    tankFull = true;
-                } else {
-                    // if the swap rate is not set for the token or canUseForSwap is false then getSwapAmount returns 0
-                    // and no gas is deposited to the users wallet Unless it is a DEPOSIT transaction from the mainnet
-                    // amountToSwap : Amount of token to be deducted from trader's portfolio and transferred to treasury
-                    // in exchange for the replenishmentAmount(ALOT) deposited in trader's wallet
-                    uint256 amountToSwap = getSwapAmount(_symbol, gasAmount);
-
-                    if (amountToSwap > 0) {
-                        if (amountToSwap <= assets[_trader][_symbol].available) {
-                            transferToken(_trader, treasury, _symbol, amountToSwap, 0, Tx.AUTOFILL, false);
-                            gasStation.requestGas(_trader, gasAmount);
-                            tankFull = true;
-                        }
-
-                        // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
-                        // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
-                        // order to initiate a transaction. This is equivalent of an airdrop
-                        // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
-                        // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
-                    } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
+            // User has enough ALOT in his portfolio, no need to swap ALOT with the token sent
+            // Just withdraw ALOT from his portfolio to his wallet
+            if (gasAmount <= assets[_trader][native].available) {
+                withdrawNativePrivate(_trader, gasAmount);
+                tankFull = true;
+            } else if (address(gasStation).balance >= gasAmount) {
+                // if the swap rate is not set for the token or canUseForSwap is false then getSwapAmount returns 0
+                // and no gas is deposited to the users wallet Unless it is a DEPOSIT transaction from the mainnet
+                // amountToSwap : Amount of token to be deducted from trader's portfolio and transferred to treasury
+                // in exchange for the replenishmentAmount(ALOT) deposited in trader's wallet
+                uint256 amountToSwap = getSwapAmount(_symbol, gasAmount);
+                if (amountToSwap > 0) {
+                    if (amountToSwap <= assets[_trader][_symbol].available) {
+                        transferToken(_trader, treasury, _symbol, amountToSwap, 0, Tx.AUTOFILL, false);
                         gasStation.requestGas(_trader, gasAmount);
                         tankFull = true;
                     }
+                    // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
+                    // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
+                    // order to initiate a transaction. This is equivalent of an airdrop
+                    // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
+                    // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
+                } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
+                    gasStation.requestGas(_trader, gasAmount);
+                    tankFull = true;
                 }
             }
         } else {

@@ -16,7 +16,7 @@
     "P-OACC-01": "Portfolio: admin account needed for this function",
     "P-OACC-02": "Portfolio: address can not be address(0)",
     "P-OACC-03": "Portfolio: only TradePairs contract call this function",
-    "P-OACC-04": "Portfolio: only TradePairs contract can call addExecution",
+    "P-OACC-04": "Portfolio: only TradePairs contract or admin can call this function",
     "P-ALOA-01": "Portfolio: at least one account needed in admin group",
     "P-ALOA-02": "Portfolio: can not remove PortfolioBridge from PORTFOLIO_BRIDGE_ROLE, use setPortfolioBridge function instead",
     "P-NTDP-01": "Portfolio: deposits paused",
@@ -125,8 +125,7 @@
     "E-ALOA-01": "Exchange: at least one account needed in admin group",
     "E-NFUN-01": "Exchange: unknown function call",
     "E-TNAP-01": "Exchange: tokens need to be added to portfolio first",
-    "E-TNSA-01": "Exchange: token in portfolio is not in the same auction mode",
-    "E-BSNM-01": "Exchange: base symbol doesn't match one in trade pair",
+    "E-TNSA-01": "Exchange: token in portfolio is not in the same auction mode/quote token can never be in auction",
 
     "R-TIEM-01": "RBTLibrary: target is empty",
     "R-TIEM-02": "RBTLibrary: target is empty",

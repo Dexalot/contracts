@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     // denominator for rate calculations
     uint256 public constant TENK = 10000;
@@ -159,14 +159,14 @@ contract TradePairs is
             tradePair.maxTradeAmount = _maxTradeAmount;
             tradePair.buyBookId = buyBookId;
             tradePair.sellBookId = sellBookId;
-            tradePair.makerRate = 10; // makerRate=10 (0.10% = 10/10000)
-            tradePair.takerRate = 20; // takerRate=20 (0.20% = 20/10000)
+            tradePair.makerRate = 20; // (0.20% = 20/10000)
+            tradePair.takerRate = 30; // (0.30% = 30/10000)
             // with default allowedSlippagePercent of 20, the market orders cannot be filled
             // worst than 80% of the bestBid and 120% of bestAsk
-            tradePair.allowedSlippagePercent = 20; // allowedSlippagePercent=20 (20% = 20/100)
+            tradePair.allowedSlippagePercent = 20; // (20% = 20/100)
             // tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
-            // tradePair.postOnly = false;         //evm initialized
+            // tradePair.postOnly = false;         // evm initialized
 
             setAuctionModePrivate(_tradePairId, _mode);
             tradePairsArray.push(_tradePairId);
@@ -331,6 +331,7 @@ contract TradePairs is
         TradePair storage tradePair = tradePairMap[_tradePairId];
         uint256 oldValue = uint256(tradePair.auctionMode);
         tradePair.auctionMode = _mode;
+        IPortfolioSub(address(portfolio)).setAuctionMode(tradePair.baseSymbol, _mode);
         if (UtilsLibrary.matchingAllowed(_mode)) {
             // Makes sure that the matching is completed after the auction has ended and order book
             // doesn't have any crossed orders left before unpausing the trade pair

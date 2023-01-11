@@ -1097,7 +1097,7 @@ describe("TradePairs", function () {
                         expect(e.args.type2).to.be.equal(type2);            // type2 is GTC=0 ( FOK-is ignored!!!)
                         expect(e.args.status).to.be.equal(2);            // status is PARTIAL = 2
                         expect(e.args.quantityfilled).to.be.equal(Utils.parseUnits('10', baseDecimals));   // quantityfilled is 10 AVAX
-                        expect(e.args.totalfee).to.be.equal(Utils.parseUnits('1', quoteDecimals));  // 0.1% of 1000 = 1 QT
+                        expect(e.args.totalfee).to.be.equal(Utils.parseUnits('2', quoteDecimals));  // 0.2% of 1000 = 2 QT
 
                         // getOrderByClientOrderId should return the same orders
                         const orderbyCl1= await tradePairs.getOrderByClientOrderId(trader1.address, clientOrderid);
@@ -1115,7 +1115,7 @@ describe("TradePairs", function () {
                         expect(e.args.type2).to.be.equal(0);            // type2 is GTC=0
                         expect(e.args.status).to.be.equal(3);            // status is FILLED = 3
                         expect(e.args.quantityfilled).to.be.equal(Utils.parseUnits('10', baseDecimals));   // quantityfilled is 10 AVAX
-                        expect(e.args.totalfee).to.be.equal(Utils.parseUnits('0.02', baseDecimals));  // 0.2% of 10 = 0.02 AVAX
+                        expect(e.args.totalfee).to.be.equal(Utils.parseUnits('0.03', baseDecimals));  // 0.3% of 10 = 0.03 AVAX
 
                     }
 
