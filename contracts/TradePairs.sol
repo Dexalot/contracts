@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.2");
+    bytes32 public constant VERSION = bytes32("2.2.3");
 
     // denominator for rate calculations
     uint256 public constant TENK = 10000;
@@ -331,7 +331,7 @@ contract TradePairs is
         TradePair storage tradePair = tradePairMap[_tradePairId];
         uint256 oldValue = uint256(tradePair.auctionMode);
         tradePair.auctionMode = _mode;
-        IPortfolioSub(address(portfolio)).setAuctionMode(tradePair.baseSymbol, _mode);
+        portfolio.setAuctionMode(tradePair.baseSymbol, _mode);
         if (UtilsLibrary.matchingAllowed(_mode)) {
             // Makes sure that the matching is completed after the auction has ended and order book
             // doesn't have any crossed orders left before unpausing the trade pair

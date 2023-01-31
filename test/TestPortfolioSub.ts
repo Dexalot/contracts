@@ -319,13 +319,46 @@ describe("Portfolio Sub", () => {
         const gas = await ethers.provider.estimateGas(tx)
         const gasPrice = await ethers.provider.getGasPrice()
         const total = gas.mul(gasPrice)
+        const gasThreshold = (await gasStation.gasAmount()).mul(2);
+//        console.log (Utils.formatUnits(initial_amount,18), "gasth", Utils.formatUnits(gasThreshold,18))
 
+        // Fail when more than available is being deposited into the portfolio
+        // For some reason , revertWith is not matching the error , cd Jan30,23
+        // await expect(portfolio.connect(trader1).depositNative(trader1.address, 0, {
+        //     value: initial_amount.mul(2),
+        //     gasLimit: gas,
+        //     gasPrice: gasPrice
+        // })).to.be.revertedWith("InvalidInputError: sender doesn't have enough funds to send tx. The max upfront cost is: 2000000000169000320237961 and the sender's account only has: 1000000000000000000000000");
+
+        //Fail when trying to leave almost 0 in the wallet
         await expect(portfolio.connect(trader1).depositNative(trader1.address, 0, {
             value: initial_amount.sub(total),
             gasLimit: gas,
             gasPrice: gasPrice
         }))
         .to.be.revertedWith("P-BLTH-01");
+
+        // console.log (Utils.formatUnits(initial_amount.sub(total).sub(gasThreshold),18))
+
+        //Allow if leaving just a bit more than gasThreshold in the wallet.
+        await portfolio.connect(trader1).depositNative(trader1.address, 0, {
+            value: initial_amount.sub(total).sub(gasThreshold.mul(2)),
+            gasLimit: gas,
+            gasPrice: gasPrice
+        });
+        const endingBal = Number(await trader1.getBalance())
+       // console.log (endingBal, Number(gasThreshold.toString()))
+
+        expect(endingBal).to.be.greaterThan(Number(gasThreshold.toString()))
+
+        //Refill the trader1 balance
+        const newBalance = ethers.utils.parseEther('1000000');
+        const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+            trader1.address,
+        newBalanceHex, // 1000000 ALOT
+        ]);
+
     })
 
     it("Should deposit native tokens from subnet if initiated by self ", async () => {

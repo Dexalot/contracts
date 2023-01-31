@@ -74,7 +74,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -396,14 +396,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
         require(allowDeposit, "P-NTDP-01");
-        // the ending balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.1*2 ALOT
-        require(_from.balance >= msg.value + (gasStation.gasAmount() * 2), "P-BLTH-01");
-
         // We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
         // solhint-disable-next-line avoid-low-level-calls
         (bool sent, ) = address(0).call{value: msg.value}("");
         require(sent, "P-BF-01");
-
+        // the ending balance cannot be lower than the twice the gasAmount that we would deposit
+        // using autoFill. Currently 0.1*2= 0.2 ALOT
+        require(_from.balance >= gasStation.gasAmount() * 2, "P-BLTH-01");
         totalNativeBurned += msg.value;
         safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS);
     }
