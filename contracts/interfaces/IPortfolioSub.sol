@@ -29,6 +29,19 @@ interface IPortfolioSub {
         uint256 _takerfeeCharged
     ) external;
 
+    function transferToken(address _to, bytes32 _symbol, uint256 _quantity) external;
+
+    enum AssetType {
+        NATIVE,
+        ERC20,
+        NONE
+    }
+
+    function getBalance(
+        address _owner,
+        bytes32 _symbol
+    ) external view returns (uint256 total, uint256 available, AssetType assetType);
+
     function withdrawNative(address payable _to, uint256 _quantity) external;
 
     function withdrawToken(

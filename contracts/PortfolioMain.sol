@@ -25,7 +25,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.0");
+    bytes32 public constant VERSION = bytes32("2.2.1");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -231,7 +231,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         bytes32[] memory tokens = new bytes32[](tokenList.length());
         uint256[] memory amounts = new uint256[](tokenList.length());
 
-        for (uint256 i = 0; i < tokenList.length(); i++) {
+        for (uint256 i = 0; i < tokenList.length(); ++i) {
             BridgeParams storage bridgeParam = bridgeParams[tokenList.at(i)];
             tokens[i] = tokenList.at(i);
             amounts[i] = ((bridgeParam.fee + bridgeParam.gasSwapRatio) * minDepositMultiplier) / 10;
@@ -345,7 +345,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @param   _symbols  Array of symbols of tokens to withdraw
      */
     function collectBridgeFees(bytes32[] calldata _symbols) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
-        for (uint256 i = 0; i < _symbols.length; i++) {
+        for (uint256 i = 0; i < _symbols.length; ++i) {
             require(tokenList.contains(_symbols[i]), "P-ETNS-02");
             uint256 bcf = bridgeFeeCollected[_symbols[i]];
             if (bcf > 0) {

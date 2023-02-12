@@ -158,7 +158,7 @@ interface ITradePairs {
 
     function cancelOrder(bytes32 _orderId) external;
 
-    function cancelAllOrders(bytes32[] memory _orderIds) external;
+    function cancelOrderList(bytes32[] memory _orderIds) external;
 
     function cancelReplaceOrder(bytes32 _orderId, bytes32 _clientOrderId, uint256 _price, uint256 _quantity) external;
 
@@ -204,12 +204,14 @@ interface ITradePairs {
      * @notice  Order Status
      * @dev     And order automatically gets the NEW status once it is committed to the blockchain \
      * 0: NEW      – Order is in the orderbook with no trades/executions \
-     * 1: REJECTED – For future use \
+     * 1: REJECTED – Order is rejected. Currently used addLimitOrderList to notify when an order from the list is
+     * rejected instead of reverting the entire order list \
      * 2: PARTIAL  – Order filled partially and it remains in the orderbook until FILLED/CANCELED \
      * 3: FILLED   – Order filled fully and removed from the orderbook \
      * 4: CANCELED – Order canceled and removed from the orderbook. PARTIAL before CANCELED is allowed \
      * 5: EXPIRED  – For future use \
-     * 6: KILLED   – For future use
+     * 6: KILLED   – For future use \
+     * 7: CANCEL_REJECT   – Cancel Request Rejected with reason code
      */
     enum Status {
         NEW,
@@ -218,7 +220,8 @@ interface ITradePairs {
         FILLED,
         CANCELED,
         EXPIRED,
-        KILLED
+        KILLED,
+        CANCEL_REJECT
     }
     /**
      * @notice  Rate Type
@@ -334,7 +337,8 @@ interface ITradePairs {
         Type2 type2,
         Status status,
         uint256 quantityfilled,
-        uint256 totalfee
+        uint256 totalfee,
+        bytes32 code
     );
 
     /**
@@ -371,6 +375,5 @@ interface ITradePairs {
         address indexed addressMaker,
         address indexed addressTaker
     );
-
     event ParameterUpdated(uint8 version, bytes32 indexed pair, string param, uint256 oldValue, uint256 newValue);
 }

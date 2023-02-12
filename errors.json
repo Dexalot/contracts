@@ -92,7 +92,7 @@
     "T-CQFA-01": "TradePairs: change to quantityFilled already applied",
     "T-PPAU-01": "TradePairs: Pair paused",
     "T-PPAU-02": "TradePairs: cancelOrder pair paused",
-    "T-PPAU-03": "TradePairs: cancelAllOrders pair paused",
+    "T-PPAU-03": "TradePairs: cancelOrderList pair paused",
     "T-PPAU-04": "TradePairs: Pair should be paused for this operation",
     "T-AOPA-01": "TradePairs: addOrderPaused paused",
     "T-IVOT-01": "TradePairs: invalid order type",
@@ -214,14 +214,15 @@
     "TVC-TKNR-01": "TokenVestingCloneable: token not revoked",
 
     "ID-ZADDR-01": "IncentiveDistributor: cannot initialize signer with zero address(0)",
+    "ID-ZADDR-02": "IncentiveDistributor: cannot initialize portfolio with zero address(0)",
     "ID-TDNE-01": "IncentiveDistributor: tokenId does not exist",
     "ID-TDNE-02": "IncentiveDistributor: tokenId does not exist",
     "ID-SIGN-01": "IncentiveDistributor: invalid claim inputs, user, tokenId, amounts or signer does not match signature",
     "ID-RTPC-01": "IncentiveDistributor: reward tokens previously claimed",
     "ID-NTTC-01": "IncentiveDistributor: no reward tokens to claim",
-    "ID-RTBI-01": "IncentiveDistributor: reward token balance insufficient in contract",
     "ID-TACM-01": "IncentiveDistributor: number of tokens and claim amounts mismatch, no. of tokens less than no. of claims",
     "ID-TACM-02": "IncentiveDistributor: number of tokens and claim amounts mismatch, no. of tokens greater than no. of claims",
+    "ID-AGCB-01": "IncentiveDistributor: amount greater than contract balance",
 
     "BA-LENM-01": "BannedAccounts: number of banned accounts and ban reasons do not match"
 }

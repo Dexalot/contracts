@@ -575,7 +575,7 @@ describe("TradePairs", function () {
             }
 
             await tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true);
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
 
             let buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             let sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -600,7 +600,7 @@ describe("TradePairs", function () {
             }
 
             const tx = await tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true);
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
             const receipt = await tx.wait();
 
             //console.log("addLimitOrderList Gas used", Utils.formatUnits(receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice).div(10**9),18));
@@ -620,7 +620,7 @@ describe("TradePairs", function () {
 
             // Only 1 order is unfilled FOK but the entire batch reverts
             await expect(tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true)).to.be.revertedWith("T-FOKF-01");
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s)).to.be.revertedWith("T-FOKF-01");
 
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -631,7 +631,7 @@ describe("TradePairs", function () {
             type2s[1]=2 // IOC,
             // Only 1 order is IOC and it gets canceled
             await tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true);
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
 
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -645,13 +645,33 @@ describe("TradePairs", function () {
                 type2s[i]=3 // PO,
             }
 
-            //Entire list is reverted as First 2 PO orders will get a match
-            await expect(tradePairs.connect(trader1)
-            .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true)).to.be.revertedWith("T-T2PO-01");
+            //First 2 PO orders will get a match hence they are rejected
+            // the rest of the orders are processed
+            const tx2 = await tradePairs.connect(trader1)
+            .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
+            const receipt2 : any  = await tx2.wait();
 
-            //First 2 PO orders are skipped as it will get a match
-            await tradePairs.connect(trader1)
-            .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,false);
+            for (const e of receipt2.events) {
+                if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader1.address){
+                    expect(e.args.pair).to.be.equal(tradePairId);
+                    const orderIndex = clientOrderIds.indexOf(e.args.clientOrderId);
+                    expect(e.args.clientOrderId).to.be.equal(clientOrderIds[orderIndex]);
+                    expect(e.args.traderaddress).to.be.equal(trader1.address);
+                    expect(e.args.price).to.be.equal(prices[orderIndex]);
+                    expect(e.args.side).to.be.equal(sides[orderIndex]);              // side is SELL=1
+                    expect(e.args.type1).to.be.equal(1);             // type1 is LIMIT=1
+                    expect(e.args.type2).to.be.equal(type2s[orderIndex]);   // type2 is GTC=0
+                    if (orderIndex <=1) {
+                        expect(e.args.status).to.be.equal(1);            // status is REJECTED = 1
+                        expect(e.args.code).to.be.equal(Utils.fromUtf8("T-T2PO-01"));
+                    } else {
+                        expect(e.args.status).to.be.equal(0);            // status is NEW = 0
+                        expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                    }
+                    expect(e.args.quantityfilled).to.be.equal(0);
+
+                }
+            }
 
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -667,7 +687,7 @@ describe("TradePairs", function () {
             // fail paused
             await tradePairs.connect(owner).pause();
             await expect( tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true))
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s))
                     .to.be.revertedWith("Pausable: paused");
 
         });
@@ -708,7 +728,7 @@ describe("TradePairs", function () {
             }
 
             await tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,true);
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
 
             const buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             const sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -1008,16 +1028,16 @@ describe("TradePairs", function () {
             // get id of the second order
             const id3 = res3.events[1].args.orderId;
 
-            // cancel the third order individually with cancelOrder before canceling the other two orders with cancelAllOrders
+            // cancel the third order individually with cancelOrder before canceling the other two orders with cancelOrderList
             await tradePairs.connect(trader1).cancelOrder(id3);
 
             // fail paused
             await tradePairs.connect(owner).pause()
-            await expect(tradePairs.connect(trader1).cancelAllOrders([id1, id2])).to.be.revertedWith("Pausable: paused");
+            await expect(tradePairs.connect(trader1).cancelOrderList([id1, id2])).to.be.revertedWith("Pausable: paused");
             await tradePairs.connect(owner).unpause()
 
             // cancel all orders
-            const tx4 = await tradePairs.connect(trader1).cancelAllOrders([id1, id2, id3]);
+            const tx4 = await tradePairs.connect(trader1).cancelOrderList([id1, id2, id3]);
             const res4: any = await tx4.wait();
 
             // verify cancellation of id1
@@ -1031,6 +1051,11 @@ describe("TradePairs", function () {
             expect(res4.events[3].args.status).to.be.equal(4);           // status is CANCELED = 4\
              //Original order removed
             expect((await tradePairs.getOrder(id2)).id).to.be.equal(ZERO_BYTES32);
+
+            // Get a cancel reject on id3
+            expect(res4.events[4].args.orderId).to.be.equal(id3);
+            expect(res4.events[4].args.code).to.be.equal(Utils.fromUtf8("T-OAEX-01"));
+            expect(res4.events[4].args.status).to.be.equal(7);  // status is CANCEL_REJECT = 7
         });
 
         it("Should be able to add market buy order from the trader accounts", async function () {
@@ -1448,12 +1473,12 @@ describe("TradePairs", function () {
             // cannot cancel order for somebody else
             await expect(tradePairs.connect(owner).cancelOrder(id1)).to.be.revertedWith("T-OOCC-01");
             // Ignore empty orders
-            await expect(tradePairs.connect(trader1).cancelAllOrders([ZERO_BYTES32, ZERO_BYTES32]));
+            await expect(tradePairs.connect(trader1).cancelOrderList([ZERO_BYTES32, ZERO_BYTES32]));
             // cannot cancel all for somebody else
-            await expect(tradePairs.connect(owner).cancelAllOrders([id1, id2])).to.be.revertedWith("T-OOCC-02");
+            await expect(tradePairs.connect(owner).cancelOrderList([id1, id2])).to.be.revertedWith("T-OOCC-02");
         });
 
-        it("Should be able to use cancelOrder(), cancelAllOrders() and cancelReplaceOrders() correctly", async function () {
+        it("Should be able to use cancelOrder(), cancelOrderList() and cancelReplaceOrders() correctly", async function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             let type2=0 ;// GTC
             // mint some tokens for trader1
@@ -1524,8 +1549,8 @@ describe("TradePairs", function () {
 
             // fail to cancel a matched order via cancelOrder()
             await expect(tradePairs.connect(trader1).cancelOrder(id1)).to.be.revertedWith("T-OAEX-01");
-            // fail to cancel a matched order via cancelAllOrders()
-            await tradePairs.connect(trader1).cancelAllOrders([id1]);
+            // fail to cancel a matched order via cancelOrderList()
+            await tradePairs.connect(trader1).cancelOrderList([id1]);
             // fail to cancel a matched order via cancelReplaceOrder()
             await tradePairs.connect(owner).setAuctionMode(tradePairId, 2);  // auction is OPEN
             clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);

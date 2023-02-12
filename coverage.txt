@@ -1,20 +1,20 @@
 --------------------------------------|----------|----------|----------|----------|----------------|
 File                                  |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 --------------------------------------|----------|----------|----------|----------|----------------|
- contracts\                           |      100 |    94.87 |      100 |      100 |                |
+ contracts\                           |      100 |       95 |      100 |      100 |                |
   BannedAccounts.sol                  |      100 |      100 |      100 |      100 |                |
   Exchange.sol                        |      100 |      100 |      100 |      100 |                |
   ExchangeMain.sol                    |      100 |      100 |      100 |      100 |                |
   ExchangeSub.sol                     |      100 |      100 |      100 |      100 |                |
   GasStation.sol                      |      100 |    93.33 |      100 |      100 |                |
   OrderBooks.sol                      |      100 |      100 |      100 |      100 |                |
-  Portfolio.sol                       |      100 |    95.65 |      100 |      100 |                |
-  PortfolioBridge.sol                 |      100 |    90.91 |      100 |      100 |                |
+  Portfolio.sol                       |      100 |    95.83 |      100 |      100 |                |
+  PortfolioBridge.sol                 |      100 |    91.18 |      100 |      100 |                |
   PortfolioBridgeSub.sol              |      100 |    91.94 |      100 |      100 |                |
   PortfolioMain.sol                   |      100 |     91.3 |      100 |      100 |                |
   PortfolioMinter.sol                 |      100 |      100 |      100 |      100 |                |
-  PortfolioSub.sol                    |      100 |    93.13 |      100 |      100 |                |
-  TradePairs.sol                      |      100 |    95.58 |      100 |      100 |                |
+  PortfolioSub.sol                    |      100 |    93.75 |      100 |      100 |                |
+  TradePairs.sol                      |      100 |    95.54 |      100 |      100 |                |
  contracts\bridgeApps\                |      100 |      100 |      100 |      100 |                |
   LzApp.sol                           |      100 |      100 |      100 |      100 |                |
  contracts\interfaces\                |      100 |      100 |      100 |      100 |                |
@@ -38,7 +38,7 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   UtilsLibrary.sol                    |      100 |      100 |      100 |      100 |                |
  contracts\others\                    |      100 |      100 |      100 |      100 |                |
   Multicall2.sol                      |      100 |      100 |      100 |      100 |                |
- contracts\token\                     |      100 |    95.91 |      100 |      100 |                |
+ contracts\token\                     |      100 |    95.98 |      100 |      100 |                |
   Airdrop.sol                         |      100 |      100 |      100 |      100 |                |
   DexalotToken.sol                    |      100 |      100 |      100 |      100 |                |
   IncentiveDistributor.sol            |      100 |      100 |      100 |      100 |                |
@@ -47,5 +47,5 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   TokenVestingCloneFactory.sol        |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol           |      100 |    96.67 |      100 |      100 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|
-All files                             |      100 |    95.56 |      100 |      100 |                |
+All files                             |      100 |    95.66 |      100 |      100 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|

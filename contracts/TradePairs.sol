@@ -67,7 +67,7 @@ contract TradePairs is
 
     //Event versions to better communicate changes to listening components
     uint8 private constant NEW_TRADE_PAIR_VERSION = 1;
-    uint8 private constant ORDER_STATUS_CHANGED_VERSION = 1;
+    uint8 private constant ORDER_STATUS_CHANGED_VERSION = 2;
     uint8 private constant EXECUTED_VERSION = 1;
     uint8 private constant PARAMETER_UPDATED_VERSION = 1;
     uint256 public maxNbrOfFills;
@@ -216,7 +216,7 @@ contract TradePairs is
             "T-RMTP-01"
         );
 
-        for (uint i = 0; i < tradePairsArray.length; i++) {
+        for (uint i = 0; i < tradePairsArray.length; ++i) {
             if (tradePairsArray[i] == _tradePairId) {
                 tradePairsArray[i] = tradePairsArray[tradePairsArray.length - 1];
                 tradePairsArray.pop();
@@ -437,7 +437,7 @@ contract TradePairs is
     function getAllowedOrderTypes(bytes32 _tradePairId) external view returns (uint256[] memory) {
         uint256 size = allowedOrderTypes[_tradePairId].length();
         uint256[] memory allowed = new uint256[](size);
-        for (uint256 i = 0; i < size; i++) {
+        for (uint256 i = 0; i < size; ++i) {
             allowed[i] = allowedOrderTypes[_tradePairId].at(i);
         }
         return allowed;
@@ -625,12 +625,13 @@ contract TradePairs is
      * ```solidity
      * status  Order Status  {
      *          NEW,
-     *          REJECTED, -- For future use
+     *          REJECTED,
      *          PARTIAL,
      *          FILLED,
      *          CANCELED,
      *          EXPIRED, -- For future use
      *          KILLED -- For future use
+     *          CANCEL_REJECT – Cancel Request Rejected with reason code
      *       }
      * ```
      * *quantityfilled*  cumulative quantity filled \
@@ -656,7 +657,8 @@ contract TradePairs is
             order.type2,
             order.status,
             order.quantityFilled,
-            order.totalFee
+            order.totalFee,
+            bytes32(0)
         );
     }
 
@@ -800,8 +802,6 @@ contract TradePairs is
      * @param   _side  enum ITradePairs.Side  Side of the order 0 BUY, 1 SELL
      * @param   _type1  Type1 : MARKET,LIMIT etc
      * @param   _type2  enum ITradePairs.Type2 SubType of the order
-     * @param   _revertOnPO  bool to revert or ignore type2=PO orders. Default=false (Revert), (Revert/ignore) when sent
-     * from addLimitOrderList
      */
     function addOrderChecks(
         address _trader,
@@ -811,74 +811,86 @@ contract TradePairs is
         uint256 _quantity,
         Side _side,
         Type1 _type1,
-        Type2 _type2,
-        bool _revertOnPO
-    ) private view returns (uint256 priceMarket, bool ignorePoOrder) {
+        Type2 _type2
+    ) private view returns (uint256, bytes32) {
         TradePair storage tradePair = tradePairMap[_tradePairId];
+        // Pair level checks. Will revert the order or the orderList entirely
         require(!tradePair.pairPaused, "T-PPAU-01");
         require(!tradePair.addOrderPaused, "T-AOPA-01");
-        require(allowedOrderTypes[_tradePairId].contains(uint256(_type1)), "T-IVOT-01");
-        // Quantity digit check
-        require(UtilsLibrary.decimalsOk(_quantity, tradePair.baseDecimals, tradePair.baseDisplayDecimals), "T-TMDQ-01");
-        require(clientOrderIDMap[_trader][_clientOrderId] == 0, "T-CLOI-01");
-        require(
-            !tradePair.postOnly || (tradePair.postOnly && _type1 == Type1.LIMIT && _type2 == Type2.PO),
-            "T-POOA-01"
-        );
+        // Order Types Check - Limit, Market etc
+        if (!allowedOrderTypes[_tradePairId].contains(uint256(_type1))) {
+            return (0, UtilsLibrary.stringToBytes32("T-IVOT-01"));
+            // Quantity digit check
+        } else if (!UtilsLibrary.decimalsOk(_quantity, tradePair.baseDecimals, tradePair.baseDisplayDecimals)) {
+            return (0, UtilsLibrary.stringToBytes32("T-TMDQ-01"));
+            // Unique ClientOrderId Check
+        } else if (clientOrderIDMap[_trader][_clientOrderId] != 0) {
+            return (0, UtilsLibrary.stringToBytes32("T-CLOI-01"));
+            // Pair Level PostOnly mode check. Only PO Orders allowed when TradePair is listed for the first time.
+        } else if (tradePair.postOnly) {
+            if (!(_type1 == Type1.LIMIT && _type2 == Type2.PO)) {
+                return (0, UtilsLibrary.stringToBytes32("T-POOA-01"));
+            }
+        }
 
         bytes32 bookIdOtherSide = _side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
         uint256 marketPrice = orderBooks.bestPrice(bookIdOtherSide);
 
         if (_type1 == Type1.MARKET) {
-            require(UtilsLibrary.matchingAllowed(tradePair.auctionMode), "T-AUCT-04");
+            // Market orders not allowed in Auction Mode
+            if (!UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
+                return (0, UtilsLibrary.stringToBytes32("T-AUCT-04"));
+            }
             //price set to the worst price to fill up to this price given enough quantity
             _price = _side == Side.BUY
                 ? (marketPrice * (100 + tradePair.allowedSlippagePercent)) / 100
                 : (marketPrice * (100 - tradePair.allowedSlippagePercent)) / 100;
-            // don't need to do a _price digit check here as it is taken from the orderbook
+            // don't need to do a _price digit check here for market orders as it is taken from the orderbook
         } else {
             // _price digit check for LIMIT order
-            require(
-                UtilsLibrary.decimalsOk(_price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals),
-                "T-TMDP-01"
-            );
-            if (_type2 == Type2.PO) {
-                // marketPrice > 0 check for non-empty orderbook
-                bool poOrderWillRevert = marketPrice > 0
-                    ? (_side == Side.BUY ? _price >= marketPrice : _price <= marketPrice) // will get a fill
-                    : false;
-
-                if (poOrderWillRevert) {
-                    if (_revertOnPO) {
-                        revert("T-T2PO-01");
-                    } else {
-                        ignorePoOrder = true;
-                    }
-                }
+            if (!UtilsLibrary.decimalsOk(_price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals)) {
+                return (0, UtilsLibrary.stringToBytes32("T-TMDP-01"));
+            }
+            // PostOnly Check (reject order that will get a fill)
+            if (
+                _type2 == Type2.PO &&
+                marketPrice > 0 && // marketPrice > 0 check for non-empty orderbook
+                (_side == Side.BUY ? _price >= marketPrice : _price <= marketPrice)
+            ) {
+                return (0, UtilsLibrary.stringToBytes32("T-T2PO-01"));
             }
         }
 
         uint256 tradeAmnt = getQuoteAmount(_tradePairId, _price, _quantity);
-        // a market order will be reverted here if there is an empty orderbook because _price will be 0
-        require(tradeAmnt >= tradePair.minTradeAmount, "T-LTMT-01");
-        require(tradeAmnt <= tradePair.maxTradeAmount, "T-MTMT-01");
-        priceMarket = _price;
+
+        // a market order will be rejected/reverted here if there is an empty orderbook because _price will be 0
+        if (tradeAmnt < tradePair.minTradeAmount) {
+            return (0, UtilsLibrary.stringToBytes32("T-LTMT-01"));
+        } else if (tradeAmnt > tradePair.maxTradeAmount) {
+            return (0, UtilsLibrary.stringToBytes32("T-MTMT-01"));
+        }
+        return (_price, "");
     }
 
     /**
-     * @notice  To send multiple Limit Orders at one time to help Market Makers
+     * @notice  To send multiple Limit Orders in a single transaction designed specifically for Market Makers
      * @dev     Make sure that each array is ordered properly. if a single order in the list reverts
-     * the entire list is reverted. Potential reverts due to FOK. Safe to use with IOC
-     * if PO, it will ignore the PO orders that gets a fill, and will process the remaining orders in the list
-     * Or it will revert the entire list. Controlled by _revertOnPO below
+     * the entire list is reverted. This function will only revert if it fails pair level checks, which are
+     * tradePair.pairPaused or tradePair.addOrderPaused \
+     * It can potentially revert if type2= FOK is used. Safe to use with IOC. \
+     * For the rest of the order level check failures, It will reject those orders by emitting
+     * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
+     * The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
+     * added to the blockchain. \
+     * Order rejects will only be raised if called from this function. Single orders entered using addOrder
+     * function will revert as before for backward compatibility. \
+     * See addOrderChecks function. Every line that starts with  return (0, rejectReason) will be rejected.
      * @param   _tradePairId  id of the trading pair
      * @param   _clientOrderIds  Array of unique id provided by the owner of the orders
      * @param   _prices  Array of prices
      * @param   _quantities  Array of quantities
      * @param   _sides  Array of sides
      * @param   _type2s  Array of SubTypes
-     * @param   _revertOnPO  false : It will ignore the PO order that is in the list if it gets fill
-     * true : The entire list will revert if one of the PO orders gets a fill
      */
     function addLimitOrderList(
         bytes32 _tradePairId,
@@ -886,10 +898,9 @@ contract TradePairs is
         uint256[] calldata _prices,
         uint256[] calldata _quantities,
         Side[] calldata _sides,
-        Type2[] calldata _type2s,
-        bool _revertOnPO
+        Type2[] calldata _type2s
     ) external nonReentrant whenNotPaused {
-        for (uint256 i = 0; i < _clientOrderIds.length; i++) {
+        for (uint256 i = 0; i < _clientOrderIds.length; ++i) {
             addOrderPrivate(
                 msg.sender,
                 _clientOrderIds[i],
@@ -899,7 +910,7 @@ contract TradePairs is
                 _sides[i],
                 Type1.LIMIT,
                 _type2s[i],
-                _revertOnPO
+                false // emit status=REJECTED for individual orders form the list instead of reverting the entire list
             );
         }
     }
@@ -936,7 +947,6 @@ contract TradePairs is
      * @param   _side  enum ITradePairs.Side  Side of the order 0 BUY, 1 SELL
      * @param   _type1  enum ITradePairs.Type1 Type of the order. 0 MARKET , 1 LIMIT (STOP and STOPLIMIT NOT Supported)
      * @param   _type2  enum ITradePairs.Type2 SubType of the order
-     * _revertOnPO is defaulted to true. It will revert if PO order gets fill
      */
     function addOrder(
         address _trader,
@@ -954,8 +964,9 @@ contract TradePairs is
 
     /**
      * @notice  See addOrder
-     * @param   _revertOnPO  bool to revert or ignore type2=PO  Default= Revert on single orders,
-     * Can set it to true/false from addLimitOrderList
+     * @param   _revert  bool to reject the order by emitting OrderStatusChange with
+     * "status"= REJECTED and "code" = rejectReason when called from addLimitOrderList function
+     * Or it will revert with the same rejectReason when called from addOrder function
      */
     function addOrderPrivate(
         address _trader,
@@ -966,11 +977,12 @@ contract TradePairs is
         Side _side,
         Type1 _type1,
         Type2 _type2,
-        bool _revertOnPO
+        bool _revert
     ) private {
-        TradePair storage tradePair = tradePairMap[_tradePairId];
-        // Returns proper _price for Type1=MARKET OR whether to revert or ignore when Type1=LIMIT & type2=PO
-        (uint256 price, bool ignorePoOrder) = addOrderChecks(
+        // Returns proper price for Type1=MARKET
+        // OR _price unchanged for Type1=LIMIT
+        // OR 0 price along with a rejectReason
+        (uint256 price, bytes32 rejectReason) = addOrderChecks(
             _trader,
             _clientOrderId,
             _tradePairId,
@@ -978,16 +990,38 @@ contract TradePairs is
             _quantity,
             _side,
             _type1,
-            _type2,
-            _revertOnPO
+            _type2
         );
-        if (ignorePoOrder) {
-            // A PO order sent from addLimitOrderList, ignore instead of Revert
-            return;
+        if (price == 0) {
+            // order can't be processed.
+            if (_revert) {
+                revert(UtilsLibrary.bytes32ToString(rejectReason)); // revert to keep single order logic backward compatible
+            } else {
+                // Coming from addLimitOrderList: Raise Event instead of Revert
+                emit OrderStatusChanged(
+                    ORDER_STATUS_CHANGED_VERSION,
+                    _trader,
+                    _tradePairId,
+                    bytes32(0), // Rejecting order before assigning an orderid
+                    _clientOrderId,
+                    _price,
+                    0,
+                    _quantity,
+                    _side,
+                    _type1,
+                    _type2,
+                    Status.REJECTED,
+                    0,
+                    0,
+                    rejectReason
+                );
+                return; // reject & stop processing the order
+            }
         } else {
             _price = price;
         }
 
+        TradePair storage tradePair = tradePairMap[_tradePairId];
         bytes32 orderId = getNextOrderId();
         clientOrderIDMap[_trader][_clientOrderId] = orderId;
         Order storage order = orderMap[orderId];
@@ -1020,6 +1054,7 @@ contract TradePairs is
         if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
             _quantity = matchOrder(order.id, maxNbrOfFills);
         }
+        bytes32 adjSymbol = _side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
 
         if (_type1 == Type1.MARKET) {
             order.price = 0; //Reset the market order price back to 0
@@ -1034,13 +1069,15 @@ contract TradePairs is
             if (_quantity > 0 && order.status != Status.CANCELED && (_type2 == Type2.GTC || _type2 == Type2.PO)) {
                 bytes32 bookIdSameSide = _side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
                 orderBooks.addOrder(bookIdSameSide, order.id, order.price);
-                bytes32 adjSymbol = _side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
+
                 uint256 adjAmount = _side == Side.BUY ? getQuoteAmount(_tradePairId, _price, _quantity) : _quantity;
                 portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
             }
         }
         // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
         emitStatusUpdate(order.id);
+        // if any ALOT or adjSymbol funds available in the portfolio then autoFill the gasTank.
+        portfolio.autoFill(order.traderaddress, adjSymbol);
         removeClosedOrder(order.id);
     }
 
@@ -1148,10 +1185,10 @@ contract TradePairs is
             }
         } else if (takerRemainingQuantity > 0 && (_maxNbrOfFills == 0 || takerOrder.type1 == Type1.MARKET)) {
             // This is not applicable to Auction Matching Mode
-            // if an order gets the max number of fills in a single block, it gets KILLED for the
+            // if an order gets the max number of fills in a single block, it gets CANCELED for the
             // remaining amount to protect the above loop from running out of gas.
             // OR IF the Market Order fills all the way to the worst price and still has remaining,
-            // it gets KILLED for the remaining amount.
+            // it gets CANCELED for the remaining amount.
             takerOrder.status = Status.CANCELED;
         }
 
@@ -1235,14 +1272,20 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Cancels all the orders given the array of order ids supplied
+     * @notice  Cancels all the orders in the array of order ids supplied
      * @dev     This function may run out of gas if a trader is trying to cancel too many orders
-     * Call with Maximum 20 orders at a time
-     * Will skip orders that are already canceled/filled and continue canceling the remaining ones in the list
+     * Call with Maximum ~50 orders at a time for a block size of 30M
+     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already
+     * canceled/filled while continuing to cancel the remaining open orders in the list. \
+     * Because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
+     * event except "orderId", "status" and "code" fields will be empty/default values. This includes the indexed fields
+     * "traderaddress" and "pair" which you may use as filters for your event listeners. Hence you should process the
+     * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
+     * filtering your events using those 2 indexed fields.
      * @param   _orderIds  array of order ids
      */
-    function cancelAllOrders(bytes32[] memory _orderIds) external override nonReentrant whenNotPaused {
-        for (uint256 i = 0; i < _orderIds.length; i++) {
+    function cancelOrderList(bytes32[] memory _orderIds) external override nonReentrant whenNotPaused {
+        for (uint256 i = 0; i < _orderIds.length; ++i) {
             Order storage order = orderMap[_orderIds[i]];
             if (order.id != bytes32(0)) {
                 // Continue only if the order is not CLOSED
@@ -1252,6 +1295,24 @@ contract TradePairs is
                 if (UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status)) {
                     doOrderCancel(order.id);
                 }
+            } else {
+                emit OrderStatusChanged(
+                    ORDER_STATUS_CHANGED_VERSION,
+                    address(0), //assigning 0 address as actual order value not available
+                    bytes32(0), //assigning empty value as actual order value not available
+                    _orderIds[i],
+                    bytes32(0), //assigning empty value as actual order value not available
+                    0,
+                    0,
+                    0,
+                    Side.BUY, //assigning default value as actual order value not available
+                    Type1.LIMIT, //assigning default value as actual order value not available
+                    Type2.GTC, //assigning default value as actual order value not available
+                    Status.CANCEL_REJECT,
+                    0,
+                    0,
+                    UtilsLibrary.stringToBytes32("T-OAEX-01") // Reject reason
+                );
             }
         }
     }

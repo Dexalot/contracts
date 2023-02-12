@@ -29,7 +29,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
     using RBTLibrary for RBTLibrary.Tree;
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
     // version
-    bytes32 public constant VERSION = bytes32("2.2.0");
+    bytes32 public constant VERSION = bytes32("2.2.1");
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -221,7 +221,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
         (, , , , , bytes32 head, uint256 size) = this.getNode(_orderBookID, _price);
         uint256[] memory quantities = new uint256[](size);
         OrderBook storage orderBook = orderBookMap[_orderBookID];
-        for (uint256 i = 0; i < size; i++) {
+        for (uint256 i = 0; i < size; ++i) {
             quantities[i] = tradePairs.getOrderRemainingQuantity(head);
             (, head) = orderBook.orderList[_price].getAdjacent(head, false);
         }
@@ -279,7 +279,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
         uint256 price = first(_orderBookID);
         uint256 i;
         while (price > 0) {
-            i++;
+            ++i;
             price = next(_orderBookID, price);
         }
         return i;
@@ -334,7 +334,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
             _lastPrice = (side == ITradePairs.Side.SELL)
                 ? next(_orderBookID, _lastPrice)
                 : prev(_orderBookID, _lastPrice);
-            i++;
+            ++i;
         }
         return (prices, quantities, _lastPrice, _lastOrder);
     }
@@ -369,7 +369,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
                 quantities[i] += tradePairs.getOrderRemainingQuantity(a);
                 (ex, a) = orderBook.orderList[price].getAdjacent(a, true);
             }
-            i++;
+            ++i;
             price = (_type == 0) ? next(_orderBookID, price) : prev(_orderBookID, price);
         }
         return (prices, quantities);

@@ -11,6 +11,7 @@ import {
     PortfolioMain,
     LZEndpointMock,
     LZEndpointMock__factory,
+    MockToken,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -37,7 +38,8 @@ describe("Portfolio Bridge Main", () => {
     let depositAvaxPayload: string;
 
     const AVAX: string = Utils.fromUtf8("AVAX");
-
+    const ALOT: string = Utils.fromUtf8("ALOT");
+    let alot : MockToken;
     const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
     const auctionMode: any = 0;
 
@@ -203,6 +205,30 @@ describe("Portfolio Bridge Main", () => {
         expect(await portfolioBridgeMain.gasForDestinationLzReceive()).to.be.equal(gasForDestinationLzReceive);
     });
 
+    it("Should have gas Swap Amount 1 and bridgeFee 0 for AVAX in PortfolioBridgeMain", async () => {
+
+        let params =await portfolioMain.bridgeParams(AVAX);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("0.01"));
+        expect(params.fee).to.equal(0);
+        expect(params.usedForGasSwap).to.equal(false); // always false in the mainnet
+
+        // Fail for non-bridge admin
+        await expect ( portfolioBridgeMain.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("AccessControl:")
+        // give BRIDGE_ADMIN to owner
+        await portfolioBridgeMain.grantRole(portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
+
+        await expect ( portfolioBridgeMain.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("P-GSRO-01")
+        await portfolioBridgeMain.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0.1"), true)
+        params =await portfolioMain.bridgeParams(AVAX);
+        expect(params.gasSwapRatio).to.equal(Utils.toWei("0.1"));
+        expect(params.fee).to.equal(Utils.toWei("0.3"));
+        expect(params.usedForGasSwap).to.equal(false); // always false in the mainnet
+
+        const minAmounts= await portfolioMain.getMinDepositAmounts();
+        expect(minAmounts[0]).not.includes(ALOT);
+        expect(minAmounts[0]).includes(AVAX);
+
+    });
 
     it("Should use lzReceive correctly", async () => {
         const srcChainId = 1;

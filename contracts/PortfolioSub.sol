@@ -64,12 +64,6 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     address public feeAddress;
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
 
-    enum AssetType {
-        NATIVE,
-        ERC20,
-        NONE
-    }
-
     // keep track of deposited and burned native tokens
     uint256 public totalNativeBurned;
 
@@ -224,7 +218,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function getBalance(
         address _owner,
         bytes32 _symbol
-    ) external view returns (uint256 total, uint256 available, AssetType assetType) {
+    ) external view override returns (uint256 total, uint256 available, AssetType assetType) {
         assetType = AssetType.NONE;
         if (native == _symbol) {
             assetType = AssetType.NATIVE;
@@ -608,7 +602,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
      */
-    function transferToken(address _to, bytes32 _symbol, uint256 _quantity) external whenNotPaused nonReentrant {
+    function transferToken(
+        address _to,
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external override whenNotPaused nonReentrant {
         require(tokenList.contains(_symbol), "P-ETNS-01");
         require(_to != msg.sender, "P-DOTS-01");
         //Can not transfer auction tokens
@@ -655,7 +653,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _maxCount--;
             }
             unchecked {
-                i++;
+                ++i;
             }
             if (i == tokenCount) {
                 _maxCount = 0;
