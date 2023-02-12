@@ -9,7 +9,7 @@
   },
   "scripts": {
     "clean-networkfiles": "rimraf .openzeppelin/unknown-*.json",
-    "hh-coverage": "npx hardhat coverage",
+    "hh-coverage": "yarn clean-networkfiles && npx hardhat clean && npx hardhat coverage",
     "hh-start-clean": "yarn clean-networkfiles && npx hardhat clean && npx hardhat node",
     "compile": "yarn hardhat compile",
     "size": "yarn hardhat size-contracts"
