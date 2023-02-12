@@ -60,7 +60,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("2.2.1");
+        return bytes32("2.2.2");
     }
 
     /**
@@ -214,7 +214,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      */
     function getTokenList() external view override returns (bytes32[] memory) {
         bytes32[] memory tokens = new bytes32[](tokenListById.length());
-        for (uint256 i = 0; i < tokenListById.length(); i++) {
+        for (uint256 i = 0; i < tokenListById.length(); ++i) {
             tokens[i] = tokenListById.at(i);
         }
         return tokens;
@@ -273,7 +273,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
         uint256[] calldata _thresholds
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_tokens.length == _thresholds.length, "PB-LENM-01");
-        for (uint256 i = 0; i < _tokens.length; i++) {
+        for (uint256 i = 0; i < _tokens.length; ++i) {
             delayThresholds[_tokens[i]] = _thresholds[i];
             emit DelayThresholdUpdated(_tokens[i], _thresholds[i]);
         }
@@ -341,7 +341,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
         uint256[] calldata _caps
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_tokens.length == _caps.length, "PB-LENM-02");
-        for (uint256 i = 0; i < _tokens.length; i++) {
+        for (uint256 i = 0; i < _tokens.length; ++i) {
             epochVolumeCaps[_tokens[i]] = _caps[i];
             emit EpochVolumeUpdated(_tokens[i], _caps[i]);
         }

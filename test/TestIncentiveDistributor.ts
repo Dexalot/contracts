@@ -1,8 +1,15 @@
 /**
  * The test runner for Dexalot Incentive Distributor contract
  */
+import Utils from "./utils";
 
-import { IncentiveDistributor, IncentiveDistributor__factory, DexalotToken, MockToken } from "../typechain-types";
+import {
+  IncentiveDistributor,
+  IncentiveDistributor__factory,
+  MockToken,
+  PortfolioSub,
+  PortfolioMain,
+} from "../typechain-types";
 
 import * as f from "./MakeTestSuite";
 
@@ -20,8 +27,10 @@ interface RewardClaimI {
 describe("IncentiveDistributor", () => {
   let IncentiveDistributor: IncentiveDistributor__factory;
   let incentiveDistributor: IncentiveDistributor;
+  let portfolioSub: PortfolioSub;
+  let portfolioMain: PortfolioMain;
 
-  let alot: DexalotToken;
+  let alot: MockToken;
   let lost: MockToken;
 
   let owner: SignerWithAddress;
@@ -34,33 +43,77 @@ describe("IncentiveDistributor", () => {
 
   let firstRun = true;
 
-  const TOKEN_ALLOC = 100000;
+  const TOKEN_ALLOC = Utils.parseUnits("100000", 18);
+  const GAS_COST = Utils.parseUnits("0.1", 18);
 
   async function deployRewards() {
-    IncentiveDistributor = await ethers.getContractFactory("IncentiveDistributor") as IncentiveDistributor__factory;
-    alot = await f.deployDexalotToken();
+    const completePortfolio = await f.deployCompletePortfolio();
+
+    portfolioSub = completePortfolio.portfolioSub;
+    portfolioMain = completePortfolio.portfolioMain;
+
+    alot = await f.deployMockToken("ALOT", 18);
     lost = await f.deployMockToken("LOST", 18);
+
+    await f.addToken(portfolioMain, alot, 1, 0);
+    await f.addToken(portfolioSub, lost, 1, 0);
+    await f.addToken(portfolioMain, lost, 1, 0);
+
+    IncentiveDistributor = (await ethers.getContractFactory("IncentiveDistributor")) as IncentiveDistributor__factory;
     if (firstRun) {
-      // to test failure with zero address for signer
+      // to test failure with zero address for signer and portfolio
       firstRun = false;
       const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-      await expect(upgrades.deployProxy(IncentiveDistributor, [alot.address, ZERO_ADDRESS]))
-        .to.be.revertedWith("ID-ZADDR-01");
+      await expect(
+        upgrades.deployProxy(IncentiveDistributor, [Utils.fromUtf8("ALOT"), ZERO_ADDRESS, portfolioSub.address])
+      ).to.be.revertedWith("ID-ZADDR-01");
+
+      await expect(
+        upgrades.deployProxy(IncentiveDistributor, [Utils.fromUtf8("ALOT"), signer.address, ZERO_ADDRESS])
+      ).to.be.revertedWith("ID-ZADDR-02");
     } else {
       // for all other regular tests with correct address for signer
-      incentiveDistributor = await upgrades.deployProxy(IncentiveDistributor, [alot.address, signer.address]) as IncentiveDistributor;
+      incentiveDistributor = (await upgrades.deployProxy(IncentiveDistributor, [
+        Utils.fromUtf8("ALOT"),
+        signer.address,
+        portfolioSub.address,
+      ])) as IncentiveDistributor;
       await incentiveDistributor.deployed();
     }
   }
 
+  async function alotFundDistributor() {
+    await alot.mint(owner.address, TOKEN_ALLOC.mul(2));
+
+    await f.depositToken(
+      portfolioMain,
+      owner,
+      alot,
+      18,
+      Utils.fromUtf8("ALOT"),
+      Utils.formatUnits(TOKEN_ALLOC.add(GAS_COST), 18)
+    );
+    await portfolioSub.transferToken(incentiveDistributor.address, Utils.fromUtf8("ALOT"), TOKEN_ALLOC.add(GAS_COST));
+  }
+
   async function addRewardTokens() {
-    await alot.transfer(incentiveDistributor.address, TOKEN_ALLOC);
+    await alotFundDistributor();
 
     await incentiveDistributor.pause();
-    await incentiveDistributor.addRewardToken(lost.address);
+    await incentiveDistributor.addRewardToken(Utils.fromUtf8("LOST"));
     await incentiveDistributor.unpause();
 
-    await lost.mint(incentiveDistributor.address, TOKEN_ALLOC);
+    await lost.mint(owner.address, TOKEN_ALLOC.mul(2));
+    await f.depositToken(portfolioMain, owner, lost, 18, Utils.fromUtf8("LOST"), Utils.formatUnits(TOKEN_ALLOC, 18));
+    await portfolioSub.transferToken(incentiveDistributor.address, Utils.fromUtf8("LOST"), TOKEN_ALLOC);
+  }
+
+  async function getBalance(userAddr: string, symbol?: string) {
+    if (symbol == void 0) {
+      symbol = "ALOT";
+    }
+    const balance = await portfolioSub.getBalance(userAddr, Utils.fromUtf8(symbol));
+    return balance.total;
   }
 
   async function toSignature(claimMsg: RewardClaimI, tempSigner?: SignerWithAddress) {
@@ -68,22 +121,22 @@ describe("IncentiveDistributor", () => {
       name: "Dexalot",
       version: ethers.utils.parseBytes32String(await incentiveDistributor.VERSION()),
       chainId: network.config.chainId,
-      verifyingContract: incentiveDistributor.address
+      verifyingContract: incentiveDistributor.address,
     };
 
     const types = {
       Claim: [
-          { name: "user", type: "address" },
-          { name: "tokenIds", type: "uint32" },
-          { name: "amounts", type: "uint128[]"},
-      ]
+        { name: "user", type: "address" },
+        { name: "tokenIds", type: "uint32" },
+        { name: "amounts", type: "uint128[]" },
+      ],
     };
 
     if (tempSigner == void 0) {
-      tempSigner = signer
+      tempSigner = signer;
     }
 
-    const signature = await tempSigner._signTypedData(domain, types, claimMsg)
+    const signature = await tempSigner._signTypedData(domain, types, claimMsg);
     return signature;
   }
 
@@ -92,63 +145,66 @@ describe("IncentiveDistributor", () => {
 
     rewards = [
       {
-        user: user1.address,
+        user: user1.address.toLowerCase(),
         tokenIds: 1,
-        amounts: [BigNumber.from(1000)],
+        amounts: [Utils.parseUnits("1000", 18)],
       },
-      { user: user2.address,  tokenIds: 3, amounts: [BigNumber.from(5000), BigNumber.from(1000)],},
       {
-        user: user3.address,
+        user: user2.address.toLowerCase(),
         tokenIds: 3,
-        amounts: [BigNumber.from(TOKEN_ALLOC - 500), BigNumber.from(5000)],
+        amounts: [Utils.parseUnits("5000", 18), Utils.parseUnits("1000", 18)],
       },
       {
-        user: user1.address,
+        user: user3.address.toLowerCase(),
+        tokenIds: 3,
+        amounts: [TOKEN_ALLOC.sub(Utils.parseUnits("500", 18)), Utils.parseUnits("5000", 18)],
+      },
+      {
+        user: user1.address.toLowerCase(),
         tokenIds: 2,
-        amounts: [BigNumber.from(1000)],
+        amounts: [Utils.parseUnits("1000", 18)],
       },
     ];
   });
 
   describe("Settings", () => {
     it("Should fail with zero address for signer", async function () {
-      // fail with zero addres for signer
+      // fail with zero address for signer
       await deployRewards();
     });
 
     it("Should not initialize again after deployment", async function () {
       await deployRewards();
 
-      await expect(incentiveDistributor.initialize(alot.address, signer.address))
-        .to.be.revertedWith("Initializable: contract is already initialized");
+      await expect(
+        incentiveDistributor.initialize(Utils.fromUtf8("ALOT"), signer.address, portfolioSub.address)
+      ).to.be.revertedWith("Initializable: contract is already initialized");
     });
 
     it("Should deploy", async () => {
       await deployRewards();
 
-      expect(await incentiveDistributor.tokens(1)).to.be.equal(alot.address);
+      expect(await incentiveDistributor.tokens(1)).to.be.equal(Utils.fromUtf8("ALOT"));
 
       expect(await incentiveDistributor.owner()).to.equal(owner.address);
     });
   });
 
   describe("Function permissions", () => {
-    it("Should allow only owner address call pause", async () => {
+    beforeEach(async () => {
       await deployRewards();
+    });
 
+    it("Should allow only owner address call pause", async () => {
       await expect(incentiveDistributor.connect(user1).pause()).to.revertedWith("Ownable: caller is not the owner");
       await expect(incentiveDistributor.connect(user1).unpause()).to.revertedWith("Ownable: caller is not the owner");
     });
 
     it("Should be paused to retrieve funds", async () => {
-      await deployRewards();
-
       await expect(incentiveDistributor.retrieveRewardToken(0)).to.revertedWith("Pausable: not paused");
     });
 
     it("Should allow only owner address retrieve funds", async () => {
-      await deployRewards();
-
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
       await expect(incentiveDistributor.connect(user1).retrieveRewardToken(0)).to.revertedWith(
         "Ownable: caller is not the owner"
@@ -157,27 +213,28 @@ describe("IncentiveDistributor", () => {
     });
 
     it("Should be paused to retrieve all funds", async () => {
-      await deployRewards();
-
       await expect(incentiveDistributor.retrieveAllRewardTokens()).to.revertedWith("Pausable: not paused");
     });
 
     it("Should allow only owner address retrieve all funds", async () => {
-      await deployRewards();
-
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
       await expect(incentiveDistributor.connect(user1).retrieveAllRewardTokens()).to.revertedWith(
         "Ownable: caller is not the owner"
       );
       await expect(incentiveDistributor.unpause()).to.emit(incentiveDistributor, "Unpaused");
     });
+
+    it("Should allow only owner address to withdraw gas", async () => {
+      await expect(incentiveDistributor.connect(user1).withdrawGas(0)).to.revertedWith(
+        "Ownable: caller is not the owner"
+      );
+    });
   });
 
   describe("Pausable", () => {
     before(async () => {
       await deployRewards();
-
-      await alot.transfer(incentiveDistributor.address, TOKEN_ALLOC);
+      await alotFundDistributor();
     });
 
     it("Should revert if trying to pause when paused", async () => {
@@ -191,7 +248,7 @@ describe("IncentiveDistributor", () => {
     });
 
     it("Should revert addRewardToken when not paused", async () => {
-      await expect(incentiveDistributor.addRewardToken(alot.address)).to.revertedWith("Pausable: not paused");
+      await expect(incentiveDistributor.addRewardToken(Utils.fromUtf8("ALOT"))).to.revertedWith("Pausable: not paused");
     });
 
     it("Should revert calling claim() when paused", async () => {
@@ -213,8 +270,7 @@ describe("IncentiveDistributor", () => {
 
       await incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature);
 
-      const claimed = await alot.balanceOf(userReward.user);
-      expect(claimed).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
     });
   });
 
@@ -227,14 +283,19 @@ describe("IncentiveDistributor", () => {
   describe("addRewardToken", () => {
     it("Should allow only owner use addRewardToken", async () => {
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
-      await expect(incentiveDistributor.connect(user1).addRewardToken(alot.address)).to.revertedWith("Ownable: caller is not the owner");
+      await expect(incentiveDistributor.connect(user1).addRewardToken(Utils.fromUtf8("ALOT"))).to.revertedWith(
+        "Ownable: caller is not the owner"
+      );
       await expect(incentiveDistributor.unpause()).to.emit(incentiveDistributor, "Unpaused");
     });
 
     it("Should allow add new reward token", async () => {
       expect(await incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
 
-      expect(await incentiveDistributor.addRewardToken(lost.address)).to.emit(incentiveDistributor, "AddRewardToken");
+      expect(await incentiveDistributor.addRewardToken(Utils.fromUtf8("LOST"))).to.emit(
+        incentiveDistributor,
+        "AddRewardToken"
+      );
 
       expect(await incentiveDistributor.allTokens()).to.equal(parseInt("11", 2));
     });
@@ -242,7 +303,6 @@ describe("IncentiveDistributor", () => {
 
   describe("Claim", () => {
     beforeEach(async () => {
-      alot = await f.deployDexalotToken();
       await deployRewards();
 
       await addRewardTokens();
@@ -257,9 +317,9 @@ describe("IncentiveDistributor", () => {
     });
 
     it("Should handle incorrect signature (different signer)", async () => {
-      const amounts = [BigNumber.from(1000)];
+      const amounts = [Utils.parseUnits("1000", 18)];
       const tokenIds = 0;
-      const signature = await toSignature({user: user1.address, tokenIds, amounts}, user1);
+      const signature = await toSignature({ user: user1.address, tokenIds, amounts }, user1);
 
       await expect(incentiveDistributor.connect(user1).claim(amounts, tokenIds, signature)).to.revertedWith(
         "ID-SIGN-01"
@@ -271,42 +331,42 @@ describe("IncentiveDistributor", () => {
       const signature = await toSignature(userReward);
       const amounts = userReward.amounts.map((x) => x.add(10));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(amounts, userReward.tokenIds, signature)
-      ).to.revertedWith("ID-SIGN-01");
+      await expect(incentiveDistributor.connect(user1).claim(amounts, userReward.tokenIds, signature)).to.revertedWith(
+        "ID-SIGN-01"
+      );
     });
 
     it("Should handle incorrect signature (different tokenIds)", async () => {
       const userReward = rewards[0];
       const signature = await toSignature(userReward);
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, 2, signature)
-      ).to.revertedWith("ID-SIGN-01");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, 2, signature)).to.revertedWith(
+        "ID-SIGN-01"
+      );
     });
 
     it("Should handle incorrect signature (different claimer)", async () => {
       const userReward = rewards[0];
       const signature = await toSignature(userReward);
 
-      await expect(
-        incentiveDistributor.claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.revertedWith("ID-SIGN-01");
+      await expect(incentiveDistributor.claim(userReward.amounts, userReward.tokenIds, signature)).to.revertedWith(
+        "ID-SIGN-01"
+      );
     });
 
     it("Should fail if number of tokenIds less than length of amounts array", async () => {
-      const amounts = [BigNumber.from(1000), BigNumber.from(500)];
+      const amounts = [Utils.parseUnits("1000", 18), Utils.parseUnits("500", 18)];
       const tokenIds = 1;
-      const signature = await toSignature({user: user1.address, tokenIds, amounts});
+      const signature = await toSignature({ user: user1.address, tokenIds, amounts });
       await expect(incentiveDistributor.connect(user1).claim(amounts, tokenIds, signature)).to.revertedWith(
         "ID-TACM-01"
       );
     });
 
     it("Should fail if number of tokenIds greater than length of amounts array", async () => {
-      const amounts = [BigNumber.from(1000)];
+      const amounts = [Utils.parseUnits("1000", 18)];
       const tokenIds = 3;
-      const signature = await toSignature({user: user1.address, tokenIds, amounts});
+      const signature = await toSignature({ user: user1.address, tokenIds, amounts });
       await expect(incentiveDistributor.connect(user1).claim(amounts, tokenIds, signature)).to.revertedWith(
         "ID-TACM-02"
       );
@@ -316,40 +376,39 @@ describe("IncentiveDistributor", () => {
       const userReward = rewards[0];
       const signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
     });
 
     it("Should allow correct lost claim to be successful", async () => {
       const userReward = rewards[3];
       const signature = await toSignature(userReward);
 
-      expect(await lost.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user, "LOST")).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await lost.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user, "LOST")).to.be.equal(userReward.amounts[0]);
     });
 
     it("Should handle double claim and give no extra rewards", async () => {
       const userReward = rewards[0];
       const signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      const alotAfterFirstClaim = await alot.balanceOf(userReward.user);
-      expect(alotAfterFirstClaim).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
@@ -360,16 +419,16 @@ describe("IncentiveDistributor", () => {
       const userReward = rewards[0];
       let signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
       const newAmounts = [userReward.amounts[0].sub(100)];
-      signature = await toSignature({user: userReward.user, tokenIds:userReward.tokenIds, amounts: newAmounts});
+      signature = await toSignature({ user: userReward.user, tokenIds: userReward.tokenIds, amounts: newAmounts });
 
       await expect(
         incentiveDistributor.connect(user1).claim(newAmounts, userReward.tokenIds, signature)
@@ -380,49 +439,49 @@ describe("IncentiveDistributor", () => {
       const userReward = rewards[0];
       let signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
-      const newAmounts = [BigNumber.from(5000).add(userReward.amounts[0])];
-      signature = await toSignature({user: userReward.user, tokenIds: userReward.tokenIds, amounts: newAmounts});
+      const newAmounts = [Utils.parseUnits("5000", 18).add(userReward.amounts[0])];
+      signature = await toSignature({ user: userReward.user, tokenIds: userReward.tokenIds, amounts: newAmounts });
 
       await expect(incentiveDistributor.connect(user1).claim(newAmounts, userReward.tokenIds, signature)).to.emit(
         incentiveDistributor,
         "Claimed"
       );
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(newAmounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(newAmounts[0]);
     });
 
     it("Should allow valid claims for different users", async () => {
       let userReward = rewards[0];
       let signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
       userReward = rewards[1];
       signature = await toSignature(userReward);
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
-      expect(await lost.balanceOf(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
+      expect(await getBalance(userReward.user, "LOST")).to.be.equal(BigNumber.from(0));
 
       await expect(
         incentiveDistributor.connect(user2).claim(userReward.amounts, userReward.tokenIds, signature)
       ).to.emit(incentiveDistributor, "Claimed");
 
-      expect(await alot.balanceOf(userReward.user)).to.be.equal(userReward.amounts[0]);
-      expect(await lost.balanceOf(userReward.user)).to.be.equal(userReward.amounts[1]);
+      expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
+      expect(await getBalance(userReward.user, "LOST")).to.be.equal(userReward.amounts[1]);
     });
 
     it("Should fail if contract does not have enough ALOT tokens", async () => {
@@ -438,13 +497,12 @@ describe("IncentiveDistributor", () => {
 
       await expect(
         incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.revertedWith("ID-RTBI-01");
+      ).to.revertedWith("P-AFNE-02");
     });
   });
 
   describe("retrieveRewardToken", () => {
     before(async () => {
-      alot = await f.deployDexalotToken();
       await deployRewards();
 
       await addRewardTokens();
@@ -457,56 +515,105 @@ describe("IncentiveDistributor", () => {
     });
 
     it("Should allow owner withdraw alot token if paused", async () => {
-      const ownerBalance = await alot.balanceOf(owner.address);
+      const ownerBalance = await getBalance(owner.address);
 
-      expect(await alot.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
 
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
       await incentiveDistributor.retrieveRewardToken(1);
       await expect(incentiveDistributor.unpause()).to.emit(incentiveDistributor, "Unpaused");
 
-      expect(await alot.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(0));
-      expect(await alot.balanceOf(owner.address)).to.equal(ownerBalance.add(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address)).to.equal(BigNumber.from(0));
+      expect(await getBalance(owner.address)).to.equal(ownerBalance.add(TOKEN_ALLOC));
     });
 
     it("Should allow owner withdraw lost token if paused", async () => {
-      const ownerBalance = await lost.balanceOf(owner.address);
+      const ownerBalance = await getBalance(owner.address, "LOST");
 
-      expect(await lost.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address, "LOST")).to.equal(BigNumber.from(TOKEN_ALLOC));
 
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
       await incentiveDistributor.retrieveRewardToken(2);
       await expect(incentiveDistributor.unpause()).to.emit(incentiveDistributor, "Unpaused");
 
-      expect(await lost.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(0));
-      expect(await lost.balanceOf(owner.address)).to.equal(ownerBalance.add(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address, "LOST")).to.equal(BigNumber.from(0));
+      expect(await getBalance(owner.address, "LOST")).to.equal(ownerBalance.add(TOKEN_ALLOC));
     });
   });
 
   describe("retrieveAllRewardTokens", () => {
     before(async () => {
-      alot = await f.deployDexalotToken();
       await deployRewards();
 
       await addRewardTokens();
     });
 
     it("Should allow owner withdraw multi tokens if paused ", async () => {
-      const ownerALOTBalance = await alot.balanceOf(owner.address);
-      const ownerLOSTBalance = await lost.balanceOf(owner.address);
+      const ownerALOTBalance = await getBalance(owner.address);
+      const ownerLOSTBalance = await getBalance(owner.address, "LOST");
 
-      expect(await alot.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
-      expect(await lost.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address)).to.equal(BigNumber.from(TOKEN_ALLOC));
+      expect(await getBalance(incentiveDistributor.address, "LOST")).to.equal(BigNumber.from(TOKEN_ALLOC));
 
       await expect(incentiveDistributor.pause()).to.emit(incentiveDistributor, "Paused");
 
       await incentiveDistributor.retrieveAllRewardTokens();
 
-      expect(await alot.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(0));
-      expect(await lost.balanceOf(incentiveDistributor.address)).to.equal(BigNumber.from(0));
+      expect(await getBalance(incentiveDistributor.address)).to.equal(BigNumber.from(0));
+      expect(await getBalance(incentiveDistributor.address, "LOST")).to.equal(BigNumber.from(0));
 
-      expect(await alot.balanceOf(owner.address)).to.equal(ownerALOTBalance.add(TOKEN_ALLOC));
-      expect(await lost.balanceOf(owner.address)).to.equal(ownerLOSTBalance.add(TOKEN_ALLOC));
+      expect(await getBalance(owner.address)).to.equal(ownerALOTBalance.add(TOKEN_ALLOC));
+      expect(await getBalance(owner.address, "LOST")).to.equal(ownerLOSTBalance.add(TOKEN_ALLOC));
+    });
+  });
+
+  describe("depositGas", () => {
+    before(async () => {
+      await deployRewards();
+
+      await addRewardTokens();
+    });
+
+    it("Should allow anyone to deposit gas to contract balance", async () => {
+      const contractBalanceBefore = await ethers.provider.getBalance(incentiveDistributor.address);
+
+      await expect(
+        user1.sendTransaction({
+          to: incentiveDistributor.address,
+          value: Utils.parseUnits("5.0035", 18),
+          gasLimit: 700000,
+          maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
+        })
+      ).to.emit(incentiveDistributor, "DepositGas");
+
+      const contractBalanceAfter = await ethers.provider.getBalance(incentiveDistributor.address);
+      expect(contractBalanceAfter.gte(contractBalanceBefore.add(Utils.parseUnits("5", 18))));
+    });
+  });
+
+  describe("withdrawGas", () => {
+    before(async () => {
+      await deployRewards();
+
+      await addRewardTokens();
+    });
+
+    it("Should revert if withdraw amount greater than contract balance", async () => {
+      const contractBalance = await ethers.provider.getBalance(incentiveDistributor.address);
+      await expect(incentiveDistributor.withdrawGas(contractBalance.add(1))).to.revertedWith("ID-AGCB-01");
+    });
+
+    it("Should allow owner to withdraw gas from contract balance", async () => {
+      let contractBalance = await ethers.provider.getBalance(incentiveDistributor.address);
+      const ownerBalanceBefore = await owner.getBalance();
+
+      await expect(incentiveDistributor.withdrawGas(contractBalance)).to.emit(incentiveDistributor, "WithdrawGas");
+
+      contractBalance = await ethers.provider.getBalance(incentiveDistributor.address);
+      expect(contractBalance).to.equal(BigNumber.from(0));
+
+      const ownerBalanceAfter = await owner.getBalance();
+      expect(ownerBalanceAfter.gte(ownerBalanceBefore));
     });
   });
 });

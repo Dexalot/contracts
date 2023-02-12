@@ -32,7 +32,7 @@ import "./interfaces/IPortfolioBridge.sol";
  * If your trading application has a business need to deposit/withdraw more often, then your app
  * will need to integrate with the PortfolioMain contract in the mainnet as well to fully automate
  * your flow.
- * ExchangeSub needs to have DEFAULT_ADMIN_ROLE on this contract.
+ * Exchange needs to have DEFAULT_ADMIN_ROLE on this contract.
  */
 
 // The code in this file is part of Dexalot project.
@@ -188,18 +188,14 @@ abstract contract Portfolio is
 
     /**
      * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token and usedForGasSwap flag
-     * @dev     External function to be called by ADMIN
+     * @dev     External function to be called by DEFAULT_ADMIN_ROLE or PORTFOLIO_BRIDGE_ROLE
      * @param   _symbol  Symbol of the token
      * @param   _fee  Fee to be set
      * @param   _gasSwapRatio  Amount of token to swap per ALOT. Always set it to equivalent of 1 ALOT.
      * @param   _usedForGasSwap  bool to control the list of tokens that can be used for gas swap. Mostly majors
      */
-    function setBridgeParam(
-        bytes32 _symbol,
-        uint256 _fee,
-        uint256 _gasSwapRatio,
-        bool _usedForGasSwap
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setBridgeParam(bytes32 _symbol, uint256 _fee, uint256 _gasSwapRatio, bool _usedForGasSwap) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(PORTFOLIO_BRIDGE_ROLE, msg.sender), "P-OACC-01");
         setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, _usedForGasSwap);
     }
 
@@ -323,7 +319,7 @@ abstract contract Portfolio is
      */
     function getTokenList() external view override returns (bytes32[] memory) {
         bytes32[] memory tokens = new bytes32[](tokenList.length());
-        for (uint256 i = 0; i < tokenList.length(); i++) {
+        for (uint256 i = 0; i < tokenList.length(); ++i) {
             tokens[i] = tokenList.at(i);
         }
         return tokens;

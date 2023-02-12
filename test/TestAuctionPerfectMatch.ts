@@ -586,10 +586,10 @@ async function cancelOrder(wallet: SignerWithAddress, order: IOrder, pair: any, 
   return true;
 }
 
-async function cancelAllOrders(wallet: SignerWithAddress, orderIds: string[], pair: any, orders: Map<string, any>) {
+async function cancelOrderList(wallet: SignerWithAddress, orderIds: string[], pair: any, orders: Map<string, any>) {
   let orderLog: any = {};
 
-  const tx = await tradePairs.connect(wallet).cancelAllOrders(orderIds);
+  const tx = await tradePairs.connect(wallet).cancelOrderList(orderIds);
   orderLog = await tx.wait();
 
   if (orderLog){

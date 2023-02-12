@@ -51,6 +51,8 @@ interface IPortfolio {
 
     function getTokenList() external view returns (bytes32[] memory);
 
+    function setBridgeParam(bytes32 _symbol, uint256 _fee, uint256 _gasSwapRatio, bool _usedForGasSwap) external;
+
     event PortfolioUpdated(
         Tx indexed transaction,
         address indexed wallet,

@@ -66,7 +66,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("2.2.0");
+        return bytes32("2.2.1");
     }
 
     /**
@@ -166,6 +166,23 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
         portfolio = IPortfolio(_portfolio);
         grantRole(PORTFOLIO_ROLE, _portfolio);
         addNativeToken();
+    }
+
+    /**
+     * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token and usedForGasSwap flag
+     * @dev     External function to be called by BRIDGE_ADMIN_ROLE
+     * @param   _symbol  Symbol of the token
+     * @param   _fee  Fee to be set
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT. Always set it to equivalent of 1 ALOT.
+     * @param   _usedForGasSwap  bool to control the list of tokens that can be used for gas swap. Mostly majors
+     */
+    function setBridgeParam(
+        bytes32 _symbol,
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bool _usedForGasSwap
+    ) external onlyRole(BRIDGE_ADMIN_ROLE) {
+        portfolio.setBridgeParam(_symbol, _fee, _gasSwapRatio, _usedForGasSwap);
     }
 
     /**
@@ -460,7 +477,7 @@ contract PortfolioBridge is Initializable, PausableUpgradeable, ReentrancyGuardU
      * @param   _tokens  Array of ERC20 tokens to refund
      */
     function refundTokens(address[] calldata _tokens) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        for (uint256 i = 0; i < _tokens.length; i++) {
+        for (uint256 i = 0; i < _tokens.length; ++i) {
             IERC20Upgradeable(_tokens[i]).transfer(msg.sender, IERC20Upgradeable(_tokens[i]).balanceOf(address(this)));
         }
     }

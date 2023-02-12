@@ -64,17 +64,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     address public feeAddress;
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
 
-    enum AssetType {
-        NATIVE,
-        ERC20,
-        NONE
-    }
-
     // keep track of deposited and burned native tokens
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -224,7 +218,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function getBalance(
         address _owner,
         bytes32 _symbol
-    ) external view returns (uint256 total, uint256 available, AssetType assetType) {
+    ) external view override returns (uint256 total, uint256 available, AssetType assetType) {
         assetType = AssetType.NONE;
         if (native == _symbol) {
             assetType = AssetType.NATIVE;
@@ -396,14 +390,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
         require(allowDeposit, "P-NTDP-01");
-        // the ending balance cannot be lower than the twice the gasAmount that we would deposit. Currently 0.1*2 ALOT
-        require(_from.balance >= msg.value + (gasStation.gasAmount() * 2), "P-BLTH-01");
-
         // We burn the deposit amount but still credit the user account because we minted the ALOT with withdrawNative
         // solhint-disable-next-line avoid-low-level-calls
         (bool sent, ) = address(0).call{value: msg.value}("");
         require(sent, "P-BF-01");
-
+        // the ending balance cannot be lower than the twice the gasAmount that we would deposit
+        // using autoFill. Currently 0.1*2= 0.2 ALOT
+        require(_from.balance >= gasStation.gasAmount() * 2, "P-BLTH-01");
         totalNativeBurned += msg.value;
         safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS);
     }
@@ -609,7 +602,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
      */
-    function transferToken(address _to, bytes32 _symbol, uint256 _quantity) external whenNotPaused nonReentrant {
+    function transferToken(
+        address _to,
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external override whenNotPaused nonReentrant {
         require(tokenList.contains(_symbol), "P-ETNS-01");
         require(_to != msg.sender, "P-DOTS-01");
         //Can not transfer auction tokens
@@ -656,7 +653,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _maxCount--;
             }
             unchecked {
-                i++;
+                ++i;
             }
             if (i == tokenCount) {
                 _maxCount = 0;

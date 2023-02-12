@@ -300,6 +300,27 @@ describe("Portfolio Bridge Sub", () => {
         expect(await portfolioBridgeSub.isBridgeProviderEnabled(1)).to.be.false;
     });
 
+    it("Should have gas Swap Amount 1 and bridgeFee 0 for AVAX in PortfolioBridgeSub", async () => {
+       // Avax is added with 0 gas in the subnet
+        let  params2 =await portfolioSub.bridgeParams(AVAX);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("0"));
+        expect(params2.fee).to.equal(0);
+        expect(params2.usedForGasSwap).to.equal(false);
+
+        // Fail for non-bridge admin
+        await expect ( portfolioBridgeSub.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("AccessControl:")
+        // give BRIDGE_ADMIN to owner
+        await portfolioBridgeSub.grantRole(portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+        await expect (portfolioBridgeSub.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("P-GSRO-01")
+        await portfolioBridgeSub.setBridgeParam(AVAX,  Utils.toWei("0.2"), Utils.toWei("0.1"), true)
+        params2 =await portfolioSub.bridgeParams(AVAX);
+        expect(params2.gasSwapRatio).to.equal(Utils.toWei("0.1"));
+        expect(params2.fee).to.equal(Utils.toWei("0.2"));
+        expect(params2.usedForGasSwap).to.equal(true); // always false in the mainnet
+
+    });
+
+
     it("Should revoke role", async () => {
         const {owner, admin} = await f.getAccounts();
         await expect(portfolioBridgeSub.revokeRole(await portfolioBridgeSub.DEFAULT_ADMIN_ROLE(), owner.address)).to.be.revertedWith("PB-ALOA-01");

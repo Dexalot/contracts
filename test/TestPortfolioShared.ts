@@ -258,7 +258,7 @@ describe("Portfolio Shared", () => {
     it("Should set and get bridgeFee", async () => {
         // fail for non-admin
         await expect(portfolio.connect(trader1).setBridgeParam(AVAX, bridgeFee, 0, true))
-        .to.be.revertedWith("AccessControl: account");
+        .to.be.revertedWith("P-OACC-01");
 
         // 0 gasSwapRatio Fail
         await expect(portfolio.setBridgeParam(AVAX, Utils.toWei("0.1"), 0, true)).to.revertedWith("P-GSRO-01");
@@ -275,8 +275,8 @@ describe("Portfolio Shared", () => {
         const USDT = Utils.fromUtf8("USDT")
 
         // fail from non admin accounts
-        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
-        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("P-OACC-01");
+        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("P-OACC-01");
         // succeed from admin accounts
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await expect (portfolio.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
@@ -301,8 +301,8 @@ describe("Portfolio Shared", () => {
         const USDT = Utils.fromUtf8("USDT")
 
         // fail from non admin accounts
-        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
-        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("AccessControl: account");
+        await expect(portfolio.connect(trader1).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("P-OACC-01");
+        await expect(portfolioSub.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true)).to.revertedWith("P-OACC-01");
         // succeed from admin accounts
         await portfolio.grantRole(portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await expect (portfolio.connect(admin).setBridgeParam(USDT, 0, Utils.toWei("0.1"), true))
