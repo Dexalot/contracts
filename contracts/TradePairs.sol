@@ -964,9 +964,10 @@ contract TradePairs is
 
     /**
      * @notice  See addOrder
-     * @param   _revert  bool to reject the order by emitting OrderStatusChange with
-     * "status"= REJECTED and "code" = rejectReason when called from addLimitOrderList function
-     * Or it will revert with the same rejectReason when called from addOrder function
+     * @param   _singleOrder  bool indicating whether it is a singleOrder or a part of listOrder
+     * if true, it is called from addOrder function, it will revert with the a rejectReason. \
+     * if false, it is called from addLimitOrderList function. it rejects the order by emitting
+     * OrderStatusChange with "status" = REJECTED and "code" = rejectReason instead of reverting.
      */
     function addOrderPrivate(
         address _trader,
@@ -977,7 +978,7 @@ contract TradePairs is
         Side _side,
         Type1 _type1,
         Type2 _type2,
-        bool _revert
+        bool _singleOrder
     ) private {
         // Returns proper price for Type1=MARKET
         // OR _price unchanged for Type1=LIMIT
@@ -994,7 +995,7 @@ contract TradePairs is
         );
         if (price == 0) {
             // order can't be processed.
-            if (_revert) {
+            if (_singleOrder) {
                 revert(UtilsLibrary.bytes32ToString(rejectReason)); // revert to keep single order logic backward compatible
             } else {
                 // Coming from addLimitOrderList: Raise Event instead of Revert
@@ -1054,6 +1055,7 @@ contract TradePairs is
         if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
             _quantity = matchOrder(order.id, maxNbrOfFills);
         }
+
         bytes32 adjSymbol = _side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
 
         if (_type1 == Type1.MARKET) {
@@ -1076,8 +1078,11 @@ contract TradePairs is
         }
         // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
         emitStatusUpdate(order.id);
-        // if any ALOT or adjSymbol funds available in the portfolio then autoFill the gasTank.
-        portfolio.autoFill(order.traderaddress, adjSymbol);
+        if (_singleOrder) {
+            // Only when called from single orders, skip it for list orders
+            // if any ALOT or adjSymbol funds available in the portfolio then autoFill the gasTank.
+            portfolio.autoFill(order.traderaddress, adjSymbol);
+        }
         removeClosedOrder(order.id);
     }
 
@@ -1244,7 +1249,7 @@ contract TradePairs is
         uint256 _quantity
     ) external override nonReentrant whenNotPaused {
         Order storage order = orderMap[_orderId];
-        require(UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status), "T-OAEX-01");
+        require(order.id != bytes32(0), "T-OAEX-01");
         require(order.traderaddress == msg.sender, "T-OOCC-01");
         (bytes32 tradePairId, Side side, Type1 type1, Type2 type2) = (
             order.tradePairId,
@@ -1260,11 +1265,13 @@ contract TradePairs is
     /**
      * @notice  Cancels an order given the order id supplied
      * @dev     Will revert with "T-OAEX-01" if order is already filled or canceled
+     * if order doesn't exist in can be canceled because FILLED & CANCELED orders are removed.
+     * The remaining status are NEW & PARTIAL which are ok to cancel
      * @param   _orderId  order id to cancel
      */
     function cancelOrder(bytes32 _orderId) external override nonReentrant whenNotPaused {
         Order storage order = orderMap[_orderId];
-        require(UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status), "T-OAEX-01");
+        require(order.id != bytes32(0), "T-OAEX-01");
         require(order.traderaddress == msg.sender, "T-OOCC-01");
         TradePair storage tradePair = tradePairMap[order.tradePairId];
         require(!tradePair.pairPaused, "T-PPAU-02");
@@ -1292,9 +1299,7 @@ contract TradePairs is
                 require(order.traderaddress == msg.sender, "T-OOCC-02");
                 TradePair storage tradePair = tradePairMap[order.tradePairId];
                 require(!tradePair.pairPaused, "T-PPAU-03");
-                if (UtilsLibrary.canCancel(order.quantity, order.quantityFilled, order.status)) {
-                    doOrderCancel(order.id);
-                }
+                doOrderCancel(order.id);
             } else {
                 emit OrderStatusChanged(
                     ORDER_STATUS_CHANGED_VERSION,
