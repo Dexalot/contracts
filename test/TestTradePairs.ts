@@ -544,8 +544,17 @@ describe("TradePairs", function () {
         });
 
 
-        it("Should be able to send addLimitOrderList", async function () {
+        it("Should be able to send addLimitOrderList/ no autoFill", async function () {
             const type2 = 0 ;  // GTC
+            const ALOT =Utils.fromUtf8("ALOT")
+            const alot_decimals =18;
+            const alot = await f.deployMockToken("ALOT", alot_decimals)
+            const deposit_amount = '100'
+
+            await f.addToken(portfolioMain, alot, 1);
+            await alot.mint(trader1.address, Utils.toWei(deposit_amount));
+            await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
+
 
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
@@ -574,8 +583,37 @@ describe("TradePairs", function () {
                 type2s.push(type2);
             }
 
-            await tradePairs.connect(trader1)
-                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
+            const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address);
+            const gasDeposited = await gasStation.gasAmount();
+
+            // Autofill does not kick in for addLimitOrderList
+            const WalBaltoReset =gasDeposited.div(2);
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                WalBaltoReset.toHexString(),
+              ]);
+
+            const tx1 = await tradePairs.connect(trader1)
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,{gasLimit: 3000000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+            const res1: any = await tx1.wait();
+            const gasUsedInTx = res1.cumulativeGasUsed.mul(res1.effectiveGasPrice);
+            // No autoFill kicked in, wallet balance less than what we started with
+            expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset)).to.lte(gasUsedInTx);
+            // No change in QT
+            expect((await portfolio.getBalance(trader1.address, quoteSymbol)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
+            // No impact on treasury nor Gas Station
+            expect((await portfolio.getBalance(treasurySafe.address, quoteSymbol)).total).to.equal(0);
+            expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+            //No impact on Trader Portfolio ALOT Balance
+            expect((await portfolio.getBalance(trader1.address, ALOT)).total).to.equal(Utils.parseUnits(deposit_amount, alot_decimals));
+
+            //Reset trader1 balances for later tests
+            const newBalance = ethers.utils.parseEther('1000000');
+            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                newBalanceHex,
+              ]);
 
             let buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             let sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -829,7 +867,7 @@ describe("TradePairs", function () {
             expect((await tradePairs.getOrder(id)).id).to.be.equal(ZERO_BYTES32);
         });
 
-        it("Should autofill kick-in when canceling an order", async function () {
+        it("Should autofill kick-in when adding & canceling an order", async function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
 
@@ -848,13 +886,6 @@ describe("TradePairs", function () {
 
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
 
-            // add a buy order because it is AVAX/QT and when cancelled We make QT available to get gas for
-            const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('10', baseDecimals), 0, 1, type2);
-            const res1: any = await tx1.wait();
-            // get if of the order
-            const id = res1.events[1].args.orderId;
-
             const AVAX = baseSymbol;
             const QT = quoteSymbol;
             await portfolio.setBridgeParam(QT, 0, Utils.parseUnits('1', quoteDecimals), true)
@@ -864,14 +895,32 @@ describe("TradePairs", function () {
             expect(params.gasSwapRatio).to.equal(Utils.parseUnits('1', quoteDecimals));
             expect(params.fee).to.equal(0);
             expect(params.usedForGasSwap).to.equal(true);
-
-            const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+            let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address);
             const gasDeposited = await gasStation.gasAmount();
             const qtSwappedAmnt = (await portfolio.bridgeParams(QT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
+            // Test out addOrder autoFill using QT
+            const WalBaltoReset =gasDeposited.div(2);
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                WalBaltoReset.toHexString(),
+              ]);
+            // add a buy order because it is AVAX/QT and when cancelled We make QT available to get gas for
+            const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
+            , Utils.parseUnits('10', baseDecimals), 0, 1, type2,{gasLimit: 600000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+            const res1: any = await tx1.wait();
+            // get if of the order
+            const id = res1.events[1].args.orderId;
+
+            let gasUsedInTx = res1.cumulativeGasUsed.mul(res1.effectiveGasPrice);
+
+            expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset.add(gasDeposited))).to.lte(gasUsedInTx);
+            expect((await portfolio.getBalance(trader1.address, QT)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals).sub(qtSwappedAmnt));
+            expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(qtSwappedAmnt);
+            expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited);
+            gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address);
 
             // console.log ("gasStationBeforeBal", gasStationBeforeBal.toString(), "avaxswaped", qtSwappedAmnt.toString())
             // console.log ("wallet bal before", (await ethers.provider.getBalance(trader1.address)).toString())
-            const WalBaltoReset =gasDeposited.div(2);
             await ethers.provider.send("hardhat_setBalance", [
                 trader1.address,
                 WalBaltoReset.toHexString(),
@@ -882,7 +931,7 @@ describe("TradePairs", function () {
             const tx2 = await tradePairs.connect(trader1).cancelOrder(id ,{gasLimit: 500000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
             const res: any = await tx2.wait();
             expect(res.events[1].args.status).to.be.equal(4);           // status is CANCELED = 4
-            const gasUsedInTx = res.cumulativeGasUsed.mul(res.effectiveGasPrice);
+            gasUsedInTx = res.cumulativeGasUsed.mul(res.effectiveGasPrice);
 
             expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset.add(gasDeposited))).to.lte(gasUsedInTx);
 
@@ -891,8 +940,8 @@ describe("TradePairs", function () {
             // console.log ((await portfolio.getBalance(trader1.address, QT)).total.toString())
             // console.log ((await portfolio.getBalance(treasurySafe.address, QT)).total.toString())
 
-            expect((await portfolio.getBalance(trader1.address, QT)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals).sub(qtSwappedAmnt));
-            expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(qtSwappedAmnt);
+            expect((await portfolio.getBalance(trader1.address, QT)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals).sub(qtSwappedAmnt.mul(2)));
+            expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(qtSwappedAmnt.mul(2));
             expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited);
 
             //Reset trader1 balances for later tests
@@ -904,7 +953,7 @@ describe("TradePairs", function () {
               ]);
         });
 
-        it("Should autofill kick-in using ALOT when canceling an order if ALOT is available", async function () {
+        it("Should autofill kick-in using ALOT when adding/canceling an order if ALOT is available", async function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
             const ALOT =Utils.fromUtf8("ALOT")
@@ -932,14 +981,6 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
             await f.addTradePair(tradePairs, pair, defaultPairSettings)
-
-            // add a sell order because it is AVAX/QT
-            const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('10', baseDecimals), 1, 1, type2);
-            const res1: any = await tx1.wait();
-            // get if of the order
-            const id = res1.events[1].args.orderId;
-
             const AVAX = baseSymbol;
             const QT = quoteSymbol;
             await portfolio.setBridgeParam(QT, 0, Utils.parseUnits('1', quoteDecimals), true)
@@ -950,13 +991,42 @@ describe("TradePairs", function () {
             expect(params.fee).to.equal(0);
             expect(params.usedForGasSwap).to.equal(true);
 
-            const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
+            let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
             const gasDeposited = await gasStation.gasAmount();
+
+            const WalBaltoReset =gasDeposited.div(2);
+            await ethers.provider.send("hardhat_setBalance", [
+                trader1.address,
+                WalBaltoReset.toHexString(),
+              ]);
+            // Test out addOrder autoFill using a sell order AVAX/QT
+            const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
+            , Utils.parseUnits('10', baseDecimals), 1, 1, type2,{gasLimit: 600000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+            const res1: any = await tx1.wait();
+            // get id of the order
+            const id = res1.events[1].args.orderId;
+            let gasUsedInTx = res1.cumulativeGasUsed.mul(res1.effectiveGasPrice);
+
+            // Wallet balance increased
+            expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset.add(gasDeposited))).to.lte(gasUsedInTx);
+
+            // gasDeposited fully for QT
+            // console.log ("wallet bal after2",(await ethers.provider.getBalance(trader1.address)).toString())
+            // console.log ((await portfolio.getBalance(trader1.address, QT)).total.toString())
+            // console.log ((await portfolio.getBalance(treasurySafe.address, QT)).total.toString())
+
+            // No change in QT
+            expect((await portfolio.getBalance(trader1.address, QT)).total).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
+            // No impact on treasury nor Gas Station
+            expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(0);
+            expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
+            //Trader Portfolio ALOT Balance went down by gasDeposited
+            expect((await portfolio.getBalance(trader1.address, ALOT)).total).to.equal(Utils.parseUnits(deposit_amount, alot_decimals).sub(gasDeposited));
             //const qtSwappedAmnt = (await portfolio.bridgeParams(QT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
 
             // console.log ("gasStationBeforeBal", gasStationBeforeBal.toString(), "avaxswaped", qtSwappedAmnt.toString())
             // console.log ("wallet bal before", (await ethers.provider.getBalance(trader1.address)).toString())
-            const WalBaltoReset =gasDeposited.div(2);
+            gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
             await ethers.provider.send("hardhat_setBalance", [
                 trader1.address,
                 WalBaltoReset.toHexString(),
@@ -967,7 +1037,7 @@ describe("TradePairs", function () {
             const tx2 = await tradePairs.connect(trader1).cancelOrder(id ,{gasLimit: 500000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
             const res: any = await tx2.wait();
             expect(res.events[1].args.status).to.be.equal(4);           // status is CANCELED = 4
-            const gasUsedInTx = res.cumulativeGasUsed.mul(res.effectiveGasPrice);
+            gasUsedInTx = res.cumulativeGasUsed.mul(res.effectiveGasPrice);
 
             expect((await ethers.provider.getBalance(trader1.address)).sub(WalBaltoReset.add(gasDeposited))).to.lte(gasUsedInTx);
 
@@ -981,7 +1051,8 @@ describe("TradePairs", function () {
             // No impact on treasury nor Gas Station
             expect((await portfolio.getBalance(treasurySafe.address, QT)).total).to.equal(0);
             expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
-
+            //Trader Portfolio ALOT Balance went down by gasDeposited
+            expect((await portfolio.getBalance(trader1.address, ALOT)).total).to.equal(Utils.parseUnits(deposit_amount, alot_decimals).sub(gasDeposited.mul(2)));
             //Reset trader1 balances for later tests
             const newBalance = ethers.utils.parseEther('1000000');
             const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");

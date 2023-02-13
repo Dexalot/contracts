@@ -22,7 +22,7 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
     // admin role that manages banned accounts
     bytes32 public constant BAN_ADMIN_ROLE = keccak256("BAN_ADMIN_ROLE");
     // version
-    bytes32 public constant VERSION = bytes32("2.2.0");
+    bytes32 public constant VERSION = bytes32("2.2.1");
 
     // data structure to represent a banned account
     struct BannedAccount {
@@ -32,6 +32,9 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
 
     // mapping of banned accounts
     mapping(address => BannedAccount) public bannedAccounts;
+
+    // event for bans and unban actions
+    event BanStatusChanged(address indexed account, BanReason reason, bool banned);
 
     /**
      * @notice  Initialize the upgradeable contract
@@ -51,6 +54,7 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
      * @param   _reason  Reason for the ban, e.g. BanReason.OFAC
      */
     function banAccount(address _account, BanReason _reason) external onlyRole(BAN_ADMIN_ROLE) {
+        emit BanStatusChanged(_account, _reason, true);
         bannedAccounts[_account] = BannedAccount(_reason, true);
     }
 
@@ -64,7 +68,7 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
         BanReason[] calldata _reasons
     ) external onlyRole(BAN_ADMIN_ROLE) {
         require(_accounts.length == _reasons.length, "BA-LENM-01");
-        for (uint256 i = 0; i < _accounts.length; i++) {
+        for (uint256 i = 0; i < _accounts.length; ++i) {
             bannedAccounts[_accounts[i]] = BannedAccount(_reasons[i], true);
         }
     }
@@ -74,6 +78,7 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
      * @param   _account  Address to be removed from banned accounts
      */
     function unbanAccount(address _account) external onlyRole(BAN_ADMIN_ROLE) {
+        emit BanStatusChanged(_account, BanReason.NOTBANNED, false);
         bannedAccounts[_account] = BannedAccount(BanReason.NOTBANNED, false);
     }
 
@@ -82,7 +87,7 @@ contract BannedAccounts is Initializable, AccessControlEnumerableUpgradeable, IB
      * @param   _accounts  Array of addresses to be removed from the banned accounts
      */
     function unbanAccounts(address[] calldata _accounts) external onlyRole(BAN_ADMIN_ROLE) {
-        for (uint256 i = 0; i < _accounts.length; i++) {
+        for (uint256 i = 0; i < _accounts.length; ++i) {
             bannedAccounts[_accounts[i]] = BannedAccount(BanReason.NOTBANNED, false);
         }
     }

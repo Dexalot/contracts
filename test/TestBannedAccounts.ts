@@ -37,12 +37,14 @@ describe("Banned Accounts Storage", () => {
         const { owner, admin, trader1 } = await f.getAccounts();
 
         // fail for account without BAN_ADMIN_ROLE
-        await expect(bannedAccounts.connect(owner).banAccount(trader1.address, 1))   // BanReason.OFAC = 1
+        await expect(bannedAccounts.connect(owner).banAccount(trader1.address, 1))  // BanReason.OFAC = 1
             .to.be.revertedWith("AccessControl");
         expect(await bannedAccounts.isBanned(trader1.address)).to.be.false;
 
         // succeed for account with BAN_ADMIN_ROLE
-        await bannedAccounts.connect(admin).banAccount(trader1.address, 1)           // BanReason.OFAC = 1
+        await expect(bannedAccounts.connect(admin).banAccount(trader1.address, 1))
+            .to.emit(bannedAccounts, "BanStatusChanged")
+            .withArgs(trader1.address, 1, true)                                     // BanReason.OFAC = 1
         expect(await bannedAccounts.isBanned(trader1.address)).to.be.true;
     })
 
@@ -77,7 +79,9 @@ describe("Banned Accounts Storage", () => {
         expect(await bannedAccounts.isBanned(trader1.address)).to.be.true;
 
         // succeed for account with BAN_ADMIN_ROLE
-        await bannedAccounts.connect(admin).unbanAccount(trader1.address)
+        await expect(bannedAccounts.connect(admin).unbanAccount(trader1.address))
+            .to.emit(bannedAccounts, "BanStatusChanged")
+            .withArgs(trader1.address, 0, false)                                    // BanReason.OFAC = 1
         expect(await bannedAccounts.isBanned(trader1.address)).to.be.false;
     })
 
