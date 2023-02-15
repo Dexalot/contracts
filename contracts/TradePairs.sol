@@ -667,7 +667,7 @@ contract TradePairs is
      * @dev     Updates the `totalAmount`, `quantityFilled`, `totalFee` and the status of the order.
      * Commissions are rounded down based on evm and display decimals to avoid DUST
      * @param   _orderId  order id to update
-     * @param   _price  execution price ( Can be different than order price)
+     * @param   _price  execution price (Can be better than or equal to order price)
      * @param   _quantity  execution quantity
      * @param   _rate  maker or taker rate
      * @return  uint256  last fee charged
@@ -680,17 +680,15 @@ contract TradePairs is
     ) private returns (uint256) {
         Order storage order = orderMap[_orderId];
         TradePair storage tradePair = tradePairMap[order.tradePairId];
-        require(order.status != Status.CANCELED, "T-OACA-01");
-        order.quantityFilled += _quantity;
-        require(order.quantityFilled <= order.quantity, "T-CQFA-01");
+        order.quantityFilled = order.quantityFilled + _quantity;
         order.status = order.quantity == order.quantityFilled ? Status.FILLED : Status.PARTIAL;
         uint256 amount = getQuoteAmount(order.tradePairId, _price, _quantity);
-        order.totalAmount += amount;
+        order.totalAmount = order.totalAmount + amount;
         // Rounding Down the fee based on display decimals to avoid DUST
         uint256 lastFeeRounded = order.side == Side.BUY
             ? UtilsLibrary.floor((_quantity * _rate) / TENK, tradePair.baseDecimals - tradePair.baseDisplayDecimals)
             : UtilsLibrary.floor((amount * _rate) / TENK, tradePair.quoteDecimals - tradePair.quoteDisplayDecimals);
-        order.totalFee += lastFeeRounded;
+        order.totalFee = order.totalFee + lastFeeRounded;
         return lastFeeRounded;
     }
 

@@ -88,8 +88,6 @@
 
     "T-OACC-01": "TradePairs: admin account needed for this function",
     "T-LONR-01": "TradePairs: Limit order type cannot be removed",
-    "T-OACA-01": "TradePairs: cancelOrder order already canceled",
-    "T-CQFA-01": "TradePairs: change to quantityFilled already applied",
     "T-PPAU-01": "TradePairs: Pair paused",
     "T-PPAU-02": "TradePairs: cancelOrder pair paused",
     "T-PPAU-03": "TradePairs: cancelOrderList pair paused",
