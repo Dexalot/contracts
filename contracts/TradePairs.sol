@@ -638,6 +638,7 @@ contract TradePairs is
      * *totalfee* cumulative fee paid for the order (total fee is always in terms of
      * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
      * ALOT/AVAX , fee is paid in AVAX \
+     * *code*  reason when order has REJECT or CANCEL_REJECT status, empty otherwise \
      * Note: Order price can be different than the execution price.
      * @param   _orderId  order id
      */

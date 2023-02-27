@@ -322,6 +322,7 @@ interface ITradePairs {
      * @param   status Order Status See #Status
      * @param   quantityfilled  cumulative quantity filled
      * @param   totalfee cumulative fee paid for the order
+     * @param   code reason when order has REJECT or CANCEL_REJECT status
      */
     event OrderStatusChanged(
         uint8 version,
