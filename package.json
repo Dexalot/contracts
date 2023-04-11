@@ -33,6 +33,7 @@
     "chai": "4.3.7",
     "dotenv": "16.0.3",
     "ethereum-waffle": "3.4.4",
+    "ethereumjs-util": "7.1.5",
     "ethers": "5.7.2",
     "hardhat": "2.12.6",
     "hardhat-contract-sizer": "2.6.1",
