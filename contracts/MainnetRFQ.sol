@@ -2,6 +2,7 @@
 pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -21,9 +22,12 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
-contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable {
+contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using ECDSAUpgradeable for bytes32;
+
+    // version
+    bytes32 public constant VERSION = bytes32("1.0.0");
 
     // address used to sign transactions from Paraswap API
     address public swapSigner;
@@ -73,6 +77,7 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
         __AccessControlEnumerable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
+        __EIP712_init("Dexalot", "1.0.0");
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
 
@@ -96,9 +101,11 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
         // adds nonce to nonce used mapping
         nonceUsed[_quote.nonceAndMeta] = true;
 
-        // verifies trade paramaters came from Paraswap API
-        address messageSigner = keccak256(
-            abi.encodePacked(
+
+        bytes32 structType = keccak256("Quote(uint256 nonceAndMeta,uint256 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)");
+        bytes32 hashedStruct = keccak256(
+            abi.encode(
+                structType,
                 _quote.nonceAndMeta,
                 _quote.expiry,
                 _quote.makerAsset,
@@ -108,7 +115,9 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
                 _quote.makerAmount,
                 _quote.takerAmount
             )
-        ).toEthSignedMessageHash().recover(_signature);
+        );
+        bytes32 digest = _hashTypedDataV4(hashedStruct);
+        address messageSigner = digest.recover(_signature);
         require(messageSigner == swapSigner, "RF-IS-01");
 
         if (_quote.makerAsset == address(0)) {
