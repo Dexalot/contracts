@@ -40,11 +40,47 @@ describe("Mainnet RFQ", () => {
 
   let rebalancer: SignerWithAddress;
   let signer: SignerWithAddress;
+
+  let chainId: number;
+
+
+  async function toSignature(quote: Quote, txSigner: SignerWithAddress) {
+
+    const domain = {
+      name: "Dexalot",
+      version: ethers.utils.parseBytes32String(await mainnetRFQ.VERSION()),
+      chainId: chainId,
+      verifyingContract: mainnetRFQ.address,
+    };
+
+    const types = {
+      Quote: [
+        { name: "nonceAndMeta", type: "uint256" },
+        { name: "expiry", type: "uint256" },
+        { name: "makerAsset", type: "address" },
+        { name: "takerAsset", type: "address" },
+        { name: "maker", type: "address" },
+        { name: "taker", type: "address" },
+        { name: "makerAmount", type: "uint256" },
+        { name: "takerAmount", type: "uint256" },
+      ],
+    };
+
+    const signature = await txSigner._signTypedData(domain, types, quote);
+    return signature;
+  }
+
+
+
+
   beforeEach(async function () {
     const { owner, other1: _signer, other2: _rebalancer,  trader1 } = await f.getAccounts();
 
     signer = _signer;
     rebalancer = _rebalancer;
+
+    const network = await ethers.provider.getNetwork()
+    chainId = network.chainId;
 
 
     const MainnetRFQ = await ethers.getContractFactory("MainnetRFQ");
@@ -128,12 +164,7 @@ describe("Mainnet RFQ", () => {
 
 
 
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
+    const signature = await toSignature(quote, signer);
 
     await expect(
       mainnetRFQ.connect(trader1).simpleSwap(quote, signature, {value: swapAmountAVAX},)
@@ -191,14 +222,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
-
+    const signature = await toSignature(quote, signer);
 
     await expect(
         mainnetRFQ.connect(trader1).simpleSwap(
@@ -253,16 +277,7 @@ describe("Mainnet RFQ", () => {
       takerAmount: swapAmountALOT,
     };
 
-
-
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
+    const signature = await toSignature(quote, signer);
 
     const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
 
@@ -312,14 +327,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
+    const signature = await toSignature(quote, signer);
 
     const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
 
@@ -368,14 +376,7 @@ describe("Mainnet RFQ", () => {
       takerAmount: swapAmountAVAX,
     };
 
-
-
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
+    const signature = await toSignature(quote, signer);
 
     await expect(mainnetRFQ.connect(trader1).simpleSwap(quote, signature, {value: swapAmountAVAX},)).to.be.revertedWith("RF-QE-01");
 
@@ -399,14 +400,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
-
+    const signature = await toSignature(quote, signer);
 
     await expect(
         mainnetRFQ.connect(trader1).simpleSwap(
@@ -449,15 +443,7 @@ describe("Mainnet RFQ", () => {
       takerAmount: swapAmountALOT,
     };
 
-
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await trader1.signMessage(ethers.utils.arrayify(messageHash))
-
-
+    const signature = await toSignature(quote, trader1);
 
     await expect(
         mainnetRFQ.connect(trader1).simpleSwap(
@@ -485,16 +471,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-
-    let messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    let signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
-
-
+    let signature = await toSignature(quote, signer);
 
     await expect(
         mainnetRFQ.connect(trader1).simpleSwap(
@@ -520,14 +497,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-
-    messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
+    signature = await toSignature(quote, signer);
 
 
 
@@ -557,15 +527,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-
-    messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
-
+    signature = await toSignature(quote, signer);
 
 
     await expect(
@@ -599,12 +561,7 @@ describe("Mainnet RFQ", () => {
 
 
 
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
+    const signature = await toSignature(quote, signer);
 
 
 
@@ -644,16 +601,7 @@ describe("Mainnet RFQ", () => {
     };
 
 
-
-    const messageHash = ethers.utils.solidityKeccak256(
-      ["uint256", "uint256", "address", "address", "address", "address", "uint256", "uint256"],
-      [quote.nonceAndMeta, quote.expiry, quote.makerAsset, quote.takerAsset, quote.maker, quote.taker, quote.makerAmount, quote.takerAmount]
-    );
-
-    const signature = await signer.signMessage(ethers.utils.arrayify(messageHash))
-
-
-
+    const signature = await toSignature(quote, signer);
 
     await expect(
         mainnetRFQ.connect(signer).simpleSwap(
@@ -760,9 +708,5 @@ describe("Mainnet RFQ", () => {
       mainnetRFQ.connect(signer).batchClaimBalance([mockUSDC.address, mockALOT.address], [usdcBalanceRFQ, alotBalanceRFQ])
     ).to.be.revertedWith("RF-OCR-01");
   });
-
-
-
-
 
 });
