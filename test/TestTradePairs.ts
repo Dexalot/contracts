@@ -730,6 +730,135 @@ describe("TradePairs", function () {
 
         });
 
+        it("PO & Limit Orders processed in the same block should match or revert depending on the order they are processed", async function () {
+            const ALOT =Utils.fromUtf8("ALOT")
+            const alot_decimals =18;
+            const alot = await f.deployMockToken("ALOT", alot_decimals)
+            const deposit_amount = '100'
+
+            await f.addToken(portfolioMain, alot, 1);
+            await alot.mint(trader1.address, Utils.toWei(deposit_amount));
+            await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
+
+            expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
+            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
+
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
+
+            // deposit some native to portfolio for trader1
+            await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
+            // deposit some tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
+
+            let clientOrderIds=[];
+            let prices=[];
+            let quantities= [];
+            let sides =[];
+            let type2s =[];
+
+
+            //buy PO, followed by sell Limit at the same price
+            clientOrderIds.push(await Utils.getClientOrderId(ethers.provider, trader1.address,2));
+            prices.push(Utils.parseUnits((100 ).toString(), quoteDecimals));
+            quantities.push(Utils.parseUnits('1', baseDecimals));
+            sides.push(0);
+            type2s.push(3); //PO
+
+
+            clientOrderIds.push(await Utils.getClientOrderId(ethers.provider, trader1.address,3));
+            prices.push(Utils.parseUnits((100 ).toString(), quoteDecimals));
+            quantities.push(Utils.parseUnits('1', baseDecimals));
+            sides.push(1);
+            type2s.push(0); //GTC
+
+            const tx = await tradePairs.connect(trader1)
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s);
+            const res2: any = await tx.wait();
+
+            for (const e of res2.events) {
+                if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader1.address
+                    && e.args.status !== 0){ //ignore the first two status= new events
+                    expect(e.args.pair).to.be.equal(tradePairId);
+                    const orderIndex = clientOrderIds.indexOf(e.args.clientOrderId);
+                    expect(e.args.clientOrderId).to.be.equal(clientOrderIds[orderIndex]);
+                    expect(e.args.traderaddress).to.be.equal(trader1.address);
+                    expect(e.args.price).to.be.equal(prices[orderIndex]);
+                    expect(e.args.side).to.be.equal(sides[orderIndex]);              // side is SELL=1
+                    expect(e.args.type1).to.be.equal(1);             // type1 is LIMIT=1
+                    expect(e.args.type2).to.be.equal(type2s[orderIndex]);   // type2 is GTC=0
+                    expect(e.args.status).to.be.equal(3);            // status is FILLED = 3
+                    expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                    expect(e.args.quantityfilled).to.be.equal(quantities[orderIndex]);
+
+                }
+            }
+
+            let buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
+            let sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
+
+            // No impact
+            expect(buybook.length).to.equal(0);
+            expect(sellbook.length).to.equal(0); //Only 4 more added to the orderbook 2 PO orders ignored
+
+            clientOrderIds  =[];
+            prices=[];
+            quantities= [];
+            sides =[];
+            type2s =[];
+
+            // First Limit order then fallowed by PO order that should be REJECTED
+            clientOrderIds.push(await Utils.getClientOrderId(ethers.provider, trader1.address,1));
+            prices.push(Utils.parseUnits((100 ).toString(), quoteDecimals));
+            quantities.push(Utils.parseUnits('1', baseDecimals));
+            sides.push(1);
+            type2s.push(0); //GTC
+
+            //buy PO, followed by sell Limit at the same price
+            clientOrderIds.push(await Utils.getClientOrderId(ethers.provider, trader1.address,0));
+            prices.push(Utils.parseUnits((100 ).toString(), quoteDecimals));
+            quantities.push(Utils.parseUnits('1', baseDecimals));
+            sides.push(0);
+            type2s.push(3); //PO
+
+            const tx1 = await tradePairs.connect(trader1)
+                    .addLimitOrderList(tradePairId,clientOrderIds,prices,quantities,sides,type2s,{gasLimit: 3000000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
+            const res1: any = await tx1.wait();
+
+
+            for (const e of res1.events) {
+                if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader1.address){
+                    expect(e.args.pair).to.be.equal(tradePairId);
+                    const orderIndex = clientOrderIds.indexOf(e.args.clientOrderId);
+                    expect(e.args.clientOrderId).to.be.equal(clientOrderIds[orderIndex]);
+                    expect(e.args.traderaddress).to.be.equal(trader1.address);
+                    expect(e.args.price).to.be.equal(prices[orderIndex]);
+                    expect(e.args.side).to.be.equal(sides[orderIndex]);              // side is SELL=1
+                    expect(e.args.type1).to.be.equal(1);             // type1 is LIMIT=1
+                    expect(e.args.type2).to.be.equal(type2s[orderIndex]);   // type2 is GTC=0
+                    if (orderIndex ===1) {
+                        expect(e.args.status).to.be.equal(1);            // status is REJECTED = 1
+                        expect(e.args.code).to.be.equal(Utils.fromUtf8("T-T2PO-01"));
+                    } else {
+                        expect(e.args.status).to.be.equal(0);            // status is NEW = 0
+                        expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                    }
+                    expect(e.args.quantityfilled).to.be.equal(0);
+
+                }
+            }
+
+            buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
+            sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
+
+            expect(buybook.length).to.equal(0);
+            expect(sellbook.length).to.equal(1);
+
+        });
+
+
+
         it("Should get unsolicited cancel when maxNbrOfFills reached", async function () {
             const type2 = 0 ;  // GTC
 

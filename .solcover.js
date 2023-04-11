@@ -4,6 +4,7 @@ module.exports = {
                     "bridgeApps/CelerApp",
                     "interfaces/celer",
                     "library/celer",
+                    "MainnetRFQAssembly"
                 ],
     mocha: {
         grep: "@skip-on-coverage", // Find everything with this tag

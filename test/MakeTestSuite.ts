@@ -1,6 +1,7 @@
 import Utils from './utils';
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { ecsign } from "ethereumjs-util";
 
 import { PromiseOrValue } from "../typechain-types/common";
 
@@ -35,6 +36,7 @@ import {
     PortfolioBridgeSub,
     PortfolioMinter,
     PortfolioMinter__factory,
+    MainnetRFQ,
 } from '../typechain-types'
 
 import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -42,6 +44,8 @@ import { NativeMinterMock } from "../typechain-types/contracts/mocks";
 import { NativeMinterMock__factory } from "../typechain-types/factories/contracts/mocks";
 
 import { ethers, upgrades } from "hardhat";
+import { Wallet } from 'ethers';
+import { string } from 'hardhat/internal/core/params/argumentTypes';
 
 interface Signers {
     owner: SignerWithAddress,
@@ -451,6 +455,97 @@ export const setBridgeSubSettings = async (portfolioBridge: PortfolioBridgeSub, 
         [delayThreshold]
     );
 }
+
+export const packQuote = (
+    nonceAndMeta: string,
+    expiry: number,
+    makerAsset: string,
+    takerAsset: string,
+    maker: string,
+    taker: string,
+    makerAmount: string,
+    takerAmount: string,
+  ): any => {
+    const rawArray = [
+      nonceAndMeta,
+      expiry,
+      makerAsset.toLowerCase(),
+      takerAsset.toLowerCase(),
+      maker.toLowerCase(),
+      taker.toLowerCase(),
+      makerAmount,
+      takerAmount,
+    ];
+    
+    const packed = ethers.utils.solidityKeccak256(
+      [
+        "uint256",
+        "uint256",
+        "address",
+        "address",
+        "address",
+        "address",
+        "uint256",
+        "uint256",
+      ],
+      rawArray
+    );
+    const rawObject: MainnetRFQ.QuoteStruct = {
+      nonceAndMeta: rawArray[0],
+      expiry: rawArray[1],
+      makerAsset: rawArray[2],
+      takerAsset: rawArray[3],
+      maker: rawArray[4],
+      taker: rawArray[5],
+      makerAmount: rawArray[6],
+      takerAmount: rawArray[7],
+    };
+
+    return {
+      raw: rawObject,
+      packed,
+    };
+  };
+
+export const getMakerFromMnemonic = (index: number): Wallet => {
+const wallet = ethers.Wallet.fromMnemonic(
+    "test test test test test test test test test test test junk",
+    `m/44'/60'/0'/0/${index}`
+);
+return wallet;
+};
+
+export const getLatestBlockTimestamp = async (): Promise<number> => {
+return (await ethers.provider.getBlock("latest")).timestamp;
+};
+
+export const getSignature = async (wallet: Wallet, data: string): Promise<string> => {
+const { v, r, s } = ecsign(hexToBuf(data), hexToBuf(wallet._signingKey().privateKey));
+const signature = concatRSV(r, s, v);
+return signature;
+};
+
+export const getTime = (): number => {
+    return Math.floor(Date.now() / 1000);
+  };
+
+export const hexToBuf = (value: any) => {
+const padToEven = (a: any) => (a.length % 2 ? `0${a}` : a);
+return Buffer.from(padToEven(stripHexPrefix(value)), "hex");
+};
+
+export const concatRSV = (r: any, s: any, v: any) => {
+return (
+    "0x" +
+    stripHexPrefix("0x" + r.toString("hex")) +
+    stripHexPrefix("0x" + s.toString("hex")) +
+    stripHexPrefix(v.toString(16))
+);
+};
+
+export const stripHexPrefix = (str: any) => {
+return str.slice(0, 2) === "0x" ? str.slice(2) : str;
+  };
 
 export const latestTime = async (): Promise<number> => {
     const currentBlockNumber = await ethers.provider.getBlockNumber();
