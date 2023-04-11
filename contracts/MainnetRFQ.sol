@@ -12,7 +12,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 /**
  * @title   Request For Quote smart contract
  * @notice  This contract takes advantages of prices from the dexalot subnet to provide
- * token swaps on C-Chain. Currentley, users must perform a simple swap via our RFQ API.
+ * token swaps on C-Chain. Currently, users must perform a simple swap via our RFQ API.
  * @dev After getting a firm quote from our off chain RFQ API, call the simpleSwap() function with
  * the quote. This will execute a swap, exchanging the taker asset (asset you provide) with
  * the maker asset (asset we provide).
@@ -27,7 +27,7 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
 
     // address used to sign transactions from Paraswap API
     address public swapSigner;
-    address rebalancer;
+    address public rebalancer;
 
     // keeps track of trade nonces
     mapping(uint256 => bool) private nonceUsed;
