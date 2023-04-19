@@ -22,7 +22,12 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
-contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, ReentrancyGuardUpgradeable, EIP712Upgradeable {
+contract MainnetRFQ is
+    AccessControlEnumerableUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    EIP712Upgradeable
+{
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using ECDSAUpgradeable for bytes32;
 
@@ -70,19 +75,19 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
 
     /**
      * @notice  initializer function for Upgradeable RFQ
-     * @param _admin Address of contract admin
-     * @param _swapSigner Address of swap signer
+     * @param _swapSigner Address of swap signer, rebalancer is also defaulted to swap signer
+     * but it can be changed later
      */
-    function initialize(address _admin, address _swapSigner, address _rebalancer) public initializer {
+    function initialize(address _swapSigner) public initializer {
         __AccessControlEnumerable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
         __EIP712_init("Dexalot", "1.0.0");
 
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
         swapSigner = _swapSigner;
-        rebalancer = _rebalancer;
+        rebalancer = _swapSigner;
     }
 
     /**
@@ -101,8 +106,9 @@ contract MainnetRFQ is AccessControlEnumerableUpgradeable, PausableUpgradeable, 
         // adds nonce to nonce used mapping
         nonceUsed[_quote.nonceAndMeta] = true;
 
-
-        bytes32 structType = keccak256("Quote(uint256 nonceAndMeta,uint256 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)");
+        bytes32 structType = keccak256(
+            "Quote(uint256 nonceAndMeta,uint256 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
+        );
         bytes32 hashedStruct = keccak256(
             abi.encode(
                 structType,
