@@ -74,10 +74,10 @@ describe("Mainnet RFQ", () => {
 
 
   beforeEach(async function () {
-    const { owner, other1: _signer, other2: _rebalancer,  trader1 } = await f.getAccounts();
+    const { owner, other1: _signer,  trader1 } = await f.getAccounts();
 
     signer = _signer;
-    rebalancer = _rebalancer;
+    rebalancer = signer;
 
     const network = await ethers.provider.getNetwork()
     chainId = network.chainId;
@@ -87,9 +87,7 @@ describe("Mainnet RFQ", () => {
 
     // deploy upgradeable contract
     mainnetRFQ = (await upgrades.deployProxy(MainnetRFQ, [
-      owner.address,
-      signer.address,
-      rebalancer.address
+      signer.address
     ])) as MainnetRFQ;
 
     await mainnetRFQ.deployed();
@@ -118,8 +116,6 @@ describe("Mainnet RFQ", () => {
 
   it("Should not initialize again after deployment", async function () {
     await expect(mainnetRFQ.initialize(
-        "0x0000000000000000000000000000000000000000",
-        "0x0000000000000000000000000000000000000000",
         "0x0000000000000000000000000000000000000000",
     ))
     .to.be.revertedWith("Initializable: contract is already initialized");
@@ -623,10 +619,10 @@ describe("Mainnet RFQ", () => {
 
 
   it("Only admin can send AVAX.", async () => {
-    const { owner, other1: signer, other2: rebalancer } = await f.getAccounts();
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
     await expect(
-      signer.sendTransaction({
+      owner.sendTransaction({
         to: mainnetRFQ.address,
         value: ethers.utils.parseEther("1"),
       })
@@ -640,7 +636,7 @@ describe("Mainnet RFQ", () => {
   });
 
   it("Rebalancer can claimBalance", async () => {
-    const { owner, other1: signer, other2: rebalancer } = await f.getAccounts();
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
     const usdcBalanceRFQ = await mockUSDC.balanceOf(mainnetRFQ.address);
     const usdcBalanceReb = await mockUSDC.balanceOf(rebalancer.address);
@@ -671,7 +667,7 @@ describe("Mainnet RFQ", () => {
 
 
   it("Rebalancer can batchClaimBalance", async () => {
-    const { owner, other1: signer, other2: rebalancer } = await f.getAccounts();
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
     const usdcBalanceRFQ = await mockUSDC.balanceOf(mainnetRFQ.address);
     const usdcBalanceReb = await mockUSDC.balanceOf(rebalancer.address);
@@ -695,17 +691,17 @@ describe("Mainnet RFQ", () => {
   });
 
   it("Only Rebalancer can claimBalance & batchClaimBalance", async () => {
-    const { owner, other1: signer, other2: rebalancer } = await f.getAccounts();
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
     const usdcBalanceRFQ = await mockUSDC.balanceOf(mainnetRFQ.address);
     const alotBalanceRFQ = await mockALOT.balanceOf(mainnetRFQ.address);
 
     await expect(
-      mainnetRFQ.connect(signer).claimBalance(mockUSDC.address, usdcBalanceRFQ)
+      mainnetRFQ.connect(owner).claimBalance(mockUSDC.address, usdcBalanceRFQ)
     ).to.be.revertedWith("RF-OCR-01");
 
     await expect(
-      mainnetRFQ.connect(signer).batchClaimBalance([mockUSDC.address, mockALOT.address], [usdcBalanceRFQ, alotBalanceRFQ])
+      mainnetRFQ.connect(owner).batchClaimBalance([mockUSDC.address, mockALOT.address], [usdcBalanceRFQ, alotBalanceRFQ])
     ).to.be.revertedWith("RF-OCR-01");
   });
 
