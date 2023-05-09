@@ -113,7 +113,6 @@
     "T-AUCT-04": "TradePairs: market orders not allowed in auction mode",
     "T-AUCT-05": "TradePairs: setAuctionMode can not turn on live trading when orderbook is crossed",
 
-
     "E-OIZA-01": "Exchange: address can not be address(0)",
     "E-OACC-01": "Exchange: default or auction admin account needed",
     "E-OACC-02": "Exchange: default admin account needed for pauseTradePair",
@@ -133,18 +132,15 @@
     "R-KIEM-02": "RBTLibrary: key is empty",
     "R-KEXI-01": "RBTLibrary: key exists",
 
-    "RF-QE-01": "Request For Quote: quote expired",
-    "RF-IN-01": "Request For Quote: invalid nonce",
-    "RF-IMS-01": "Request For Quote: invalid msg.sender",
-    "RF-IS-01": "Request For Quote: invalid signature",
-    "RF-TF-01": "Request For Quote: transfer failed",
-    "RF-IMV-01": "Request For Quote: invalid msg.value",
-    "RF-SAZ-01": "Request For Quote: set address to zero",
-    "RF-ALOA-01": "Request For Quote: at least one account needed in admin group",
-    "RF-OCR-01": "Request For Quote: only callable by rebalancer",
-
-
-
+    "RF-QE-01": "MainnetRFQ: quote expired",
+    "RF-IN-01": "MainnetRFQ: invalid nonce",
+    "RF-IMS-01": "MainnetRFQ: invalid msg.sender",
+    "RF-IS-01": "MainnetRFQ: invalid signature",
+    "RF-TF-01": "MainnetRFQ: transfer failed",
+    "RF-IMV-01": "MainnetRFQ: invalid msg.value",
+    "RF-SAZ-01": "MainnetRFQ: set address to zero",
+    "RF-ALOA-01": "MainnetRFQ: at least one account needed in admin group",
+    "RF-OCR-01": "MainnetRFQ: only callable by rebalancer",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",

@@ -85,6 +85,10 @@ describe("Mainnet RFQ", () => {
 
     const MainnetRFQ = await ethers.getContractFactory("MainnetRFQ");
 
+    await expect(upgrades.deployProxy(MainnetRFQ, [
+      ethers.constants.AddressZero
+    ])).to.be.revertedWith("RF-SAZ-01");
+
     // deploy upgradeable contract
     mainnetRFQ = (await upgrades.deployProxy(MainnetRFQ, [
       signer.address
@@ -116,7 +120,7 @@ describe("Mainnet RFQ", () => {
 
   it("Should not initialize again after deployment", async function () {
     await expect(mainnetRFQ.initialize(
-        "0x0000000000000000000000000000000000000000",
+        "0x0000000000000000000000000000000000000000"
     ))
     .to.be.revertedWith("Initializable: contract is already initialized");
   });
@@ -176,26 +180,36 @@ describe("Mainnet RFQ", () => {
 
     // fail for non-owner
     await expect(mainnetRFQ.connect(signer).setSwapSigner(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
-    await expect(mainnetRFQ.connect(signer).setRebalancer(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).addAdmin(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).removeAdmin(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).addTrustedContract(rebalancer.address, "ps")).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).removeTrustedContract(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).setSlippageTolerance(1)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).addRebalancer(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);;
+    await expect(mainnetRFQ.connect(signer).removeRebalancer(rebalancer.address)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);;
     await expect(mainnetRFQ.connect(owner).removeAdmin(rebalancer.address)).to.be.revertedWith("RF-ALOA-01");
-
-
+    
     await mainnetRFQ.connect(owner).setSwapSigner(rebalancer.address);
-    await mainnetRFQ.connect(owner).setRebalancer(rebalancer.address);
     await mainnetRFQ.connect(owner).addAdmin(rebalancer.address);
     await mainnetRFQ.connect(owner).removeAdmin(rebalancer.address);
     await mainnetRFQ.connect(owner).addTrustedContract(rebalancer.address, "ps")
     await mainnetRFQ.connect(owner).removeTrustedContract(rebalancer.address)
+    await mainnetRFQ.connect(owner).setSlippageTolerance(9800);
+    expect(await mainnetRFQ.slippageTolerance()).to.be.equal(9800);
+
+    await mainnetRFQ.connect(owner).addRebalancer(signer.address);
+    await expect(mainnetRFQ.connect(owner).removeRebalancer(signer.address)).to.be.revertedWith("RF-ALOA-01");
+    await mainnetRFQ.connect(owner).addRebalancer(rebalancer.address);
+    expect(await mainnetRFQ.connect(owner).isRebalancer(signer.address)).to.equal(true);
+    await mainnetRFQ.connect(owner).removeRebalancer(signer.address);
+    expect(await mainnetRFQ.connect(owner).isRebalancer(signer.address)).to.equal(false);
 
 
     // should not set to 0x0
     await expect(mainnetRFQ.connect(owner).setSwapSigner(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
-    await expect(mainnetRFQ.connect(owner).setRebalancer(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
-
+    await expect(mainnetRFQ.connect(owner).addAdmin(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
+    await expect(mainnetRFQ.connect(owner).addTrustedContract(ethers.constants.AddressZero, "RFQ")).to.be.revertedWith("RF-SAZ-01");
+    await expect(mainnetRFQ.connect(owner).addRebalancer(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
   });
 
 
@@ -227,6 +241,7 @@ describe("Mainnet RFQ", () => {
       )
     ).to.emit(mainnetRFQ, "SwapExecuted")
     .withArgs(
+      trader1.address,
       mainnetRFQ.address,
       trader1.address,
       mockUSDC.address,
@@ -405,6 +420,7 @@ describe("Mainnet RFQ", () => {
       )
     ).to.emit(mainnetRFQ, "SwapExecuted")
     .withArgs(
+      trader1.address,
       mainnetRFQ.address,
       trader1.address,
       mockUSDC.address,
@@ -607,6 +623,7 @@ describe("Mainnet RFQ", () => {
       )
     ).to.emit(mainnetRFQ, "SwapExecuted")
     .withArgs(
+      trader1.address,
       mainnetRFQ.address,
       trader1.address,
       mockALOT.address,
@@ -626,7 +643,7 @@ describe("Mainnet RFQ", () => {
         to: mainnetRFQ.address,
         value: ethers.utils.parseEther("1"),
       })
-    ).to.be.revertedWith("RF-OCR-01");
+    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
 
     rebalancer.sendTransaction({
       to: mainnetRFQ.address,
@@ -698,11 +715,211 @@ describe("Mainnet RFQ", () => {
 
     await expect(
       mainnetRFQ.connect(owner).claimBalance(mockUSDC.address, usdcBalanceRFQ)
-    ).to.be.revertedWith("RF-OCR-01");
+    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
 
     await expect(
       mainnetRFQ.connect(owner).batchClaimBalance([mockUSDC.address, mockALOT.address], [usdcBalanceRFQ, alotBalanceRFQ])
-    ).to.be.revertedWith("RF-OCR-01");
+    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
+  });
+
+
+
+  it("Only Rebalancer can call updateQuoteExpiry", async () => {
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
+
+    await expect(
+      mainnetRFQ.connect(owner).updateQuoteExpiry(0, 1)
+    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
+  });
+
+  it("Only Rebalancer can call updateTakerAmount", async () => {
+    const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
+   
+    await expect(
+      mainnetRFQ.connect(owner).updateQuoteMakerAmount(0, 1, 1)
+    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
+  });
+
+
+  it("Updating expiry works", async () => {
+    const { other1: signer, trader1, other1: rebalancer  } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockALOT.address,
+      takerAsset: ethers.constants.AddressZero,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountAVAX,
+    };
+
+
+
+    const signature = await toSignature(quote, signer);
+
+    await mainnetRFQ.connect(rebalancer).updateQuoteExpiry(quote.nonceAndMeta, time-100)
+
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          quote,
+          signature,
+          {value: swapAmountAVAX},
+      )
+    ).to.be.revertedWith("RF-QE-01");
+
+
+    await mainnetRFQ.connect(rebalancer).updateQuoteExpiry(quote.nonceAndMeta, time+100)
+
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          quote,
+          signature,
+          {value: swapAmountAVAX},
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockALOT.address,
+      ethers.constants.AddressZero,
+      swapAmountALOT,
+      swapAmountAVAX,
+    );
+  });
+
+
+  it("Updating makerAmount works", async () => {
+    const { other1: signer, trader1, other1: rebalancer  } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+
+    const newMakerAmount = ethers.BigNumber.from(quote.makerAmount).mul(9900).div(10000);
+
+
+    await expect(
+      mainnetRFQ.connect(rebalancer).updateQuoteMakerAmount(quote.nonceAndMeta, newMakerAmount, quote.makerAmount)
+    )
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          quote,
+          signature
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      newMakerAmount,
+      swapAmountALOT,
+    );
+
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(newMakerAmount)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(newMakerAmount)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+
+
+  it("MakerAmount Slippage has a lower bounds", async () => {
+
+    const { other1: signer, trader1, other1: rebalancer  } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    const maxSlippage = await mainnetRFQ.slippageTolerance();
+    const newMakerAmount = ethers.BigNumber.from(quote.makerAmount).mul(maxSlippage).div(10000);
+
+
+    await expect(
+      mainnetRFQ.connect(rebalancer).updateQuoteMakerAmount(quote.nonceAndMeta, 1, quote.makerAmount)
+    ).to.be.revertedWith("RF-TMS")
+
+   
+
+  });
+
+
+  it("Invalid AVAX transfer should revert", async() => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: ethers.constants.AddressZero,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: Utils.parseUnits("30000", 18).toString() ,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(mainnetRFQ.connect(trader1).simpleSwap(
+        quote,
+        signature
+    )).to.be.revertedWith("RF-TF-01")
+
+
+    await expect(mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, Utils.parseUnits("30000", 18).toString())).to.be.revertedWith("RF-TF-01");
+
+    await expect(mainnetRFQ.connect(rebalancer).batchClaimBalance([ethers.constants.AddressZero], [ Utils.parseUnits("30000", 18).toString()])).to.be.revertedWith("RF-TF-01");
+
+
   });
 
 });
