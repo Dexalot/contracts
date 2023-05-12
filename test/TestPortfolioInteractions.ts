@@ -325,6 +325,11 @@ describe("Portfolio Interactions", () => {
         await expect(f.withdrawToken(portfolioSub, trader1, Utils.fromUtf8("AVAX"), 18, "0.009"))
         .to.be.revertedWith("P-WUTH-01")
 
+        // revert for amount = bridge fee
+        await expect(f.withdrawToken(portfolioSub, trader1, Utils.fromUtf8("AVAX"), 18, "0.01"))
+        .to.be.revertedWith("P-WUTH-01")
+
+
         const beforeBalance = await trader1.getBalance()
         const tx = await f.withdrawToken(portfolioSub, trader1, Utils.fromUtf8("AVAX"), 18, "5")
         const receipt = await tx.wait()
@@ -368,6 +373,11 @@ describe("Portfolio Interactions", () => {
         .to.equal(ethers.utils.parseEther("10").sub(ethers.BigNumber.from(bridgeFee)).toString())
 
         const traderTokenBeforeBalance = await alot.balanceOf(trader1.address)
+
+        // revert for amount <= bridge fee
+        await expect(f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "0.01"))
+        .to.be.revertedWith("P-WUTH-01")
+
 
         await f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5")
 

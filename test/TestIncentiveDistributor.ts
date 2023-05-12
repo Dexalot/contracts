@@ -45,6 +45,7 @@ describe("IncentiveDistributor", () => {
 
   const TOKEN_ALLOC = Utils.parseUnits("100000", 18);
   const GAS_COST = Utils.parseUnits("0.1", 18);
+  const ANY_TS = () => true;
 
   async function deployRewards() {
     const completePortfolio = await f.deployCompletePortfolio();
@@ -120,7 +121,7 @@ describe("IncentiveDistributor", () => {
     const domain = {
       name: "Dexalot",
       version: ethers.utils.parseBytes32String(await incentiveDistributor.VERSION()),
-      chainId: network.config.chainId,
+      chainId: network.config.chainId || 1337,
       verifyingContract: incentiveDistributor.address,
     };
 
@@ -145,22 +146,22 @@ describe("IncentiveDistributor", () => {
 
     rewards = [
       {
-        user: user1.address.toLowerCase(),
+        user: user1.address,
         tokenIds: 1,
         amounts: [Utils.parseUnits("1000", 18)],
       },
       {
-        user: user2.address.toLowerCase(),
+        user: user2.address,
         tokenIds: 3,
         amounts: [Utils.parseUnits("5000", 18), Utils.parseUnits("1000", 18)],
       },
       {
-        user: user3.address.toLowerCase(),
+        user: user3.address,
         tokenIds: 3,
         amounts: [TOKEN_ALLOC.sub(Utils.parseUnits("500", 18)), Utils.parseUnits("5000", 18)],
       },
       {
-        user: user1.address.toLowerCase(),
+        user: user1.address,
         tokenIds: 2,
         amounts: [Utils.parseUnits("1000", 18)],
       },
@@ -378,9 +379,9 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
     });
@@ -391,9 +392,9 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user, "LOST")).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user, "LOST")).to.be.equal(userReward.amounts[0]);
     });
@@ -404,9 +405,9 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
@@ -421,9 +422,9 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
@@ -441,19 +442,19 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
-      const newAmounts = [Utils.parseUnits("5000", 18).add(userReward.amounts[0])];
+      const amountToClaim = Utils.parseUnits("5000", 18);
+      const newAmounts = [amountToClaim.add(userReward.amounts[0])];
       signature = await toSignature({ user: userReward.user, tokenIds: userReward.tokenIds, amounts: newAmounts });
 
-      await expect(incentiveDistributor.connect(user1).claim(newAmounts, userReward.tokenIds, signature)).to.emit(
-        incentiveDistributor,
-        "Claimed"
-      );
+      await expect(incentiveDistributor.connect(user1).claim(newAmounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, [amountToClaim], ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(newAmounts[0]);
     });
@@ -464,9 +465,9 @@ describe("IncentiveDistributor", () => {
 
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user1).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
 
@@ -476,9 +477,9 @@ describe("IncentiveDistributor", () => {
       expect(await getBalance(userReward.user)).to.be.equal(BigNumber.from(0));
       expect(await getBalance(userReward.user, "LOST")).to.be.equal(BigNumber.from(0));
 
-      await expect(
-        incentiveDistributor.connect(user2).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user2).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       expect(await getBalance(userReward.user)).to.be.equal(userReward.amounts[0]);
       expect(await getBalance(userReward.user, "LOST")).to.be.equal(userReward.amounts[1]);
@@ -488,9 +489,9 @@ describe("IncentiveDistributor", () => {
       let userReward = rewards[2];
       let signature = await toSignature(userReward);
 
-      await expect(
-        incentiveDistributor.connect(user3).claim(userReward.amounts, userReward.tokenIds, signature)
-      ).to.emit(incentiveDistributor, "Claimed");
+      await expect(incentiveDistributor.connect(user3).claim(userReward.amounts, userReward.tokenIds, signature))
+        .to.emit(incentiveDistributor, "Claimed")
+        .withArgs(userReward.user, userReward.tokenIds, userReward.amounts, ANY_TS);
 
       userReward = rewards[0];
       signature = await toSignature(userReward);
