@@ -27,7 +27,7 @@ import "../interfaces/IPortfolioSub.sol";
 
 contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712Upgradeable {
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.0.2");
 
     IPortfolioSub private _portfolio;
 
@@ -52,7 +52,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
     function initialize(bytes32 _alotSymbol, address __signer, address __portfolio) public initializer {
         __Ownable_init();
         __Pausable_init();
-        __EIP712_init("Dexalot", "1.0.1");
+        __EIP712_init("Dexalot", "1.0.2");
 
         require(__signer != address(0), "ID-ZADDR-01");
         require(__portfolio != address(0), "ID-ZADDR-02");
@@ -77,11 +77,12 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
         require(_checkClaim(msg.sender, _tokenIds, _amounts, _signature), "ID-SIGN-01");
 
         bool isClaimed;
+        uint32 bitmap = _tokenIds;
 
         for (uint256 i = 0; i < _amounts.length; ++i) {
-            require(_tokenIds != 0, "ID-TACM-01");
-            uint32 tokenId = _tokenIds & ~(_tokenIds - 1);
-            _tokenIds -= tokenId;
+            require(bitmap != 0, "ID-TACM-01");
+            uint32 tokenId = bitmap & ~(bitmap - 1);
+            bitmap -= tokenId;
 
             uint128 amount = _amounts[i];
             uint128 prevClaimed = claimedRewards[msg.sender][tokenId];
@@ -101,7 +102,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
             }
         }
         require(isClaimed, "ID-NTTC-01");
-        require(_tokenIds == 0, "ID-TACM-02");
+        require(bitmap == 0, "ID-TACM-02");
 
         emit Claimed(msg.sender, _tokenIds, _amounts, block.timestamp);
     }

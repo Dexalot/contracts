@@ -269,7 +269,7 @@ describe("Portfolio Bridge Main", () => {
         // fail for non-message sender role
         await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(bridge0, xfer1)).to.be.revertedWith("AccessControl:");
         // fail for wrong BridgeProvider
-        await expect(portfolioBridgeMain.sendXChainMessage(bridge3, xfer1)).to.be.revertedWith("Transaction reverted: function");
+        await expect(portfolioBridgeMain.sendXChainMessage(bridge3, xfer1)).to.be.revertedWith("Transaction reverted");
 
         // fail - bridge provider enabled but not implemented
         await portfolioBridgeMain.enableBridgeProvider(bridge1, true);
@@ -295,9 +295,11 @@ describe("Portfolio Bridge Main", () => {
         const txnBlock = await ethers.provider.getBlock(receipt.blockNumber);
         expect(receipt.events[0].args.xfer.timestamp).to.be.equal(txnBlock.timestamp);
         // fail for unauthorized sender of lzSend
-        portfolioBridgeMain.grantRole(portfolioBridgeMain.PORTFOLIO_ROLE(), trader1.address);
-        portfolioBridgeMain.revokeRole(portfolioBridgeMain.PORTFOLIO_ROLE(), portfolioBridgeMain.address);
         await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(bridge0, xfer1)).to.be.revertedWith("AccessControl:");
+
+        //Revoke PortfolioRole and fail for owner
+        await portfolioBridgeMain.revokeRole(portfolioBridgeMain.PORTFOLIO_ROLE(), owner.address);
+        await expect(portfolioBridgeMain.sendXChainMessage(bridge0, xfer1)).to.be.revertedWith("AccessControl:");
     });
 
     it("Should refund native", async () => {

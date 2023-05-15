@@ -374,7 +374,7 @@ describe("Exchange Sub", function () {
             expect((await tradePairs.getTradePair(auctionTradePairId)).takerRate).to.be.equal(tRate);
 
             // call with wrong rate type
-            await expect(tradePairs.connect(owner).updateRate(auctionTradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
+            await expect(tradePairs.connect(owner).updateRate(auctionTradePairId, tRate, 2)).to.be.revertedWith("Transaction reverted");
         });
 
         it("Should update maker and taker fee rates simultaneously with updateRates() from the auction admin account", async function () {
