@@ -17,11 +17,11 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
  * @dev After getting a firm quote from our off chain RFQ API, call the simpleSwap() function with
  * the quote. This will execute a swap, exchanging the taker asset (asset you provide) with
  * the maker asset (asset we provide). In times of high volatility, the API may adjust your quoted
- * price. The price will never be lower than slippageTolerance, which represents a percentage of the 
+ * price. The price will never be lower than slippageTolerance, which represents a percentage of the
  * original quoted price. To check if your quoted price has been affected by slippage, monitor the SlippageApplied
  * event. The expiry of your quote may also be adjusted during times of high volatility. Monitor the ExpiryUpdated
  * event to verify if the deadline has been updated. It is highly unlikely that your quotes's makerAmount and expiry
- * are updated. Adjusting the quote is rare, and only resorted to in periods of high volatility for quotes that do 
+ * are updated. Adjusting the quote is rare, and only resorted to in periods of high volatility for quotes that do
  * not properly represent the liquidity of the Dexalot subnet.
  */
 
@@ -64,7 +64,7 @@ contract MainnetRFQ is
     mapping(address => string) public trustedContractToIntegrator;
 
     // storage gap for upgradeability
-    uint256[50] __gap; 
+    uint256[50] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -95,10 +95,9 @@ contract MainnetRFQ is
         uint256 takerAmount;
     }
 
-
     /**
      * @notice  initializer function for Upgradeable RFQ
-     * @dev slippageTolerance is initially set to 9700. slippageTolerance is represented in BIPs, 
+     * @dev slippageTolerance is initially set to 9700. slippageTolerance is represented in BIPs,
      * therefore slippageTolerance is effectively set to 97%. This means that the price of a firm quote
      * can not drop more than 3% initially.
      * @param _swapSigner Address of swap signer, rebalancer is also defaulted to swap signer
@@ -127,7 +126,7 @@ contract MainnetRFQ is
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
     function simpleSwap(Quote calldata _quote, bytes calldata _signature) external payable whenNotPaused nonReentrant {
-        require(nonceUsed[_quote.nonceAndMeta] == false, "RF-IN-01");
+        require(!nonceUsed[_quote.nonceAndMeta], "RF-IN-01");
         require(_quote.taker == msg.sender || trustedContracts[msg.sender], "RF-IMS-01");
 
         // adds nonce to nonce used mapping
@@ -155,9 +154,9 @@ contract MainnetRFQ is
         require(messageSigner == swapSigner, "RF-IS-01");
 
         // verifies if quote expiry updated by checking in mapping
-        // if the expiry is less than the current timestamp, then 
-        // the transaction reverts 
-        if(quoteExpiryUpdated[_quote.nonceAndMeta] != 0) {
+        // if the expiry is less than the current timestamp, then
+        // the transaction reverts
+        if (quoteExpiryUpdated[_quote.nonceAndMeta] != 0) {
             require(block.timestamp <= quoteExpiryUpdated[_quote.nonceAndMeta], "RF-QE-01");
         } else {
             require(block.timestamp <= _quote.expiry, "RF-QE-01");
@@ -167,10 +166,10 @@ contract MainnetRFQ is
         // by checking in the mapping. If not, the original quoted price
         // is used for the trade
         uint256 makerAmount = quoteMakerAmountUpdated[_quote.nonceAndMeta];
-        if(makerAmount == 0) {
+        if (makerAmount == 0) {
             makerAmount = _quote.makerAmount;
-        } 
-        
+        }
+
         if (_quote.makerAsset == address(0)) {
             // swap NATIVE <=> ERC-20
             IERC20Upgradeable(_quote.takerAsset).safeTransferFrom(_quote.taker, address(this), _quote.takerAmount);
@@ -186,7 +185,7 @@ contract MainnetRFQ is
             IERC20Upgradeable(_quote.takerAsset).safeTransferFrom(_quote.taker, address(this), _quote.takerAmount);
             IERC20Upgradeable(_quote.makerAsset).safeTransfer(_quote.taker, makerAmount);
         }
-        
+
         emit SwapExecuted(
             _quote.nonceAndMeta,
             _quote.maker,
@@ -212,21 +211,25 @@ contract MainnetRFQ is
 
     /**
      * @notice Updates the makerAmount of a quote.
-     * The new makerAmount can not be lower than the percentage 
+     * The new makerAmount can not be lower than the percentage
      * of slippageTolerance from the previous quoted price.
      * @dev Only rebalancer can call this function.
      * @param _nonceAndMeta nonce of quote
      * @param _newMakerAmount new makerAmount for quote
      **/
-    function updateQuoteMakerAmount(uint256 _nonceAndMeta, uint256 _newMakerAmount, uint256 _oldMakerAmount) external onlyRole(REBALANCER_ADMIN_ROLE) {
-        uint256 lowestAllowedPriceAfterSlippage = _oldMakerAmount * slippageTolerance / 10000;
-        require(lowestAllowedPriceAfterSlippage < _newMakerAmount, "RF-TMS"); 
+    function updateQuoteMakerAmount(
+        uint256 _nonceAndMeta,
+        uint256 _newMakerAmount,
+        uint256 _oldMakerAmount
+    ) external onlyRole(REBALANCER_ADMIN_ROLE) {
+        uint256 lowestAllowedPriceAfterSlippage = (_oldMakerAmount * slippageTolerance) / 10000;
+        require(lowestAllowedPriceAfterSlippage < _newMakerAmount, "RF-TMS");
         quoteMakerAmountUpdated[_nonceAndMeta] = _newMakerAmount;
         emit SlippageApplied(_nonceAndMeta, _newMakerAmount);
     }
 
     /**
-     * @notice Updates the slippageTolerance for a quote update. 
+     * @notice Updates the slippageTolerance for a quote update.
      * i.e. slippageTolerance = 9700 (97%), _oldMakerAmount = 100
      * _newMakerAmount must be greater than if not equal to 97
      * 97 = 100 * 9700 / 10000
@@ -378,7 +381,10 @@ contract MainnetRFQ is
      * @param   _assets  Array of addresses of the assets to be withdrawn
      * @param   _amounts  Array of amounts of assets to be withdrawn
      */
-    function batchClaimBalance(address[] calldata _assets, uint256[] calldata _amounts) external onlyRole(REBALANCER_ADMIN_ROLE) nonReentrant {
+    function batchClaimBalance(
+        address[] calldata _assets,
+        uint256[] calldata _amounts
+    ) external onlyRole(REBALANCER_ADMIN_ROLE) nonReentrant {
         uint256 i;
 
         while (i < _assets.length) {
@@ -399,5 +405,6 @@ contract MainnetRFQ is
     /**
      * @dev  Used to rebalance rfq contract
      */
-    receive() external payable onlyRole(REBALANCER_ADMIN_ROLE) { }
+    // solhint-disable-next-line no-empty-blocks
+    receive() external payable onlyRole(REBALANCER_ADMIN_ROLE) {}
 }
