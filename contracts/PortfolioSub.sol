@@ -68,7 +68,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.2");
+    bytes32 public constant VERSION = bytes32("2.2.3");
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -508,7 +508,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         Tx _transaction
     ) private {
         AssetEntry storage asset = assets[_trader][_symbol];
-        require(_amount > 0 && _amount >= _feeCharged, "P-WUTH-01");
+        require(_amount > 0 && _amount > _feeCharged, "P-WUTH-01");
         require(_amount <= asset.total, "P-TFNE-01");
         // decrease the total quantity from the user balances.
         asset.total -= _amount;

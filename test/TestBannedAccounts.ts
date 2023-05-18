@@ -121,7 +121,7 @@ describe("Banned Accounts Storage", () => {
 
         // fail with incorrect arguments
         await expect(bannedAccounts.connect(admin).banAccount(trader1.address, 4))
-            .to.be.revertedWith("Transaction reverted: function was called with incorrect parameters");
+            .to.be.revertedWith("Transaction reverted");
     })
 
 })

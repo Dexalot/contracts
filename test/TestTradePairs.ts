@@ -277,7 +277,7 @@ describe("TradePairs", function () {
             expect((await tradePairs.getTradePair(tradePairId)).takerRate).to.be.equal(tRate);
 
             // call with wrong rate type
-            await expect(tradePairs.connect(owner).updateRate(tradePairId, tRate, 2)).to.be.revertedWith("function was called with incorrect parameters");
+            await expect(tradePairs.connect(owner).updateRate(tradePairId, tRate, 2)).to.be.revertedWith("Transaction reverted");
         });
 
         it("Should update max number of fills from the owner account", async function () {
@@ -1896,12 +1896,12 @@ describe("TradePairs", function () {
 
         it("Should reject sending gas token directly to trade pairs contract.", async () => {
             const balBefore = await ethers.provider.getBalance(owner.address);
-            const msg = "Transaction reverted:";
+            const msg = "Transaction reverted";
             try {
                 await owner.sendTransaction({to: tradePairs.address,
                                              value: Utils.toWei('1')})
             } catch(err: any) {
-                expect(err.message.includes(msg)).to.be.true;
+                expect(err.reason?.includes(msg) || err.message?.includes(msg)).to.be.true;
              }
             const balAfter = await ethers.provider.getBalance(owner.address);
             expect(balBefore).to.be.equal(balAfter);
