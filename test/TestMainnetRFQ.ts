@@ -38,6 +38,8 @@ describe("Mainnet RFQ", () => {
   const swapAmountALOT: string = Utils.parseUnits("100", 18).toString()
   const swapAmountAVAX: string = Utils.parseUnits("10", 18).toString()
 
+  const agustusRFQ = "0x34268C38fcbC798814b058656bC0156C7511c0E4";
+
   let rebalancer: SignerWithAddress;
   let signer: SignerWithAddress;
 
@@ -48,21 +50,23 @@ describe("Mainnet RFQ", () => {
 
     const domain = {
       name: "Dexalot",
-      version: ethers.utils.parseBytes32String(await mainnetRFQ.VERSION()),
+      version: "1",
       chainId: chainId,
       verifyingContract: mainnetRFQ.address,
     };
 
+    
+
     const types = {
-      Quote: [
-        { name: "nonceAndMeta", type: "uint256" },
-        { name: "expiry", type: "uint256" },
-        { name: "makerAsset", type: "address" },
-        { name: "takerAsset", type: "address" },
-        { name: "maker", type: "address" },
-        { name: "taker", type: "address" },
-        { name: "makerAmount", type: "uint256" },
-        { name: "takerAmount", type: "uint256" },
+      Order: [
+        { name: "nonceAndMeta", type: "uint256", },
+        { name: "expiry", type: "uint128", },
+        { name: "makerAsset", type: "address", },
+        { name: "takerAsset", type: "address", },
+        { name: "maker", type: "address", },
+        { name: "taker", type: "address", },
+        { name: "makerAmount", type: "uint256", },
+        { name: "takerAmount", type: "uint256", },
       ],
     };
 
@@ -96,6 +100,8 @@ describe("Mainnet RFQ", () => {
 
     await mainnetRFQ.deployed();
 
+    await mainnetRFQ.addTrustedContract(trader1.address, "ps");
+
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);
     mockALOT = await f.deployMockToken("ALOT", 18);
@@ -124,6 +130,13 @@ describe("Mainnet RFQ", () => {
     ))
     .to.be.revertedWith("Initializable: contract is already initialized");
   });
+
+  it("Should checktrusted contract", async () => {
+    const { owner, trader1} = await f.getAccounts();
+
+    expect(await mainnetRFQ.isTrustedContract(trader1.address)).to.equal(true);
+  });
+
 
   it("Should deploy correctly", async () => {
     const { owner, other1: signer } = await f.getAccounts();
@@ -588,53 +601,6 @@ describe("Mainnet RFQ", () => {
 
   });
 
-
-  it("Whitelisted address can make trade when msg.sender != _quote.taker", async () => {
-    const { owner, other1: signer, trader1 } = await f.getAccounts();
-
-    await mainnetRFQ.addTrustedContract(signer.address, "ps");
-
-    expect(
-      await mainnetRFQ.isTrustedContract(signer.address)
-    ).to.equal(true);
-
-    const time = await f.getLatestBlockTimestamp();
-
-
-    const quote: Quote = {
-      nonceAndMeta: trader1.address,
-      expiry: time + 120,
-      makerAsset: mockALOT.address,
-      takerAsset: ethers.constants.AddressZero,
-      maker: mainnetRFQ.address,
-      taker: trader1.address,
-      makerAmount: swapAmountALOT,
-      takerAmount: swapAmountAVAX,
-    };
-
-
-    const signature = await toSignature(quote, signer);
-
-    await expect(
-        mainnetRFQ.connect(signer).simpleSwap(
-          quote,
-          signature,
-          {value: swapAmountAVAX},
-      )
-    ).to.emit(mainnetRFQ, "SwapExecuted")
-    .withArgs(
-      trader1.address,
-      mainnetRFQ.address,
-      trader1.address,
-      mockALOT.address,
-      ethers.constants.AddressZero,
-      swapAmountALOT,
-      swapAmountAVAX,
-    );
-
-  });
-
-
   it("Only admin can send AVAX.", async () => {
     const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
@@ -724,11 +690,11 @@ describe("Mainnet RFQ", () => {
 
 
 
-  it("Only Rebalancer can call updateQuoteExpiry", async () => {
+  it("Only Rebalancer can call updateOrderExpiry", async () => {
     const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
 
     await expect(
-      mainnetRFQ.connect(owner).updateQuoteExpiry(0, 1)
+      mainnetRFQ.connect(owner).updateOrderExpiry(0, 1)
     ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
   });
 
@@ -736,7 +702,7 @@ describe("Mainnet RFQ", () => {
     const { owner, other1: signer, other1: rebalancer } = await f.getAccounts();
    
     await expect(
-      mainnetRFQ.connect(owner).updateQuoteMakerAmount(0, 1, 1)
+      mainnetRFQ.connect(owner).updateOrderMakerAmount(0, 1, 1)
     ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
   });
 
@@ -762,7 +728,7 @@ describe("Mainnet RFQ", () => {
 
     const signature = await toSignature(quote, signer);
 
-    await mainnetRFQ.connect(rebalancer).updateQuoteExpiry(quote.nonceAndMeta, time-100)
+    await mainnetRFQ.connect(rebalancer).updateOrderExpiry(quote.nonceAndMeta, time-100)
 
 
     await expect(
@@ -774,7 +740,7 @@ describe("Mainnet RFQ", () => {
     ).to.be.revertedWith("RF-QE-01");
 
 
-    await mainnetRFQ.connect(rebalancer).updateQuoteExpiry(quote.nonceAndMeta, time+100)
+    await mainnetRFQ.connect(rebalancer).updateOrderExpiry(quote.nonceAndMeta, time+100)
 
 
     await expect(
@@ -819,7 +785,7 @@ describe("Mainnet RFQ", () => {
 
 
     await expect(
-      mainnetRFQ.connect(rebalancer).updateQuoteMakerAmount(quote.nonceAndMeta, newMakerAmount, quote.makerAmount)
+      mainnetRFQ.connect(rebalancer).updateOrderMakerAmount(quote.nonceAndMeta, newMakerAmount, quote.makerAmount)
     )
 
     await expect(
@@ -882,7 +848,7 @@ describe("Mainnet RFQ", () => {
 
 
     await expect(
-      mainnetRFQ.connect(rebalancer).updateQuoteMakerAmount(quote.nonceAndMeta, 1, quote.makerAmount)
+      mainnetRFQ.connect(rebalancer).updateOrderMakerAmount(quote.nonceAndMeta, 1, quote.makerAmount)
     ).to.be.revertedWith("RF-TMS")
 
    
@@ -921,5 +887,612 @@ describe("Mainnet RFQ", () => {
 
 
   });
+
+
+  it("Should trade two tokens erc1271SimpleSwap", async () => {
+
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: "0x96477BE111fd5268920674cA517A66Bbbed625e1bb9ba849b54b400000000000", //trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      "0x96477BE111fd5268920674cA517A66Bbbed625e1bb9ba849b54b400000000000", // trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      swapAmountUSDC,
+      swapAmountALOT,
+    );
+
+    expect(await mockUSDC.allowance(mainnetRFQ.address, trader1.address)).to.equal(
+      swapAmountUSDC
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+
+  });
+
+
+  it("Updating makerAmount works erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1, other1: rebalancer  } = await f.getAccounts();
+
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+
+    const newMakerAmount = ethers.BigNumber.from(quote.makerAmount).mul(9900).div(10000);
+
+
+    await expect(
+      mainnetRFQ.connect(rebalancer).updateOrderMakerAmount(quote.nonceAndMeta, newMakerAmount, quote.makerAmount)
+    )
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      newMakerAmount,
+      swapAmountALOT,
+    );
+
+    expect(await mockUSDC.allowance(mainnetRFQ.address, trader1.address)).to.equal(
+      newMakerAmount
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+
+
+  
+
+
+  it("Invalid AVAX transfer should revert erc1271SimpleSwap", async() => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: ethers.constants.AddressZero,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: Utils.parseUnits("30000", 18).toString() ,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+        quote,
+        signature
+    )).to.be.revertedWith("RF-TF-01")
+
+
+    await expect(mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, Utils.parseUnits("30000", 18).toString())).to.be.revertedWith("RF-TF-01");
+
+    await expect(mainnetRFQ.connect(rebalancer).batchClaimBalance([ethers.constants.AddressZero], [ Utils.parseUnits("30000", 18).toString()])).to.be.revertedWith("RF-TF-01");
+
+
+  });
+
+
+  it("Should not trade with undervalued transaction erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    // when taker is avax
+    let quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockALOT.address,
+      takerAsset: ethers.constants.AddressZero,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountAVAX,
+    };
+
+
+    let signature = await toSignature(quote, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+          {value: ethers.BigNumber.from(swapAmountAVAX).sub(1)},
+      )
+    ).to.be.revertedWith("RF-IMV-01"); // With("0x522d4953412d3031")
+
+
+    await mockALOT.connect(trader1).approve(mainnetRFQ.address, 0);
+
+    // when maker is avax
+    quote = {
+      nonceAndMeta: "0x01",
+      expiry: time + 120,
+      makerAsset: ethers.constants.AddressZero,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountAVAX,
+      takerAmount: swapAmountALOT,
+    };
+
+
+    signature = await toSignature(quote, signer);
+
+
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("ERC20: insufficient allowance");
+
+
+
+
+    // when maker & taker erc20
+
+    await mockUSDC.connect(trader1).approve(mainnetRFQ.address, 0);
+
+    quote = {
+      nonceAndMeta: "0x02",
+      expiry: time + 120,
+      makerAsset: mockALOT.address,
+      takerAsset: mockUSDC.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountUSDC,
+    };
+
+
+    signature = await toSignature(quote, signer);
+
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("ERC20: insufficient allowance");
+
+
+
+
+  });
+
+  it("Should not trade if msg.sender != _quote.taker erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockALOT.address,
+      takerAsset: ethers.constants.AddressZero,
+      maker: mainnetRFQ.address,
+      taker: signer.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountAVAX,
+    };
+
+
+
+    const signature = await toSignature(quote, signer);
+
+
+
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+          {value: swapAmountAVAX},
+      )
+    ).to.be.revertedWith("RF-IMS-01");
+
+  });
+
+  it("Should trade AVAX as maker asset erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: ethers.constants.AddressZero,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountAVAX,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+        quote,
+        signature
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).add(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  })
+
+  it("Should trade AVAX as taker erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockALOT.address,
+      takerAsset: ethers.constants.AddressZero,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountAVAX,
+    };
+
+
+    const signature = await toSignature(quote, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+        quote,
+        signature,
+        {value: swapAmountAVAX},
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).sub(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.allowance(mainnetRFQ.address, trader1.address)).to.equal(
+      swapAmountALOT
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).add(swapAmountAVAX)
+    );
+  });
+
+  it("Should not trade with expired quote erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time - 120,
+      makerAsset: mockALOT.address,
+      takerAsset: ethers.constants.AddressZero,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountALOT,
+      takerAmount: swapAmountAVAX,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(mainnetRFQ.connect(trader1).erc1271SimpleSwap(quote, signature, {value: swapAmountAVAX},)).to.be.revertedWith("RF-QE-01");
+
+  });
+
+  it("Should not trade with invalid nonce erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      swapAmountUSDC,
+      swapAmountALOT,
+    );
+
+    // uses same nonce
+    await expect(
+      mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("RF-IN-01");
+  });
+
+
+  it("Should not trade with invalid signature erc1271SimpleSwap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, trader1);
+
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("RF-IS-02");
+  });
+
+  it("Should not trade erc1271SimpleSwap swap with simple swap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(
+      mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+        quote,
+        signature,
+    )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      swapAmountUSDC,
+      swapAmountALOT,
+    );
+
+
+    await expect(mainnetRFQ.connect(trader1).simpleSwap(quote, signature, {value: swapAmountAVAX},)).to.be.revertedWith("RF-IN-01");
+  });
+
+  it("Should not trade simple swap with erc1271SimpleSwap swap", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    const quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const signature = await toSignature(quote, signer);
+
+    await expect(
+      mainnetRFQ.connect(trader1).simpleSwap(
+        quote,
+        signature,
+    )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      trader1.address,
+      mainnetRFQ.address,
+      trader1.address,
+      mockUSDC.address,
+      mockALOT.address,
+      swapAmountUSDC,
+      swapAmountALOT,
+    );
+
+
+    await expect(mainnetRFQ.connect(trader1).erc1271SimpleSwap(quote, signature, {value: swapAmountAVAX},)).to.be.revertedWith("RF-IN-01");
+  });
+
+  
+
+  it("Should test invalid recoverSigner", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    let quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    let invalidResp = await mainnetRFQ.isValidSignature("0x0000000000000000000000000000000000000000000000000000000000000000", "0x00");
+
+    expect(invalidResp).to.equal("0x00000000");
+
+    const signature = await toSignature(quote, signer);
+
+    quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 121,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const message = 'Hello, world!';
+    const messageHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(message));
+
+    invalidResp = await mainnetRFQ.isValidSignature(messageHash, "0x123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456781a");
+
+    expect(invalidResp).to.equal("0x00000000");
+
+  });
+
+
+  it("Should not trade when contract not verified erc1271SimpleSwap", async () => {
+
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: "0x96477BE111fd5268920674cA517A66Bbbed625e1bb9ba849b54b400000000000", //trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    await mainnetRFQ.removeTrustedContract(trader1.address);
+
+    const signature = await toSignature(quote, signer);
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("RF-IN-01");
+  });
+
 
 });

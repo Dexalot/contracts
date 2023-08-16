@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "./interfaces/IERC1271.sol";
 
 /**
  * @title   Request For Quote smart contract
@@ -33,13 +34,14 @@ contract MainnetRFQ is
     AccessControlEnumerableUpgradeable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable,
-    EIP712Upgradeable
+    EIP712Upgradeable,
+    IERC1271
 {
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.0");
+    bytes32 public constant VERSION = bytes32("1.0.1");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -47,17 +49,17 @@ contract MainnetRFQ is
     // address used to sign transactions from Paraswap API
     address public swapSigner;
 
-    // max slippage tolerance for updated quote in BIPs
+    // max slippage tolerance for updated order in BIPs
     uint256 public slippageTolerance;
 
     // keeps track of trade nonces executed
     mapping(uint256 => bool) private nonceUsed;
     // keeps track of trade nonces that had an updated expiry
-    mapping(uint256 => uint256) public quoteMakerAmountUpdated;
+    mapping(uint256 => uint256) public orderMakerAmountUpdated;
     // keeps track of trade nonces that had slippage applied to their quoted price
-    mapping(uint256 => uint256) public quoteExpiryUpdated;
+    mapping(uint256 => uint256) public orderExpiryUpdated;
 
-    // whitelisted smart contracts. Only applicable if msg.sender is not _quote.taker
+    // whitelisted smart contracts. Only applicable if msg.sender is not _order.taker
     mapping(address => bool) public trustedContracts;
 
     // contract address to integrator organization name
@@ -83,10 +85,10 @@ contract MainnetRFQ is
     event ExpiryUpdated(uint256 nonceAndMeta, uint256 newExpiry);
     event SlippageToleranceUpdated(uint256 newSlippageTolerance);
 
-    // firm quote data structure sent to user from Paraswap API
-    struct Quote {
+    // firm order data structure sent to user from RFQ API
+    struct Order {
         uint256 nonceAndMeta;
-        uint256 expiry;
+        uint128 expiry;
         address makerAsset;
         address takerAsset;
         address maker;
@@ -97,9 +99,9 @@ contract MainnetRFQ is
 
     /**
      * @notice  initializer function for Upgradeable RFQ
-     * @dev slippageTolerance is initially set to 9700. slippageTolerance is represented in BIPs,
-     * therefore slippageTolerance is effectively set to 97%. This means that the price of a firm quote
-     * can not drop more than 3% initially.
+     * @dev slippageTolerance is initially set to 9800. slippageTolerance is represented in BIPs,
+     * therefore slippageTolerance is effectively set to 98%. This means that the price of a firm quote
+     * can not drop more than 2% initially.
      * @param _swapSigner Address of swap signer, rebalancer is also defaulted to swap signer
      * but it can be changed later
      */
@@ -108,128 +110,250 @@ contract MainnetRFQ is
         __AccessControlEnumerable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
-        __EIP712_init("Dexalot", "1.0.0");
+        __EIP712_init("Dexalot", "1");
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(REBALANCER_ADMIN_ROLE, _swapSigner);
 
         swapSigner = _swapSigner;
-        slippageTolerance = 9700;
+        slippageTolerance = 9800;
     }
 
     /**
      * @notice Swaps two Assets, based off a predetermined swap price.
+     * @dev This function can only be called after generating a firm order from the RFQ API.
+     * All parameters are generated from the RFQ API. Prices are determined based off of trade
+     * prices from the Dexalot subnet.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     **/
+    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused nonReentrant {
+        _verifyTradeNotProcessed(_order);
+
+        bytes32 digest = _calculateOrderDigest(_order);
+        address messageSigner = digest.recover(_signature);
+        require(messageSigner == swapSigner, "RF-IS-01");
+
+        uint256 makerAmount = _verifyTradeParameters(_order);
+
+        _executeSwap(_order, makerAmount, true);
+    }
+
+    /**
+     * @notice Swaps two assets for another smart contract, based off a predetermined swap price.
      * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
      * prices from the Dexalot subnet.
-     * @param _quote Trade parameters for swap generated from /api/rfq/firm
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
-    function simpleSwap(Quote calldata _quote, bytes calldata _signature) external payable whenNotPaused nonReentrant {
-        require(!nonceUsed[_quote.nonceAndMeta], "RF-IN-01");
-        require(_quote.taker == msg.sender || trustedContracts[msg.sender], "RF-IMS-01");
+    function erc1271SimpleSwap(
+        Order calldata _order,
+        bytes calldata _signature
+    ) external payable whenNotPaused nonReentrant {
+        require(trustedContracts[msg.sender], "RF-IN-01");
+        _verifyTradeNotProcessed(_order);
 
+        bytes32 digest = _calculateOrderDigest(_order);
+        bytes4 magicNumber = isValidSignature(digest, _signature);
+        require(magicNumber == 0x1626ba7e, "RF-IS-02");
+
+        uint256 makerAmount = _verifyTradeParameters(_order);
+
+        _executeSwap(_order, makerAmount, false);
+    }
+
+    /**
+     * @notice Verifies Signature in accordance of ERC1271 standard
+     * @param _hash Hash of order data
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return bytes4   The Magic Value based on ERC1271 standard. 0x1626ba7e represents
+     * a valid signature, while 0x00000000 represents an invalid signature.
+     **/
+    function isValidSignature(bytes32 _hash, bytes memory _signature) public view override returns (bytes4) {
+        address signer = _recoverSigner(_hash, _signature);
+
+        if (signer == swapSigner) {
+            return 0x1626ba7e;
+        } else {
+            return 0x00000000;
+        }
+    }
+
+    /**
+     * @notice Helper function used to verify signature
+     * @param _messageHash Hash of order data
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return address   The address of the signer of the signature.
+     **/
+    function _recoverSigner(bytes32 _messageHash, bytes memory _signature) private pure returns (address) {
+        bytes32 r;
+        bytes32 s;
+        uint8 v;
+
+        if (_signature.length != 65) {
+            return address(0);
+        }
+
+        assembly {
+            r := mload(add(_signature, 32))
+            s := mload(add(_signature, 64))
+            v := byte(0, mload(add(_signature, 96)))
+        }
+
+        if (v < 27) {
+            v += 27;
+        }
+
+        if (v != 27 && v != 28) {
+            return address(0);
+        }
+
+        return ecrecover(_messageHash, v, r, s);
+    }
+
+    /**
+     * @notice Verifies that a transaction has not been traded already.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     **/
+    function _verifyTradeNotProcessed(Order calldata _order) private {
+        require(!nonceUsed[_order.nonceAndMeta], "RF-IN-01");
+        require(_order.taker == msg.sender, "RF-IMS-01");
         // adds nonce to nonce used mapping
-        nonceUsed[_quote.nonceAndMeta] = true;
+        nonceUsed[_order.nonceAndMeta] = true;
+    }
 
+    /**
+     * @notice Calculates the digest of the transaction's order.
+     * @dev The digest is then used to determine the validity of the signature passed
+     * to a swap function.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @return bytes32   The digest of the _order.
+     **/
+    function _calculateOrderDigest(Order calldata _order) internal view returns (bytes32) {
         bytes32 structType = keccak256(
-            "Quote(uint256 nonceAndMeta,uint256 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
+            "Order(uint256 nonceAndMeta,uint128 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
         );
 
         bytes32 hashedStruct = keccak256(
             abi.encode(
                 structType,
-                _quote.nonceAndMeta,
-                _quote.expiry,
-                _quote.makerAsset,
-                _quote.takerAsset,
-                _quote.maker,
-                _quote.taker,
-                _quote.makerAmount,
-                _quote.takerAmount
+                _order.nonceAndMeta,
+                _order.expiry,
+                _order.makerAsset,
+                _order.takerAsset,
+                _order.maker,
+                _order.taker,
+                _order.makerAmount,
+                _order.takerAmount
             )
         );
-        bytes32 digest = _hashTypedDataV4(hashedStruct);
-        address messageSigner = digest.recover(_signature);
-        require(messageSigner == swapSigner, "RF-IS-01");
+        return _hashTypedDataV4(hashedStruct);
+    }
 
-        // verifies if quote expiry updated by checking in mapping
+    /**
+     * @notice Checks if the trade parameters have been updated. If so,
+     * this function updates the parameters for the trade. Additionally, this
+     * function checks if the trade expiry has past.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @return uint256 The proper makerAmount to use for the trade.
+     **/
+    function _verifyTradeParameters(Order calldata _order) private view returns (uint256) {
+        // verifies if order expiry updated by checking in mapping
         // if the expiry is less than the current timestamp, then
         // the transaction reverts
-        if (quoteExpiryUpdated[_quote.nonceAndMeta] != 0) {
-            require(block.timestamp <= quoteExpiryUpdated[_quote.nonceAndMeta], "RF-QE-01");
+        if (orderExpiryUpdated[_order.nonceAndMeta] != 0) {
+            require(block.timestamp <= orderExpiryUpdated[_order.nonceAndMeta], "RF-QE-01");
         } else {
-            require(block.timestamp <= _quote.expiry, "RF-QE-01");
+            require(block.timestamp <= _order.expiry, "RF-QE-01");
         }
 
         // verifies if slippage was applied to the quoted makerAmount
         // by checking in the mapping. If not, the original quoted price
         // is used for the trade
-        uint256 makerAmount = quoteMakerAmountUpdated[_quote.nonceAndMeta];
+        uint256 makerAmount = orderMakerAmountUpdated[_order.nonceAndMeta];
         if (makerAmount == 0) {
-            makerAmount = _quote.makerAmount;
+            makerAmount = _order.makerAmount;
         }
+        return makerAmount;
+    }
 
-        if (_quote.makerAsset == address(0)) {
+    /**
+     * @notice Handles the exchange of assets based on swap type and
+     * if the assets are ERC-20's or native tokens.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _makerAmount the proper makerAmount for the trade
+     * @param isSimpleSwap boolean referring to which swap structure to use
+     **/
+    function _executeSwap(Order calldata _order, uint256 _makerAmount, bool isSimpleSwap) private {
+        if (_order.makerAsset == address(0)) {
             // swap NATIVE <=> ERC-20
-            IERC20Upgradeable(_quote.takerAsset).safeTransferFrom(_quote.taker, address(this), _quote.takerAmount);
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
             // solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = payable(_quote.taker).call{value: makerAmount}("");
+            (bool success, ) = payable(_order.taker).call{value: _makerAmount}("");
             require(success, "RF-TF-01");
-        } else if (_quote.takerAsset == address(0)) {
+        } else if (_order.takerAsset == address(0)) {
             // swap ERC-20 <=> NATIVE
-            require(msg.value == _quote.takerAmount, "RF-IMV-01");
-            IERC20Upgradeable(_quote.makerAsset).safeTransfer(_quote.taker, makerAmount);
+            require(msg.value == _order.takerAmount, "RF-IMV-01");
+            if (isSimpleSwap) {
+                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+            } else {
+                IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
+            }
         } else {
             // swap ERC-20 <=> ERC-20
-            IERC20Upgradeable(_quote.takerAsset).safeTransferFrom(_quote.taker, address(this), _quote.takerAmount);
-            IERC20Upgradeable(_quote.makerAsset).safeTransfer(_quote.taker, makerAmount);
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
+            if (isSimpleSwap) {
+                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+            } else {
+                IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
+            }
         }
 
         emit SwapExecuted(
-            _quote.nonceAndMeta,
-            _quote.maker,
-            _quote.taker,
-            _quote.makerAsset,
-            _quote.takerAsset,
-            makerAmount,
-            _quote.takerAmount
+            _order.nonceAndMeta,
+            _order.maker,
+            _order.taker,
+            _order.makerAsset,
+            _order.takerAsset,
+            _makerAmount,
+            _order.takerAmount
         );
     }
 
     /**
-     * @notice Updates the expiry of a quote. The new expiry
+     * @notice Updates the expiry of a order. The new expiry
      * is the deadline a trader has to execute the swap.
      * @dev Only rebalancer can call this function.
-     * @param _nonceAndMeta nonce of quote
-     * @param _newExpiry new expiry for quote
+     * @param _nonceAndMeta nonce of order
+     * @param _newExpiry new expiry for order
      **/
-    function updateQuoteExpiry(uint256 _nonceAndMeta, uint256 _newExpiry) external onlyRole(REBALANCER_ADMIN_ROLE) {
-        quoteExpiryUpdated[_nonceAndMeta] = _newExpiry;
+    function updateOrderExpiry(uint256 _nonceAndMeta, uint256 _newExpiry) external onlyRole(REBALANCER_ADMIN_ROLE) {
+        orderExpiryUpdated[_nonceAndMeta] = _newExpiry;
         emit ExpiryUpdated(_nonceAndMeta, _newExpiry);
     }
 
     /**
-     * @notice Updates the makerAmount of a quote.
+     * @notice Updates the makerAmount of a order.
      * The new makerAmount can not be lower than the percentage
      * of slippageTolerance from the previous quoted price.
      * @dev Only rebalancer can call this function.
-     * @param _nonceAndMeta nonce of quote
-     * @param _newMakerAmount new makerAmount for quote
+     * @param _nonceAndMeta nonce of order
+     * @param _newMakerAmount new makerAmount for order
      **/
-    function updateQuoteMakerAmount(
+    function updateOrderMakerAmount(
         uint256 _nonceAndMeta,
         uint256 _newMakerAmount,
         uint256 _oldMakerAmount
     ) external onlyRole(REBALANCER_ADMIN_ROLE) {
         uint256 lowestAllowedPriceAfterSlippage = (_oldMakerAmount * slippageTolerance) / 10000;
         require(lowestAllowedPriceAfterSlippage < _newMakerAmount, "RF-TMS");
-        quoteMakerAmountUpdated[_nonceAndMeta] = _newMakerAmount;
+        orderMakerAmountUpdated[_nonceAndMeta] = _newMakerAmount;
         emit SlippageApplied(_nonceAndMeta, _newMakerAmount);
     }
 
     /**
-     * @notice Updates the slippageTolerance for a quote update.
+     * @notice Updates the slippageTolerance for a order update.
      * i.e. slippageTolerance = 9700 (97%), _oldMakerAmount = 100
      * _newMakerAmount must be greater than if not equal to 97
      * 97 = 100 * 9700 / 10000
