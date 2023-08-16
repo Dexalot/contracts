@@ -41,7 +41,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.0");
+    bytes32 public constant VERSION = bytes32("1.0.1");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -225,7 +225,7 @@ contract MainnetRFQ is
 
     /**
      * @notice Calculates the digest of the transaction's order.
-     * @dev The digest is then used to determine the validity of the signature passed 
+     * @dev The digest is then used to determine the validity of the signature passed
      * to a swap function.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @return bytes32   The digest of the _order.

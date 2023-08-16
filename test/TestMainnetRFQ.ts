@@ -131,6 +131,12 @@ describe("Mainnet RFQ", () => {
     .to.be.revertedWith("Initializable: contract is already initialized");
   });
 
+  it("Should checktrusted contract", async () => {
+    const { owner, trader1} = await f.getAccounts();
+
+    expect(await mainnetRFQ.isTrustedContract(trader1.address)).to.equal(true);
+  });
+
 
   it("Should deploy correctly", async () => {
     const { owner, other1: signer } = await f.getAccounts();
@@ -1412,6 +1418,80 @@ describe("Mainnet RFQ", () => {
 
 
     await expect(mainnetRFQ.connect(trader1).erc1271SimpleSwap(quote, signature, {value: swapAmountAVAX},)).to.be.revertedWith("RF-IN-01");
+  });
+
+  
+
+  it("Should test invalid recoverSigner", async () => {
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+
+    let quote: Quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    let invalidResp = await mainnetRFQ.isValidSignature("0x0000000000000000000000000000000000000000000000000000000000000000", "0x00");
+
+    expect(invalidResp).to.equal("0x00000000");
+
+    const signature = await toSignature(quote, signer);
+
+    quote = {
+      nonceAndMeta: trader1.address,
+      expiry: time + 121,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    const message = 'Hello, world!';
+    const messageHash = ethers.utils.keccak256(ethers.utils.toUtf8Bytes(message));
+
+    invalidResp = await mainnetRFQ.isValidSignature(messageHash, "0x123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456781a");
+
+    expect(invalidResp).to.equal("0x00000000");
+
+  });
+
+
+  it("Should not trade when contract not verified erc1271SimpleSwap", async () => {
+
+    const { other1: signer, trader1 } = await f.getAccounts();
+
+    const time = await f.getLatestBlockTimestamp();
+
+    const quote: Quote = {
+      nonceAndMeta: "0x96477BE111fd5268920674cA517A66Bbbed625e1bb9ba849b54b400000000000", //trader1.address,
+      expiry: time + 120,
+      makerAsset: mockUSDC.address,
+      takerAsset: mockALOT.address,
+      maker: mainnetRFQ.address,
+      taker: trader1.address,
+      makerAmount: swapAmountUSDC,
+      takerAmount: swapAmountALOT,
+    };
+
+    await mainnetRFQ.removeTrustedContract(trader1.address);
+
+    const signature = await toSignature(quote, signer);
+    await expect(
+        mainnetRFQ.connect(trader1).erc1271SimpleSwap(
+          quote,
+          signature,
+      )
+    ).to.be.revertedWith("RF-IN-01");
   });
 
 

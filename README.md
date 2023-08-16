@@ -6,8 +6,7 @@
 
 - Install the latest version of VS Code
 - Install the latest version of git version control
-- Install Node.js version 16.15.1
-
+- Install Node.js version 18.16.0
 ## Get the code
 
 ```sh
@@ -68,6 +67,7 @@ TestLzApp.ts
 TestLzDestroyAndRecoverFunds.ts
 TestMockToken.ts
 TestMulticall2.ts
+TestMainnetRFQ.ts
 TestOrderBooks.ts
 TestPortfolioBridgeMain.ts
 TestPortfolioBridgeSub.ts
@@ -101,7 +101,7 @@ Please note the full coverage run will take 10-20 minutes depending on the speed
 ### Documentation
 
 Dexalot team built a documentation site to serve the developer community.  Please visit at
-[Dexalot Knowledge Hub @ https://docs.dexalot-test.com](https://docs.dexalot-test.com) to
+[Dexalot Knowledge Hub @ https://docs.dexalot.com](https://docs.dexalot.com) to
 learn more about the novel dual-chain app.
 
 Happy Trading! \
