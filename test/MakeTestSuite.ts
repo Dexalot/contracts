@@ -1,7 +1,6 @@
 import Utils from './utils';
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { ecsign } from "ethereumjs-util";
 
 import { PromiseOrValue } from "../typechain-types/common";
 
@@ -476,7 +475,7 @@ export const packQuote = (
       makerAmount,
       takerAmount,
     ];
-    
+
     const packed = ethers.utils.solidityKeccak256(
       [
         "uint256",
@@ -519,11 +518,11 @@ export const getLatestBlockTimestamp = async (): Promise<number> => {
 return (await ethers.provider.getBlock("latest")).timestamp;
 };
 
-export const getSignature = async (wallet: Wallet, data: string): Promise<string> => {
-const { v, r, s } = ecsign(hexToBuf(data), hexToBuf(wallet._signingKey().privateKey));
-const signature = concatRSV(r, s, v);
-return signature;
-};
+// export const getSignature = async (wallet: Wallet, data: string): Promise<string> => {
+// const { v, r, s } = ecsign(hexToBuf(data), hexToBuf(wallet._signingKey().privateKey));
+// const signature = concatRSV(r, s, v);
+// return signature;
+// };
 
 export const getTime = (): number => {
     return Math.floor(Date.now() / 1000);
