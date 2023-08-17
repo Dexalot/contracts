@@ -120,8 +120,8 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice Swaps two Assets, based off a predetermined swap price.
-     * @dev This function can only be called after generating a firm order from the RFQ API.
+     * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
+     * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
      * prices from the Dexalot subnet.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
@@ -131,36 +131,12 @@ contract MainnetRFQ is
         _verifyTradeNotProcessed(_order);
 
         bytes32 digest = _calculateOrderDigest(_order);
-        address messageSigner = digest.recover(_signature);
-        require(messageSigner == swapSigner, "RF-IS-01");
-
-        uint256 makerAmount = _verifyTradeParameters(_order);
-
-        _executeSwap(_order, makerAmount, true);
-    }
-
-    /**
-     * @notice Swaps two assets for another smart contract, based off a predetermined swap price.
-     * @dev This function can only be called after generating a firm quote from the RFQ API.
-     * All parameters are generated from the RFQ API. Prices are determined based off of trade
-     * prices from the Dexalot subnet.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     **/
-    function erc1271SimpleSwap(
-        Order calldata _order,
-        bytes calldata _signature
-    ) external payable whenNotPaused nonReentrant {
-        require(trustedContracts[msg.sender], "RF-IN-01");
-        _verifyTradeNotProcessed(_order);
-
-        bytes32 digest = _calculateOrderDigest(_order);
         bytes4 magicNumber = isValidSignature(digest, _signature);
-        require(magicNumber == 0x1626ba7e, "RF-IS-02");
+        require(magicNumber == 0x1626ba7e, "RF-IS-01");
 
         uint256 makerAmount = _verifyTradeParameters(_order);
 
-        _executeSwap(_order, makerAmount, false);
+        _executeSwap(_order, makerAmount, trustedContracts[msg.sender]);
     }
 
     /**
@@ -283,9 +259,9 @@ contract MainnetRFQ is
      * if the assets are ERC-20's or native tokens.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _makerAmount the proper makerAmount for the trade
-     * @param isSimpleSwap boolean referring to which swap structure to use
+     * @param isContract boolean referring to whether the taker is a contract
      **/
-    function _executeSwap(Order calldata _order, uint256 _makerAmount, bool isSimpleSwap) private {
+    function _executeSwap(Order calldata _order, uint256 _makerAmount, bool isContract) private {
         if (_order.makerAsset == address(0)) {
             // swap NATIVE <=> ERC-20
             IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
@@ -295,18 +271,18 @@ contract MainnetRFQ is
         } else if (_order.takerAsset == address(0)) {
             // swap ERC-20 <=> NATIVE
             require(msg.value == _order.takerAmount, "RF-IMV-01");
-            if (isSimpleSwap) {
-                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-            } else {
+            if (isContract) {
                 IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
+            } else {
+                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
             }
         } else {
             // swap ERC-20 <=> ERC-20
             IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
-            if (isSimpleSwap) {
-                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-            } else {
+            if (isContract) {
                 IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
+            } else {
+                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
             }
         }
 
