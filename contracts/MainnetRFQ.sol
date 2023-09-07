@@ -41,10 +41,22 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.0.2");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
+
+    // firm order data structure sent to user from RFQ API
+    struct Order {
+        uint256 nonceAndMeta;
+        uint128 expiry;
+        address makerAsset;
+        address takerAsset;
+        address maker;
+        address taker;
+        uint256 makerAmount;
+        uint256 takerAmount;
+    }
 
     // address used to sign transactions from Paraswap API
     address public swapSigner;
@@ -58,12 +70,6 @@ contract MainnetRFQ is
     mapping(uint256 => uint256) public orderMakerAmountUpdated;
     // keeps track of trade nonces that had slippage applied to their quoted price
     mapping(uint256 => uint256) public orderExpiryUpdated;
-
-    // whitelisted smart contracts. Only applicable if msg.sender is not _order.taker
-    mapping(address => bool) public trustedContracts;
-
-    // contract address to integrator organization name
-    mapping(address => string) public trustedContractToIntegrator;
 
     // storage gap for upgradeability
     uint256[50] __gap;
@@ -84,18 +90,6 @@ contract MainnetRFQ is
     event SlippageApplied(uint256 nonceAndMeta, uint256 newMakerAmount);
     event ExpiryUpdated(uint256 nonceAndMeta, uint256 newExpiry);
     event SlippageToleranceUpdated(uint256 newSlippageTolerance);
-
-    // firm order data structure sent to user from RFQ API
-    struct Order {
-        uint256 nonceAndMeta;
-        uint128 expiry;
-        address makerAsset;
-        address takerAsset;
-        address maker;
-        address taker;
-        uint256 makerAmount;
-        uint256 takerAmount;
-    }
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -120,6 +114,12 @@ contract MainnetRFQ is
     }
 
     /**
+     * @notice  Used to rebalance native token on rfq contract
+     */
+    // solhint-disable-next-line no-empty-blocks
+    receive() external payable onlyRole(REBALANCER_ADMIN_ROLE) {}
+
+    /**
      * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
      * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
@@ -136,165 +136,7 @@ contract MainnetRFQ is
 
         uint256 makerAmount = _verifyTradeParameters(_order);
 
-        _executeSwap(_order, makerAmount, trustedContracts[msg.sender]);
-    }
-
-    /**
-     * @notice Verifies Signature in accordance of ERC1271 standard
-     * @param _hash Hash of order data
-     * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     * @return bytes4   The Magic Value based on ERC1271 standard. 0x1626ba7e represents
-     * a valid signature, while 0x00000000 represents an invalid signature.
-     **/
-    function isValidSignature(bytes32 _hash, bytes memory _signature) public view override returns (bytes4) {
-        address signer = _recoverSigner(_hash, _signature);
-
-        if (signer == swapSigner) {
-            return 0x1626ba7e;
-        } else {
-            return 0x00000000;
-        }
-    }
-
-    /**
-     * @notice Helper function used to verify signature
-     * @param _messageHash Hash of order data
-     * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     * @return address   The address of the signer of the signature.
-     **/
-    function _recoverSigner(bytes32 _messageHash, bytes memory _signature) private pure returns (address) {
-        bytes32 r;
-        bytes32 s;
-        uint8 v;
-
-        if (_signature.length != 65) {
-            return address(0);
-        }
-
-        assembly {
-            r := mload(add(_signature, 32))
-            s := mload(add(_signature, 64))
-            v := byte(0, mload(add(_signature, 96)))
-        }
-
-        if (v < 27) {
-            v += 27;
-        }
-
-        if (v != 27 && v != 28) {
-            return address(0);
-        }
-
-        return ecrecover(_messageHash, v, r, s);
-    }
-
-    /**
-     * @notice Verifies that a transaction has not been traded already.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     **/
-    function _verifyTradeNotProcessed(Order calldata _order) private {
-        require(!nonceUsed[_order.nonceAndMeta], "RF-IN-01");
-        require(_order.taker == msg.sender, "RF-IMS-01");
-        // adds nonce to nonce used mapping
-        nonceUsed[_order.nonceAndMeta] = true;
-    }
-
-    /**
-     * @notice Calculates the digest of the transaction's order.
-     * @dev The digest is then used to determine the validity of the signature passed
-     * to a swap function.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @return bytes32   The digest of the _order.
-     **/
-    function _calculateOrderDigest(Order calldata _order) internal view returns (bytes32) {
-        bytes32 structType = keccak256(
-            "Order(uint256 nonceAndMeta,uint128 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
-        );
-
-        bytes32 hashedStruct = keccak256(
-            abi.encode(
-                structType,
-                _order.nonceAndMeta,
-                _order.expiry,
-                _order.makerAsset,
-                _order.takerAsset,
-                _order.maker,
-                _order.taker,
-                _order.makerAmount,
-                _order.takerAmount
-            )
-        );
-        return _hashTypedDataV4(hashedStruct);
-    }
-
-    /**
-     * @notice Checks if the trade parameters have been updated. If so,
-     * this function updates the parameters for the trade. Additionally, this
-     * function checks if the trade expiry has past.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @return uint256 The proper makerAmount to use for the trade.
-     **/
-    function _verifyTradeParameters(Order calldata _order) private view returns (uint256) {
-        // verifies if order expiry updated by checking in mapping
-        // if the expiry is less than the current timestamp, then
-        // the transaction reverts
-        if (orderExpiryUpdated[_order.nonceAndMeta] != 0) {
-            require(block.timestamp <= orderExpiryUpdated[_order.nonceAndMeta], "RF-QE-01");
-        } else {
-            require(block.timestamp <= _order.expiry, "RF-QE-01");
-        }
-
-        // verifies if slippage was applied to the quoted makerAmount
-        // by checking in the mapping. If not, the original quoted price
-        // is used for the trade
-        uint256 makerAmount = orderMakerAmountUpdated[_order.nonceAndMeta];
-        if (makerAmount == 0) {
-            makerAmount = _order.makerAmount;
-        }
-        return makerAmount;
-    }
-
-    /**
-     * @notice Handles the exchange of assets based on swap type and
-     * if the assets are ERC-20's or native tokens.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @param _makerAmount the proper makerAmount for the trade
-     * @param isContract boolean referring to whether the taker is a contract
-     **/
-    function _executeSwap(Order calldata _order, uint256 _makerAmount, bool isContract) private {
-        if (_order.makerAsset == address(0)) {
-            // swap NATIVE <=> ERC-20
-            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
-            // solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = payable(_order.taker).call{value: _makerAmount}("");
-            require(success, "RF-TF-01");
-        } else if (_order.takerAsset == address(0)) {
-            // swap ERC-20 <=> NATIVE
-            require(msg.value == _order.takerAmount, "RF-IMV-01");
-            if (isContract) {
-                IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
-            } else {
-                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-            }
-        } else {
-            // swap ERC-20 <=> ERC-20
-            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
-            if (isContract) {
-                IERC20Upgradeable(_order.makerAsset).approve(_order.taker, _makerAmount);
-            } else {
-                IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-            }
-        }
-
-        emit SwapExecuted(
-            _order.nonceAndMeta,
-            _order.maker,
-            _order.taker,
-            _order.makerAsset,
-            _order.takerAsset,
-            _makerAmount,
-            _order.takerAmount
-        );
+        _executeSwap(_order, makerAmount);
     }
 
     /**
@@ -373,6 +215,7 @@ contract MainnetRFQ is
     }
 
     /**
+     * @notice  Checks if address has Rebalancer Admin role
      * @param   _address  address to check
      * @return  bool    true if address has Rebalancer Admin role
      */
@@ -401,45 +244,12 @@ contract MainnetRFQ is
     }
 
     /**
+     * @notice  Checks if address has Default Admin role
      * @param   _address  address to check
      * @return  bool    true if address has Default Admin role
      */
     function isAdmin(address _address) external view returns (bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Adds the given contract to trusted contracts in order to provide excluded functionality
-     * @dev     Only callable by admin
-     * @param   _contract  Address of the contract to be added
-     * @param   _organization  Organization of the contract to be added
-     */
-    function addTrustedContract(
-        address _contract,
-        string calldata _organization
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_contract != address(0), "RF-SAZ-01");
-        trustedContracts[_contract] = true;
-        trustedContractToIntegrator[_contract] = _organization;
-        emit AddressSet(_organization, "RF-ADD-TRUSTEDCONTRACT", _contract);
-    }
-
-    /**
-     * @notice  Removes the given contract from trusted contracts
-     * @dev     Only callable by admin
-     * @param   _contract  Address of the contract to be removed
-     */
-    function removeTrustedContract(address _contract) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        trustedContracts[_contract] = false;
-        emit AddressSet(trustedContractToIntegrator[_contract], "RF-REMOVE-TRUSTED-CONTRACT", _contract);
-    }
-
-    /**
-     * @param   _contract  Address of the contract
-     * @return  bool  True if the contract is trusted
-     */
-    function isTrustedContract(address _contract) external view returns (bool) {
-        return trustedContracts[_contract];
     }
 
     /**
@@ -485,6 +295,7 @@ contract MainnetRFQ is
         address[] calldata _assets,
         uint256[] calldata _amounts
     ) external onlyRole(REBALANCER_ADMIN_ROLE) nonReentrant {
+        require(_assets.length == _amounts.length, "RF-BCAM-01");
         uint256 i;
 
         while (i < _assets.length) {
@@ -503,8 +314,135 @@ contract MainnetRFQ is
     }
 
     /**
-     * @dev  Used to rebalance rfq contract
-     */
-    // solhint-disable-next-line no-empty-blocks
-    receive() external payable onlyRole(REBALANCER_ADMIN_ROLE) {}
+     * @notice Verifies Signature in accordance of ERC1271 standard
+     * @param _hash Hash of order data
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return bytes4   The Magic Value based on ERC1271 standard. 0x1626ba7e represents
+     * a valid signature, while 0x00000000 represents an invalid signature.
+     **/
+    function isValidSignature(bytes32 _hash, bytes memory _signature) public view override returns (bytes4) {
+        address signer = _recoverSigner(_hash, _signature);
+
+        if (signer == swapSigner) {
+            return 0x1626ba7e;
+        } else {
+            return 0x00000000;
+        }
+    }
+
+    /**
+     * @notice Helper function used to verify signature
+     * @param _messageHash Hash of order data
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return signer   The address of the signer of the signature.
+     **/
+    function _recoverSigner(bytes32 _messageHash, bytes memory _signature) private pure returns (address) {
+        (address signer, ) = ECDSAUpgradeable.tryRecover(_messageHash, _signature);
+        return signer;
+    }
+
+    /**
+     * @notice Verifies that a transaction has not been traded already.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     **/
+    function _verifyTradeNotProcessed(Order calldata _order) private {
+        require(!nonceUsed[_order.nonceAndMeta], "RF-IN-01");
+        require(_order.taker == msg.sender, "RF-IMS-01");
+        // adds nonce to nonce used mapping
+        nonceUsed[_order.nonceAndMeta] = true;
+    }
+
+    /**
+     * @notice Calculates the digest of the transaction's order.
+     * @dev The digest is then used to determine the validity of the signature passed
+     * to a swap function.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @return bytes32   The digest of the _order.
+     **/
+    function _calculateOrderDigest(Order calldata _order) private view returns (bytes32) {
+        bytes32 structType = keccak256(
+            "Order(uint256 nonceAndMeta,uint128 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
+        );
+
+        bytes32 hashedStruct = keccak256(
+            abi.encode(
+                structType,
+                _order.nonceAndMeta,
+                _order.expiry,
+                _order.makerAsset,
+                _order.takerAsset,
+                _order.maker,
+                _order.taker,
+                _order.makerAmount,
+                _order.takerAmount
+            )
+        );
+        return _hashTypedDataV4(hashedStruct);
+    }
+
+    /**
+     * @notice Checks if the trade parameters have been updated. If so,
+     * this function updates the parameters for the trade. Additionally, this
+     * function checks if the trade expiry has past.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @return uint256 The proper makerAmount to use for the trade.
+     **/
+    function _verifyTradeParameters(Order calldata _order) private view returns (uint256) {
+        // verifies if order expiry updated by checking in mapping
+        // if the expiry is less than the current timestamp, then
+        // the transaction reverts
+        if (orderExpiryUpdated[_order.nonceAndMeta] != 0) {
+            require(block.timestamp <= orderExpiryUpdated[_order.nonceAndMeta], "RF-QE-01");
+        } else {
+            require(block.timestamp <= _order.expiry, "RF-QE-02");
+        }
+
+        // verifies if slippage was applied to the quoted makerAmount
+        // by checking in the mapping. If not, the original quoted price
+        // is used for the trade
+        uint256 makerAmount = orderMakerAmountUpdated[_order.nonceAndMeta];
+        if (makerAmount == 0) {
+            makerAmount = _order.makerAmount;
+        }
+        return makerAmount;
+    }
+
+    /**
+     * @notice Handles the exchange of assets based on swap type and
+     * if the assets are ERC-20's or native tokens.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _makerAmount the proper makerAmount for the trade
+     **/
+    function _executeSwap(Order calldata _order, uint256 _makerAmount) private {
+        if (_order.makerAsset == address(0)) {
+            // swap NATIVE <=> ERC-20
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
+            // solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = payable(_order.taker).call{value: _makerAmount}("");
+            require(success, "RF-TF-01");
+        } else if (_order.takerAsset == address(0)) {
+            // swap ERC-20 <=> NATIVE
+            require(msg.value >= _order.takerAmount, "RF-IMV-01");
+            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+            if (msg.value > _order.takerAmount) {
+                // solhint-disable-next-line avoid-low-level-calls
+                (bool success, ) = payable(msg.sender).call{value: msg.value - _order.takerAmount}("");
+                require(success, "RF-TF-02");
+            }
+        } else {
+            // swap ERC-20 <=> ERC-20
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
+            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+        }
+
+        emit SwapExecuted(
+            _order.nonceAndMeta,
+            _order.maker,
+            _order.taker,
+            _order.makerAsset,
+            _order.takerAsset,
+            _makerAmount,
+            _order.takerAmount
+        );
+    }
 }

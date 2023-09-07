@@ -1264,7 +1264,7 @@ contract TradePairs is
     /**
      * @notice  Cancels an order given the order id supplied
      * @dev     Will revert with "T-OAEX-01" if order is already filled or canceled
-     * if order doesn't exist in can be canceled because FILLED & CANCELED orders are removed.
+     * if order doesn't exist it can't be canceled because FILLED & CANCELED orders are removed.
      * The remaining status are NEW & PARTIAL which are ok to cancel
      * @param   _orderId  order id to cancel
      */
