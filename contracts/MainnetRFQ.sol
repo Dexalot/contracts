@@ -41,7 +41,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.3");
+    bytes32 public constant VERSION = bytes32("1.0.4");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -128,15 +128,33 @@ contract MainnetRFQ is
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
     function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused nonReentrant {
-        _verifyTradeNotProcessed(_order);
+        uint256 makerAmount = _verifyOrder(_order, _signature);
 
-        bytes32 digest = _calculateOrderDigest(_order);
-        bytes4 magicNumber = isValidSignature(digest, _signature);
-        require(magicNumber == 0x1626ba7e, "RF-IS-01");
+        _executeSwap(_order, makerAmount, _order.takerAmount);
+    }
 
-        uint256 makerAmount = _verifyTradeParameters(_order);
+    /**
+     * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
+     * @dev This function can only be called after generating a firm quote from the RFQ API.
+     * All parameters are generated from the RFQ API. Prices are determined based off of trade
+     * prices from the Dexalot subnet. This function is used for multi hop swaps and will partially fill
+     * at the original quoted price.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @param _takerAmount Actual amount of takerAsset utilized in swap
+     **/
+    function partialSwap(
+        Order calldata _order,
+        bytes calldata _signature,
+        uint256 _takerAmount
+    ) external payable whenNotPaused nonReentrant {
+        uint256 makerAmount = _verifyOrder(_order, _signature);
 
-        _executeSwap(_order, makerAmount);
+        if (_takerAmount < _order.takerAmount) {
+            makerAmount = (makerAmount * _takerAmount) / _order.takerAmount;
+        }
+
+        _executeSwap(_order, makerAmount, _takerAmount);
     }
 
     /**
@@ -192,64 +210,6 @@ contract MainnetRFQ is
         require(_swapSigner != address(0), "RF-SAZ-01");
         swapSigner = _swapSigner;
         emit SwapSignerUpdated(_swapSigner);
-    }
-
-    /**
-     * @notice  Adds Rebalancer Admin role to the address
-     * @param   _address  address to add role to
-     */
-    function addRebalancer(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_address != address(0), "RF-SAZ-01");
-        emit RoleUpdated("RFQ", "ADD-ROLE", REBALANCER_ADMIN_ROLE, _address);
-        grantRole(REBALANCER_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Removes Rebalancer Admin role from the address
-     * @param   _address  address to remove role from
-     */
-    function removeRebalancer(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(getRoleMemberCount(REBALANCER_ADMIN_ROLE) > 1, "RF-ALOA-01");
-        emit RoleUpdated("RFQ", "REMOVE-ROLE", REBALANCER_ADMIN_ROLE, _address);
-        revokeRole(REBALANCER_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Checks if address has Rebalancer Admin role
-     * @param   _address  address to check
-     * @return  bool    true if address has Rebalancer Admin role
-     */
-    function isRebalancer(address _address) external view returns (bool) {
-        return hasRole(REBALANCER_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Adds Default Admin role to the address
-     * @param   _address  address to add role to
-     */
-    function addAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_address != address(0), "RF-SAZ-01");
-        emit RoleUpdated("RFQ", "ADD-ROLE", DEFAULT_ADMIN_ROLE, _address);
-        grantRole(DEFAULT_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Removes Default Admin role from the address
-     * @param   _address  address to remove role from
-     */
-    function removeAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "RF-ALOA-01");
-        emit RoleUpdated("RFQ", "REMOVE-ROLE", DEFAULT_ADMIN_ROLE, _address);
-        revokeRole(DEFAULT_ADMIN_ROLE, _address);
-    }
-
-    /**
-     * @notice  Checks if address has Default Admin role
-     * @param   _address  address to check
-     * @return  bool    true if address has Default Admin role
-     */
-    function isAdmin(address _address) external view returns (bool) {
-        return hasRole(DEFAULT_ADMIN_ROLE, _address);
     }
 
     /**
@@ -314,6 +274,64 @@ contract MainnetRFQ is
     }
 
     /**
+     * @notice  Adds Rebalancer Admin role to the address
+     * @param   _address  address to add role to
+     */
+    function addRebalancer(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_address != address(0), "RF-SAZ-01");
+        emit RoleUpdated("RFQ", "ADD-ROLE", REBALANCER_ADMIN_ROLE, _address);
+        grantRole(REBALANCER_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Removes Rebalancer Admin role from the address
+     * @param   _address  address to remove role from
+     */
+    function removeRebalancer(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(getRoleMemberCount(REBALANCER_ADMIN_ROLE) > 1, "RF-ALOA-01");
+        emit RoleUpdated("RFQ", "REMOVE-ROLE", REBALANCER_ADMIN_ROLE, _address);
+        revokeRole(REBALANCER_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Adds Default Admin role to the address
+     * @param   _address  address to add role to
+     */
+    function addAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_address != address(0), "RF-SAZ-01");
+        emit RoleUpdated("RFQ", "ADD-ROLE", DEFAULT_ADMIN_ROLE, _address);
+        grantRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Removes Default Admin role from the address
+     * @param   _address  address to remove role from
+     */
+    function removeAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "RF-ALOA-01");
+        emit RoleUpdated("RFQ", "REMOVE-ROLE", DEFAULT_ADMIN_ROLE, _address);
+        revokeRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Checks if address has Rebalancer Admin role
+     * @param   _address  address to check
+     * @return  bool    true if address has Rebalancer Admin role
+     */
+    function isRebalancer(address _address) external view returns (bool) {
+        return hasRole(REBALANCER_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Checks if address has Default Admin role
+     * @param   _address  address to check
+     * @return  bool    true if address has Default Admin role
+     */
+    function isAdmin(address _address) external view returns (bool) {
+        return hasRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    /**
      * @notice Verifies Signature in accordance of ERC1271 standard
      * @param _hash Hash of order data
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
@@ -331,25 +349,62 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice Helper function used to verify signature
-     * @param _messageHash Hash of order data
-     * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     * @return signer   The address of the signer of the signature.
-     **/
-    function _recoverSigner(bytes32 _messageHash, bytes memory _signature) private pure returns (address) {
-        (address signer, ) = ECDSAUpgradeable.tryRecover(_messageHash, _signature);
-        return signer;
-    }
-
-    /**
-     * @notice Verifies that a transaction has not been traded already.
+     * @notice Verifies that an order is valid and has not been executed already.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return uint256 The proper makerAmount to use for the trade.
      **/
-    function _verifyTradeNotProcessed(Order calldata _order) private {
+    function _verifyOrder(Order calldata _order, bytes calldata _signature) private returns (uint256) {
         require(!nonceUsed[_order.nonceAndMeta], "RF-IN-01");
         require(_order.taker == msg.sender, "RF-IMS-01");
         // adds nonce to nonce used mapping
         nonceUsed[_order.nonceAndMeta] = true;
+
+        bytes32 digest = _calculateOrderDigest(_order);
+        bytes4 magicNumber = isValidSignature(digest, _signature);
+        require(magicNumber == 0x1626ba7e, "RF-IS-01");
+
+        return _verifyTradeParameters(_order);
+    }
+
+    /**
+     * @notice Handles the exchange of assets based on swap type and
+     * if the assets are ERC-20's or native tokens.
+     * @param _order Trade parameters for swap generated from /api/rfq/firm
+     * @param _makerAmount the proper makerAmount for the trade
+     * @param _takerAmount the proper takerAmount for the trade
+     **/
+    function _executeSwap(Order calldata _order, uint256 _makerAmount, uint256 _takerAmount) private {
+        if (_order.makerAsset == address(0)) {
+            // swap NATIVE <=> ERC-20
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _takerAmount);
+            // solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = payable(_order.taker).call{value: _makerAmount}("");
+            require(success, "RF-TF-01");
+        } else if (_order.takerAsset == address(0)) {
+            // swap ERC-20 <=> NATIVE
+            require(msg.value >= _takerAmount, "RF-IMV-01");
+            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+            if (msg.value > _takerAmount) {
+                // solhint-disable-next-line avoid-low-level-calls
+                (bool success, ) = payable(msg.sender).call{value: msg.value - _takerAmount}("");
+                require(success, "RF-TF-02");
+            }
+        } else {
+            // swap ERC-20 <=> ERC-20
+            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _takerAmount);
+            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
+        }
+
+        emit SwapExecuted(
+            _order.nonceAndMeta,
+            _order.maker,
+            _order.taker,
+            _order.makerAsset,
+            _order.takerAsset,
+            _makerAmount,
+            _takerAmount
+        );
     }
 
     /**
@@ -408,41 +463,13 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice Handles the exchange of assets based on swap type and
-     * if the assets are ERC-20's or native tokens.
-     * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @param _makerAmount the proper makerAmount for the trade
+     * @notice Helper function used to verify signature
+     * @param _messageHash Hash of order data
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return signer   The address of the signer of the signature.
      **/
-    function _executeSwap(Order calldata _order, uint256 _makerAmount) private {
-        if (_order.makerAsset == address(0)) {
-            // swap NATIVE <=> ERC-20
-            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
-            // solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = payable(_order.taker).call{value: _makerAmount}("");
-            require(success, "RF-TF-01");
-        } else if (_order.takerAsset == address(0)) {
-            // swap ERC-20 <=> NATIVE
-            require(msg.value >= _order.takerAmount, "RF-IMV-01");
-            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-            if (msg.value > _order.takerAmount) {
-                // solhint-disable-next-line avoid-low-level-calls
-                (bool success, ) = payable(msg.sender).call{value: msg.value - _order.takerAmount}("");
-                require(success, "RF-TF-02");
-            }
-        } else {
-            // swap ERC-20 <=> ERC-20
-            IERC20Upgradeable(_order.takerAsset).safeTransferFrom(_order.taker, address(this), _order.takerAmount);
-            IERC20Upgradeable(_order.makerAsset).safeTransfer(_order.taker, _makerAmount);
-        }
-
-        emit SwapExecuted(
-            _order.nonceAndMeta,
-            _order.maker,
-            _order.taker,
-            _order.makerAsset,
-            _order.takerAsset,
-            _makerAmount,
-            _order.takerAmount
-        );
+    function _recoverSigner(bytes32 _messageHash, bytes memory _signature) private pure returns (address) {
+        (address signer, ) = ECDSAUpgradeable.tryRecover(_messageHash, _signature);
+        return signer;
     }
 }
