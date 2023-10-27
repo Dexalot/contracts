@@ -41,7 +41,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.5");
+    bytes32 public constant VERSION = bytes32("1.0.6");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -93,6 +93,8 @@ contract MainnetRFQ is
     event SlippageApplied(uint256 nonceAndMeta, uint256 newMakerAmount);
     event ExpiryUpdated(uint256 nonceAndMeta, uint256 newExpiry);
     event SlippageToleranceUpdated(uint256 newSlippageTolerance);
+    event AddTrustedContract(address contractAddress);
+    event RemoveTrustedContract(address contractAddress);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -239,6 +241,7 @@ contract MainnetRFQ is
     function addTrustedContract(address _contract) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_contract != address(0), "RF-SAZ-01");
         trustedContracts[_contract] = true;
+        emit AddTrustedContract(_contract);
     }
 
     /**
@@ -248,6 +251,7 @@ contract MainnetRFQ is
      */
     function removeTrustedContract(address _contract) external onlyRole(DEFAULT_ADMIN_ROLE) {
         trustedContracts[_contract] = false;
+        emit RemoveTrustedContract(_contract);
     }
 
     /**

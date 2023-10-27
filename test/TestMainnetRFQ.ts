@@ -216,9 +216,9 @@ describe("Mainnet RFQ", () => {
     await expect(mainnetRFQ.connect(signer).removeRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);;
     await expect(mainnetRFQ.connect(owner).removeAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
 
-    await mainnetRFQ.connect(owner).addTrustedContract(dummyAddress);
+    await expect(mainnetRFQ.connect(owner).addTrustedContract(dummyAddress)).to.emit(mainnetRFQ, "AddTrustedContract").withArgs(dummyAddress);
     expect(await mainnetRFQ.connect(owner).trustedContracts(dummyAddress)).to.equal(true);
-    await mainnetRFQ.connect(owner).removeTrustedContract(dummyAddress);
+    await expect(mainnetRFQ.connect(owner).removeTrustedContract(dummyAddress)).to.emit(mainnetRFQ, "RemoveTrustedContract").withArgs(dummyAddress);
     expect(await mainnetRFQ.connect(owner).trustedContracts(dummyAddress)).to.equal(false);
     await mainnetRFQ.connect(owner).setSwapSigner(dummyAddress);
     await mainnetRFQ.connect(owner).addAdmin(dummyAddress);
