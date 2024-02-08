@@ -25,9 +25,9 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 
 describe("TokenVestingCloneable", function () {
     let testToken: MockToken;
+    let testTokenBytes32: string;
     let factory: TokenVestingCloneFactory;
     let TokenVestingCloneable: TokenVestingCloneable__factory;
-    let tokenVesting: TokenVestingCloneable;
 
     let portfolio: PortfolioMain
     let portfolioSub: PortfolioSub
@@ -49,28 +49,30 @@ describe("TokenVestingCloneable", function () {
     let released: BigNumber
     let vestedAmount: BigNumber
     let vestedPercentageAmount: BigNumber
-
+    let srcChainListOrgId: number;
     let now: number;
 
-    const srcChainId: any = 1;
     const token_decimals =18
 
     before(async () => {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
+        const { cChain } = f.getChains();
+
+        srcChainListOrgId= cChain.chainListOrgId;
     })
 
     beforeEach(async function () {
         [owner, investor1] = await ethers.getSigners();
 
         testToken = await f.deployMockToken("DEG", token_decimals);
+        testTokenBytes32 = Utils.fromUtf8("DEG")
         await testToken.mint(owner.address, Utils.toWei('100000000'));
-        const { portfolioMain: portfolioM, portfolioSub: portfolioS } = await f.deployCompletePortfolio();
+        const { portfolioAvax: portfolioM, portfolioSub: portfolioS } = await f.deployCompletePortfolio();
 
         portfolio = portfolioM;
         portfolioSub = portfolioS;
 
-        // f.addToken(portfolio, testToken, 0.01, 2)
-        f.addToken(portfolioSub, testToken, 0, 2)
+        //f.addToken(portfolio, portfolioSub, testToken, 0.0001, 2)
 
         factory = await f.deployTokenVestingCloneFactory();
 
@@ -93,7 +95,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(tokenVesting.initialize(investor1.address, start, cliff, duration, startPortfolioDeposits,
                                                  revocable, percentage, period, portfolio.address, owner.address))
@@ -112,7 +114,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             expect(await tokenVesting.beneficiary()).to.equal(investor1.address);
             expect(await tokenVesting.start()).to.equal(start);
@@ -191,7 +193,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
             await expect(tokenVesting.setPortfolio(ZERO)).to.revertedWith("TVC-PIZA-02");
         });
 
@@ -214,8 +216,7 @@ describe("TokenVestingCloneable", function () {
             cliff = 20000;
             duration = 120000;
             percentage = 15;
-            const dt = Utils.fromUtf8("DEG");
-            const am: any = 0; // auction mode OFF
+            //const dt = Utils.fromUtf8("DEG");
             let released;
             let vestedAmount;
             let vestedPercentageAmount;
@@ -223,7 +224,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -231,7 +232,9 @@ describe("TokenVestingCloneable", function () {
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.5',token_decimals));
+            await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false, 0);
+            //await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false);
+            // await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(),  '0', ethers.utils.parseUnits('0.5',token_decimals), false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
@@ -357,7 +360,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start+100000, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -373,7 +376,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -394,18 +397,19 @@ describe("TokenVestingCloneable", function () {
             cliff = 5000;
             duration = 120000;
             const dt = Utils.fromUtf8("DEG");
-            const am: any = 2; // auction mode OFF
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
-
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
+            // await portfolio.addToken(testTokenBytes32, testToken.address, srcChainListOrgId, token_decimals
+            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
+                await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
+            //await f.addToken(portfolio, portfolioSub, testToken, 0.01, 0, false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // some time before auction
@@ -422,20 +426,16 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("DEG");
-            const am: any = 2; // auction mode OFF
-
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
-
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
+            await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0,false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // some time during auction
@@ -458,7 +458,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
@@ -493,7 +493,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -607,7 +607,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             now = await f.latestTime();
             released = await tokenVesting.released(testToken.address);
@@ -632,7 +632,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, customPercentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -666,7 +666,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, customPercentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -745,7 +745,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TVC-CNTR-01');
         });
@@ -757,7 +757,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await tokenVesting.revoke(testToken.address);
             await expect(tokenVesting.revoke(testToken.address)).to.be.revertedWith('TVC-TKAR-01');
@@ -767,7 +767,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(tokenVesting.connect(investor1).setPortfolio(portfolio.address)).to.be.revertedWith('Ownable: caller is not the owner');
 
@@ -781,13 +781,12 @@ describe("TokenVestingCloneable", function () {
             cliff = 5000;
             duration = 120000;
             period = 0;
-            const dt = Utils.fromUtf8("DEG");
-            const am: any = 2; // auction mode ON
+
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -804,7 +803,9 @@ describe("TokenVestingCloneable", function () {
             const canFundWallet = await tokenVesting.connect(investor1).canFundWallet(testToken.address, investor1.address);
             expect(canFundWallet).to.equal(false);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
+
+            await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
+
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             await testToken.connect(investor1).approve(tokenVesting.address, Utils.toWei('1000'));
@@ -814,7 +815,7 @@ describe("TokenVestingCloneable", function () {
             expect(await tokenVesting.vestedAmount(testToken.address)).to.equal(0);
             expect(await tokenVesting.vestedPercentageAmount(testToken.address)).to.equal(100);
 
-            expect((await portfolioSub.getBalance(investor1.address, dt))[0]).to.equal(100);
+            expect((await portfolioSub.getBalance(investor1.address, testTokenBytes32))[0]).to.equal(100);
             expect(await testToken.balanceOf(investor1.address)).to.equal(0);
 
             await ethers.provider.send("evm_increaseTime", [15000]);
@@ -828,7 +829,7 @@ describe("TokenVestingCloneable", function () {
             expect(await tokenVesting.vestedPercentageAmount(testToken.address)).to.equal(100);
 
             expect(await testToken.balanceOf(investor1.address)).to.equal(54);
-            expect((await portfolioSub.getBalance(investor1.address, dt))[0]).to.equal(100);
+            expect((await portfolioSub.getBalance(investor1.address, testTokenBytes32))[0]).to.equal(100);
         });
 
         it("Should behave correctly with multiple releaseToPortfolio calls", async function () {
@@ -836,17 +837,19 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("DEG");
-            const am: any = 2; // auction mode ON
+            //const dt = Utils.fromUtf8("DEG");
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await testToken.transfer(tokenVesting.address, 1000);
+            await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
+            // await portfolio.addToken(testTokenBytes32, testToken.address, 0, token_decimals
+            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
+            //await f.addToken(portfolio, portfolioSub, testToken, 0.001, 0);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.00000000000000001',token_decimals));
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             await ethers.provider.send("evm_increaseTime", [2000]);
@@ -877,7 +880,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, 1000))
                 .to.emit(testToken, "Transfer")
@@ -926,7 +929,6 @@ describe("TokenVestingCloneable", function () {
             percentage = 15;
             period = 20000;
             const dt = Utils.fromUtf8("DEG");
-            const am: any = 0; // auction mode OFF
             let released;
             let vestedAmount;
             let vestedPercentageAmount;
@@ -934,15 +936,18 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
-
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.5',token_decimals));
+            //await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false);
+            // await portfolio.addToken(testTokenBytes32, testToken.address, 0, token_decimals
+            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
+            await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false, 0);
+            //await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals), false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
@@ -1152,7 +1157,7 @@ describe("TokenVestingCloneable", function () {
             await factory.createTokenVesting(beneficiary, start+100000, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
             const count = await factory.count();
-            tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
+            const tokenVesting= TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")

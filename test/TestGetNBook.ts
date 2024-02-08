@@ -9,9 +9,6 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     MockToken,
-    MockToken__factory,
-    LZEndpointMock,
-    PortfolioBridge,
     ExchangeSub,
     PortfolioMain,
     PortfolioSub,
@@ -23,11 +20,11 @@ import * as f from "./MakeTestSuite";
 
 import { assert } from "chai";
 import { ethers } from "hardhat";
-import { BigNumber } from "ethers";
+import { BigNumber, ContractFactory } from "ethers";
 
 import TradePairsAbi from '../artifacts/contracts/TradePairs.sol/TradePairs.json';
 
-let MockToken: MockToken__factory;
+let MockToken: ContractFactory;
 
 // using the first numberOfAccounts accounts
 const numberOfAccounts = 3;
@@ -99,10 +96,10 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
         deploymentAccount = deploymentWallet.address;
         console.log("deploymentAccount =", deploymentAccount);
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
-        portfolio = portfolioS;
 
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolio = portfolioContracts.portfolioSub;
 
         orderBooks = await f.deployOrderBooks();
         exchange = await f.deployExchangeSub(portfolio, orderBooks)
@@ -118,8 +115,8 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             _tokenBytes32 = Utils.fromUtf8(_tokenStr);
             _tokenDecimals = decimalsMap[_tokenStr];
             _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
-            await f.addToken(portfolio, _token, 0.1, auctionMode);
-            await f.addToken(portfolioMain, _token, 0.1, auctionMode);
+            await f.addToken(portfolioMain, portfolio, _token, 0.1, auctionMode);
+
             for (let i=0; i<numberOfAccounts; i++) {
                 const account = accounts[i];
                 console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));

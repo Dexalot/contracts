@@ -6,6 +6,8 @@ pragma solidity 0.8.17;
  * @title Interface of TradePairs
  */
 
+import "./IPortfolio.sol";
+
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
@@ -101,11 +103,12 @@ interface ITradePairs {
 
     function postOnly(bytes32 _tradePairId, bool _postOnly) external;
 
+
     function addTradePair(
         bytes32 _tradePairId,
-        bytes32 _baseSymbol,
+        IPortfolio.TokenDetails calldata _baseTokenDetails,
         uint8 _baseDisplayDecimals,
-        bytes32 _quoteSymbol,
+        IPortfolio.TokenDetails calldata _quoteTokenDetails,
         uint8 _quoteDisplayDecimals,
         uint256 _minTradeAmount,
         uint256 _maxTradeAmount,

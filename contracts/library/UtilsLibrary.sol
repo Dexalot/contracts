@@ -137,6 +137,22 @@ library UtilsLibrary {
         id = stringToBytes32(string.concat(bytes32ToString(_symbol), Strings.toString(_srcChainId)));
     }
 
+    // get quote amount
+    /**
+     * @notice  Returns the quote amount for a given price and quantity
+     * @param   _baseDecimals  id of the trading pair
+     * @param   _price  price
+     * @param   _quantity  quantity
+     * @return  quoteAmount quote amount
+     */
+    function getQuoteAmount(
+        uint8 _baseDecimals,
+        uint256 _price,
+        uint256 _quantity
+    ) internal pure returns (uint256 quoteAmount) {
+        quoteAmount = (_price * _quantity) / 10 ** _baseDecimals;
+    }
+
     /**
      * @notice  Copied from Layer0 Libs
      * @param   _bytes  Bytes to slice

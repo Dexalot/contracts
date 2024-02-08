@@ -7,6 +7,8 @@ import "./interfaces/IPortfolioSub.sol";
 import "./interfaces/IGasStation.sol";
 import "./interfaces/IPortfolioMinter.sol";
 import "./interfaces/IPortfolioBridgeSub.sol";
+import "./interfaces/ITradePairs.sol";
+import "./interfaces/IRebateAccounts.sol";
 
 /**
  * @title  Subnet Portfolio
@@ -42,7 +44,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     mapping(address => mapping(bytes32 => AssetEntry)) public assets;
     // bytes32 symbols to uint256(total) token map
     // Used for sanity checks that periodically compares subnet balances to the Mainnet balances.
-    // Incremented only with Tx.DEPOSIT and Tx.RECOVERFUNDS
+    // Incremented only with Tx.DEPOSIT
     // Decremented only with Tx.WITHDRAW.
     // It assumes all funds originate from the mainnet without any exceptions. As a result, amounts
     // transferred from/to wallet in the subnet are ignored (add/remove gas)
@@ -68,7 +70,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.3");
+    bytes32 public constant VERSION = bytes32("2.5.0");
+
+    IRebateAccounts private rebateAccounts;
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -79,7 +83,58 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function initialize(bytes32 _native, uint32 _chainId) public override initializer {
         Portfolio.initialize(_native, _chainId);
         // Always Add native with 0 Bridge Fee and 1 gasSwapRatio (1 ALOT for 1 ALOT)
-        addTokenInternal(native, address(0), _chainId, 18, ITradePairs.AuctionMode.OFF, 0, 1 * 10 ** 18);
+        TokenDetails memory details = TokenDetails(
+            18,
+            address(0),
+            ITradePairs.AuctionMode.OFF,
+            _chainId,
+            native,
+            bytes32(0),
+            native,
+            false
+        );
+        addTokenInternal(details, 0, 1 * 10 ** 18);
+    }
+
+    /**
+     * @notice  Adds the given token to the portfolio
+     * @dev     Only callable by admin.
+     * We don't allow tokens with the same symbols but different addresses.
+     * Native symbol is also added by default with 0 address.
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
+     * @param   _tokenAddress  Address of the token
+     * @param   _srcChainId  Source Chain id
+     * @param   _decimals  Decimals of the token
+     * @param   _mode  Starting auction mode of the token
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
+     * @param   _subnetSymbol  Subnet Symbol of the token
+     */
+    function addToken(
+        bytes32 _srcChainSymbol,
+        address _tokenAddress,
+        uint32 _srcChainId,
+        uint8 _decimals,
+        ITradePairs.AuctionMode _mode,
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bytes32 _subnetSymbol
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        // Can't add Native Token because it has already been added in the Portfolio initialization
+        if (_subnetSymbol != native) {
+            TokenDetails memory details = TokenDetails(
+                _decimals,
+                _tokenAddress,
+                _mode, // Auction Mode is ignored as it is irrelevant in the Mainnet
+                _srcChainId,
+                _subnetSymbol,
+                bytes32(0),
+                _srcChainSymbol,
+                true // All tokens in the subnet are virtual TODO
+            );
+
+            addTokenInternal(details, _fee, _gasSwapRatio);
+        }
     }
 
     /**
@@ -87,10 +142,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @dev     This function is only callable by admin. \
      * We don't allow tokens with same symbols. \
      * Native symbol is also added as a token with 0 address. \
-     * PortfolioSub keeps track of total deposited tokens in tokenTotals for sanity checks against mainnet.
-     * It has no ERC20 Contracts hence, it overwrites the addresses with address(0). \
+     * PortfolioSub keeps track of total deposited tokens in tokenTotals for sanity checks against mainnet. It has
+     * no ERC20 Contracts hence, it overwrites the addresses with address(0) and isVirtual =true except native ALOT. \
      * It also adds the token to the PortfolioBridgeSub with the proper sourceChainid
-     * Tokens in PortfolioSub has ZeroAddress but PortfolioBridge has the proper address from each chain
+     * Tokens in PortfolioSub has ZeroAddress but PortfolioBridgeMain has the proper address from each chain
      * Sample Token List in PortfolioSub: \
      * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId) \
      * ALOT ALOT432204 18 0x0000000000000000000000000000000000000000 0 \
@@ -102,54 +157,41 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * USDC USDC432204 6 0x0000000000000000000000000000000000000000 0 \
      * USDt USDt432204 6 0x0000000000000000000000000000000000000000 0 \
      * WETH.e WETH.e432204 18 0x0000000000000000000000000000000000000000 0 \
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain Id, overwritten by srcChain of Portolio but used when adding
-     * it to PortfolioBridgeSub.
-     * @param   _decimals  Decimals of the token
-     * @param   _mode  Starting auction mode of the token
+     * @param   _details  Token Details
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
+
      */
-    function addTokenInternal(
-        bytes32 _symbol,
-        address _tokenAddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode,
-        uint256 _fee,
-        uint256 _gasSwapRatio
-    ) internal override {
-        super.addTokenInternal(
-            _symbol,
+    function addTokenInternal(TokenDetails memory _details, uint256 _fee, uint256 _gasSwapRatio) internal override {
+        address mainnetAddress = _details.tokenAddress;
+        uint32 srcChainId = _details.srcChainId;
+        if (!tokenList.contains(_details.symbol)) {
             // All tokens from mainnet have 0 address including AVAX because subnet doesn't have ERC20
-            address(0),
-            _srcChainId,
-            _decimals,
-            _mode,
-            _fee,
-            _gasSwapRatio
-        );
+            _details.tokenAddress = address(0);
+            // Subnet symbols are all virtual but need to be added with the subnet chainId
+            _details.srcChainId = chainId;
+            super.addTokenInternal(_details, _fee, _gasSwapRatio);
+            // Tokens are added with default usedForGasSwap=false. They need to be set to true if/when necessary
+            // except ALOT. It can always be used for this purpose
+            if (_details.symbol == bytes32("ALOT")) {
+                setBridgeParamInternal(_details.symbol, _fee, _gasSwapRatio, true);
+            } else {
+                setBridgeParamInternal(_details.symbol, _fee, 0, false);
+            }
 
-        // Tokens are added with default usedForGasSwap=false. They need to be set to true if/when necessary
-        // except ALOT. It can always be used for this purpose
-        if (_symbol == bytes32("ALOT")) {
-            setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, true);
-        } else {
-            setBridgeParamInternal(_symbol, _fee, 0, false);
+            tokenTotals[_details.symbol] = 0; //set totals to 0
         }
-
-        tokenTotals[_symbol] = 0; //set totals to 0
-        // Don't add native here as portfolioBridge may not be initialized yet
+        // Don't add native here as PortfolioBridgeSub may not be initialized yet
         // Native added when portfolioBridgeSub.SetPortfolio
-        if (_symbol != native && address(portfolioBridge) != address(0)) {
-            //Adding to portfolioBridge with the proper mainnet address and srcChainId
+        if (_details.symbol != native && address(portfolioBridge) != address(0)) {
+            //Adding to PortfolioBridgeSub with the proper mainnet address and srcChainId
             IPortfolioBridgeSub(address(portfolioBridge)).addToken(
-                _symbol,
-                _tokenAddress,
-                _srcChainId,
-                _decimals,
-                _mode
+                _details.sourceChainSymbol,
+                mainnetAddress,
+                srcChainId,
+                _details.decimals,
+                _details.auctionMode,
+                _details.symbol
             );
         }
     }
@@ -232,52 +274,89 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     /**
      * @notice  Function for TradePairs to transfer tokens between addresses as a result of an execution
-     * @dev     WHEN Increasing in addExecution the amount is applied to both total and available
+     * @dev     This function calculates the fee to be applied to the orders and it also looks up if
+     * a rate override mapping.
+     * WHEN Increasing in addExecution the amount is applied to both total and available
      * (so SafeIncrease can be used) as opposed to
      * WHEN Decreasing in addExecution the amount is only applied to total. (SafeDecrease
      * can NOT be used, so we have safeDecreaseTotal instead)
      * i.e. (USDT 100 Total, 50 Available after we send a BUY order of 10 avax at 5$.
      * Partial Exec 5 at $5. Total goes down to 75. Available stays at 50)
+     * @param   _tradePair  TradePair struct
      * @param   _makerSide  Side of the maker
      * @param   _makerAddr  Address of the maker
      * @param   _takerAddr  Address of the taker
-     * @param   _baseSymbol  Symbol of the base token
-     * @param   _quoteSymbol  Symbol of the quote token
+
      * @param   _baseAmount  Amount of the base token
      * @param   _quoteAmount  Amount of the quote token
-     * @param   _makerfeeCharged  Fee charged to the maker
-     * @param   _takerfeeCharged  Fee charged to the taker
+     * @return  makerfee Maker fee
+     * @return  takerfee Taker fee
      */
     function addExecution(
+        bytes32 _tradePairId,
+        ITradePairs.TradePair calldata _tradePair,
         ITradePairs.Side _makerSide,
         address _makerAddr,
         address _takerAddr,
-        bytes32 _baseSymbol,
-        bytes32 _quoteSymbol,
         uint256 _baseAmount,
-        uint256 _quoteAmount,
-        uint256 _makerfeeCharged,
-        uint256 _takerfeeCharged
-    ) external override {
+        uint256 _quoteAmount
+    ) external override returns (uint256 makerfee, uint256 takerfee) {
         // Only TradePairs can call PORTFOLIO addExecution
         require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
+
+
+        (uint8 makerRate, uint8 takerRate) = rebateAccounts.getRates(_makerAddr, _takerAddr, _tradePairId, _tradePair.makerRate, _tradePair.takerRate);
+        makerfee = calculateFee(_tradePair, _makerSide, _baseAmount, _quoteAmount, makerRate);
+        takerfee = calculateFee(
+            _tradePair,
+            _makerSide == ITradePairs.Side.BUY ? ITradePairs.Side.SELL : ITradePairs.Side.BUY,
+            _baseAmount,
+            _quoteAmount,
+            takerRate
+        );
+
         // if _maker.side = BUY then _taker.side = SELL
         if (_makerSide == ITradePairs.Side.BUY) {
             // decrease maker quote and incrase taker quote
-            transferToken(_makerAddr, _takerAddr, _quoteSymbol, _quoteAmount, _takerfeeCharged, Tx.EXECUTION, true);
+            transferToken(_makerAddr, _takerAddr, _tradePair.quoteSymbol, _quoteAmount, takerfee, Tx.EXECUTION, true);
             // increase maker base and decrase taker base
-            transferToken(_takerAddr, _makerAddr, _baseSymbol, _baseAmount, _makerfeeCharged, Tx.EXECUTION, false);
+            transferToken(_takerAddr, _makerAddr, _tradePair.baseSymbol, _baseAmount, makerfee, Tx.EXECUTION, false);
         } else {
             // increase maker quote and decrease taker quote
-            transferToken(_takerAddr, _makerAddr, _quoteSymbol, _quoteAmount, _makerfeeCharged, Tx.EXECUTION, false);
+            transferToken(_takerAddr, _makerAddr, _tradePair.quoteSymbol, _quoteAmount, makerfee, Tx.EXECUTION, false);
             // decrease maker base and incrase taker base
-            transferToken(_makerAddr, _takerAddr, _baseSymbol, _baseAmount, _takerfeeCharged, Tx.EXECUTION, true);
+            transferToken(_makerAddr, _takerAddr, _tradePair.baseSymbol, _baseAmount, takerfee, Tx.EXECUTION, true);
         }
     }
 
     /**
+     * @notice  Calculates the commission
+     * @dev     Commissions are rounded down based on evm and display decimals to avoid DUST
+     * @param   _tradePair  TradePair struct
+     * @param   _side  order side
+     * @param   _quantity  execution quantity
+     * @param   _quoteAmount  quote amount
+     * @param   _rate  taker or maker rate
+     */
+
+    function calculateFee(
+        ITradePairs.TradePair calldata _tradePair,
+        ITradePairs.Side _side,
+        uint256 _quantity,
+        uint256 _quoteAmount,
+        uint8 _rate
+    ) private pure returns (uint256 lastFeeRounded) {
+        lastFeeRounded = _side == ITradePairs.Side.BUY
+            ? UtilsLibrary.floor((_quantity * _rate) / TENK, _tradePair.baseDecimals - _tradePair.baseDisplayDecimals)
+            : UtilsLibrary.floor(
+                (_quoteAmount * _rate) / TENK,
+                _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
+            );
+    }
+
+    /**
      * @notice  Processes the message coming from the bridge
-     * @dev     DEPOSIT/RECOVERFUNDS messages are the only messages that can be sent to the portfolio sub for the moment
+     * @dev     DEPOSIT message is the only message that can be sent to portfolioSub for the moment
      * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly.
      * CAUTION: if Paused for upgrade, wait to make sure no messages are in flight, then upgrade.
@@ -295,14 +374,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // Should not avoid revert if symbol not found. This will block the bridge
         require(tokenList.contains(_symbol), "P-ETNS-01");
         require(_quantity > 0, "P-ZETD-01");
-        // Only allow deposits in the subnet from PortfolioBridge that has PORTFOLIO_BRIDGE_ROLE and not from the users
+        // Only allow deposits in the subnet from PortfolioBridgeSub that has PORTFOLIO_BRIDGE_ROLE and not from the users
         if (_transaction == Tx.DEPOSIT) {
             // Deposit the entire amount to the portfolio first
             safeIncrease(_trader, _symbol, _quantity, 0, _transaction);
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
             autoFillPrivate(_trader, _symbol, _transaction);
-        } else if (_transaction == Tx.RECOVERFUNDS) {
-            safeIncrease(_trader, _symbol, _quantity, 0, _transaction);
         } else {
             revert("P-PTNS-02");
         }
@@ -424,7 +501,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws the token to the mainnet
+     * @notice  Withdraws token to the default destination chain. Keeping it for backward compatibility
      * @param   _to  Address of the withdrawer
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
@@ -435,6 +512,25 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolioBridge.BridgeProvider _bridge
+    ) external override {
+        require(_to == msg.sender, "P-OOWT-01");
+        this.withdrawToken(_to, _symbol, _quantity, _bridge, portfolioBridge.getDefaultDestinationChain());
+    }
+
+    /**
+     * @notice  Withdraws token to a destination chain
+     * @param   _to  Address of the withdrawer
+     * @param   _symbol  Symbol of the token
+     * @param   _quantity  Amount of the token
+     * @param   _bridge  Enum bridge type
+     * @param   _dstChainListOrgChainId  Destination chain the token is being withdrawn
+     */
+    function withdrawToken(
+        address _to,
+        bytes32 _symbol,
+        uint256 _quantity,
+        IPortfolioBridge.BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId
     ) external override whenNotPaused nonReentrant {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
@@ -445,6 +541,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         uint256 bridgeFee = (_to != feeAddress && _to != treasury) ? bridgeParams[_symbol].fee : 0;
         safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW);
         portfolioBridge.sendXChainMessage(
+            _dstChainListOrgChainId,
             _bridge,
             XFER(
                 0, // Nonce to be assigned in PBridge
@@ -453,7 +550,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _symbol,
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
-                block.timestamp
+                block.timestamp,
+                bytes32(0)
             )
         );
     }
@@ -483,7 +581,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         asset.available += quantityLessFee;
         //Commissions are always taken from incoming currency. This takes care of ALL EXECUTION and DEPOSIT and INTXFER
         safeTransferFee(feeAddress, _symbol, _feeCharged);
-        if (_transaction == Tx.DEPOSIT || _transaction == Tx.RECOVERFUNDS) {
+        if (_transaction == Tx.DEPOSIT) {
             tokenTotals[_symbol] += _amount;
         }
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction);
@@ -641,7 +739,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 symbol;
         uint256 feeAccumulated = assets[_from][native].available;
         if (feeAccumulated > 0) {
-            this.withdrawToken(_from, native, feeAccumulated, portfolioBridge.getDefaultBridgeProvider());
+            this.withdrawToken(
+                _from,
+                native,
+                feeAccumulated,
+                portfolioBridge.getDefaultBridgeProvider(),
+                portfolioBridge.getDefaultDestinationChain()
+            );
         }
         uint256 tokenCount = tokenList.length();
         uint256 i;
@@ -649,7 +753,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             symbol = tokenList.at(i);
             feeAccumulated = assets[_from][symbol].available;
             if (feeAccumulated > 0) {
-                this.withdrawToken(_from, symbol, feeAccumulated, portfolioBridge.getDefaultBridgeProvider());
+                this.withdrawToken(
+                    _from,
+                    symbol,
+                    feeAccumulated,
+                    portfolioBridge.getDefaultBridgeProvider(),
+                    portfolioBridge.getDefaultDestinationChain()
+                );
                 _maxCount--;
             }
             unchecked {
@@ -671,6 +781,18 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function getSwapAmount(bytes32 _symbol, uint256 _gasAmount) private view returns (uint256) {
         BridgeParams storage bridgeParam = bridgeParams[_symbol];
         return bridgeParam.usedForGasSwap ? (bridgeParam.gasSwapRatio * _gasAmount) / 10 ** 18 : 0;
+    }
+
+    /**
+     * @notice  Sets the Rebate Accounts contract
+     * @dev     Only admin can call this function
+     * @param   _rebateAccounts  Rebate Accounts contract to be set
+     */
+    function setRebateAccounts(IRebateAccounts _rebateAccounts) external {
+        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+        require(address(_rebateAccounts) != address(0), "P-OACC-02");
+        emit AddressSet("PORTFOLIO", "SET_REBATEACCTS", address(rebateAccounts), address(_rebateAccounts));
+        rebateAccounts = _rebateAccounts;
     }
 
     /**
@@ -760,18 +882,45 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @notice  Remove token from the tokenMap
      * @dev     tokenTotals for the symbol should be 0 before it can be removed
      * Make sure that there are no in-flight deposit messages.
-     * Calling this function also removes the token from portfolioBridge.
-     * @param   _symbol  symbol of the token
-     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub.
+     * Calling this function also removes the token from portfolioBridge. If multiple tokens in the portfolioBridgeSub shares
+     * the subnet symbol, the symbol is not deleted from the PortfolioSub
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
+     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub. Don't use the subnet id here
+     * Always use the chain id that the token is being removed. Otherwise it will silently fail as it can't find the token to delete
+     * in PortfolioBridgeSub
+     * @param   _subnetSymbol  Subnet Symbol of the token
      */
-    function removeToken(bytes32 _symbol, uint32 _srcChainId) public override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(tokenTotals[_symbol] == 0, "P-TTNZ-01");
+    function removeToken(
+        bytes32 _srcChainSymbol,
+        uint32 _srcChainId,
+        bytes32 _subnetSymbol
+    ) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(tokenTotals[_subnetSymbol] == 0, "P-TTNZ-01");
+        bool deleted = IPortfolioBridgeSub(address(portfolioBridge)).removeToken(
+            _srcChainSymbol,
+            _srcChainId,
+            _subnetSymbol
+        );
+        //Nothing found in PBridge to delete, no need to continue
+        if (!deleted) {
+            return;
+        }
+        bytes32[] memory tokenListById = portfolioBridge.getTokenList();
+        for (uint256 i = 0; i < tokenListById.length; ++i) {
+            TokenDetails memory tokenDetails = IPortfolioBridgeSub(address(portfolioBridge)).getTokenDetails(
+                tokenListById[i]
+            );
+            if (tokenDetails.symbol == _subnetSymbol) {
+                // There is another PB Bridge token using the _subnetSymbol. Can not delete. Return
+                return;
+            }
+        }
         // Can never remove subnet ALOT token from PortfolioSub nor from PortfolioBridgeSub
         //, or other ALOTs from any other chainId
-        if (tokenList.contains(_symbol) && _symbol != native) {
-            IPortfolioBridgeSub(address(portfolioBridge)).removeToken(_symbol, _srcChainId);
-            delete (tokenTotals[_symbol]);
+        if (tokenList.contains(_subnetSymbol) && _subnetSymbol != native) {
+            delete (tokenTotals[_subnetSymbol]);
         }
-        super.removeToken(_symbol, _srcChainId);
+
+        super.removeToken(_subnetSymbol, _srcChainId);
     }
 }

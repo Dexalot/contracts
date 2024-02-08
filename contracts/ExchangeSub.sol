@@ -22,7 +22,7 @@ import "./OrderBooks.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.0");
+    bytes32 public constant VERSION = bytes32("2.2.1");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -116,6 +116,40 @@ contract ExchangeSub is Exchange {
     //========== AUCTION ADMIN FUNCTIONS ==================
 
     /**
+     * @notice  Add new token to portfolio
+     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
+     * @param   _subnetSymbol  Subnet Symbol of the token
+     * @param   _tokenaddress  address of the token
+     * @param   _srcChainId  Source Chain id
+     * @param   _decimals  decimals of the token
+     * @param   _mode  starting auction mode
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
+     */
+    function addToken(
+        bytes32 _subnetSymbol,
+        address _tokenaddress,
+        uint32 _srcChainId,
+        uint8 _decimals,
+        ITradePairs.AuctionMode _mode,
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bytes32 _srcChainSymbol
+    ) external onlyRole(AUCTION_ADMIN_ROLE) {
+        IPortfolioSub(address(portfolio)).addToken(
+            _subnetSymbol,
+            _tokenaddress,
+            _srcChainId,
+            _decimals,
+            _mode,
+            _fee,
+            _gasSwapRatio,
+            _srcChainSymbol
+        );
+    }
+
+    /**
      * @notice  Adds a new trading pair to the exchange.
      * @dev     Both the base and quote symbol must exist in the PortfolioSub otherwise it will revert.
      * Both `DEFAULT_ADMIN_ROLE` and `AUCTION_ADMIN_ROLE` can add a new trading pair.
@@ -139,16 +173,51 @@ contract ExchangeSub is Exchange {
         ITradePairs.AuctionMode _mode
     ) external {
         require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender) || hasRole(AUCTION_ADMIN_ROLE, msg.sender), "E-OACC-01");
+
+        checkMirrorPair(_baseSymbol, _quoteSymbol);
+
+        IPortfolio.TokenDetails memory baseTokenDetails = portfolio.getTokenDetails(_baseSymbol);
+        IPortfolio.TokenDetails memory quoteTokenDetails = portfolio.getTokenDetails(_quoteSymbol);
+        require(
+            baseTokenDetails.decimals >= _baseDisplayDecimals && quoteTokenDetails.decimals >= _quoteDisplayDecimals,
+            "E-TNAP-01"
+        );
+        require(
+            baseTokenDetails.auctionMode == _mode && quoteTokenDetails.auctionMode == ITradePairs.AuctionMode.OFF,
+            "E-TNSA-01"
+        );
+
         tradePairs.addTradePair(
             _tradePairId,
-            _baseSymbol,
+            baseTokenDetails,
             _baseDisplayDecimals,
-            _quoteSymbol,
+            quoteTokenDetails,
             _quoteDisplayDecimals,
             _minTradeAmount,
             _maxTradeAmount,
             _mode
         );
+
+    }
+
+    /**
+     * @notice  Checks to see if a mirror pair exists
+     * @dev     Checks to see if USDC/AVAX exists when trying to add AVAX/USDC
+     * Mirror pairs are not allowed to avoid confusion from a user perspective.
+     * @param   _baseSymbol  base Symbol of the pair to be added
+     * @param   _quoteSymbol  quote Symbol of the pair to be added
+     */
+    function checkMirrorPair(bytes32 _baseSymbol, bytes32 _quoteSymbol) private view {
+        bytes32 mirrorPairId = UtilsLibrary.stringToBytes32(
+            string(
+                abi.encodePacked(
+                    UtilsLibrary.bytes32ToString(_quoteSymbol),
+                    "/",
+                    UtilsLibrary.bytes32ToString(_baseSymbol)
+                )
+            )
+        );
+        require(tradePairs.getTradePair(mirrorPairId).baseSymbol == "", "T-MPNA-01");
     }
 
     /**

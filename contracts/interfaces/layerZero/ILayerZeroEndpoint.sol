@@ -92,6 +92,6 @@ interface ILayerZeroEndpoint is ILayerZeroUserApplicationConfig {
     returns (
         uint64,
         address,
-        bytes32
+        bytes calldata
     );
 }

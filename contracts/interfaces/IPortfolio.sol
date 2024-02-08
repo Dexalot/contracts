@@ -20,16 +20,6 @@ interface IPortfolio {
 
     function pauseDeposit(bool _pause) external;
 
-    function addToken(
-        bytes32 _symbol,
-        address _tokenaddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode,
-        uint256 _fee,
-        uint256 _gasSwapRatio
-    ) external;
-
     function removeToken(bytes32 _symbol, uint32 _srcChainId) external;
 
     function depositNative(address payable _from, IPortfolioBridge.BridgeProvider _bridge) external payable;
@@ -76,6 +66,7 @@ interface IPortfolio {
         bytes32 symbol;
         uint256 quantity;
         uint256 timestamp;
+        bytes32 customdata;
     }
 
     struct TokenDetails {
@@ -85,6 +76,8 @@ interface IPortfolio {
         uint32 srcChainId; //4
         bytes32 symbol;
         bytes32 symbolId;
+        bytes32 sourceChainSymbol;
+        bool isVirtual;
     }
 
     enum Tx {
@@ -93,11 +86,12 @@ interface IPortfolio {
         EXECUTION,
         INCREASEAVAIL,
         DECREASEAVAIL,
-        IXFERSENT,
-        IXFERREC,
-        RECOVERFUNDS,
+        IXFERSENT, // Subnet Sent. I for Internal to Subnet
+        IXFERREC, // Subnet Received. I for Internal to Subnet
+        RECOVERFUNDS, // Obsolete as of 2/1/2024 CD
         ADDGAS,
         REMOVEGAS,
-        AUTOFILL
+        AUTOFILL,
+        CCTRADE // Cross Chain Trade.
     }
 }

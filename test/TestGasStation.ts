@@ -26,10 +26,9 @@ import { ethers, upgrades } from "hardhat";
      beforeEach(async function () {
         GasStation = await ethers.getContractFactory("GasStation") as GasStation__factory;
 
-        const {portfolioSub: portfolioS, gasStation: gStation} = await f.deployCompletePortfolio();
-
-        portfolioSub = portfolioS;
-        gasStation= gStation;
+         const portfolioContracts = await f.deployCompletePortfolio(true);
+         portfolioSub = portfolioContracts.portfolioSub;
+         gasStation = portfolioContracts.gasStation;
      });
 
     it("Should not initialize again after deployment", async function () {

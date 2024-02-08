@@ -6,15 +6,16 @@ import Utils from './utils';
 
 import type {
     UtilsLibraryMock,
-    UtilsLibraryMock__factory,
+
 } from '../typechain-types';
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { ContractFactory } from 'ethers';
 
 
 describe("UtilsLibrary via UtilsLibraryMock", function () {
-    let UtilsLibraryMock: UtilsLibraryMock__factory;
+    let UtilsLibraryMock: ContractFactory;
 	let utilsLibraryMock: UtilsLibraryMock;
 
 	before(async function () {

@@ -10,20 +10,26 @@ import "../library/UtilsLibrary.sol";
 
 /**
  * @title Abstract Layer Zero contract
- * @notice  It is extended by the PortfolioBridge contract for Dexalot specific implementation
- * @dev  This doesn't support multi mainnet Chain as many functions depend on lzRemoteChainId
- * Remove lzRemoteChainId and adjust the functions for multichain support.
+ * @notice  It is extended by the PortfolioBridgeMain contract for Dexalot specific implementation
+ * @dev  defaultLzRemoteChainId is the default destination chain. For PortfolioBridgeSub it is avalanche C-Chain
+ * For other blockchains it is Dexalot Subnet
  */
 
 abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceiver, ILayerZeroUserApplicationConfig {
     ILayerZeroEndpoint internal lzEndpoint;
-
     //chainId ==> Remote contract address concatenated with the local contract address, 40 bytes
     mapping(uint16 => bytes) public lzTrustedRemoteLookup;
+    mapping(uint16 => Destination) public remoteParams;
+    mapping(uint32 => uint16) internal lzDestinationMap; // chainListOrgChainId ==> lzChainId
 
-    event LzSetTrustedRemoteAddress(uint16 remoteChainId, bytes remoteAddress);
-    uint16 internal lzRemoteChainId;
-    uint256 public gasForDestinationLzReceive;
+    uint16 internal defaultLzRemoteChainId; // Default remote chain id (LayerZero assigned ids)
+
+    event LzSetTrustedRemoteAddress(
+        uint16 destinationLzChainId,
+        bytes remoteAddress,
+        uint32 chainListOrgChainId,
+        uint256 gasForDestinationLzReceive
+    );
 
     /**
      * @notice  Sets the Layer Zero Endpoint address
@@ -33,13 +39,6 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     function setLzEndPoint(address _endpoint) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_endpoint != address(0), "LA-LIZA-01");
         lzEndpoint = ILayerZeroEndpoint(_endpoint);
-    }
-
-    /**
-     * @return  ILayerZeroEndpoint  Layer Zero Endpoint
-     */
-    function getLzEndPoint() external view returns (ILayerZeroEndpoint) {
-        return lzEndpoint;
     }
 
     /**
@@ -58,43 +57,51 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     ) external virtual override;
 
     /**
-     * @notice  Sends message
-     * @param   _payload  Payload to send
-     * @param   _refundAddress  Refund address
+     * @notice  send a LayerZero message to the specified address at a LayerZero endpoint.
+     * @param   _dstChainId the destination chain identifier
+     * @param   _payload  a custom bytes payload to send to the destination contract
+     * @param   _refundAddress  if the source transaction is cheaper than the amount of value passed, refund the additional amount to this address
+
      * @return  uint256  Message fee
      */
-    function lzSend(bytes memory _payload, address payable _refundAddress) internal virtual returns (uint256) {
-        bytes memory trustedRemote = lzTrustedRemoteLookup[lzRemoteChainId];
+    function lzSend(
+        uint16 _dstChainId,
+        bytes memory _payload,
+        address payable _refundAddress
+    ) internal virtual returns (uint256) {
+        bytes memory trustedRemote = lzTrustedRemoteLookup[_dstChainId];
         require(trustedRemote.length != 0, "LA-DCNT-01");
-        (uint256 messageFee, bytes memory adapterParams) = lzEstimateFees(_payload);
+        (uint256 nativeFee, bytes memory adapterParams) = lzEstimateFees(_dstChainId, _payload);
         // solhint-disable-next-line check-send-result
-        lzEndpoint.send{value: messageFee}(
-            lzRemoteChainId, // destination LayerZero chainId
+        lzEndpoint.send{value: nativeFee}(
+            _dstChainId, // destination LayerZero chainId
             trustedRemote, // trusted remote
             _payload, // bytes payload
             _refundAddress, // refund address
             address(0x0), // _zroPaymentAddress
             adapterParams
         );
-        return messageFee;
+        return nativeFee;
     }
 
     /**
      * @notice  Estimates message fees
+     * @param   _dstChainId  Target chain id
      * @param   _payload  Message payload
      * @return  messageFee  Message fee
      * @return  adapterParams  Adapter parameters
      */
     function lzEstimateFees(
+        uint16 _dstChainId,
         bytes memory _payload
     ) internal view returns (uint256 messageFee, bytes memory adapterParams) {
-        // Dexalot sets a higher gasForDestinationLzReceive value for LayerZero in PortfolioBridge extending LzApp
+        // Dexalot sets a higher gasForDestinationLzReceive value for LayerZero in PortfolioBridgeMain extending LzApp
         // LayerZero needs v1 in adapterParams to specify a higher gas for the destination to receive transaction
         // For more details refer to LayerZero PingPong example at
         // https://github.com/LayerZero-Labs/solidity-examples/blob/main/contracts/examples/PingPong.sol
         uint16 version = 1;
-        adapterParams = abi.encodePacked(version, gasForDestinationLzReceive);
-        (messageFee, ) = lzEndpoint.estimateFees(lzRemoteChainId, address(this), _payload, false, adapterParams);
+        adapterParams = abi.encodePacked(version, getGasForDestination(_dstChainId));
+        (messageFee, ) = lzEndpoint.estimateFees(_dstChainId, address(this), _payload, false, adapterParams);
     }
 
     //---------------------------UserApplication config----------------------------------------
@@ -150,21 +157,6 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @notice  Sets trusted remote address for the cross-chain communication
-     * @dev     Allow DEFAULT_ADMIN to set it multiple times.
-     * @param   _srcChainId  Source(Remote) chain id
-     * @param   _srcAddress  Source(Remote) contract address
-     */
-    function setLZTrustedRemoteAddress(
-        uint16 _srcChainId,
-        bytes calldata _srcAddress
-    ) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        lzTrustedRemoteLookup[_srcChainId] = abi.encodePacked(_srcAddress, address(this));
-        lzRemoteChainId = _srcChainId;
-        emit LzSetTrustedRemoteAddress(_srcChainId, _srcAddress);
-    }
-
-    /**
      * @notice  Force resumes the stuck bridge by destroying the message blocking it.
      * @dev     This action is destructive! Use this as the last resort!
      * Use this function directly only when portfolioBridge.lzDestroyAndRecoverFunds() fails
@@ -208,12 +200,28 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     //--------------------------- VIEW FUNCTIONS ----------------------------------------
 
     /**
+     * @return  ILayerZeroEndpoint  Layer Zero Endpoint
+     */
+    function getLzEndPoint() external view returns (ILayerZeroEndpoint) {
+        return lzEndpoint;
+    }
+
+    /**
+     * @notice  Gets the Gas Amount in the Target Chain that is used to estimate the fee. Default value returned if target not found
+     * @param   _dstChainId  Target chain id
+     * @return  uint256  Gas Amount
+     */
+    function getGasForDestination(uint16 _dstChainId) private view returns (uint256) {
+        return remoteParams[_dstChainId].gasForDestination;
+    }
+
+    /**
      * @notice  Gets the Trusted Remote Address per given chainId
-     * @param   _srcChainId  Source chain id
+     * @param   _remoteChainId  Remote chain id
      * @return  bytes  Trusted Source Remote Address
      */
-    function getTrustedRemoteAddress(uint16 _srcChainId) external view returns (bytes memory) {
-        bytes memory path = lzTrustedRemoteLookup[_srcChainId];
+    function getTrustedRemoteAddress(uint16 _remoteChainId) external view returns (bytes memory) {
+        bytes memory path = lzTrustedRemoteLookup[_remoteChainId];
         require(path.length != 0, "LA-DCNT-01");
         return UtilsLibrary.slice(path, 0, path.length - 20); // the last 20 bytes should be address(this)
     }
@@ -230,26 +238,38 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @return  bool  True if the bridge has stored payload, means it is stuck
+     * @return  bool  True if the bridge has stored payload with its default destination, means it is stuck
      */
     function hasStoredPayload() external view returns (bool) {
-        return lzEndpoint.hasStoredPayload(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId]);
+        return lzEndpoint.hasStoredPayload(defaultLzRemoteChainId, lzTrustedRemoteLookup[defaultLzRemoteChainId]);
     }
 
     /**
-     * @dev  Inbound nonce assigned by LZ
+     * @dev  Get the inboundNonce of a lzApp from a source chain which could be EVM or non-EVM chain
+     * @param  _srcChainId  the source chain identifier
+     * @param  _srcAddress the source chain contract address
      * @return  uint64  Inbound nonce
      */
-    function getInboundNonce() internal view returns (uint64) {
-        return lzEndpoint.getInboundNonce(lzRemoteChainId, lzTrustedRemoteLookup[lzRemoteChainId]);
+    function getInboundNonce(uint16 _srcChainId, bytes calldata _srcAddress) internal view returns (uint64) {
+        return lzEndpoint.getInboundNonce(_srcChainId, _srcAddress);
+    }
+
+    function getInboundNonce(uint16 _srcChainId) internal view returns (uint64) {
+        return lzEndpoint.getInboundNonce(_srcChainId, lzTrustedRemoteLookup[_srcChainId]);
     }
 
     /**
-     * @dev  Outbound nonce assigned by LZ
+     * @dev  get the outboundNonce from this source chain which, consequently, is always an EVM
+     * @param  _dstChainId  The destination chain identifier
+     * @param  _srcAddress  The source chain contract address
      * @return  uint64  Outbound nonce
      */
-    function getOutboundNonce() internal view returns (uint64) {
-        return lzEndpoint.getOutboundNonce(lzRemoteChainId, address(this));
+    function getOutboundNonce(uint16 _dstChainId, address _srcAddress) internal view returns (uint64) {
+        return lzEndpoint.getOutboundNonce(_dstChainId, _srcAddress);
+    }
+
+    function getOutboundNonce(uint16 _dstChainId) internal view returns (uint64) {
+        return lzEndpoint.getOutboundNonce(_dstChainId, address(this));
     }
 
     /**

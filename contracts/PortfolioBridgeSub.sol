@@ -3,7 +3,8 @@
 pragma solidity 0.8.17;
 
 import "./interfaces/IPortfolioBridgeSub.sol";
-import "./PortfolioBridge.sol";
+import "./interfaces/IDelayedTransfers.sol";
+import "./PortfolioBridgeMain.sol";
 
 /**
  * @title PortfolioBridgeSub: Bridge aggregator and message relayer for subnet using multiple different bridges
@@ -18,17 +19,19 @@ import "./PortfolioBridge.sol";
  * When sending back to the target chain, it maps it back to the expected symbol by the target chain,
  * i.e USDC to USDC1 if sent back to Ethereum, USDC43114 if sent to Avalanche. \
  * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getTokenId that has
- * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol mapping
- * will happen in different functions, either in processPayload or in getXFerMessage.
- * We need to raise the XChainXFerMessage before xfer.symbol is mapped in processPayload function so the
- * incoming and the outgoing xfer messages always contain the symbolId rather than symbol. \
+ * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol
+ * mapping will happen in processPayload. getSymbolForId is called by getXFerMessage and it returns the
+ * Xfer Message as is but also returns the reverse mapped local symbol. \
+ * We need to raise the XChainXFerMessage & update the inventory with the symbolId so the
+ * incoming and the outgoing xfer messages always contain the symbolId rather than symbol and then processPayload
+ * can use the local symbol when calling portfolio methods \
  */
 
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
 
-contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
+contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
 
     // key is symbolId (symbol + srcChainId)
@@ -41,33 +44,18 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
 
     // Add by symbolId rather than symbol
     EnumerableSetUpgradeable.Bytes32Set private tokenListById;
-    uint32 public defaultTargetChainId; // Avalanche
-
-    uint256 public delayPeriod; // in seconds
-    uint256 public epochLength; // in seconds
-
-    mapping(bytes32 => IPortfolio.XFER) public delayedTransfers;
-    mapping(bytes32 => uint256) public delayThresholds; // key is token
-    mapping(bytes32 => uint256) public epochVolumes; // key is token
-    mapping(bytes32 => uint256) public epochVolumeCaps; // key is token
-    mapping(bytes32 => uint256) public lastOpTimestamps; // key is token
-
-    event DelayedTransfer(string action, bytes32 id, IPortfolio.XFER xfer);
-    event DelayPeriodUpdated(uint256 period);
-    event DelayThresholdUpdated(bytes32 symbol, uint256 threshold);
-    event EpochLengthUpdated(uint256 length);
-    event EpochVolumeUpdated(bytes32 token, uint256 cap);
-
+    mapping(bytes32 => uint256) public inventoryBySymbolId; // key is symbolId
+    IDelayedTransfers public delayedTransfers;
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("2.2.2");
+        return bytes32("3.0.0");
     }
 
     /**
-     * @notice  Adds the given token to the portfolioBridge. PortfolioBridgeSub the list will be bigger as they could
+     * @notice  Adds the given token to the PortfolioBridgeSub. PortfolioBridgeSub the list will be bigger as they could
      * be from different mainnet chains
      * @dev     `addToken` is only callable by admin or from Portfolio when a new subnet symbol is added for the
-     * first time. The same subnet symbol but different symbolId are required when adding a token to
+     * first time. The same subnet symbol but a different symbolId is required when adding a token to
      * PortfolioBridgeSub. \
      * Sample Token List in PortfolioBridgeSub: (BTC & ALOT Listed twice with 2 different chain ids) \
      * Native symbol is also added as a token with 0 address \
@@ -89,30 +77,32 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      * added via PortfolioSub.addToken which also calls the same PortfolioBridgeSub function. \
      * Similarly, ALOT from the Avalanche Mainnet can only be removed by PortfolioBridgeSub.removeToken
      * if it was added by mistake. All other tokens should be removed with PortfolioSub.removeToken.
-
-     * @param   _symbol  Symbol of the token
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
      * @param   _tokenAddress  Mainnet token address the symbol or zero address for AVAX
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  Decimals of the token
+     * @param   _subnetSymbol  Subnet Symbol of the token (Shared Symbol of the same token from different chains)
+
      */
     function addToken(
-        bytes32 _symbol,
+        bytes32 _srcChainSymbol,
         address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode
+        ITradePairs.AuctionMode,
+        bytes32 _subnetSymbol
     ) external override {
         require(
-            hasRole(PORTFOLIO_ROLE, msg.sender) ||
+            hasRole(BRIDGE_USER_ROLE, msg.sender) ||
                 hasRole(DEFAULT_ADMIN_ROLE, msg.sender) ||
                 msg.sender == address(this), // called by addNativeToken function
             "PB-OACC-01"
         );
 
-        IPortfolio.TokenDetails memory subnetToken = portfolio.getTokenDetails(_symbol);
+        IPortfolio.TokenDetails memory subnetToken = portfolio.getTokenDetails(_subnetSymbol);
         //subnetToken.symbol from PortfolioSub is the subnet symbol in all mappings in the PortfolioBridgeSub
-        require(subnetToken.symbol == _symbol, "PB-SDMP-01");
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
+        require(subnetToken.symbol == _subnetSymbol, "PB-SDMP-01");
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_srcChainSymbol, _srcChainId);
 
         if (!tokenListById.contains(symbolId)) {
             tokenListById.add(symbolId);
@@ -123,32 +113,45 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
             tokenDetails.decimals = _decimals;
             tokenDetails.tokenAddress = _tokenAddress;
             tokenDetails.srcChainId = _srcChainId;
-            tokenDetails.symbol = _symbol;
+            tokenDetails.symbol = _subnetSymbol;
             tokenDetails.symbolId = symbolId;
-
-            tokenDetailsMapBySymbolChainId[_symbol][_srcChainId] = symbolId;
+            tokenDetails.sourceChainSymbol = _srcChainSymbol;
+            // All subnet tokens in the portfolioBridgeSub are not virtual
+            tokenDetails.isVirtual = _subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId()
+                ? false
+                : true;
+            tokenDetailsMapBySymbolChainId[_subnetSymbol][_srcChainId] = symbolId;
         }
     }
 
     /**
      * @notice  Remove the token from the tokenDetailsMapById and tokenDetailsMapBySymbolChainId
      * @dev     Make sure that there are no in-flight messages
-     * @param   _symbol  symbol of the token
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
      * @param   _srcChainId  Source Chain id
+     * @param   _subnetSymbol  symbol of the token
+
      */
-    function removeToken(bytes32 _symbol, uint32 _srcChainId) external override whenPaused {
-        require(hasRole(PORTFOLIO_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "PB-OACC-01");
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
+    function removeToken(
+        bytes32 _srcChainSymbol,
+        uint32 _srcChainId,
+        bytes32 _subnetSymbol
+    ) external override whenPaused returns (bool deleted) {
+        require(hasRole(BRIDGE_USER_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "PB-OACC-01");
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_srcChainSymbol, _srcChainId);
+        require(inventoryBySymbolId[symbolId] == 0, "PB-INVZ-01");
         if (
             // We can't remove the native that was added from current chainId,
             // but the native symbol added from a mainnet can be removed.
             // ALOT added from Avalanche ALOT43114 can be removed not ALOT added from the subnet
             tokenListById.contains(symbolId) &&
-            !(_symbol == portfolio.getNative() && _srcChainId == portfolio.getChainId())
+            !(_subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId())
         ) {
+            delete (inventoryBySymbolId[symbolId]);
             delete (tokenDetailsMapById[symbolId]);
-            delete (tokenDetailsMapBySymbolChainId[_symbol][_srcChainId]);
+            delete (tokenDetailsMapBySymbolChainId[_srcChainSymbol][_srcChainId]);
             tokenListById.remove(symbolId);
+            deleted = true;
         }
     }
 
@@ -158,7 +161,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      */
     function addNativeToken() internal override {
         IPortfolio.TokenDetails memory t = portfolio.getTokenDetails(portfolio.getNative());
-        this.addToken(t.symbol, t.tokenAddress, t.srcChainId, t.decimals, ITradePairs.AuctionMode.OFF);
+        this.addToken(t.symbol, t.tokenAddress, t.srcChainId, t.decimals, ITradePairs.AuctionMode.OFF, t.symbol);
     }
 
     /**
@@ -167,12 +170,13 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
      * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC43114
      * Because the subnet needs to know about different ids from different mainnets.
      * When sending messages Subnet to Mainnet, it resolves it back to the symbolId the target chain expects
+     * @param   _dstChainListOrgChainId  destination chain id
      * @param   _symbol  symbol of the token
-     * @return  bytes32  symbolId
+     * @return  bytes32  symbolId for the destination
      */
 
-    function getTokenId(bytes32 _symbol) internal view override returns (bytes32) {
-        return tokenDetailsMapBySymbolChainId[_symbol][defaultTargetChainId];
+    function getTokenId(uint32 _dstChainListOrgChainId, bytes32 _symbol) internal view override returns (bytes32) {
+        return tokenDetailsMapBySymbolChainId[_symbol][_dstChainListOrgChainId];
     }
 
     /**
@@ -199,17 +203,7 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Sets the default target chain id. To be extended with multichain implementation
-     * @dev   Only admin can call this function
-     * @param   _chainId  Default Chainid to use
-     */
-    function setDefaultTargetChain(uint32 _chainId) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        defaultTargetChainId = _chainId;
-        emit DefaultChainIdUpdated(defaultTargetChainId);
-    }
-
-    /**
-     * @notice  List of the tokens in the portfolioBridge
+     * @notice  List of the tokens in the PortfolioBridgeSub
      * @return  bytes32[]  Array of symbols of the tokens
      */
     function getTokenList() external view override returns (bytes32[] memory) {
@@ -223,156 +217,75 @@ contract PortfolioBridgeSub is PortfolioBridge, IPortfolioBridgeSub {
     /**
      * @notice  Sends XFER message to the destination chain
      * @dev     This is a wrapper to check volume and threshold while withdrawing
+     * @param   _dstChainListOrgChainId   destination ChainListOrg chain id
      * @param   _bridge  Bridge type to send over
      * @param   _xfer  XFER message to send
      */
     function sendXChainMessage(
+        uint32 _dstChainListOrgChainId,
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer
-    ) external override onlyRole(PORTFOLIO_ROLE) {
+    ) external override onlyRole(BRIDGE_USER_ROLE) returns (uint256 messageFee) {
         // Volume treshold check for multiple small transfers within a given amount of time
         // Used only for withdrawals from the subnet.
-        updateVolume(_xfer.symbol, _xfer.quantity); // Reverts if breached. Does not add to delayTranfer.
+        delayedTransfers.updateVolume(_xfer.symbol, _xfer.quantity); // Reverts if breached. Does not add to delayTranfer.
 
         //Check individual treasholds again for withdrawals. And set them in delayed transfer if necessary.
-        if (checkTresholds(_xfer)) {
-            sendXChainMessageInternal(_bridge, _xfer);
+        if (delayedTransfers.checkTresholds(_xfer)) {
+            messageFee = sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer);
         }
     }
 
     /**
-     * @notice  Checks the volume and thresholds to delay or execute immediately
-     * @dev     This function is called both in processPayload (deposits coming from mainnet)
-     * as well as sendXChainMessage (withdrawals from the subnet)
-     * Not bridge specific! Delayed messages will be processed by the defaultBridge
-     * symbolId has already been mapped to symbol for the portfolio to properly process it
-     * @param   _xfer  XFER message
-     * @return  bool  True if the transfer can be executed immediately, false if it is delayed
+     * @notice  Overriding empty function from PortfolioBridgeMain
+     * @dev     Update the inventory by each chain only in the Subnet.
+     * Inventory in the host chains are already known and don't need to be calculated
      */
-    function checkTresholds(IPortfolio.XFER memory _xfer) internal override returns (bool) {
-        uint256 delayThreshold = delayThresholds[_xfer.symbol];
-        if (delayThreshold > 0 && _xfer.quantity > delayThreshold) {
-            bytes32 id = keccak256(
-                abi.encodePacked(_xfer.nonce, _xfer.transaction, _xfer.trader, _xfer.symbol, _xfer.quantity)
-            );
-            addDelayedTransfer(id, _xfer);
-            return false;
-        } else {
-            return true;
+    function updateInventoryBySource(IPortfolio.XFER memory _xfer) internal override {
+        uint256 inventory = inventoryBySymbolId[_xfer.symbol];
+        if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
+            require(_xfer.quantity <= inventory, "PB-INVT-01");
+            inventoryBySymbolId[_xfer.symbol] = inventory - _xfer.quantity;
+        } else if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
+            inventoryBySymbolId[_xfer.symbol] = inventory + _xfer.quantity;
         }
     }
 
     /**
-     * @notice  Sets delay thresholds for tokens
+     * @notice  Sets host chains inventories for each token
      * @dev     Only admin can call this function
-     * @param   _tokens  Array of tokens
-     * @param   _thresholds  Array of thresholds
+     * @param   _tokens  Array of tokens in the from of SYMBOL + srcChainId
+     * @param   _quantities  Array of quantities
      */
-    function setDelayThresholds(
+    function setInventoryBySymbolId(
         bytes32[] calldata _tokens,
-        uint256[] calldata _thresholds
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokens.length == _thresholds.length, "PB-LENM-01");
+        uint256[] calldata _quantities
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_tokens.length == _quantities.length, "PB-LENM-01");
         for (uint256 i = 0; i < _tokens.length; ++i) {
-            delayThresholds[_tokens[i]] = _thresholds[i];
-            emit DelayThresholdUpdated(_tokens[i], _thresholds[i]);
+            inventoryBySymbolId[_tokens[i]] = _quantities[i];
         }
     }
 
-    /**
-     * @notice  Sets delay period for delayed transfers
-     * @dev   Only admin can call this function
-     * @param   _period  Delay period in seconds
-     */
-    function setDelayPeriod(uint256 _period) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        delayPeriod = _period;
-        emit DelayPeriodUpdated(_period);
-    }
 
     /**
-     * @notice  Adds transfer to delayed queue
-     * @param   _id  Transfer ID
-     * @param   _xfer  XFER message
+     * @notice  Set DelayedTransfers address
+     * @dev     Only admin can set DelayedTransfers address.
+     * @param   _delayedTransfers  DelayedTransfers address
      */
-    function addDelayedTransfer(bytes32 _id, IPortfolio.XFER memory _xfer) private {
-        require(delayedTransfers[_id].timestamp == 0, "PB-DTAE-01");
-        delayedTransfers[_id] = _xfer;
-        emit DelayedTransfer("ADDED", _id, _xfer);
+    function setDelayedTransfer(address _delayedTransfers) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        delayedTransfers = IDelayedTransfers(_delayedTransfers);
     }
 
     /**
      * @notice  Executes delayed transfer if the delay period has passed
      * @dev     Only admin can call this function
+     * @param   _dstChainId  lz destination chain id
      * @param   _id  Transfer ID
      */
-    function executeDelayedTransfer(bytes32 _id) external override onlyRole(BRIDGE_ADMIN_ROLE) {
-        IPortfolio.XFER storage xfer = delayedTransfers[_id];
-        require(xfer.timestamp > 0, "PB-DTNE-01");
-        require(block.timestamp > xfer.timestamp + delayPeriod, "PB-DTSL-01");
-
-        if (xfer.transaction == IPortfolio.Tx.DEPOSIT) {
-            portfolio.processXFerPayload(xfer.trader, xfer.symbol, xfer.quantity, xfer.transaction);
-        } else if (xfer.transaction == IPortfolio.Tx.WITHDRAW) {
-            sendXChainMessageInternal(defaultBridgeProvider, xfer);
-        }
-
-        emit DelayedTransfer("EXECUTED", _id, xfer);
-        delete delayedTransfers[_id];
+    function executeDelayedTransfer(uint16 _dstChainId, bytes32 _id) external override onlyRole(BRIDGE_ADMIN_ROLE) {
+        IPortfolio.XFER memory xfer = delayedTransfers.executeDelayedTransfer(_id);
+        sendXChainMessageInternal(_dstChainId, defaultBridgeProvider, xfer);
     }
 
-    /**
-     * @notice  Sets epoch length for volume control
-     * @dev    Only admin can call this function
-     * @param   _length  Epoch length in seconds
-     */
-    function setEpochLength(uint256 _length) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        epochLength = _length;
-        emit EpochLengthUpdated(_length);
-    }
-
-    /**
-     * @notice  Sets volume cap for tokens
-     * @dev     Only admin can call this function
-     * @param   _tokens  Array of tokens
-     * @param   _caps  Array of caps
-     */
-    function setEpochVolumeCaps(
-        bytes32[] calldata _tokens,
-        uint256[] calldata _caps
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokens.length == _caps.length, "PB-LENM-02");
-        for (uint256 i = 0; i < _tokens.length; ++i) {
-            epochVolumeCaps[_tokens[i]] = _caps[i];
-            emit EpochVolumeUpdated(_tokens[i], _caps[i]);
-        }
-    }
-
-    /**
-     * @notice  Updates volume for token. Used only for withdrawals from the subnet.
-     * @dev     Does nothing if there is no cap/limit for the token
-     * Volume treshold check for multiple small transfers within a epoch.
-     * @param   _token  Token symbol
-     * @param   _amount  Amount to add to volume
-     */
-    function updateVolume(bytes32 _token, uint256 _amount) private {
-        if (epochLength == 0) {
-            return;
-        }
-        uint256 cap = epochVolumeCaps[_token];
-        if (cap == 0) {
-            // Default behavior no cap on any tokens
-            return;
-        }
-        uint256 volume = epochVolumes[_token];
-        uint256 timestamp = block.timestamp;
-        uint256 epochStartTime = (timestamp / epochLength) * epochLength;
-        if (lastOpTimestamps[_token] < epochStartTime) {
-            volume = _amount;
-        } else {
-            volume += _amount;
-        }
-        require(volume <= cap, "PB-VCAP-01");
-        epochVolumes[_token] = volume;
-        lastOpTimestamps[_token] = timestamp;
-    }
 }

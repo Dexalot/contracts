@@ -24,7 +24,7 @@ import "./interfaces/IPortfolioBridge.sol";
  * Because of this novel architecture, a subnet wallet can only house ALOT token and nothing
  * else. That's why the subnet wallet is referred to as the “Gas Tank”. All assets will be
  * handled inside the PortfolioSub smart contract in the subnet.
- * PortfolioBridge and PortfolioBridgeSub are bridge aggregators in charge of sending/receiving messages
+ * PortfolioBridgeMain and PortfolioBridgeSub are bridge aggregators in charge of sending/receiving messages
  * via generic messaging using active bridge transports.
  * @dev This contract contains shared logic for PortfolioMain and PortfolioSub.
  * It is perfectly sufficient for your trading application to interface with only the Dexalot Subnet
@@ -98,7 +98,7 @@ abstract contract Portfolio is
      * @param   _portfolioBridge  New portfolio bridge contract address
      */
     function setPortfolioBridge(address _portfolioBridge) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        //Can't have multiple portfoliobridge using the same portfolio
+        //Can't have multiple portfolioBridge using the same portfolio
         if (hasRole(PORTFOLIO_BRIDGE_ROLE, address(portfolioBridge)))
             super.revokeRole(PORTFOLIO_BRIDGE_ROLE, address(portfolioBridge));
         portfolioBridge = IPortfolioBridge(_portfolioBridge);
@@ -228,67 +228,32 @@ abstract contract Portfolio is
     }
 
     /**
-     * @notice  Adds the given token to the portfolio
-     * @dev     Only callable by admin.
-     * We don't allow tokens with the same symbols but different addresses.
-     * Native symbol is also added by default with 0 address.
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain id
-     * @param   _decimals  Decimals of the token
-     * @param   _mode  Starting auction mode of the token
-     * @param   _fee  Bridge Fee
-     * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     */
-    function addToken(
-        bytes32 _symbol,
-        address _tokenAddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode,
-        uint256 _fee,
-        uint256 _gasSwapRatio
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        // Can't add Native Token because it has already been added in the Portfolio initialization
-        if (_symbol != native) {
-            addTokenInternal(_symbol, _tokenAddress, _srcChainId, _decimals, _mode, _fee, _gasSwapRatio);
-        }
-    }
-
-    /**
      * @notice  Actual private function that implements the token addition
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenAddress  Address of the token
-     * @param   _decimals  Decimals of the token
-     * @param   _mode  Starting auction mode of the token
+     * @param   _details  Token Details
      *  _fee  Bridge Fee (child implementation)
      *  _gasSwapRatio  Amount of token to swap per ALOT (child implementation)
      */
-    function addTokenInternal(
-        bytes32 _symbol,
-        address _tokenAddress,
-        uint32, // it can only be the mainnet's chain id
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode,
-        uint256,
-        uint256
-    ) internal virtual {
-        require(!tokenList.contains(_symbol), "P-TAEX-01");
-        require(_decimals > 0, "P-CNAT-01");
+    function addTokenInternal(TokenDetails memory _details, uint256, uint256) internal virtual {
+        require(!tokenList.contains(_details.symbol), "P-TAEX-01");
+        require(_details.decimals > 0, "P-CNAT-01");
 
-        TokenDetails storage tokenDetails = tokenDetailsMap[_symbol];
-        tokenDetails.auctionMode = _mode;
-        tokenDetails.decimals = _decimals;
-        tokenDetails.tokenAddress = _tokenAddress;
-        tokenDetails.srcChainId = chainId; // always add with the chain id of the Portfolio
-        tokenDetails.symbol = _symbol;
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, chainId);
+        TokenDetails storage tokenDetails = tokenDetailsMap[_details.symbol];
+        tokenDetails.auctionMode = _details.auctionMode;
+        tokenDetails.decimals = _details.decimals;
+        tokenDetails.tokenAddress = _details.tokenAddress;
+        tokenDetails.srcChainId = _details.srcChainId;
+        tokenDetails.symbol = _details.symbol;
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_details.symbol, tokenDetails.srcChainId);
         tokenDetails.symbolId = symbolId;
+        tokenDetails.isVirtual = _details.isVirtual;
+        //sourceChainSymbol is always equal to symbol for Portfolios.abi
+        //It is needed and can be different in PortfolioBrigeSub
+        tokenDetails.sourceChainSymbol = _details.symbol;
         //add to the list by symbol
-        tokenList.add(_symbol);
+        tokenList.add(_details.symbol);
         //add to the list by symbolId
-        tokenDetailsMapById[symbolId] = _symbol;
-        emit ParameterUpdated(_symbol, "P-ADDTOKEN", _decimals, uint256(_mode));
+        tokenDetailsMapById[symbolId] = _details.symbol;
+        emit ParameterUpdated(_details.symbol, "P-ADDTOKEN", _details.decimals, uint256(_details.auctionMode));
     }
 
     /**

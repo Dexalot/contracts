@@ -101,10 +101,10 @@ describe("Dexalot", () => {
         deploymentAccount = deploymentWallet.address;
         console.log("deploymentAccount =", deploymentAccount);
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
-        portfolio = portfolioS;
-
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolio = portfolioContracts.portfolioSub;
+        const alotMain =  portfolioContracts.alot;
 
         orderBooks = await f.deployOrderBooks();
         exchange = await f.deployExchangeSub(portfolio, orderBooks)
@@ -119,16 +119,21 @@ describe("Dexalot", () => {
         console.log();
         console.log("=== Creating and Minting Mock Tokens ===");
 
-        const srcChainId = 1;
+        //const srcChainId = 1;
         const auctionMode: any = 0;
 
-        for (let j=0; j<tokenList.length; j++) {
-            _tokenStr = tokenList[j];
+        for (const element of tokenList) {
+            _tokenStr = element;
             _tokenBytes32 = Utils.fromUtf8(_tokenStr);
             _tokenDecimals = decimalsMap[_tokenStr];
-            _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
-            await f.addToken(portfolio, _token, 0.1, auctionMode);
-            await f.addToken(portfolioMain, _token, 0.1, auctionMode);
+
+            if (_tokenStr !== "ALOT") {
+                _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
+                await f.addToken(portfolioMain, portfolio, _token, 0.1, auctionMode);
+            } else {
+                _token = alotMain;
+            }
+            //await f.addToken(portfolioMain, _token, 0.1, auctionMode);
             for (let i=0; i<numberOfAccounts; i++) {
                 const account = accounts[i];
                 //console.log("Account:", account, "before minting", _tokenStr, Utils.formatUnits((await _token.balanceOf(account)), _tokenDecimals));
@@ -142,8 +147,8 @@ describe("Dexalot", () => {
 
         const tokenAddressMap: any = {};
         tokenAddressMap["AVAX"] = "0x0000000000000000000000000000000000000000";
-        for (let j=0; j<tokenList.length; j++) {
-            _tokenStr = tokenList[j];
+        for (const element of tokenList) {
+            _tokenStr = element;
             _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_tokenStr));
             _token = MockToken.attach(_tokenAddr);
             tokenAddressMap[_tokenStr] = _token.address;
@@ -172,8 +177,8 @@ describe("Dexalot", () => {
             console.log();
 
             // deposit ERC20 token for account to portfolio
-            for (let j=0; j<tokenList.length; j++) {
-                _tokenStr = tokenList[j];
+            for (const element of tokenList) {
+                _tokenStr = element;
                 _tokenBytes32 = Utils.fromUtf8(_tokenStr);
                 _tokenAddr = await portfolioMain.getToken(_tokenBytes32);
                 console.log(`${_tokenStr} @ ${_tokenAddr}`)
@@ -201,8 +206,8 @@ describe("Dexalot", () => {
         console.log("ExchangeSub contract deployed at: ", exchange.address)
 
         const pairs: any = [];
-        for (let j=0; j<tokenPairs.length; j++) {
-            const pair = tokenPairs[j]
+        for (const element of tokenPairs) {
+            const pair = element
             const symbols = pair.split("/", 2);
             const baseSymbol = symbols[0];
             const quoteSymbol = symbols[1];
@@ -240,8 +245,8 @@ describe("Dexalot", () => {
         console.log();
         console.log("=== ERC20 Token List at Start-Up ===");
         const _tokenList = await portfolio.getTokenList(); // return is bytes32[]
-        for (let i=0; i < _tokenList.length; i++) {
-            console.log(Utils.toUtf8(_tokenList[i]));
+        for (const element of _tokenList) {
+            console.log(Utils.toUtf8(element));
         }
 
         // check all balances at the start of orders processing
@@ -249,8 +254,8 @@ describe("Dexalot", () => {
         console.log("=== Portfolio State Before Processing Orders ===");
         for (let i=0; i<numberOfAccounts; i++) {
             const account = accounts[i];
-            for (let j=0; j<tokens.length; j++) {
-                const token = tokens[j];
+            for (const element of tokens) {
+                const token = element;
                 const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
                 Utils.printBalances(account, res, decimalsMap[token]);
             }
@@ -268,8 +273,8 @@ describe("Dexalot", () => {
 
         // initialize accumulator to check Fee contract state after each order in tests
         const feeLumped: any = {}
-        for (let i=0; i<tokens.length; i++) {
-            feeLumped[tokens[i]] = BigNumber(0);
+        for (const element of tokens) {
+            feeLumped[element] = BigNumber(0);
         }
 
         // initialize accumulator to check Portfolio contract state per user per token after each order
@@ -280,8 +285,8 @@ describe("Dexalot", () => {
             const owner = accounts[i];
             console.log(i, " :: ", owner);
             portfolioUser[owner] = {};
-            for (let j=0; j<tokens.length; j++) {
-                const token = tokens[j];
+            for (const element of tokens) {
+                const token = element;
                 portfolioUser[owner][token] = {};
                 portfolioUser[owner][token]['total'] = BigNumber(initial_portfolio_deposits[token] );
                 portfolioUser[owner][token]['available'] = BigNumber(initial_portfolio_deposits[token] );
@@ -295,14 +300,14 @@ describe("Dexalot", () => {
         console.log("=== Reading Orders ===");
         const ordersRaw = await Utils.loadOrders('./test/data/01_TestOrderBook.csv');
 
-        for (let i=0; i<ordersRaw.length; i++) {
+        for (const element of ordersRaw) {
             // skip over empty lines
-            if (!ordersRaw[i]["clientOrderId"]) { continue; }
+            if (!element["clientOrderId"]) { continue; }
 
             // skip over comment lines added for the group of orders to document tests
-            if (ordersRaw[i]["clientOrderId"][0] === "#") { continue; }
+            if (element["clientOrderId"][0] === "#") { continue; }
 
-            const order: any = ordersRaw[i];
+            const order: any = element;
             order["ownerIndex"] = parseInt(order["owner"]);
             order["owner"] = accounts[order["ownerIndex"]];
             order["price"] = BigNumber(order["price"]);
@@ -316,9 +321,9 @@ describe("Dexalot", () => {
 
         console.log();
         console.log("=== Processing Orders ===");
-        for (let i=0; i<orders.length; i++) {
+        for (const element of orders) {
 
-            const order = orders[i];                // simulated order from file
+            const order = element;                // simulated order from file
             let orderLog: any = {};               // return values from transaction receipt
 
             // reference for enums in ITradePairs.sol
@@ -387,9 +392,9 @@ describe("Dexalot", () => {
                 orderLog = await tx.wait();
 
                 // add orders affected by this addition to the orderMap
-                for (let j=0; j<orderLog.events.length; j++) {
-                    if (orderLog.events[j].event) {
-                        const _log = orderLog.events[j];
+                for (const element of orderLog.events) {
+                    if (element.event) {
+                        const _log = element;
                         if (_log.event === 'OrderStatusChanged') {
                             const _id = _log.args.orderId;
                             const _orders = [...orderMap.values()];
@@ -439,9 +444,9 @@ describe("Dexalot", () => {
             const makerFee = [];
             const takerFee = [];
             if (order["action"] === "ADD") {
-                for (let j=0; j<orderLog.events.length; j++) {
-                    if (orderLog.events[j].event) {
-                        const _log = orderLog.events[j];
+                for (const element of orderLog.events) {
+                    if (element.event) {
+                        const _log = element;
                         if (_log.event === 'Executed') {
                             makerOrder.push(_log.args.makerOrder);
                             makerFee.push(_log.args.feeMaker);
@@ -618,7 +623,7 @@ describe("Dexalot", () => {
             await expect(portfolio.connect(wallets[0]).withdrawFees(wallets[0].address, 10))
             .to.be.revertedWith("P-OWTF-01");
 
-            const treasury = portfolio.getTreasury();
+            const treasury = await portfolio.getTreasury();
             await portfolio.connect(wallets[0]).withdrawFees(feeAddress, 10);
             await portfolio.connect(wallets[0]).withdrawFees(treasury, 10);
 
@@ -657,8 +662,8 @@ describe("Dexalot", () => {
         for (let i=0; i<numberOfAccounts; i++) {
             const _owner = accounts[i];
             console.log(_owner);
-            for (let j=0; j<tokens.length; j++) {
-                _tokenStr = tokens[j];
+            for (const element of tokens) {
+                _tokenStr = element;
                 const _bal = await portfolio.getBalance(_owner, Utils.fromUtf8(_tokenStr));
 
                 // check total
@@ -678,14 +683,14 @@ describe("Dexalot", () => {
 
         console.log("===== PORTFOLIO CONTRACT LUMPED END STATE =====")
         const portfolioLumped: any = {};
-        for (let i=0; i<tokens.length; i++) {
-            portfolioLumped[tokens[i]] = BigNumber(0);
+        for (const element of tokens) {
+            portfolioLumped[element] = BigNumber(0);
         }
 
         for (let i=0; i<numberOfAccounts; i++) {
             const _owner = accounts[i];
-            for (let j=0; j<tokens.length; j++) {
-                _tokenStr = tokens[j];
+            for (const element of tokens) {
+                _tokenStr = element;
                 const _bal = await portfolio.getBalance(_owner, Utils.fromUtf8(_tokenStr));
                 portfolioLumped[_tokenStr] = portfolioLumped[_tokenStr].plus(BigNumber(Utils.formatUnits(_bal.total, decimalsMap[_tokenStr])));
             }
@@ -698,12 +703,12 @@ describe("Dexalot", () => {
         doNumberAssert(_checkName, _contractValue, _checkValue);
 
         // portfolio lumped balance for erc20 tokens
-        for (let i=0; i<tokenList.length; i++) {
-            _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(tokenList[i]));
+        for (const element of tokenList) {
+            _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(element));
             _token = MockToken.attach(_tokenAddr);
-            _checkName = "Ending Potfolio contract lumped balance ::: " + tokenList[i] + " ::: total";
-            _contractValue = BigNumber(Utils.formatUnits(await portfolio.tokenTotals(Utils.fromUtf8(tokenList[i])), await _token.decimals()));
-            _checkValue = portfolioLumped[tokenList[i]];
+            _checkName = "Ending Potfolio contract lumped balance ::: " + element + " ::: total";
+            _contractValue = BigNumber(Utils.formatUnits(await portfolio.tokenTotals(Utils.fromUtf8(element)), await _token.decimals()));
+            _checkValue = portfolioLumped[element]
             doNumberAssert(_checkName, _contractValue, _checkValue);
         }
 

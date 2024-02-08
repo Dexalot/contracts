@@ -1,13 +1,12 @@
 import Utils from './utils';
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-
 import { PromiseOrValue } from "../typechain-types/common";
-
+import { MockContract, smock } from '@defi-wonderland/smock';
 import {
     DexalotToken,
     OrderBooks,
-    PortfolioBridge,
+    PortfolioBridgeMain,
     PortfolioMain,
     PortfolioSub,
     TradePairs,
@@ -17,11 +16,8 @@ import {
     GasStation,
     LZEndpointMock,
     ExchangeSub,
-    OrderBooks__factory,
-    PortfolioMain__factory,
-    PortfolioSub__factory,
-    PortfolioBridge__factory,
-    PortfolioBridgeSub__factory,
+    DelayedTransfers,
+    RebateAccounts,
     TradePairs__factory,
     PortfolioMinterMock__factory,
     GasStation__factory,
@@ -40,12 +36,19 @@ import {
 
 import { NativeMinterMock } from "../typechain-types/contracts/mocks";
 
-import { NativeMinterMock__factory } from "../typechain-types/factories/contracts/mocks";
+import { LZEndpointMock__factory, NativeMinterMock__factory } from "../typechain-types/factories/contracts/mocks";
 
 import { ethers, upgrades } from "hardhat";
-import { Wallet } from 'ethers';
-import { string } from 'hardhat/internal/core/params/argumentTypes';
+import { ContractFactory, Wallet } from 'ethers';
 
+// Fuji details. Gunzilla chainListOrgId is madeup
+const cChain = { native: "AVAX", nativeBytes32: Utils.fromUtf8("AVAX"), evm_decimals:18, lzChainId: 10106, chainListOrgId: 43113 };
+const arbitrumChain = { native: "ETH", nativeBytes32: Utils.fromUtf8("ETH"), evm_decimals:18, lzChainId: 10231, chainListOrgId: 421614 };
+const gunzillaSubnet = { native: "GUN", nativeBytes32: Utils.fromUtf8("GUN"), evm_decimals: 18, lzChainId: 10236, chainListOrgId: 49321 };
+const dexalotSubnet = { native: "ALOT", nativeBytes32: Utils.fromUtf8("ALOT"), evm_decimals: 18, lzChainId: 10118, chainListOrgId: 432201 };
+const chainsArray = [cChain, arbitrumChain , gunzillaSubnet, dexalotSubnet]
+
+const maxGas = { PortfolioMain: 300000, PortfolioSub: 250000, MainnetRFQ: 150000 };
 interface Signers {
     owner: SignerWithAddress,
     admin: SignerWithAddress,
@@ -59,13 +62,39 @@ interface Signers {
 }
 
 interface PortfolioContracts {
-    portfolioMain: PortfolioMain,
+    portfolioAvax: PortfolioMain,
     portfolioSub: PortfolioSub,
     gasStation: GasStation,
     portfolioMinter: PortfolioMinterMock,
-    portfolioBridgeMain: PortfolioBridge,
+    delayedTransfers: DelayedTransfers,
+    rebateAccounts: RebateAccounts,
+    portfolioBridgeAvax: PortfolioBridgeMain,
     portfolioBridgeSub: PortfolioBridgeSub,
-    lzEndpointMain: LZEndpointMock,
+    lzEndpointAvax: LZEndpointMock | MockContract<LZEndpointMock>,
+    lzEndpointSub: LZEndpointMock | MockContract<LZEndpointMock>,
+    mainnetRFQAvax: MainnetRFQ,
+    alot: MockToken
+}
+
+interface MultiPortfolioContracts {
+    portfolioAvax: PortfolioMain,
+    portfolioArb: PortfolioMain,
+    portfolioGun: PortfolioMain,
+    portfolioSub: PortfolioSub,
+    gasStation: GasStation,
+    portfolioMinter: PortfolioMinterMock,
+    portfolioBridgeAvax: PortfolioBridgeMain,
+    portfolioBridgeArb: PortfolioBridgeMain,
+    portfolioBridgeGun: PortfolioBridgeMain,
+    portfolioBridgeSub: PortfolioBridgeSub,
+    lzEndpointAvax: LZEndpointMock | MockContract<LZEndpointMock>,
+    lzEndpointArb: LZEndpointMock | MockContract<LZEndpointMock>,
+    lzEndpointGun: LZEndpointMock | MockContract<LZEndpointMock>,
+    lzEndpointSub: LZEndpointMock | MockContract<LZEndpointMock>,
+    mainnetRFQAvax: MainnetRFQ,
+    mainnetRFQArb: MainnetRFQ,
+    mainnetRFQGun: MainnetRFQ,
+    alot: MockToken | undefined
 }
 
 /*
@@ -74,9 +103,13 @@ interface PortfolioContracts {
     You should call fixtures in the same order as the test suite
 */
 
+export const getChains = () => {
+    return { cChain, dexalotSubnet, arbitrumChain, gunzillaSubnet , chainsArray };
+}
+
 export const getAccounts = async (): Promise<Signers> => {
     const [owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2] = await ethers.getSigners();
-    return {owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2}
+    return { owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2 };
 }
 
 export const deployDexalotToken = async (): Promise<DexalotToken> => {
@@ -100,6 +133,12 @@ export const deployBannedAccounts = async (): Promise<BannedAccounts> => {
     return bannedAccounts;
 }
 
+export const deployLZEndpointMock = async (sourceChainID: number): Promise<MockContract<LZEndpointMock>> => {
+    const LZEndpointMock = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
+    const lzEndpointMock = await LZEndpointMock.deploy(sourceChainID)
+    return lzEndpointMock;
+}
+
 export const deployLZEndpoint = async (sourceChainID: number): Promise<LZEndpointMock> => {
     const LZEndpointMock = await ethers.getContractFactory("LZEndpointMock");
     const lzEndpointMock: LZEndpointMock = await LZEndpointMock.deploy(
@@ -109,67 +148,124 @@ export const deployLZEndpoint = async (sourceChainID: number): Promise<LZEndpoin
 }
 
 export const deployOrderBooks = async (): Promise<OrderBooks> => {
-    const OrderBooks = await ethers.getContractFactory("OrderBooks") as OrderBooks__factory;
+    const OrderBooks = await ethers.getContractFactory("OrderBooks") ;
     const orderBook: OrderBooks = await upgrades.deployProxy(OrderBooks) as OrderBooks
     return orderBook;
 }
 
-export const deployPortfolioMain = async (native: string,): Promise<PortfolioMain> => { // FIXME not complete !!!
-    const srcChainId = 1;
+export const deployDelayedTransfers = async (portfolioBridgeSub: PortfolioBridgeSub): Promise<DelayedTransfers> => {
+    const DelayedTransfers = await ethers.getContractFactory("DelayedTransfers") ;
+    const delayedTransfers: DelayedTransfers = await upgrades.deployProxy(DelayedTransfers,[portfolioBridgeSub.address]) as DelayedTransfers
+    return delayedTransfers;
+}
 
-    const PortfolioMain = await ethers.getContractFactory("PortfolioMain") as PortfolioMain__factory;
-    const portfolioMain: PortfolioMain = await upgrades.deployProxy(PortfolioMain, [Utils.fromUtf8(native), srcChainId]) as PortfolioMain;
+export const deployRebateAccounts = async (): Promise<RebateAccounts> => {
+    const RebateAccounts = await ethers.getContractFactory("RebateAccounts") ;
+    const rebateAccounts: RebateAccounts = await upgrades.deployProxy(RebateAccounts) as RebateAccounts
+    return rebateAccounts;
+}
+
+export const deployPortfolioMain = async (chainDetails:any): Promise<PortfolioMain> => {
+    const PortfolioMain = await ethers.getContractFactory("PortfolioMain") ;
+    const portfolioMain: PortfolioMain = await upgrades.deployProxy(PortfolioMain, [chainDetails.nativeBytes32, chainDetails.chainListOrgId]) as PortfolioMain;
     const bannedAccounts: BannedAccounts = await deployBannedAccounts();
     await portfolioMain.setBannedAccounts(bannedAccounts.address);
 
     return portfolioMain;
 }
 
-export const deployPortfolioSub = async (native: string): Promise<PortfolioSub> => { // FIXME not complete !!!
+export const deployPortfolioSub = async (native: string): Promise<PortfolioSub> => {
     const {feeSafe} = await getAccounts();
-    const srcChainId = 1;
 
-    const PortfolioSub = await ethers.getContractFactory("PortfolioSub") as PortfolioSub__factory;
-    const portfolioSub: PortfolioSub = await upgrades.deployProxy(PortfolioSub, [Utils.fromUtf8(native), srcChainId]) as PortfolioSub;
+    const PortfolioSub = await ethers.getContractFactory("PortfolioSub") ;
+    const portfolioSub: PortfolioSub = await upgrades.deployProxy(PortfolioSub, [Utils.fromUtf8(native), dexalotSubnet.chainListOrgId]) as PortfolioSub;
     await portfolioSub.setFeeAddress(feeSafe.address);
 
     return portfolioSub;
 }
 
-export const addToken = async (portfolio: PortfolioMain | PortfolioSub, token: MockToken, gasSwapRatio: number, auctionMode = 0, usedForGasSwap=false): Promise<void> => {
-    const srcChainId=1;
+export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridgeMain: PortfolioBridgeMain): Promise<MainnetRFQ> => {
+    const MainnetRFQ = await ethers.getContractFactory("MainnetRFQ") ;
+    const mainnetRFQ: MainnetRFQ = await upgrades.deployProxy(MainnetRFQ, [signer.address]) as MainnetRFQ;
+    await mainnetRFQ.setPortfolioBridge(portfolioBridgeMain.address);
+    await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
+    return mainnetRFQ;
+}
+
+export const addToken = async (portfolioMain: PortfolioMain , portfolioSub: PortfolioSub, token: MockToken, gasSwapRatio: number, auctionMode = 0, usedForGasSwap=false, bridgeFee=0, subnetSymbol=""): Promise<void> => {
+
     const tokenDecimals = await token.decimals();
-    const bridgeFee = '0'
-    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, srcChainId, tokenDecimals, auctionMode
-            , Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatio.toString(),tokenDecimals) );
-    if(usedForGasSwap) {
-        await portfolio.setBridgeParam(Utils.fromUtf8(await token.symbol()), Utils.parseUnits(bridgeFee,tokenDecimals),
-                Utils.parseUnits(gasSwapRatio.toString(),tokenDecimals) , usedForGasSwap)
+    const sourceChainID = await portfolioMain.getChainId();
+    const symbol = await token.symbol();
+    const tokenSymbol = Utils.fromUtf8(symbol);
+    subnetSymbol = subnetSymbol === "" ? symbol : subnetSymbol;
+
+
+    await portfolioMain.addToken(tokenSymbol, token.address, 0, tokenDecimals
+        , Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), false);
+
+    await portfolioMain.setBridgeParam(tokenSymbol, Utils.parseUnits(bridgeFee.toString(), tokenDecimals),
+        Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), usedForGasSwap);
+
+
+    await addTokenToPortfolioSub(portfolioSub, await token.symbol(), subnetSymbol, token.address, tokenDecimals
+        , sourceChainID, gasSwapRatio, auctionMode, usedForGasSwap, bridgeFee);
+}
+
+export const addTokenToPortfolioSub = async (portfolioSub: PortfolioSub, tokenSymbol: string, subnetSymbol: string, tokenAddress: string, tokenDecimals: number,
+    sourceChainID: number, gasSwapRatio: number, auctionMode = 0, usedForGasSwap = false, bridgeFee = 0): Promise<void> => {
+        tokenSymbol = Utils.fromUtf8(tokenSymbol);
+        subnetSymbol= Utils.fromUtf8(subnetSymbol);
+        await portfolioSub.addToken(tokenSymbol, tokenAddress, sourceChainID, tokenDecimals, auctionMode,
+            Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), subnetSymbol);
+
+        if(usedForGasSwap || bridgeFee >0 ) {
+            await portfolioSub.setBridgeParam(subnetSymbol, Utils.parseUnits(bridgeFee.toString(),tokenDecimals),
+                    Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals),tokenDecimals) , usedForGasSwap)
+        }
+}
+
+
+export const addTokenToPortfolioMain = async (portfolio: PortfolioMain , token: MockToken, gasSwapRatio: number, usedForGasSwap=false, bridgeFee=0): Promise<void> => {
+    const tokenDecimals = await token.decimals();
+
+    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, 0, tokenDecimals,
+        Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), false);
+
+    if(usedForGasSwap || bridgeFee >0 ) {
+        await portfolio.setBridgeParam(Utils.fromUtf8(await token.symbol()), Utils.parseUnits(bridgeFee.toString(),tokenDecimals),
+                Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals),tokenDecimals) , usedForGasSwap)
     }
 }
 
-export const deployPortfolioBridge = async (remoteLZEndpoint: LZEndpointMock, portfolio: PortfolioMain | PortfolioSub, srcChainId=1): Promise<PortfolioBridge | PortfolioBridgeSub> => {
+export const addVirtualToken = async (portfolio: PortfolioMain, symbol: string, tokenDecimals:number, srcChainId: number): Promise<void> => {
+
+    await portfolio.addToken(Utils.fromUtf8(symbol), ethers.constants.AddressZero, srcChainId, tokenDecimals,
+        0,  Utils.parseUnits("100", tokenDecimals), true);
+}
+
+
+export const deployPortfolioBridge = async (remoteLZEndpoint: LZEndpointMock |MockContract<LZEndpointMock>, portfolio: PortfolioMain | PortfolioSub): Promise<PortfolioBridgeMain | PortfolioBridgeSub> => {
     const {admin} = await getAccounts();
 
-    let PortfolioBridge: PortfolioBridge__factory;
+    let PortfolioBridge: ContractFactory;
     let portfolioBridge;
 
-    if(await portfolio.native() === Utils.fromUtf8('ALOT')) {
-        PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeSub") as PortfolioBridgeSub__factory;
+    if (await portfolio.native() === Utils.fromUtf8('ALOT')) {
+        //Subnet PortfolioBridge
+        PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeSub") ;
         portfolioBridge = await upgrades.deployProxy(
             PortfolioBridge, [remoteLZEndpoint.address]) as PortfolioBridgeSub;
 
-        await portfolioBridge.setDefaultTargetChain(srcChainId);
-
     } else {
-
-        PortfolioBridge = await ethers.getContractFactory("PortfolioBridge") as PortfolioBridge__factory;
+        PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeMain") ;
         portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [remoteLZEndpoint.address]) as PortfolioBridge;
+            PortfolioBridge, [remoteLZEndpoint.address]) as PortfolioBridgeMain;
 
     }
 
-    await portfolioBridge.setPortfolio(portfolio.address)
+    await portfolioBridge.setPortfolio(portfolio.address);
+
 
     await admin.sendTransaction({
         to: portfolioBridge.address,
@@ -182,25 +278,29 @@ export const deployPortfolioBridge = async (remoteLZEndpoint: LZEndpointMock, po
 }
 
 export const setRemoteBridges = async (
-    bridgeOne: PortfolioBridge, chainIDOne: number,
-    bridgeTwo: PortfolioBridge, chainIDTwo: number,
-    lzOne: LZEndpointMock, lzTwo: LZEndpointMock) => {
-    await bridgeOne.setLZTrustedRemoteAddress(
-        chainIDTwo,
-        bridgeTwo.address
-    )
-    await lzOne.setDestLzEndpoint(
-        bridgeTwo.address,
-        lzTwo.address
-    )
+    sourcePortfolioBridge: PortfolioBridgeMain,
+    destinationPorfolioBridge: PortfolioBridgeMain,
+    sourceLzEndPoint: LZEndpointMock | MockContract<LZEndpointMock>,
+    destLzEndPoint: LZEndpointMock | MockContract<LZEndpointMock>,
+    sourceChain:any,
+    remoteChain: any,
+    maxDestinationGas = maxGas.PortfolioMain ) => {
 
-    await bridgeTwo.setLZTrustedRemoteAddress(
-        chainIDOne,
-        bridgeOne.address
+    await sourcePortfolioBridge.setTrustedRemoteAddress(0, remoteChain.lzChainId, destinationPorfolioBridge.address, remoteChain.chainListOrgId, maxDestinationGas);
+    // console.log("Setting portfolioBridgeSub dest id" , cChain.lzChainId, "Remote addr",portfolioBridgeMain.address)
+    // const results = await portfolioBridgeSub.remoteParams(cChain.lzChainId);
+    // console.log(results.lzRemoteChainId, results.chainListOrgChainId, results.gasForDestination);
+
+    //TODO check to see if it is already set. Ignore if it is.
+    await sourceLzEndPoint.setDestLzEndpoint(
+        destinationPorfolioBridge.address,
+        destLzEndPoint.address
     )
-    await lzTwo.setDestLzEndpoint(
-        bridgeOne.address,
-        lzOne.address
+    await destinationPorfolioBridge.setTrustedRemoteAddress(0, sourceChain.lzChainId, sourcePortfolioBridge.address, sourceChain.chainListOrgId, maxDestinationGas);
+    // console.log("Setting portfolioBridgeMain dest id", dexalotSubnet.lzChainId, "Remote addr",portfolioBridgeSub.address)
+    await destLzEndPoint.setDestLzEndpoint(
+        sourcePortfolioBridge.address,
+        sourceLzEndPoint.address
     )
 }
 
@@ -208,6 +308,7 @@ export const deployTradePairs = async (orderBooks: OrderBooks, portfolio: Portfo
     const TradePairs = await ethers.getContractFactory("TradePairs") as TradePairs__factory;
     const tradePairs: TradePairs = await upgrades.deployProxy(TradePairs, [orderBooks.address, portfolio.address]) as TradePairs;
     await tradePairs.grantRole(await tradePairs.DEFAULT_ADMIN_ROLE(), exchange.address);
+    await tradePairs.grantRole(await tradePairs.EXCHANGE_ROLE(), exchange.address);
     await portfolio.grantRole(await portfolio.EXECUTOR_ROLE(), tradePairs.address);
 
     await exchange.setTradePairs(tradePairs.address);
@@ -313,73 +414,172 @@ export const deployStaking = async (stakingToken: string, rewardToken: string, r
 }
 
 export const deployTokenVestingCloneFactory = async (): Promise<TokenVestingCloneFactory> => {
-    const TokenVestingCloneFactory = await ethers.getContractFactory("TokenVestingCloneFactory") as TokenVestingCloneFactory__factory;
-    const tokenVestingCloneFactory: TokenVestingCloneFactory = await TokenVestingCloneFactory.deploy() as TokenVestingCloneFactory;
+    const TokenVestingCloneFactory = await ethers.getContractFactory("TokenVestingCloneFactory");  //as TokenVestingCloneFactory__factory;
+    const tokenVestingCloneFactory: TokenVestingCloneFactory = await TokenVestingCloneFactory.deploy();  //as TokenVestingCloneFactory;
 
     return tokenVestingCloneFactory;
 }
 
-export const deployCompletePortfolio = async (): Promise<PortfolioContracts> => {
-    const srcChainId = 1;
-    const tokenDecimals = 18;
-    const auctionMode: any = 0;
-    const gasSwapRatioAvax = 0.01;
-    const bridgeFee = '0' ;
-    const portfolioMain = await deployPortfolioMain("AVAX");
-    const portfolioSub = await deployPortfolioSub("ALOT");
+export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPoint=false ): Promise<PortfolioContracts> => {
+    const gasSwap = { avax: 0.01, arb: 0.001, gun: 1 };
+    const bridgeFee = { avax: "0", arb: "0", gun: "0" };
+    const portfolioAvax = await deployPortfolioMain(cChain);
 
-    const lzEndpointMain: LZEndpointMock = await deployLZEndpoint(1);
-    //const lzEndpointSub: LZEndpointMock = await deployLZEndpoint(2);
-    //using same endpoint for testing
-    const portfolioBridgeMain = await deployPortfolioBridge(lzEndpointMain, portfolioMain) as PortfolioBridge;
-    const portfolioBridgeSub = await deployPortfolioBridge(lzEndpointMain, portfolioSub, srcChainId) as PortfolioBridgeSub;
+    const portfolioSub = await deployPortfolioSub(dexalotSubnet.native);
+    const rebateAccounts = await deployRebateAccounts();
+    await portfolioSub.setRebateAccounts(rebateAccounts.address);
 
-    await setRemoteBridges(portfolioBridgeMain, 1, portfolioBridgeSub, 1, lzEndpointMain, lzEndpointMain);
-    // Set the swap Ratio for AVAX in main at deployment
-    await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatioAvax.toString(), tokenDecimals ), true);
-    // Add Avax to portfolioSub that also sets its gasSwapRatio
-    await portfolioSub.addToken(Utils.fromUtf8("AVAX"), "0x0000000000000000000000000000000000000000", srcChainId, tokenDecimals, auctionMode
-        , Utils.parseUnits(bridgeFee,tokenDecimals), Utils.parseUnits(gasSwapRatioAvax.toString(), tokenDecimals ));
+    await rebateAccounts.addAdminAccountForRates(await portfolioSub.feeAddress(), "Fee Address");
+    await rebateAccounts.addAdminAccountForRates(await portfolioSub.getTreasury(), "Treasury Address");
 
-    //ALOT is automatically added and its swap ratio set to 1 in the Portfoliosub contract initialization
-    //ALOT needs to be added to PortfolioMain with the proper address which will also set its gasSwapRatio to 1
+
+    let lzEndpointAvax: LZEndpointMock | MockContract<LZEndpointMock>;
+    let lzEndpointSub: LZEndpointMock | MockContract<LZEndpointMock>;
+
+    if (mockLzEndPoint) {
+        lzEndpointAvax = await deployLZEndpointMock(cChain.lzChainId);
+        lzEndpointSub = await deployLZEndpointMock(dexalotSubnet.lzChainId);
+    } else {
+        lzEndpointAvax = await deployLZEndpoint(cChain.lzChainId);
+        lzEndpointSub = await deployLZEndpoint(dexalotSubnet.lzChainId);
+    }
+
+    const portfolioBridgeAvax = await deployPortfolioBridge(lzEndpointAvax, portfolioAvax) as PortfolioBridgeMain;
+    const portfolioBridgeSub = await deployPortfolioBridge(lzEndpointSub, portfolioSub) as PortfolioBridgeSub;
+    const delayedTransfers = await deployDelayedTransfers(portfolioBridgeSub);
+    await portfolioBridgeSub.setDelayedTransfer(delayedTransfers.address);
+
+    await setRemoteBridges(portfolioBridgeAvax, portfolioBridgeSub, lzEndpointAvax, lzEndpointSub, cChain, dexalotSubnet);
+
+    await addMainnetNativeCoin(portfolioAvax, portfolioSub, cChain, gasSwap.avax, bridgeFee.avax);
+
+    const { other1 } = await getAccounts()
+    const mainnetRFQAvax = await deployMainnetRFQ(other1, portfolioBridgeAvax) ;
+
+    const alot_token_symbol = "ALOT";
+    const alot_token_decimals = 18;
+    const ALOT = Utils.fromUtf8(alot_token_symbol);
+    const alot = await deployMockToken(alot_token_symbol, alot_token_decimals);
+
+    if (addMainnetAlot) {
+        //ALOT needs to be added to PortfolioMain with the proper address which will also set its gasSwapRatio to 1
+        await portfolioAvax.addToken(ALOT, alot.address, cChain.chainListOrgId, alot_token_decimals, '0', ethers.utils.parseUnits('1', alot_token_decimals), false);
+        // ALOT is automatically added and its swap ratio set to 1 in the Portfoliosub contract initialization
+        // BUT ALOT needs to be added to PortfolioBridge independently with the Mainnet Address
+        // PortfolioSub.addToken will ignore the call because it already has ALOT in its tokenList
+        await portfolioBridgeSub.addToken(ALOT, alot.address, cChain.chainListOrgId, alot_token_decimals, 0, ALOT);
+    }
 
     const gasStation = await deployGasStation(portfolioSub);
-    const portfolioMinter = await deployPortfolioMinterMock(portfolioSub, "0x0000000000000000000000000000000000000000");
+    const portfolioMinter = await deployPortfolioMinterMock(portfolioSub, ethers.constants.AddressZero);
 
     return {
-        portfolioMain,
+        portfolioAvax,
         portfolioSub,
         gasStation,
         portfolioMinter,
-        portfolioBridgeMain,
+        delayedTransfers,
+        rebateAccounts,
+        portfolioBridgeAvax,
         portfolioBridgeSub,
-        lzEndpointMain,
+        lzEndpointAvax,
+        lzEndpointSub,
+        mainnetRFQAvax,
+        alot
     }
 }
 
+
+export const deployCompleteMultiChainPortfolio = async (addAvaxChainAlot= false, mockLzEndPoint=false ): Promise<MultiPortfolioContracts> => {
+
+    const gasSwap = { avax: 0.01, arb: 0.001, gun: 1 };
+    const bridgeFee = { avax: "0", arb: "0", gun: "0" };
+
+    const portfolioContracts = await deployCompletePortfolio(addAvaxChainAlot, mockLzEndPoint);
+
+    const portfolioArb = await deployPortfolioMain(arbitrumChain);
+    const portfolioGun = await deployPortfolioMain(gunzillaSubnet);
+
+    let lzEndpointArb: LZEndpointMock | MockContract<LZEndpointMock>;
+    let lzEndpointGun: LZEndpointMock | MockContract<LZEndpointMock>;
+
+    if (mockLzEndPoint) {
+        lzEndpointArb = await deployLZEndpointMock(arbitrumChain.lzChainId);
+        lzEndpointGun = await deployLZEndpointMock(gunzillaSubnet.lzChainId);
+    } else {
+        lzEndpointArb = await deployLZEndpoint(arbitrumChain.lzChainId);
+        lzEndpointGun = await deployLZEndpoint(gunzillaSubnet.lzChainId);
+    }
+
+    const portfolioBridgeArb = await deployPortfolioBridge(lzEndpointArb, portfolioArb) as PortfolioBridgeMain;
+    const portfolioBridgeGun = await deployPortfolioBridge(lzEndpointGun, portfolioGun) as PortfolioBridgeMain;
+
+    await setRemoteBridges(portfolioBridgeArb, portfolioContracts.portfolioBridgeSub, lzEndpointArb, portfolioContracts.lzEndpointSub, arbitrumChain,dexalotSubnet);
+    await setRemoteBridges(portfolioBridgeGun, portfolioContracts.portfolioBridgeSub, lzEndpointGun, portfolioContracts.lzEndpointSub, gunzillaSubnet,dexalotSubnet);
+    await setRemoteBridges(portfolioContracts.portfolioBridgeAvax, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, cChain, gunzillaSubnet);
+    await setRemoteBridges(portfolioBridgeArb, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, arbitrumChain, gunzillaSubnet);
+
+    await addMainnetNativeCoin(portfolioArb, portfolioContracts.portfolioSub, arbitrumChain, gasSwap.arb, bridgeFee.arb);
+    await addMainnetNativeCoin(portfolioGun, portfolioContracts.portfolioSub, gunzillaSubnet, gasSwap.gun, bridgeFee.gun);
+
+    const { other1 } = await getAccounts()
+
+    const mainnetRFQArb = await deployMainnetRFQ(other1, portfolioBridgeArb) ;
+    const mainnetRFQGun = await deployMainnetRFQ(other1, portfolioBridgeGun) ;
+
+    return {
+        portfolioAvax: portfolioContracts.portfolioAvax,
+        portfolioArb,
+        portfolioGun,
+        portfolioSub: portfolioContracts.portfolioSub,
+        gasStation: portfolioContracts.gasStation,
+        portfolioMinter: portfolioContracts.portfolioMinter,
+        portfolioBridgeAvax: portfolioContracts.portfolioBridgeAvax,
+        portfolioBridgeArb,
+        portfolioBridgeGun,
+        portfolioBridgeSub: portfolioContracts.portfolioBridgeSub,
+        lzEndpointAvax: portfolioContracts.lzEndpointAvax,
+        lzEndpointArb,
+        lzEndpointGun,
+        lzEndpointSub: portfolioContracts.lzEndpointSub,
+        mainnetRFQAvax: portfolioContracts.mainnetRFQAvax,
+        mainnetRFQArb,
+        mainnetRFQGun,
+        alot: portfolioContracts.alot
+    }
+}
+
+// Sets-up the native coin of the mainnet chain properly. Mainnet native is added to PortfolioMain at initialization automatically. Hence no need to do it here
+export const addMainnetNativeCoin = async(portfolioMain: PortfolioMain, portfolioSub: PortfolioSub, chainDetails:any,  gasSwap:number, bridgeFee: string, auctionMode=0) => {
+    // Set the swap Ratio for AVAX in main at deployment
+    await portfolioMain.setBridgeParam(chainDetails.nativeBytes32, Utils.parseUnits(bridgeFee, chainDetails.evm_decimals), Utils.parseUnits(gasSwap.toString(), chainDetails.evm_decimals ), true);
+    // Add Avax to portfolioSub that also sets its gasSwapRatio
+    await portfolioSub.addToken(chainDetails.nativeBytes32, ethers.constants.AddressZero, chainDetails.chainListOrgId, chainDetails.evm_decimals, auctionMode
+        , Utils.parseUnits(bridgeFee, chainDetails.evm_decimals), Utils.parseUnits(gasSwap.toString(), chainDetails.evm_decimals ), chainDetails.nativeBytes32);
+}
+
 export const addBaseAndQuoteTokens = async (portfolioMain: PortfolioMain, portfolioSub: PortfolioSub, baseSymbol: string, baseAddr: string, baseDecimals: number, quoteSymbol: string, quoteAddr: string, quoteDecimals:number,  mode: number): Promise<void> => {
-    const srcChainId = 1;
+
     const auctionMode: any = mode;
 
     // add token to portfolio subnet - don't add if it is the native ALOT or AVAX on subnet as they are already added
     if (baseSymbol != Utils.fromUtf8("ALOT") && baseSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding base to Sub" , baseSymbol);
-        await portfolioSub.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',baseDecimals));
+        await portfolioSub.addToken(baseSymbol, baseAddr, cChain.chainListOrgId, baseDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol);
     }
     if (quoteSymbol != Utils.fromUtf8("ALOT") && quoteSymbol != Utils.fromUtf8("AVAX")){
         //console.log ("Adding quote to Sub" , quoteSymbol);
-        await portfolioSub.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
+        await portfolioSub.addToken(quoteSymbol, quoteAddr, cChain.chainListOrgId, quoteDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol);
     }
 
     // add token to portfolio mainnet - don't add if it is the native AVAX on mainnet as they are already added
     if (baseSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding base to Main" , baseSymbol);
-        await portfolioMain.addToken(baseSymbol, baseAddr, srcChainId, baseDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',baseDecimals));
+        await portfolioMain.addToken(baseSymbol, baseAddr, 0,baseDecimals, '0', ethers.utils.parseUnits('0.5',baseDecimals), false);
     }
     if (quoteSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding quote to Main" , quoteSymbol);
-        await portfolioMain.addToken(quoteSymbol, quoteAddr, srcChainId, quoteDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
+        await portfolioMain.addToken(quoteSymbol, quoteAddr, 0,quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals), false);
     }
 
 }
@@ -397,12 +597,12 @@ export const addTradePairFromExchange = async (exchange: ExchangeSub, pair: any,
 }
 
 
-export const addTradePair = async (tradePairs: TradePairs, pair: any, pairSettings: any) => {
+export const addTradePair = async (exchangeSub: ExchangeSub, pair: any, pairSettings: any) => {
     const { owner } = await getAccounts()
     const { baseSymbol,  baseDisplayDecimals, quoteSymbol, quoteDisplayDecimals, quoteDecimals, tradePairId } = pair
     const { minTradeAmount, maxTradeAmount, mode } = pairSettings
 
-    await tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
+    await exchangeSub.connect(owner).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
         quoteSymbol, quoteDisplayDecimals,
         Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
         Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode);
@@ -431,11 +631,16 @@ export const depositToken = async (portfolio: PortfolioMain, from:SignerWithAddr
     });
 }
 
+
 export const withdrawToken = async (portfolio: PortfolioSub, from:SignerWithAddress, tokenSymbol: string, tokenDecimals: number, amount: string, bridgeProvider =0): Promise<any> => {
-    return await portfolio.connect(from).withdrawToken(from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider);
+     return await (<any> portfolio).connect(from)["withdrawToken(address,bytes32,uint256,uint8)"]( from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider);
 }
 
-export const setBridgeSubSettings = async (portfolioBridge: PortfolioBridgeSub, settings: any) => {
+export const withdrawTokenToDst = async (portfolio: PortfolioSub, from:SignerWithAddress, tokenSymbol: string, tokenDecimals: number, amount: string, dstChainId: number , bridgeProvider =0): Promise<any> => {
+    return await (<any> portfolio).connect(from)["withdrawToken(address,bytes32,uint256,uint8,uint32)"]( from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider, dstChainId);
+}
+
+export const setBridgeSubSettings = async (delayedTransfers: DelayedTransfers, settings: any) => {
     const {
         delayPeriod,
         epochLength,
@@ -443,68 +648,100 @@ export const setBridgeSubSettings = async (portfolioBridge: PortfolioBridgeSub, 
         epochVolumeCap,
         delayThreshold
     } = settings;
-    await portfolioBridge.setDelayPeriod(delayPeriod);
-    await portfolioBridge.setEpochLength(epochLength);
-    await portfolioBridge.setEpochVolumeCaps(
+    await delayedTransfers.setDelayPeriod(delayPeriod);
+    await delayedTransfers.setEpochLength(epochLength);
+    await delayedTransfers.setEpochVolumeCaps(
         [token],
         [epochVolumeCap]
     )
-    await portfolioBridge.setDelayThresholds(
+    await delayedTransfers.setDelayThresholds(
         [token],
         [delayThreshold]
     );
 }
 
-export const packQuote = (
-    nonceAndMeta: string,
-    expiry: number,
-    makerAsset: string,
-    takerAsset: string,
-    maker: string,
-    taker: string,
-    makerAmount: string,
-    takerAmount: string,
-  ): any => {
-    const rawArray = [
-      nonceAndMeta,
-      expiry,
-      makerAsset.toLowerCase(),
-      takerAsset.toLowerCase(),
-      maker.toLowerCase(),
-      taker.toLowerCase(),
-      makerAmount,
-      takerAmount,
-    ];
 
-    const packed = ethers.utils.solidityKeccak256(
-      [
-        "uint256",
-        "uint256",
-        "address",
-        "address",
-        "address",
-        "address",
-        "uint256",
-        "uint256",
-      ],
-      rawArray
-    );
-    const rawObject: MainnetRFQ.QuoteStruct = {
-      nonceAndMeta: rawArray[0],
-      expiry: rawArray[1],
-      makerAsset: rawArray[2],
-      takerAsset: rawArray[3],
-      maker: rawArray[4],
-      taker: rawArray[5],
-      makerAmount: rawArray[6],
-      takerAmount: rawArray[7],
-    };
+export const printTokens =  async (portfolioMainArray: PortfolioMain[], portfolioSub: PortfolioSub, portfolioBridgeSub: PortfolioBridgeSub) =>{
+    console.log("*********************");
+    for (const portfolioMain of portfolioMainArray) {
+        const  tokenList = await portfolioMain.getTokenList()
+        console.log("Token List in Portfolio", Utils.toUtf8(await portfolioMain.native()));
+        console.log("Symbol, SymbolId, Decimals, address                        , auction, SrcChainSym, isVirtual");
+        for (const element of tokenList) {
+            const tdet = await portfolioMain.getTokenDetails(element);
+            console.log(Utils.toUtf8(tdet.symbol), Utils.toUtf8(tdet.symbolId), tdet.decimals, tdet.tokenAddress, tdet.auctionMode, Utils.toUtf8(tdet.sourceChainSymbol), tdet.isVirtual)
+        }
+    }
+    const tokenList = await portfolioSub.getTokenList()
+    console.log("Token List in Portfolio Sub:")
+    console.log("Symbol, SymbolId, Decimals, address                        , auction, SrcChainSym, isVirtual");
+    for (const element of tokenList) {
+        const tdet = await portfolioSub.getTokenDetails(element);
+        console.log(Utils.toUtf8(tdet.symbol), Utils.toUtf8(tdet.symbolId), tdet.decimals, tdet.tokenAddress, tdet.auctionMode, Utils.toUtf8(tdet.sourceChainSymbol), tdet.isVirtual)
+    }
 
-    return {
-      raw: rawObject,
-      packed,
-    };
-  };
+    if (portfolioBridgeSub) {
+        const  tokenList = await portfolioBridgeSub.getTokenList()
+        console.log("Token List in Portfolio Bridge Sub:")
+        console.log("Symbol, SymbolId, Decimals, address                        , auction, SrcChainSym, isVirtual");
+        for (const element of tokenList) {
+            const tdet = await portfolioBridgeSub.getTokenDetails(element);
+            console.log(Utils.toUtf8(tdet.symbol), Utils.toUtf8(tdet.symbolId), tdet.decimals, tdet.tokenAddress, tdet.auctionMode, Utils.toUtf8(tdet.sourceChainSymbol), tdet.isVirtual);
+        }
+    }
+}
+
+
+// export const packQuote = (
+//     nonceAndMeta: string,
+//     expiry: number,
+//     makerAsset: string,
+//     takerAsset: string,
+//     maker: string,
+//     taker: string,
+//     makerAmount: string,
+//     takerAmount: string,
+//   ): any => {
+//     const rawArray = [
+//       nonceAndMeta,
+//       expiry,
+//       makerAsset.toLowerCase(),
+//       takerAsset.toLowerCase(),
+//       maker.toLowerCase(),
+//       taker.toLowerCase(),
+//       makerAmount,
+//       takerAmount,
+//     ];
+
+//     const packed = ethers.utils.solidityKeccak256(
+//       [
+//         "uint256",
+//         "uint256",
+//         "address",
+//         "address",
+//         "address",
+//         "address",
+//         "uint256",
+//         "uint256",
+//       ],
+//       rawArray
+//     );
+//     const rawObject: MainnetRFQ.OrderStruct = {
+//       nonceAndMeta: rawArray[0],
+//       expiry: rawArray[1],
+//       makerAsset: rawArray[2],
+//       takerAsset: rawArray[3],
+//       maker: rawArray[4],
+//       taker: rawArray[5],
+//       makerAmount: rawArray[6],
+//       takerAmount: rawArray[7],
+//     };
+
+//     return {
+//       raw: rawObject,
+//       packed,
+//     };
+//   };
 
 export const getMakerFromMnemonic = (index: number): Wallet => {
 const wallet = ethers.Wallet.fromMnemonic(

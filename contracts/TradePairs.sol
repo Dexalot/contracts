@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.3");
+    bytes32 public constant VERSION = bytes32("2.5.0");
 
     // denominator for rate calculations
     uint256 public constant TENK = 10000;
@@ -71,6 +71,7 @@ contract TradePairs is
     uint8 private constant EXECUTED_VERSION = 1;
     uint8 private constant PARAMETER_UPDATED_VERSION = 1;
     uint256 public maxNbrOfFills;
+    bytes32 public constant EXCHANGE_ROLE = keccak256("EXCHANGE_ROLE");
 
     /**
      * @notice  initializer function for Upgradeable TradePairs
@@ -94,12 +95,11 @@ contract TradePairs is
 
     /**
      * @notice  Adds a new TradePair
-     * @dev     Only DEFAULT_ADMIN or ExchangeSub can call this function which has this role.
-     * Both the base and quote symbols must exist in the PortfolioSub otherwise it will revert.
+     * @dev     Should only be called by ExchangeSub which has this DEFAULT_ADMIN role.
      * @param   _tradePairId  id of the trading pair
-     * @param   _baseSymbol  symbol of the base asset
+     * @param   _baseTokenDetails  base asset details from PortfolioSub
      * @param   _baseDisplayDecimals  display decimals of the base Asset. Quantity increment
-     * @param   _quoteSymbol  symbol of the quote asset
+     * @param   _quoteTokenDetails  quote asset details from PortfolioSub
      * @param   _quoteDisplayDecimals  display decimals of the quote Asset. Price increment
      * @param   _minTradeAmount  minimum trade amount
      * @param   _maxTradeAmount  maximum trade amount
@@ -107,39 +107,20 @@ contract TradePairs is
      */
     function addTradePair(
         bytes32 _tradePairId,
-        bytes32 _baseSymbol,
+        IPortfolio.TokenDetails calldata _baseTokenDetails,
         uint8 _baseDisplayDecimals,
-        bytes32 _quoteSymbol,
+        IPortfolio.TokenDetails calldata _quoteTokenDetails,
         uint8 _quoteDisplayDecimals,
         uint256 _minTradeAmount,
         uint256 _maxTradeAmount,
         AuctionMode _mode
-    ) external override {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "T-OACC-01");
+    ) external override onlyRole(EXCHANGE_ROLE) {
         TradePair storage tradePair = tradePairMap[_tradePairId];
-
-        checkMirrorPair(_baseSymbol, _quoteSymbol);
 
         if (tradePair.baseSymbol == "") {
             EnumerableSetUpgradeable.UintSet storage enumSet = allowedOrderTypes[_tradePairId];
             enumSet.add(uint256(Type1.LIMIT)); // LIMIT orders always allowed
             //enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
-
-            IPortfolio.TokenDetails memory baseTokenDetails = IPortfolio(address(portfolio)).getTokenDetails(
-                _baseSymbol
-            );
-            IPortfolio.TokenDetails memory quoteTokenDetails = IPortfolio(address(portfolio)).getTokenDetails(
-                _quoteSymbol
-            );
-            require(
-                baseTokenDetails.decimals >= _baseDisplayDecimals &&
-                    quoteTokenDetails.decimals >= _quoteDisplayDecimals,
-                "E-TNAP-01"
-            );
-            require(
-                baseTokenDetails.auctionMode == _mode && quoteTokenDetails.auctionMode == ITradePairs.AuctionMode.OFF,
-                "E-TNSA-01"
-            );
 
             bytes32 buyBookId = UtilsLibrary.stringToBytes32(
                 string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-BUYBOOK"))
@@ -149,11 +130,11 @@ contract TradePairs is
             );
             orderBooks.addToOrderbooks(buyBookId, Side.BUY);
             orderBooks.addToOrderbooks(sellBookId, Side.SELL);
-            tradePair.baseSymbol = _baseSymbol;
-            tradePair.baseDecimals = baseTokenDetails.decimals;
+            tradePair.baseSymbol = _baseTokenDetails.symbol;
+            tradePair.baseDecimals = _baseTokenDetails.decimals;
             tradePair.baseDisplayDecimals = _baseDisplayDecimals;
-            tradePair.quoteSymbol = _quoteSymbol;
-            tradePair.quoteDecimals = quoteTokenDetails.decimals;
+            tradePair.quoteSymbol = _quoteTokenDetails.symbol;
+            tradePair.quoteDecimals = _quoteTokenDetails.decimals;
             tradePair.quoteDisplayDecimals = _quoteDisplayDecimals;
             tradePair.minTradeAmount = _minTradeAmount;
             tradePair.maxTradeAmount = _maxTradeAmount;
@@ -180,27 +161,6 @@ contract TradePairs is
                 _maxTradeAmount
             );
         }
-    }
-
-    /**
-     * @notice  Checks to see if a mirror pair exists
-     * @dev     Checks to see if USDC/AVAX exists when trying to add AVAX/USDC
-     * Mirror pairs are not allowed to avoid confusion from a user perspective.
-     * @param   _baseSymbol  base Symbol of the pair to be added
-     * @param   _quoteSymbol  quote Symbol of the pair to be added
-     */
-    function checkMirrorPair(bytes32 _baseSymbol, bytes32 _quoteSymbol) private view {
-        bytes32 mirrorPairId = UtilsLibrary.stringToBytes32(
-            string(
-                abi.encodePacked(
-                    UtilsLibrary.bytes32ToString(_quoteSymbol),
-                    "/",
-                    UtilsLibrary.bytes32ToString(_baseSymbol)
-                )
-            )
-        );
-
-        require(tradePairMap[mirrorPairId].baseSymbol == "", "T-MPNA-01");
     }
 
     /**
@@ -592,18 +552,6 @@ contract TradePairs is
         return idCounter++;
     }
 
-    // get quote amount
-    /**
-     * @notice  Returns the quote amount for a given price and quantity
-     * @param   _tradePairId  id of the trading pair
-     * @param   _price  price
-     * @param   _quantity  quantity
-     * @return  uint256  quote amount
-     */
-    function getQuoteAmount(bytes32 _tradePairId, uint256 _price, uint256 _quantity) private view returns (uint256) {
-        return (_price * _quantity) / 10 ** tradePairMap[_tradePairId].baseDecimals;
-    }
-
     /**
      * @notice  Emits a given order's latest state
      * @dev     The details of the emitted event is as follows: \
@@ -668,29 +616,17 @@ contract TradePairs is
      * @dev     Updates the `totalAmount`, `quantityFilled`, `totalFee` and the status of the order.
      * Commissions are rounded down based on evm and display decimals to avoid DUST
      * @param   _orderId  order id to update
-     * @param   _price  execution price (Can be better than or equal to order price)
      * @param   _quantity  execution quantity
-     * @param   _rate  maker or taker rate
-     * @return  uint256  last fee charged
+     * @param   _quoteAmount  quote amount
+     * @param   _fee  fee (commission) paid for the order
+
      */
-    function handleExecution(
-        bytes32 _orderId,
-        uint256 _price,
-        uint256 _quantity,
-        uint8 _rate
-    ) private returns (uint256) {
+    function updateOrder(bytes32 _orderId, uint256 _quantity, uint256 _quoteAmount, uint256 _fee) private {
         Order storage order = orderMap[_orderId];
-        TradePair storage tradePair = tradePairMap[order.tradePairId];
         order.quantityFilled = order.quantityFilled + _quantity;
         order.status = order.quantity == order.quantityFilled ? Status.FILLED : Status.PARTIAL;
-        uint256 amount = getQuoteAmount(order.tradePairId, _price, _quantity);
-        order.totalAmount = order.totalAmount + amount;
-        // Rounding Down the fee based on display decimals to avoid DUST
-        uint256 lastFeeRounded = order.side == Side.BUY
-            ? UtilsLibrary.floor((_quantity * _rate) / TENK, tradePair.baseDecimals - tradePair.baseDisplayDecimals)
-            : UtilsLibrary.floor((amount * _rate) / TENK, tradePair.quoteDecimals - tradePair.quoteDisplayDecimals);
-        order.totalFee = order.totalFee + lastFeeRounded;
-        return lastFeeRounded;
+        order.totalAmount = order.totalAmount + _quoteAmount;
+        order.totalFee = order.totalFee + _fee;
     }
 
     /**
@@ -706,20 +642,19 @@ contract TradePairs is
         Order storage makerOrder = orderMap[_makerOrderId];
         TradePair storage tradePair = tradePairMap[makerOrder.tradePairId];
         Order storage takerOrder = orderMap[_takerOrderId];
-        uint256 mlastFee = handleExecution(makerOrder.id, _price, _quantity, tradePair.makerRate);
-        uint256 tlastFee = handleExecution(takerOrder.id, _price, _quantity, tradePair.takerRate);
-        uint256 qAmount = getQuoteAmount(makerOrder.tradePairId, _price, _quantity);
-        portfolio.addExecution(
+
+        uint256 quoteAmount = UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, _price, _quantity);
+        (uint256 mlastFee, uint256 tlastFee) = portfolio.addExecution(
+            makerOrder.tradePairId,
+            tradePair,
             makerOrder.side,
             makerOrder.traderaddress,
             takerOrder.traderaddress,
-            tradePair.baseSymbol,
-            tradePair.quoteSymbol,
             _quantity,
-            qAmount,
-            mlastFee,
-            tlastFee
+            quoteAmount
         );
+        updateOrder(makerOrder.id, _quantity, quoteAmount, mlastFee);
+        updateOrder(takerOrder.id, _quantity, quoteAmount, tlastFee);
         emitExecuted(_price, _quantity, makerOrder.id, takerOrder.id, mlastFee, tlastFee);
         emitStatusUpdate(makerOrder.id); // EMIT maker order's status update
     }
@@ -860,7 +795,7 @@ contract TradePairs is
             }
         }
 
-        uint256 tradeAmnt = getQuoteAmount(_tradePairId, _price, _quantity);
+        uint256 tradeAmnt = UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, _price, _quantity);
 
         // a market order will be rejected/reverted here if there is an empty orderbook because _price will be 0
         if (tradeAmnt < tradePair.minTradeAmount) {
@@ -1071,7 +1006,9 @@ contract TradePairs is
                 bytes32 bookIdSameSide = _side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
                 orderBooks.addOrder(bookIdSameSide, order.id, order.price);
 
-                uint256 adjAmount = _side == Side.BUY ? getQuoteAmount(_tradePairId, _price, _quantity) : _quantity;
+                uint256 adjAmount = _side == Side.BUY
+                    ? UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, _price, _quantity)
+                    : _quantity;
                 portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
             }
         }
@@ -1171,7 +1108,11 @@ contract TradePairs is
                     IPortfolio.Tx.INCREASEAVAIL,
                     makerOrder.traderaddress,
                     tradePair.quoteSymbol,
-                    getQuoteAmount(makerOrder.tradePairId, makerOrder.price - tradePair.auctionPrice, quantity)
+                    UtilsLibrary.getQuoteAmount(
+                        tradePair.baseDecimals,
+                        makerOrder.price - tradePair.auctionPrice,
+                        quantity
+                    )
                 );
             }
             removeClosedOrder(makerOrder.id);
@@ -1264,7 +1205,7 @@ contract TradePairs is
     /**
      * @notice  Cancels an order given the order id supplied
      * @dev     Will revert with "T-OAEX-01" if order is already filled or canceled
-     * if order doesn't exist in can be canceled because FILLED & CANCELED orders are removed.
+     * if order doesn't exist it can't be canceled because FILLED & CANCELED orders are removed.
      * The remaining status are NEW & PARTIAL which are ok to cancel
      * @param   _orderId  order id to cancel
      */
@@ -1278,19 +1219,102 @@ contract TradePairs is
     }
 
     /**
+     * @notice  To Cancel/Replace multiple Orders in a single transaction designed specifically for Market Makers
+     * @dev     Make sure that each array is ordered properly.
+     * Cancels the first order in the list and immediately enters a similar order in the same direction, then repeats it
+     * for the next order in the list. Only the quantity and the price of the order can be changed. All the other order
+     * fields are copied from the canceled order to the new order.
+     * CAUTION: The time priority of the original order is lost!
+     * Canceled order's locked quantity is made available for the new order within this tx.
+     * Call with Maximum ~15 orders at a time for a block size of 30M
+     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already
+     * canceled/filled while continuing to cancel/replace the remaining open orders in the list. \
+     * Because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
+     * event except "orderId", "traderaddress", "status" and "code" fields will be empty/default values. This includes the
+     * indexed field "pair" which you may use as filters for your event listeners. Hence you should process the
+     * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
+     * filtering your events using the "pair" field.
+     * if a single order in the list reverts the entire list is reverted. This function will only revert if it fails
+     * pair level checks, which are tradePair.pairPaused or tradePair.addOrderPaused \
+     * It can potentially revert if type2= FOK is used. Safe to use with IOC. \
+     * For the rest of the order level check failures, It will reject those orders by emitting
+     * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
+     * The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
+     * added to the blockchain. \
+     * Order rejects will only be raised if called from this function. Single orders entered using addOrder
+     * function will revert as before for backward compatibility. \
+     * See addOrderChecks function. Every line that starts with  return (0, rejectReason) will be rejected.
+     * @param   _orderIds  order ids to be replaces
+     * @param   _clientOrderIds  Array of unique id provided by the owner of the orders that will be assigned
+     * to replaced orders
+     * @param   _prices  Array of prices
+     * @param   _quantities  Array of quantities
+     */
+    function cancelReplaceList(
+        bytes32[] calldata _orderIds,
+        bytes32[] calldata _clientOrderIds,
+        uint256[] calldata _prices,
+        uint256[] calldata _quantities
+    ) external nonReentrant whenNotPaused {
+        for (uint256 i = 0; i < _orderIds.length; ++i) {
+            Order storage order = orderMap[_orderIds[i]];
+            if (order.id != bytes32(0)) {
+                require(order.traderaddress == msg.sender, "T-OOCC-01");
+                (bytes32 tradePairId, Side side, Type1 type1, Type2 type2) = (
+                    order.tradePairId,
+                    order.side,
+                    order.type1,
+                    order.type2
+                );
+
+                doOrderCancel(order.id);
+                addOrderPrivate(
+                    msg.sender,
+                    _clientOrderIds[i],
+                    tradePairId,
+                    _prices[i],
+                    _quantities[i],
+                    side,
+                    type1,
+                    type2,
+                    true
+                );
+            } else {
+                emit OrderStatusChanged(
+                    ORDER_STATUS_CHANGED_VERSION,
+                    msg.sender, //assuming msg sender is the owner of the order to be canceled.
+                    bytes32(0), //assigning empty value as actual order value not available
+                    _orderIds[i],
+                    bytes32(0), //assigning empty value as actual order value not available
+                    0,
+                    0,
+                    0,
+                    Side.BUY, //assigning default value as actual order value not available
+                    Type1.LIMIT, //assigning default value as actual order value not available
+                    Type2.GTC, //assigning default value as actual order value not available
+                    Status.CANCEL_REJECT,
+                    0,
+                    0,
+                    UtilsLibrary.stringToBytes32("T-OAEX-01") // Reject reason
+                );
+            }
+        }
+    }
+
+    /**
      * @notice  Cancels all the orders in the array of order ids supplied
      * @dev     This function may run out of gas if a trader is trying to cancel too many orders
      * Call with Maximum ~50 orders at a time for a block size of 30M
      * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already
      * canceled/filled while continuing to cancel the remaining open orders in the list. \
      * Because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
-     * event except "orderId", "status" and "code" fields will be empty/default values. This includes the indexed fields
-     * "traderaddress" and "pair" which you may use as filters for your event listeners. Hence you should process the
+     * event except "orderId", "traderaddress", "status" and "code" fields will be empty/default values. This includes the
+     * indexed field "pair" which you may use as filters for your event listeners. Hence you should process the
      * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
-     * filtering your events using those 2 indexed fields.
+     * filtering your events using the "pair" field.
      * @param   _orderIds  array of order ids
      */
-    function cancelOrderList(bytes32[] memory _orderIds) external override nonReentrant whenNotPaused {
+    function cancelOrderList(bytes32[] calldata _orderIds) external override nonReentrant whenNotPaused {
         for (uint256 i = 0; i < _orderIds.length; ++i) {
             Order storage order = orderMap[_orderIds[i]];
             if (order.id != bytes32(0)) {
@@ -1302,7 +1326,7 @@ contract TradePairs is
             } else {
                 emit OrderStatusChanged(
                     ORDER_STATUS_CHANGED_VERSION,
-                    address(0), //assigning 0 address as actual order value not available
+                    msg.sender, //assuming msg sender is the owner of the order to be canceled.
                     bytes32(0), //assigning empty value as actual order value not available
                     _orderIds[i],
                     bytes32(0), //assigning empty value as actual order value not available
@@ -1335,8 +1359,8 @@ contract TradePairs is
         bytes32 bookId = order.side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
         bytes32 adjSymbol = order.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
         uint256 adjAmount = order.side == Side.BUY
-            ? getQuoteAmount(
-                order.tradePairId,
+            ? UtilsLibrary.getQuoteAmount(
+                tradePair.baseDecimals,
                 order.price,
                 UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled)
             )

@@ -10,7 +10,6 @@ import {
     ExchangeMain,
     MockToken,
     PortfolioMain,
-    PriceFeedMock__factory,
     TokenVestingCloneable__factory,
     TokenVestingCloneFactory,
     TokenVestingCloneable,
@@ -21,9 +20,10 @@ import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { ContractFactory } from 'ethers';
 
 describe("Exchange Main", function () {
-    let PriceFeed: PriceFeedMock__factory;
+    let PriceFeed: ContractFactory;
     let mockToken: MockToken;
     let exchange: ExchangeMain;
     let portfolio: PortfolioMain;
@@ -55,8 +55,8 @@ describe("Exchange Main", function () {
     });
 
     beforeEach(async function () {
-        const {portfolioMain: portfolioM} = await f.deployCompletePortfolio();
-        portfolio = portfolioM;
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolio = portfolioContracts.portfolioAvax;
         exchange = await f.deployExchangeMain(portfolio)
         mockToken = await f.deployMockToken("MOCK", 18);
         PriceFeed = await ethers.getContractFactory("PriceFeedMock");
@@ -70,20 +70,21 @@ describe("Exchange Main", function () {
         });
 
         it("Should use addToken correctly by auction admin", async function () {
-            const srcChainId = 1;
             const token_decimals = 18;
-            const auctionMode: any = 0;
+            const { cChain } = f.getChains();
+
+            const srcChainListOrgId= cChain.chainListOrgId;
 
             // fail for non-admin & Admin
-            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address, srcChainId, token_decimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
-            await expect(exchange.addToken(MOCK, mockToken.address, srcChainId, token_decimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
 
             await exchange.removeAdmin(auctionAdmin.address);
-            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainId, token_decimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
 
             // succeed for auctionAdmin
             await exchange.addAuctionAdmin(auctionAdmin.address);
-            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainId, token_decimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals));
+            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false);
         });
 
 
@@ -160,7 +161,7 @@ describe("Exchange Main", function () {
             tokenVesting = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
 
-            const auction_role_admin = exchange.AUCTION_ADMIN_ROLE();
+            const auction_role_admin = await exchange.AUCTION_ADMIN_ROLE();
             // ADD exchange as a default admin to portfolio,
             await portfolio.grantRole(auction_role_admin, exchange.address)
             // fail for non admin account

@@ -3,6 +3,7 @@
 pragma solidity 0.8.17;
 
 import "./ITradePairs.sol";
+import "./IPortfolio.sol";
 
 /**
  * @title Interface of PortfolioBridgeSub
@@ -14,22 +15,22 @@ import "./ITradePairs.sol";
 
 interface IPortfolioBridgeSub {
     function addToken(
-        bytes32 _symbol,
-        address _tokenaddress,
+        bytes32 _srcChainSymbol,
+        address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
-        ITradePairs.AuctionMode _mode
+        ITradePairs.AuctionMode,
+        bytes32 _subnetSymbol
     ) external;
 
-    function removeToken(bytes32 _symbol, uint32 _srcChainId) external;
+    function removeToken(
+        bytes32 _srcChainSymbol,
+        uint32 _srcChainId,
+        bytes32 _subnetSymbol
+    ) external returns (bool deleted);
 
-    function executeDelayedTransfer(bytes32 _id) external;
+    function getTokenDetails(bytes32 _symbolId) external view returns (IPortfolio.TokenDetails memory);
 
-    function setDelayThresholds(bytes32[] calldata _tokens, uint256[] calldata _thresholds) external;
+    function executeDelayedTransfer(uint16 _dstChainId, bytes32 _id) external;
 
-    function setDelayPeriod(uint256 _period) external;
-
-    function setEpochLength(uint256 _length) external;
-
-    function setEpochVolumeCaps(bytes32[] calldata _tokens, uint256[] calldata _caps) external;
 }
