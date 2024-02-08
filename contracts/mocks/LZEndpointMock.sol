@@ -6,6 +6,7 @@ pragma abicoder v2;
 import "../interfaces/layerZero/ILayerZeroReceiver.sol";
 import "../interfaces/layerZero/ILayerZeroEndpoint.sol";
 import "./LzLib.sol";
+import "hardhat/console.sol";
 
 /*
 like a real LayerZero endpoint but can be mocked, which handle message transmission, verification, and receipt.
@@ -68,7 +69,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     struct StoredPayload {
         uint64 payloadLength;
         address dstAddress;
-        bytes32 payloadHash;
+        bytes payloadHash; // Changed to bytes from bytes32 by Cengiz to access the payload when testing
     }
 
     struct QueuedPayload {
@@ -185,11 +186,13 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     ) external override receiveNonReentrant {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
 
+        //console.log("Receive nextMsgBlocked", nextMsgBlocked);
         // assert and increment the nonce. no message shuffling
         require(_nonce == ++inboundNonce[_srcChainId][_path], "LayerZeroMock: wrong nonce");
 
         // queue the following msgs inside of a stack to simulate a successful send on src, but not fully delivered on dst
-        if (sp.payloadHash != bytes32(0)) {
+        if (sp.payloadLength != 0) { //sp.payloadHash != bytes32(0);
+            //console.log("Inside the first if ");
             QueuedPayload[] storage msgs = msgsToDeliver[_srcChainId][_path];
             QueuedPayload memory newMsg = QueuedPayload(_dstAddress, _nonce, _payload);
 
@@ -210,23 +213,28 @@ contract LZEndpointMock is ILayerZeroEndpoint {
                 msgs.push(newMsg);
             }
         } else if (nextMsgBlocked) {
-            storedPayload[_srcChainId][_path] = StoredPayload(
-                uint64(_payload.length),
-                _dstAddress,
-                keccak256(_payload)
-            );
+            // storedPayload[_srcChainId][_path] = StoredPayload(
+            //     uint64(_payload.length),
+            //     _dstAddress,
+            //     keccak256(_payload)
+            // );
+            storedPayload[_srcChainId][_path] = StoredPayload(uint64(_payload.length), _dstAddress, _payload);
+            //console.log("Emitting PayloadStored", address(this));
             emit PayloadStored(_srcChainId, _path, _dstAddress, _nonce, _payload, bytes(""));
             // ensure the next msgs that go through are no longer blocked
             nextMsgBlocked = false;
         } else {
+            //console.log("Trying to deliver payload");
             try
                 ILayerZeroReceiver(_dstAddress).lzReceive{gas: _gasLimit}(_srcChainId, _path, _nonce, _payload)
             {} catch (bytes memory reason) {
-                storedPayload[_srcChainId][_path] = StoredPayload(
-                    uint64(_payload.length),
-                    _dstAddress,
-                    keccak256(_payload)
-                );
+                //console.log("Emitting PayloadStored while trying to deliver payload", address(this));
+                // storedPayload[_srcChainId][_path] = StoredPayload(
+                //     uint64(_payload.length),
+                //     _dstAddress,
+                //     keccak256(_payload)
+                // );
+                storedPayload[_srcChainId][_path] = StoredPayload(uint64(_payload.length), _dstAddress, _payload);
                 emit PayloadStored(_srcChainId, _path, _dstAddress, _nonce, _payload, reason);
                 // ensure the next msgs that go through are no longer blocked
                 nextMsgBlocked = false;
@@ -268,9 +276,10 @@ contract LZEndpointMock is ILayerZeroEndpoint {
 
     function retryPayload(uint16 _srcChainId, bytes calldata _path, bytes calldata _payload) external override {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
-        require(sp.payloadHash != bytes32(0), "LayerZeroMock: no stored payload");
+        require(sp.payloadLength != 0, "LayerZeroMock: no stored payload"); //sp.payloadHash != bytes32(0);
         require(
-            _payload.length == sp.payloadLength && keccak256(_payload) == sp.payloadHash,
+            //_payload.length == sp.payloadLength && keccak256(_payload) == sp.payloadHash,
+            _payload.length == sp.payloadLength && keccak256(_payload) == keccak256(sp.payloadHash),
             "LayerZeroMock: invalid payload"
         );
 
@@ -278,7 +287,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
         // empty the storedPayload
         sp.payloadLength = 0;
         sp.dstAddress = address(0);
-        sp.payloadHash = bytes32(0);
+        sp.payloadHash = ""; //bytes32(0);
 
         uint64 nonce = inboundNonce[_srcChainId][_path];
 
@@ -288,7 +297,7 @@ contract LZEndpointMock is ILayerZeroEndpoint {
 
     function hasStoredPayload(uint16 _srcChainId, bytes calldata _path) external view override returns (bool) {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
-        return sp.payloadHash != bytes32(0);
+        return sp.payloadLength != 0; //sp.payloadHash != bytes32(0);
     }
 
     function getSendLibraryAddress(address) external view override returns (address) {
@@ -338,13 +347,13 @@ contract LZEndpointMock is ILayerZeroEndpoint {
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _path) external override {
         StoredPayload storage sp = storedPayload[_srcChainId][_path];
         // revert if no messages are cached. safeguard malicious UA behavior
-        require(sp.payloadHash != bytes32(0), "LayerZeroMock: no stored payload");
+        require(sp.payloadLength != 0, "LayerZeroMock: no stored payload"); //sp.payloadHash != bytes32(0);
         require(sp.dstAddress == msg.sender, "LayerZeroMock: invalid caller");
 
         // empty the storedPayload
         sp.payloadLength = 0;
         sp.dstAddress = address(0);
-        sp.payloadHash = bytes32(0);
+        sp.payloadHash = ""; // bytes32(0);
 
         emit UaForceResumeReceive(_srcChainId, _path);
 

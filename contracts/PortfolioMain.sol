@@ -25,7 +25,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.3.0");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -46,7 +46,57 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         minDepositMultiplier = 19; // 19/10 1.9 times
         // Always Add native with 0 Bridge Fee and 0.01 gasSwapRatio (1 AVAX for 1 ALOT)
         // This value will be adjusted periodically
-        addTokenInternal(native, address(0), _chainId, 18, ITradePairs.AuctionMode.OFF, 0, 1 * 10 ** 16);
+        TokenDetails memory details = TokenDetails(
+            18,
+            address(0),
+            ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
+            _chainId,
+            native,
+            bytes32(0),
+            native,
+            false
+        );
+
+        addTokenInternal(details, 0, 1 * 10 ** 16);
+    }
+
+    /**
+     * @notice  Adds the given token to the portfolio
+     * @dev     Only callable by admin.
+     * We don't allow tokens with the same symbols but different addresses.
+     * Native symbol is also added by default with 0 address.
+     * @param   _symbol  Symbol of the token
+     * @param   _tokenAddress  Address of the token
+     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by the current chainid
+     * @param   _decimals  Decimals of the token
+     * @param   _fee  Bridge Fee
+     * @param   _gasSwapRatio  Amount of token to swap per ALOT
+     * @param   _isVirtual  Not an ERC20 or native. It is only used to facilitate Cross Chain Trades where the token doesn't exist
+     */
+    function addToken(
+        bytes32 _symbol,
+        address _tokenAddress,
+        uint32 _srcChainId,
+        uint8 _decimals,
+        uint256 _fee,
+        uint256 _gasSwapRatio,
+        bool _isVirtual
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        // Can't add Native Token because it has already been added in the Portfolio initialization
+        if (_symbol != native) {
+            TokenDetails memory details = TokenDetails(
+                _decimals,
+                _tokenAddress,
+                ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
+                 _isVirtual ? _srcChainId : chainId, // always add with the chain id of the Portfolio unless virtual
+                _symbol,
+                bytes32(0),
+                _symbol,
+                _isVirtual
+            );
+
+            addTokenInternal(details, _fee, _gasSwapRatio);
+        }
     }
 
     /**
@@ -62,42 +112,20 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * SLIME SLIME43114 18 0x2B0d36FACD61B71CC05ab8F3D2355ec3631C0dd5 0 \
      * USDC USDC43114 6 0xD5ac451B0c50B9476107823Af206eD814a2e2580 0 \
      * USDt USDt43114 6 0x38a024C0b412B9d1db8BC398140D00F5Af3093D4 0 \
-     * @param   _symbol  Symbol of the token
-     * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain id
-     * @param   _decimals  Decimals of the token
+     * @param   _details  Token Details
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
      */
-    function addTokenInternal(
-        bytes32 _symbol,
-        address _tokenAddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode, // not relevant in the mainnet
-        uint256 _fee,
-        uint256 _gasSwapRatio
-    ) internal override {
-        //In the mainnet sourceChain should be the same as the chainId specified in the contract
-        require(_srcChainId == chainId, "P-SCEM-01");
-
-        super.addTokenInternal(
-            _symbol,
-            _tokenAddress,
-            _srcChainId,
-            _decimals,
-            ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
-            _fee,
-            _gasSwapRatio
-        );
+    function addTokenInternal(TokenDetails memory _details, uint256 _fee, uint256 _gasSwapRatio) internal override {
+        super.addTokenInternal(_details, _fee, _gasSwapRatio);
         // Tokens can't be used to swap gas by default
-        setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, _symbol == bytes32("ALOT") ? true : false);
-        if (_symbol != native) {
-            require(_tokenAddress != address(0), "P-ZADDR-01");
-            IERC20MetadataUpgradeable assetIERC20 = IERC20MetadataUpgradeable(_tokenAddress);
-            require(UtilsLibrary.stringToBytes32(assetIERC20.symbol()) == _symbol, "P-TSDM-01");
-            require(assetIERC20.decimals() == _decimals, "P-TDDM-01");
-            tokenMap[_symbol] = IERC20MetadataUpgradeable(_tokenAddress);
+        setBridgeParamInternal(_details.symbol, _fee, _gasSwapRatio, _details.symbol == bytes32("ALOT") ? true : false);
+        if (_details.symbol != native && !_details.isVirtual) {
+            require(_details.tokenAddress != address(0), "P-ZADDR-01");
+            IERC20MetadataUpgradeable assetIERC20 = IERC20MetadataUpgradeable(_details.tokenAddress);
+            require(UtilsLibrary.stringToBytes32(assetIERC20.symbol()) == _details.symbol, "P-TSDM-01");
+            require(assetIERC20.decimals() == _details.decimals, "P-TDDM-01");
+            tokenMap[_details.symbol] = IERC20MetadataUpgradeable(_details.tokenAddress);
         }
     }
 
@@ -108,7 +136,8 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @param   _symbol  Symbol of the token
      */
     function removeToken(bytes32 _symbol, uint32) public virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (tokenList.contains(_symbol) && _symbol != native) {
+        TokenDetails memory tokenDetails = tokenDetailsMap[_symbol];
+        if (tokenDetails.symbol != bytes32(0) && _symbol != native && !tokenDetails.isVirtual) {
             // Native doesn't exist in tokenMap as it is not an ERC20
             require(tokenMap[_symbol].balanceOf(address(this)) == 0, "P-NZBL-01");
             delete (tokenMap[_symbol]);
@@ -156,6 +185,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             "P-OODT-01"
         );
         require(tokenList.contains(_symbol), "P-ETNS-01");
+        require(tokenDetailsMap[_symbol].isVirtual == false, "P-VTNS-01"); // Virtual tokens can't be deposited
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
 
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
@@ -176,8 +206,9 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         emitPortfolioEvent(_from, _symbol, _quantity, bridgeParam.fee, Tx.DEPOSIT);
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage(
+            portfolioBridge.getDefaultDestinationChain(),
             _bridge,
-            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp)
+            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp, bytes32(0))
         );
     }
 
@@ -302,8 +333,8 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
 
     /**
      * @notice  Processes the message coming from the bridge
-     * @dev     Only process WITHDRAW or RECOVERFUNDS messages as it is the only messages that can be sent to the
-     * portfolio main. Even when the contract is paused, this method is allowed for the messages that
+     * @dev     WITHDRAW message is the only message that can be sent to portfolioMain.
+     * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
      * flight then upgrade
      * @param   _trader  Address of the trader
@@ -317,7 +348,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         uint256 _quantity,
         Tx _transaction
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        if (_transaction == Tx.WITHDRAW || _transaction == Tx.RECOVERFUNDS) {
+        if (_transaction == Tx.WITHDRAW) {
             require(_trader != address(0), "P-ZADDR-02");
             require(_quantity > 0, "P-ZETD-01");
             if (_symbol == native) {
@@ -330,6 +361,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
                 //We don't check the AuctionMode of the token in the mainnet. If Subnet allows the message to be sent
                 //Then the token is no longer is auction
                 require(tokenList.contains(_symbol), "P-ETNS-02");
+                require(tokenDetailsMap[_symbol].isVirtual == false, "P-VTNS-02");
                 tokenMap[_symbol].safeTransfer(_trader, _quantity);
             }
             emitPortfolioEvent(_trader, _symbol, _quantity, 0, _transaction);

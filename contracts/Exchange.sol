@@ -157,29 +157,4 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
     function bytes32ToString(bytes32 _bytes32) public pure returns (string memory) {
         return UtilsLibrary.bytes32ToString(_bytes32);
     }
-
-    //========== AUCTION ADMIN FUNCTIONS ==================
-
-    /**
-     * @notice  Add new token to portfolio
-     * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
-     * @param   _symbol  symbol of the token
-     * @param   _tokenaddress  address of the token
-     * @param   _srcChainId  Source Chain id
-     * @param   _decimals  decimals of the token
-     * @param   _mode  starting auction mode
-     * @param   _fee  Bridge Fee
-     * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     */
-    function addToken(
-        bytes32 _symbol,
-        address _tokenaddress,
-        uint32 _srcChainId,
-        uint8 _decimals,
-        ITradePairs.AuctionMode _mode,
-        uint256 _fee,
-        uint256 _gasSwapRatio
-    ) external onlyRole(AUCTION_ADMIN_ROLE) {
-        portfolio.addToken(_symbol, _tokenaddress, _srcChainId, _decimals, _mode, _fee, _gasSwapRatio);
-    }
 }

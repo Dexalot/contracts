@@ -9,19 +9,19 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import type {
 	MockToken,
 	Multicall2,
-	Multicall2__factory,
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { ContractFactory } from 'ethers';
 
 const ZEROADDR = "0x0000000000000000000000000000000000000000"
 
 describe("Multicall2", function () {
 	let mock: MockToken;
-	let Multicall2: Multicall2__factory;
+	let Multicall2: ContractFactory;
 	let multicall2: Multicall2;
 	let target: string;
 	let owner: SignerWithAddress;

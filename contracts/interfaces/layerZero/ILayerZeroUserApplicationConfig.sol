@@ -22,4 +22,19 @@ interface ILayerZeroUserApplicationConfig {
     // @param _srcChainId - the chainId of the source chain
     // @param _srcAddress - the contract address of the source contract at the source chain
     function forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) external;
+
+    /**
+     * @notice  Destination Chain parameters for layerzero
+     * @dev     if gasForDestination is set too low the transaction will revert at the destination and will block the bridge
+     * retryPayload needs to be called manually.
+     * Not part of original LayerZero interface. Added by Cengiz on 2/1/2024
+     * @param   lzRemoteChainId  lz Remote chain id
+     * @param   chainListOrgChainId  chainid from https://chainlist.org/
+     * @param   gasForDestination  default gas to be used in the destination chain. Also used in fee estimation
+     */
+    struct Destination {
+        uint16 lzRemoteChainId;
+        uint32 chainListOrgChainId;
+        uint256 gasForDestination;
+    }
 }

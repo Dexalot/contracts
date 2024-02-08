@@ -6,7 +6,7 @@
 import Utils from './utils';
 
 import {
-    PortfolioBridge,
+    PortfolioBridgeMain,
     PortfolioMain,
     PortfolioSub,
     MockToken,
@@ -26,8 +26,8 @@ import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 describe("Portfolio Interactions", () => {
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
-    let portfolioBridgeMain: PortfolioBridge;
-    let portfolioBridgeSub: PortfolioBridge;
+    let portfolioBridgeMain: PortfolioBridgeMain;
+    let portfolioBridgeSub: PortfolioBridgeMain;
 
     let TokenVestingCloneable: TokenVestingCloneable__factory;
 
@@ -43,10 +43,10 @@ describe("Portfolio Interactions", () => {
     let alot: MockToken;
     let ALOT: string;
 
-    let avax_decimals: number;
+    // let avax_decimals: number;
 
     let mint_amount: string;
-
+    let defaultDestinationChainId: number;
 
     let deposit_amount: string;
     let deposit_amount_less_fee: string;
@@ -65,6 +65,7 @@ describe("Portfolio Interactions", () => {
         trader1 = t1;
         trader2 = t2;
 
+
         console.log("Owner", owner.address);
         console.log("Admin", admin.address );
         console.log("AuctionAdmin", auctionAdmin.address);
@@ -76,16 +77,15 @@ describe("Portfolio Interactions", () => {
 
     beforeEach(async function () {
 
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioSub = portfolioContracts.portfolioSub;
+        portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
+        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
+        gasStation= portfolioContracts.gasStation;
+        alot = portfolioContracts.alot;
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, lzEndpointMain, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub, gasStation: gStation} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
-        portfolioSub = portfolioS;
-
-        portfolioBridgeMain = pbrigeMain;
-        portfolioBridgeSub =pbrigeSub;
-
-        gasStation= gStation;
-
+        defaultDestinationChainId = await portfolioBridgeSub.getDefaultDestinationChain();
 
         token_symbol = "USDT";
         token_decimals = 18;
@@ -94,17 +94,16 @@ describe("Portfolio Interactions", () => {
 
         alot_token_symbol = "ALOT";
         alot_token_decimals = 18;
-        alot = await f.deployMockToken(alot_token_symbol, alot_token_decimals)
-        ALOT = Utils.fromUtf8(alot_token_symbol);
 
-        avax_decimals = 18;
+        ALOT = Utils.fromUtf8(alot_token_symbol);
+        // avax_decimals = 18;
 
         mint_amount = '1000'
         deposit_amount = '200';  // ether
         deposit_amount_less_fee = (parseFloat(deposit_amount)).toString();
     });
 
-    it("Should include PORTFOLIO_ROLE in PortfolioBridge by default", async function () {
+    it("Should include BRIDGE_USER_ROLE in PortfolioBridge by default", async function () {
         console.log("Owner", owner.address);
         console.log("Admin", admin.address );
         console.log("AuctionAdmin", auctionAdmin.address);
@@ -124,18 +123,13 @@ describe("Portfolio Interactions", () => {
     it("Should deposit native tokens to portfolio", async () => {
         await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei(deposit_amount)});
         const res = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
-        Utils.printResults(owner.address, "after deposit", res, avax_decimals);
         expect(res.total).to.equal(Utils.toWei(deposit_amount_less_fee));
         expect(res.available).to.equal(Utils.toWei(deposit_amount_less_fee));
     });
 
     // ALOT, SLIME, ...
     it("Should deposit ERC20 token to portfolio using depositToken()", async () => {
-        console.log();
-        const { owner, trader2 } = await f.getAccounts();
-
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
@@ -150,7 +144,7 @@ describe("Portfolio Interactions", () => {
         const bannedAccountsAddr = await portfolioMain.getBannedAccounts();
         const BannedAccounts = await ethers.getContractFactory("BannedAccounts") as BannedAccounts__factory;
         const bannedAccounts = BannedAccounts.attach(bannedAccountsAddr);
-        await bannedAccounts.grantRole(bannedAccounts.BAN_ADMIN_ROLE(), owner.address);
+        await bannedAccounts.grantRole(await bannedAccounts.BAN_ADMIN_ROLE(), owner.address);
         await bannedAccounts.banAccount(owner.address, 1); // 1=REASON is OFAC
         await expect(portfolioMain.depositToken(owner.address, USDT, Utils.toWei(deposit_amount), 0)).to.be.revertedWith("P-BANA-01");
         // succeed for msg.sender
@@ -158,19 +152,14 @@ describe("Portfolio Interactions", () => {
         await portfolioMain.depositToken(owner.address, USDT, Utils.toWei(deposit_amount), 0);
 
         const res = await portfolioSub.getBalance(owner.address, USDT);
-        Utils.printResults(owner.address, "after deposit", res, token_decimals);
         expect(res.total).to.equal(Utils.toWei(deposit_amount_less_fee));
         expect(res.available).to.equal(Utils.toWei(deposit_amount_less_fee));
      });
 
     // ALOT, SLIME, ...
     it("Should deposit ERC20 token to portfolio using depositTokenFromContract()", async () => {
-        console.log();
-        const { owner, trader2 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
-
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
         await usdt.approve(portfolioMain.address, Utils.toWei(deposit_amount));
@@ -188,11 +177,8 @@ describe("Portfolio Interactions", () => {
 
     // ALOT, SLIME ..
     it("Should withdraw ERC20 token from portfolio to mainnet", async () => {
-        console.log();
-        const { owner, trader2 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
         //"PB-SINA-01"
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
 
@@ -200,16 +186,19 @@ describe("Portfolio Interactions", () => {
         await portfolioMain.depositToken(owner.address, USDT, Utils.toWei(deposit_amount), 0);
         const withdrawal_amount = '100';
         const remaining_amount: number = Number(deposit_amount_less_fee) - parseFloat(withdrawal_amount)
+
+
         // fail for account other then msg.sender
-        await expect(portfolioSub.withdrawToken(trader2.address, USDT, Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8)"](trader2.address, USDT, Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8,uint32)"](trader2.address, USDT, Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId)).to.be.revertedWith("P-OOWT-01");
         // fail for 0 quantity
-        await expect(portfolioSub.withdrawToken(owner.address, USDT, 0, 0)).to.be.revertedWith("P-WUTH-01");
+         await expect(f.withdrawToken(portfolioSub, owner, USDT, token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
-        await expect(portfolioSub.withdrawToken(owner.address, Utils.fromUtf8("NONE"), Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-ETNS-02");
+         await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-02");
         // succeed for msg.sender
-        await portfolioSub.withdrawToken(owner.address, USDT, Utils.toWei(withdrawal_amount), 0);
+        await f.withdrawToken(portfolioSub, owner, USDT, token_decimals, withdrawal_amount)
         const res = await portfolioSub.getBalance(owner.address, USDT);
-        Utils.printResults(owner.address, "after withdrawal", res, token_decimals);
+        // Utils.printResults(owner.address, "after withdrawal", res, token_decimals);
         expect(parseFloat(Utils.fromWei(res.total)).toFixed(12)).to.equal(remaining_amount.toFixed(12));
         expect(parseFloat(Utils.fromWei(res.available)).toFixed(12)).to.equal(remaining_amount.toFixed(12));
 
@@ -222,8 +211,6 @@ describe("Portfolio Interactions", () => {
 
     // AVAX ..
     it("Should withdraw AVAX from portfolio to mainnet", async () => {
-        console.log();
-        const { owner, trader2 } = await f.getAccounts();
 
         const initial_amount = await owner.getBalance();
 
@@ -233,16 +220,17 @@ describe("Portfolio Interactions", () => {
         const withdrawal_amount = '100';
         const remaining_amount: number = Number(deposit_amount_less_fee) - parseFloat(withdrawal_amount)
         // fail for account other then msg.sender
-        await expect(portfolioSub.withdrawToken(trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
+               // fail for account other then msg.sender
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8)"](trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8,uint32)"](trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId)).to.be.revertedWith("P-OOWT-01");
         // fail for 0 quantity
-        await expect(portfolioSub.withdrawToken(owner.address, Utils.fromUtf8("AVAX"), 0, 0)).to.be.revertedWith("P-WUTH-01");
+        await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("AVAX"), token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
-        await expect(portfolioSub.withdrawToken(owner.address, Utils.fromUtf8("NONE"), Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-ETNS-02");
-        // succeed for msg.sender
-        await portfolioSub.withdrawToken(owner.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0);
-
+        await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-02");
+         // succeed for msg.sender
+        await f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("AVAX"), token_decimals, withdrawal_amount)
         const res = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
-        Utils.printResults(owner.address, "after withdrawal", res, avax_decimals);
+        // Utils.printResults(owner.address, "after withdrawal", res, avax_decimals);
         expect(parseFloat(Utils.fromWei(res.total)).toFixed(12)).to.equal(remaining_amount.toFixed(12));
         expect(parseFloat(Utils.fromWei(res.available)).toFixed(12)).to.equal(remaining_amount.toFixed(12));
 
@@ -257,9 +245,9 @@ describe("Portfolio Interactions", () => {
 
     // Works individually but not works in coverage
     it("Should send Gas Token if it is not enough", async () => {
-        const { owner, other1 } = await f.getAccounts();
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.1, 0, true); //gasSwapRatio 0.1
+        const { other1 } = await f.getAccounts();
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.1); //gasSwapRatio 0.5
+
         await usdt.mint(other1.address, ethers.utils.parseEther("1000"));
         await gasStation.setGasAmount(ethers.utils.parseEther("10"))
 
@@ -291,7 +279,7 @@ describe("Portfolio Interactions", () => {
 
     it("Should reduce bridge fee during AVAX deposit and withdraw & collect them", async () => {
         const bridgeFee = Utils.toWei("0.01")
-        const { owner, trader1 } = await f.getAccounts();
+
         await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1',token_decimals), true)
         await portfolioSub.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1',token_decimals), true)
 
@@ -343,8 +331,7 @@ describe("Portfolio Interactions", () => {
 
     it("Should reduce bridge fee during ALOT deposit and withdraw & collect them", async () => {
         const bridgeFee = Utils.toWei("0.01")
-        const { owner, trader1 } = await f.getAccounts();
-        await f.addToken(portfolioMain, alot, 1);
+
         await alot.mint(trader1.address, ethers.utils.parseUnits('100',alot_token_decimals))
         await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
         await portfolioSub.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
@@ -390,8 +377,6 @@ describe("Portfolio Interactions", () => {
     });
 
     it("Should not deposit if it the parameters are incorrect", async () => {
-        const { trader1, trader2 } = await f.getAccounts();
-
 
         await expect(portfolioMain.connect(trader1).depositNative(
             trader2.address,
@@ -413,13 +398,11 @@ describe("Portfolio Interactions", () => {
     })
 
     it("Should not deposit if the amount is less than gasSwapRatios", async () => {
-        const { trader1 } = await f.getAccounts();
 
         await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), 0, ethers.utils.parseEther("10"), true);
         await portfolioSub.setBridgeParam(Utils.fromUtf8("AVAX"), 0, ethers.utils.parseEther("10"), true);
 
         await expect(f.depositNative(portfolioMain, trader1, "9")).to.be.revertedWith("P-DUTH-01")
-        await f.addToken(portfolioMain, alot, 10);
         await alot.mint(trader1.address, ethers.utils.parseEther("100"))
 
         //Get Min Alot deposit   1*1.9
@@ -429,17 +412,14 @@ describe("Portfolio Interactions", () => {
     })
 
     it("Should not deposit if the token only exists in mainnet", async () => {
-        const { trader1 } = await f.getAccounts();
-        await f.addToken(portfolioMain, usdt, 0.5);
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5);
         await usdt.mint(trader1.address, ethers.utils.parseEther("100"))
         // This should technically fail in PortfolioSub, but doesn't revert because it is blocked by the bridge contract and revert is not propogated back
         //await expect(f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, "5")).to.be.revertedWith("P-ETNS-01")
     })
 
     it("Should not deposit or withdraw if the bridge is not enabled", async () => {
-        const { trader1 } = await f.getAccounts();
 
-        await f.addToken(portfolioMain, alot, 1);
         // no need to add ALOT to subnet as it is added while deploying portfolioSub
         await alot.mint(trader1.address, ethers.utils.parseEther("100"))
         await f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "50")
@@ -467,8 +447,7 @@ describe("Portfolio Interactions", () => {
     })
 
     it("Should pause and unpause Portfolio deposit from the admin account", async function () {
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei(mint_amount));
         // fail from non admin accounts
@@ -520,8 +499,7 @@ describe("Portfolio Interactions", () => {
         const count = await factory.count();
         const tokenVesting: TokenVestingCloneable = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
 
@@ -561,8 +539,7 @@ describe("Portfolio Interactions", () => {
         const count = await factory.count();
         const tokenVesting: TokenVestingCloneable = TokenVestingCloneable.attach(await factory.getClone(count.sub(1)))
 
-        await f.addToken(portfolioMain, usdt, 0.5); //gasSwapRatio 0.5
-        await f.addToken(portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5); //gasSwapRatio 0.5
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
         await usdt.transfer(tokenVesting.address, 1000);

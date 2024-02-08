@@ -6,16 +6,16 @@ import Utils from './utils';
 
 import type {
      PortfolioMain,
-     TokenVestingCloneable__factory
  } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { ContractFactory } from 'ethers';
 
 describe("TokenVestingCloneFactory", () => {
-    let TokenVestingCloneable: TokenVestingCloneable__factory
+    let TokenVestingCloneable: ContractFactory
 
     let portfolio: PortfolioMain
 
@@ -23,7 +23,7 @@ describe("TokenVestingCloneFactory", () => {
 
     before(async () => {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable")
-        const { portfolioMain: portfolioM } = await f.deployCompletePortfolio();
+        const { portfolioAvax: portfolioM } = await f.deployCompletePortfolio();
         portfolio = portfolioM;
     });
 

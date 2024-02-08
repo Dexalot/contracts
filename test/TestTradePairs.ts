@@ -7,25 +7,25 @@ import Utils from './utils';
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
-    MockToken__factory,
+    MockToken,
     OrderBooks,
     PortfolioMain,
     PortfolioSub,
     TradePairs,
     ExchangeSub,
-    GasStation
+    GasStation,
+    IPortfolio
 } from "../typechain-types";
 
 import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { BigNumber } from "ethers";
-const ZERO_ACCT_ADDR = "0x0000000000000000000000000000000000000000";
-const ZERO_BYTES32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+import { BigNumber, ContractFactory } from "ethers";
+
 
 describe("TradePairs", function () {
-    let MockToken: MockToken__factory;
+    let MockToken: ContractFactory;
     let portfolio: PortfolioSub;
     let portfolioMain: PortfolioMain;
     let exchange: ExchangeSub;
@@ -42,12 +42,14 @@ describe("TradePairs", function () {
     let trader2: SignerWithAddress;
     let treasurySafe: SignerWithAddress;
     let quoteAssetAddr: any;
+    let alot: MockToken;
+    const ALOT: string = Utils.fromUtf8("ALOT");
+    const alot_decimals = 18;
 
     const baseSymbolStr = "AVAX";
     const baseSymbol = Utils.fromUtf8(baseSymbolStr);
     const baseDecimals = 18;
     const baseDisplayDecimals = 3;
-    const baseAssetAddr = ZERO_ACCT_ADDR;
 
     const quoteTokenStr = "Quote Token";
     const quoteSymbolStr = "QT"
@@ -82,7 +84,15 @@ describe("TradePairs", function () {
 
     const defaultNativeDeposit = '3000'
     const defaultTokenDeposit = '2000'
-
+    const tokenStruct: IPortfolio.TokenDetailsStruct = {decimals : 18,
+        tokenAddress: ethers.constants.AddressZero,
+        auctionMode: 0,
+        srcChainId:1111,
+        symbol: ethers.constants.HashZero,
+        symbolId: ethers.constants.HashZero,
+        sourceChainSymbol:ethers.constants.HashZero,
+        isVirtual:false
+    };
     before(async function () {
         const { owner: owner1, admin: admin1, auctionAdmin: admin2, trader1: t1, trader2: t2 , treasurySafe: ts} = await f.getAccounts();
         owner = owner1;
@@ -99,14 +109,17 @@ describe("TradePairs", function () {
         console.log("Trader2", trader2.address);
 
         MockToken = await ethers.getContractFactory("MockToken");
+
+
+
     });
 
     beforeEach(async function () {
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, gasStation: gStation} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
-        portfolio = portfolioS;
-        gasStation =gStation;
-
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolio = portfolioContracts.portfolioSub;
+        gasStation = portfolioContracts.gasStation;
+        alot = portfolioContracts.alot;
 
         orderBooks = await f.deployOrderBooks();
         exchange = await f.deployExchangeSub(portfolio, orderBooks)
@@ -114,8 +127,7 @@ describe("TradePairs", function () {
 
         quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
         quoteAssetAddr = quoteToken.address;
-        await f.addToken(portfolio, quoteToken, 0.1, mode);
-        await f.addToken(portfolioMain, quoteToken, 0.1, mode);
+        await f.addToken(portfolioMain, portfolio, quoteToken, 0.1, mode);
 
     });
 
@@ -148,13 +160,13 @@ describe("TradePairs", function () {
         it("Should be able to add native as base asset and ERC20 as quote asset", async function () {
 
 
-            await expect(tradePairs.connect(trader1).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
-                                                 quoteSymbol,  quoteDisplayDecimals,
+            await expect(tradePairs.connect(trader1).addTradePair(tradePairId, tokenStruct, baseDisplayDecimals,
+                                                tokenStruct,  quoteDisplayDecimals,
                                                 Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
                                                 Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode))
-                                                .to.be.revertedWith("T-OACC-01");
+                                                .to.be.revertedWith("AccessControl:");
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             expect((await tradePairs.getTradePairs())[0]).to.be.equal(tradePairId);
 
@@ -181,18 +193,7 @@ describe("TradePairs", function () {
             expect(sellBook).to.equal(Utils.fromUtf8(sellBookStr))
         });
 
-        it("Should fail for mirror pair", async function () {
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
-
-            const tradePairStr= `${quoteSymbolStr}/${baseSymbolStr}`;
-            await expect(tradePairs.addTradePair(Utils.fromUtf8(tradePairStr), quoteSymbol, quoteDisplayDecimals,
-                                                 baseSymbol, baseDisplayDecimals,
-                                                Utils.parseUnits(minTradeAmount.toString(), baseDecimals),
-                                                Utils.parseUnits(maxTradeAmount.toString(), baseDecimals), mode))
-                                                .to.be.revertedWith("T-MPNA-01");
-
-        });
 
         it("Should not remove TradePair if orderbook is not empty", async function () {
 
@@ -201,7 +202,7 @@ describe("TradePairs", function () {
             const type1 = 1;   // market orders not enabled
 
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
 
             // mint some tokens for trader1
@@ -235,7 +236,7 @@ describe("TradePairs", function () {
             let orderbyCl1= await tradePairs.getOrderByClientOrderId(trader1.address, clientOrderidBuy);
             await tradePairs.connect(trader1).cancelOrder(orderbyCl1.id);
             //Original order removed
-            expect((await tradePairs.getOrder(orderbyCl1.id)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(orderbyCl1.id)).id).to.be.equal(ethers.constants.HashZero );
             //Still fails
             await expect(tradePairs.removeTradePair(tpairId))
                    .to.be.revertedWith("T-RMTP-01");
@@ -243,7 +244,7 @@ describe("TradePairs", function () {
             orderbyCl1= await tradePairs.getOrderByClientOrderId(trader1.address, clientOrderidSell);
             await tradePairs.connect(trader1).cancelOrder(orderbyCl1.id);
             //Original order removed
-            expect((await tradePairs.getOrder(orderbyCl1.id)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(orderbyCl1.id)).id).to.be.equal(ethers.constants.HashZero );
 
             // Success
             await expect(tradePairs.removeTradePair(tpairId))
@@ -263,7 +264,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
             const tRate = ethers.BigNumber.from(10);
@@ -297,7 +298,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // fail from non owner accounts
             await expect(tradePairs.connect(trader1).addOrderType(tradePairId, 0)).to.be.revertedWith("AccessControl:");
@@ -325,7 +326,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const minTradeAmount1 = Utils.parseUnits('50', quoteDecimals);
             // fail from non owner accounts
@@ -338,7 +339,7 @@ describe("TradePairs", function () {
         it("Should set max trade amount from the owner account", async function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const maxTradeAmount1 = Utils.parseUnits('250', quoteDecimals);
             // fail from non owner accounts
@@ -352,7 +353,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const displayDecimals = 2;
             // fail from non owner accounts
@@ -368,7 +369,7 @@ describe("TradePairs", function () {
         it("Should set allowed slippage percentage from the owner account", async function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const allowedSlippagePercent = 25;
             // fail from non owner accounts
@@ -394,8 +395,8 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.be.revertedWith("P-TSDM-01");
+            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -406,7 +407,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, pairSettings)
+            await f.addTradePair(exchange, pair, pairSettings)
 
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
 
@@ -509,7 +510,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const tx = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 1, 1, type2);
             const res: any = await tx.wait();
@@ -546,18 +547,14 @@ describe("TradePairs", function () {
 
         it("Should be able to send addLimitOrderList/ no autoFill", async function () {
             const type2 = 0 ;  // GTC
-            const ALOT =Utils.fromUtf8("ALOT")
-            const alot_decimals =18;
-            const alot = await f.deployMockToken("ALOT", alot_decimals)
             const deposit_amount = '100'
 
-            await f.addToken(portfolioMain, alot, 1);
             await alot.mint(trader1.address, Utils.toWei(deposit_amount));
             await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
 
 
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
 
             // mint some tokens for trader1
@@ -704,7 +701,7 @@ describe("TradePairs", function () {
                         expect(e.args.code).to.be.equal(Utils.fromUtf8("T-T2PO-01"));
                     } else {
                         expect(e.args.status).to.be.equal(0);            // status is NEW = 0
-                        expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                        expect(e.args.code).to.be.equal(ethers.constants.HashZero );
                     }
                     expect(e.args.quantityfilled).to.be.equal(0);
 
@@ -731,17 +728,13 @@ describe("TradePairs", function () {
         });
 
         it("PO & Limit Orders processed in the same block should match or revert depending on the order they are processed", async function () {
-            const ALOT =Utils.fromUtf8("ALOT")
-            const alot_decimals =18;
-            const alot = await f.deployMockToken("ALOT", alot_decimals)
             const deposit_amount = '100'
 
-            await f.addToken(portfolioMain, alot, 1);
             await alot.mint(trader1.address, Utils.toWei(deposit_amount));
             await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
 
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
 
             // mint some tokens for trader1
@@ -789,7 +782,7 @@ describe("TradePairs", function () {
                     expect(e.args.type1).to.be.equal(1);             // type1 is LIMIT=1
                     expect(e.args.type2).to.be.equal(type2s[orderIndex]);   // type2 is GTC=0
                     expect(e.args.status).to.be.equal(3);            // status is FILLED = 3
-                    expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                    expect(e.args.code).to.be.equal(ethers.constants.HashZero );
                     expect(e.args.quantityfilled).to.be.equal(quantities[orderIndex]);
 
                 }
@@ -842,7 +835,7 @@ describe("TradePairs", function () {
                         expect(e.args.code).to.be.equal(Utils.fromUtf8("T-T2PO-01"));
                     } else {
                         expect(e.args.status).to.be.equal(0);            // status is NEW = 0
-                        expect(e.args.code).to.be.equal(ZERO_BYTES32);
+                        expect(e.args.code).to.be.equal(ethers.constants.HashZero );
                     }
                     expect(e.args.quantityfilled).to.be.equal(0);
 
@@ -863,7 +856,7 @@ describe("TradePairs", function () {
             const type2 = 0 ;  // GTC
 
             expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
             expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
             //console.log (Utils.toUtf8((await tradePairs.getTradePairs())[0]))
             // mint some tokens for trader1
@@ -922,7 +915,7 @@ describe("TradePairs", function () {
             const res: any = await tx.wait();
             let fillCounter = 0;
 
-            const gasUsedInTx = Utils.formatUnits(res.cumulativeGasUsed.mul(res.effectiveGasPrice).div(10**9),18);
+            // const gasUsedInTx = Utils.formatUnits(res.cumulativeGasUsed.mul(res.effectiveGasPrice).div(10**9),18);
             console.log("addLimitOrderList Gas used", res.cumulativeGasUsed.toString(), res.effectiveGasPrice.toString());
             //console.log("Multiple fills gas usage", gasUsedInTx)
 
@@ -981,7 +974,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add a new order
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1, type2);
@@ -993,7 +986,7 @@ describe("TradePairs", function () {
             const res2: any = await tx2.wait();
             expect(res2.events[1].args.status).to.be.equal(4);           // status is CANCELED = 4
             //Original order removed
-            expect((await tradePairs.getOrder(id)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(id)).id).to.be.equal(ethers.constants.HashZero );
         });
 
         it("Should autofill kick-in when adding & canceling an order", async function () {
@@ -1013,7 +1006,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const AVAX = baseSymbol;
             const QT = quoteSymbol;
@@ -1085,12 +1078,8 @@ describe("TradePairs", function () {
         it("Should autofill kick-in using ALOT when adding/canceling an order if ALOT is available", async function () {
             const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             const type2=0 ;// GTC
-            const ALOT =Utils.fromUtf8("ALOT")
-            const alot_decimals =18;
-            const alot = await f.deployMockToken("ALOT", alot_decimals)
             const deposit_amount = '100'
 
-            await f.addToken(portfolioMain, alot, 1);
             await alot.mint(trader1.address, Utils.toWei(deposit_amount));
             await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT,  deposit_amount);
 
@@ -1109,7 +1098,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
             const AVAX = baseSymbol;
             const QT = quoteSymbol;
             await portfolio.setBridgeParam(QT, 0, Utils.parseUnits('1', quoteDecimals), true)
@@ -1208,7 +1197,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add the first new order
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('5', baseDecimals), 0, 1, type2);
@@ -1244,13 +1233,13 @@ describe("TradePairs", function () {
             expect(res4.events[1].args.clientOrderId).to.be.equal(clientOrderid);
             expect(res4.events[1].args.status).to.be.equal(4);           // status is CANCELED = 4
             //Original order removed
-            expect((await tradePairs.getOrder(id1)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(id1)).id).to.be.equal(ethers.constants.HashZero );
 
             // verify cancellation of id2
             expect(res4.events[3].args.clientOrderId).to.be.equal(clientOrderid2);
             expect(res4.events[3].args.status).to.be.equal(4);           // status is CANCELED = 4\
              //Original order removed
-            expect((await tradePairs.getOrder(id2)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(id2)).id).to.be.equal(ethers.constants.HashZero );
 
             // Get a cancel reject on id3
             expect(res4.events[4].args.orderId).to.be.equal(id3);
@@ -1285,7 +1274,7 @@ describe("TradePairs", function () {
             await quoteToken.connect(trader2).approve(portfolioMain.address, Utils.parseUnits('2000', quoteDecimals));
             await portfolioMain.connect(trader2).depositToken(trader2.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals), 0);
 
-            await f.addTradePair(tradePairs, pair, pairSettings)
+            await f.addTradePair(exchange, pair, pairSettings)
 
             await tradePairs.connect(owner).addOrderType(tradePairId, 0);
 
@@ -1351,7 +1340,7 @@ describe("TradePairs", function () {
 
             // Order filled(Closed) and removed from state, expect ZERO_BYTES
             const orderbyCl2= await tradePairs.getOrderByClientOrderId(trader2.address, clientOrderid2);
-            expect(orderbyCl2.id).to.be.equal(ZERO_BYTES32);
+            expect(orderbyCl2.id).to.be.equal(ethers.constants.HashZero );
         });
 
         it("Should revert when price has more decimals than quote display decimals", async function () {
@@ -1370,7 +1359,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             await expect(tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100.1234', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1, type2))
                 .to.be.revertedWith("T-TMDP-01");
@@ -1392,7 +1381,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             await expect(tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10.1234', baseDecimals), 0, 1, type2))
                 .to.be.revertedWith("T-TMDQ-01");
@@ -1402,7 +1391,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             const auctionMode = 4;
             // fail from non owner accounts
@@ -1442,8 +1431,8 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals,  '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.be.revertedWith("P-TSDM-01");
+            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -1455,7 +1444,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, pairSettings)
+            await f.addTradePair(exchange, pair, pairSettings)
 
             // fail from non owner accounts
             await expect(tradePairs.connect(trader1).postOnly(pair.tradePairId, true)).to.be.revertedWith("AccessControl:");
@@ -1498,7 +1487,7 @@ describe("TradePairs", function () {
             await quoteToken.connect(trader2).approve(portfolioMain.address, Utils.parseUnits('2000', quoteDecimals));
             await portfolioMain.connect(trader2).depositToken(trader2.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals), 0);
 
-            await f.addTradePair(tradePairs, pair, pairSettings)
+            await f.addTradePair(exchange, pair, pairSettings)
 
             await tradePairs.connect(owner).addOrderType(tradePairId, 0);
 
@@ -1531,7 +1520,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // fail from non owner accounts
             await expect(tradePairs.connect(trader1).pauseTradePair(tradePairId, true)).to.be.revertedWith("AccessControl:");
@@ -1568,7 +1557,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // fail from non owner accounts
             await expect(tradePairs.connect(trader1).pauseAddOrder(tradePairId, true)).to.be.revertedWith("AccessControl:");
@@ -1594,7 +1583,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // fail for non-admin account
             await expect(tradePairs.connect(trader1).setAuctionPrice(tradePairId, Utils.parseUnits('4.1', quoteDecimals)))
@@ -1613,7 +1602,7 @@ describe("TradePairs", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
             quoteAssetAddr = quoteToken.address;
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             expect(await tradePairs.tradePairExists(tradePairId)).to.be.true;
             expect(await tradePairs.tradePairExists(Utils.fromUtf8("DOES NOT EXIST"))).to.be.false;
@@ -1624,14 +1613,14 @@ describe("TradePairs", function () {
             quoteAssetAddr = quoteToken.address;
 
             // should emit NewTradePair
-            await expect(tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol,  baseDisplayDecimals,
+            await expect(exchange.connect(owner).addTradePair(tradePairId, baseSymbol,  baseDisplayDecimals,
                 quoteSymbol,  quoteDisplayDecimals,
                 Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
                 Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode))
                         .to.emit(tradePairs, "NewTradePair");
 
             // should not emit NewTradePair
-            await expect(tradePairs.connect(owner).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
+            await expect(exchange.connect(owner).addTradePair(tradePairId, baseSymbol, baseDisplayDecimals,
                 quoteSymbol, quoteDisplayDecimals,
                 Utils.parseUnits(minTradeAmount.toString(), quoteDecimals),
                 Utils.parseUnits(maxTradeAmount.toString(), quoteDecimals), mode))
@@ -1653,7 +1642,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add two buy orders
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1, type2);
@@ -1669,11 +1658,11 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(trader1).cancelOrder(id1)).to.be.revertedWith("Pausable: paused");
             await tradePairs.connect(owner).unpause()
             // 0address order will revert from ownership check
-            await expect(tradePairs.connect(trader1).cancelOrder(ZERO_BYTES32)).to.be.revertedWith("T-OAEX-01");
+            await expect(tradePairs.connect(trader1).cancelOrder(ethers.constants.HashZero )).to.be.revertedWith("T-OAEX-01");
             // cannot cancel order for somebody else
             await expect(tradePairs.connect(owner).cancelOrder(id1)).to.be.revertedWith("T-OOCC-01");
             // Ignore empty orders
-            await expect(tradePairs.connect(trader1).cancelOrderList([ZERO_BYTES32, ZERO_BYTES32]));
+            await expect(tradePairs.connect(trader1).cancelOrderList([ethers.constants.HashZero , ethers.constants.HashZero ]));
             // cannot cancel all for somebody else
             await expect(tradePairs.connect(owner).cancelOrderList([id1, id2])).to.be.revertedWith("T-OOCC-02");
         });
@@ -1694,7 +1683,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits('2000', quoteDecimals));
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add a buy order
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1, type2);
@@ -1706,11 +1695,11 @@ describe("TradePairs", function () {
             // cannot cancel and replace tradePairs is paused
             await tradePairs.connect(owner).pause()
             await expect(tradePairs.connect(trader1)
-                .cancelReplaceOrder(ZERO_BYTES32, clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("Pausable: paused");
+                .cancelReplaceOrder(ethers.constants.HashZero , clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("Pausable: paused");
             await tradePairs.connect(owner).unpause()
             // cannot cancel and replace with empty order id
             await expect(tradePairs.connect(trader1)
-                .cancelReplaceOrder(ZERO_BYTES32, clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("T-OAEX-01");
+                .cancelReplaceOrder(ethers.constants.HashZero , clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("T-OAEX-01");
             // cannot cancel and replace with the same clientorderid(Technically can be not recommended)
             // await expect(tradePairs.connect(trader1)
             //     .cancelReplaceOrder(id1, clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('50', baseDecimals))).to.be.revertedWith("T-CLOI-01");
@@ -1777,12 +1766,13 @@ describe("TradePairs", function () {
             expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('100', quoteDecimals));
             expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('100', quoteDecimals));
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add a buy order using the entire 100 token @price 1
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1, type2);
             const res1: any = await tx1.wait();
             const id1 = res1.events[1].args.orderId;
+            console.log(id1);
 
             prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
             expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('100', quoteDecimals));
@@ -1810,7 +1800,7 @@ describe("TradePairs", function () {
             const tx3 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 1, 1, type2);
             const res3: any = await tx3.wait();
             const id3 = res3.events[1].args.orderId;
-
+console.log(id3);
             prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
             expect(prtfBaseBalance[0]).to.equal(Utils.parseUnits('100', baseDecimals));
             expect(prtfBaseBalance[1]).to.equal(Utils.parseUnits('0', baseDecimals));
@@ -1825,7 +1815,7 @@ describe("TradePairs", function () {
             await tx4.wait();
 
             //Original order removed
-            expect((await tradePairs.getOrder(id3)).id).to.be.equal(ZERO_BYTES32);
+            expect((await tradePairs.getOrder(id3)).id).to.be.equal(ethers.constants.HashZero );
 
             prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
             expect(prtfBaseBalance[0]).to.equal(Utils.parseUnits('100', baseDecimals));
@@ -1843,7 +1833,7 @@ describe("TradePairs", function () {
             // deposit some tokens to portfolio for trader1
             await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
 
-            await f.addTradePair(tradePairs, pair, defaultPairSettings)
+            await f.addTradePair(exchange, pair, defaultPairSettings)
 
             // add two buy orders
             const tx1 = await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('1', quoteDecimals), Utils.parseUnits('100', baseDecimals), 0, 1, type2);
@@ -1887,8 +1877,8 @@ describe("TradePairs", function () {
 
             order1 = await tradePairs.getOrder(id1);
             order2 = await tradePairs.getOrder(id2);
-            expect(order1.id).to.be.equal(ZERO_BYTES32);
-            expect(order2.id).to.be.equal(ZERO_BYTES32);
+            expect(order1.id).to.be.equal(ethers.constants.HashZero );
+            expect(order2.id).to.be.equal(ethers.constants.HashZero );
 
             // sell book is empty but call the unsolicitedCancel anyway
             await tradePairs.connect(owner).unsolicitedCancel(tradePairId, !isBuyBook, 10);

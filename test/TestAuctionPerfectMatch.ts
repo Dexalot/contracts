@@ -10,7 +10,6 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
   MockToken,
-  MockToken__factory,
   ExchangeSub,
   PortfolioMain,
   PortfolioSub,
@@ -22,9 +21,9 @@ import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { BigNumber, Event } from "ethers";
+import { BigNumber, ContractFactory, Event } from "ethers";
 
-let MockToken: MockToken__factory;
+let MockToken: ContractFactory;
 
 // using the first numberOfAccounts accounts
 const numberOfAccounts = 5;
@@ -111,7 +110,7 @@ before(async () => {
   console.log(accounts);
   console.log();
 
-  MockToken = await ethers.getContractFactory("MockToken");
+  const MockToken = await ethers.getContractFactory("MockToken");
 
   deploymentWallet = wallets[0];
   deploymentAccount = deploymentWallet.address;
@@ -122,9 +121,9 @@ before(async () => {
   auctionAdminAccount = accounts[1];
   console.log("Auction Admin Account:", auctionAdminAccount)
 
-  const {portfolioMain: portfolioM, portfolioSub: portfolioS} = await f.deployCompletePortfolio();
-  portfolioMain = portfolioM;
-  portfolio = portfolioS;
+  const portfolioContracts = await f.deployCompletePortfolio(true);
+  portfolioMain = portfolioContracts.portfolioAvax;
+  portfolio = portfolioContracts.portfolioSub;
 
   orderBooks = await f.deployOrderBooks();
   exchangeSub = await f.deployExchangeSub(portfolio, orderBooks)
@@ -140,18 +139,17 @@ before(async () => {
   console.log();
   console.log("=== Creating and Minting Mock Tokens ===");
 
-  const srcChainId = 1;
 
-  for (let j=0; j<tokenList.length; j++) {
-      _tokenStr = tokenList[j];
+
+  for (const element of tokenList) {
+      _tokenStr = element;
       _tokenBytes32 = Utils.fromUtf8(_tokenStr);
       _tokenDecimals = decimalsMap[_tokenStr];
       _token = await f.deployMockToken(_tokenStr, _tokenDecimals);
       let _startAuctionMode: any = 2;
       if (_tokenStr === "SER") _startAuctionMode = 0;
 
-      await f.addToken(portfolio, _token, 0.1, _startAuctionMode);
-      await f.addToken(portfolioMain, _token, 0.1, _startAuctionMode);
+      await f.addToken(portfolioMain, portfolio, _token, 0.1, _startAuctionMode);
 
       for (let i=0; i<numberOfAccounts; i++) {
           const account = wallets[i].address;
@@ -166,8 +164,8 @@ before(async () => {
 
   const tokenAddressMap: any = {};
   tokenAddressMap["AVAX"] = "0x0000000000000000000000000000000000000000";
-  for (let j=0; j<tokenList.length; j++) {
-      _tokenStr = tokenList[j];
+  for (const element of tokenList) {
+      _tokenStr = element;
       _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_tokenStr));
       _token = MockToken.attach(_tokenAddr);
       tokenAddressMap[_tokenStr] = _token.address;
@@ -196,8 +194,8 @@ before(async () => {
       console.log();
 
       // deposit ERC20 token for account to portfolio
-      for (let j=0; j<tokenList.length; j++) {
-          _tokenStr = tokenList[j];
+      for (const element of tokenList) {
+          _tokenStr = element;
           _tokenBytes32 = Utils.fromUtf8(_tokenStr);
           _tokenAddr = await portfolioMain.getToken(_tokenBytes32);
           console.log(`${_tokenStr} @ ${_tokenAddr}`)
@@ -224,8 +222,8 @@ before(async () => {
   console.log("ExchangeSub contract deployed at: ", exchangeSub.address)
 
   pairs = [];
-  for (let j=0; j<tokenPairs.length; j++) {
-    const pair = tokenPairs[j]
+  for (const element of tokenPairs) {
+    const pair = element
     const symbols = pair.split("/", 2);
     const baseSymbol = symbols[0];
     const quoteSymbol = symbols[1];
@@ -265,8 +263,8 @@ before(async () => {
   console.log();
   console.log("=== ERC20 Token List at Start-Up ===");
   const _tokenList = await portfolioMain.getTokenList(); // return is bytes32[]
-  for (let i=0; i < _tokenList.length; i++) {
-      console.log(Utils.toUtf8(_tokenList[i]));
+  for (const element of _tokenList) {
+      console.log(Utils.toUtf8(element));
   }
 
   // check all balances at the start of orders processing
@@ -274,8 +272,8 @@ before(async () => {
   console.log("=== Portfolio State Before Processing Orders ===");
   for (let i=0; i<numberOfAccounts; i++) {
       const account = wallets[i].address;
-      for (let j=0; j<tokens.length; j++) {
-          const token = tokens[j];
+      for (const element of tokens) {
+          const token = element;
           const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
           Utils.printBalances(account, res, decimalsMap[token]);
       }
@@ -473,7 +471,7 @@ function findOrder(owner: string, side: number, price: string, quantity: string,
 }
 
 async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: number, symbolByte32: string , decimals: number) {
-  const tx = await portfolio.connect(wallet).withdrawToken(wallet.address, symbolByte32, Utils.parseUnits(withdrawal_amount.toString(), decimals), 0);
+  const tx =await f.withdrawToken(portfolio, wallet, symbolByte32, decimals, withdrawal_amount.toString())
   await tx.wait();
   return true;
 }

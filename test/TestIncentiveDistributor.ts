@@ -48,17 +48,15 @@ describe("IncentiveDistributor", () => {
   const ANY_TS = () => true;
 
   async function deployRewards() {
-    const completePortfolio = await f.deployCompletePortfolio();
+    const completePortfolio = await f.deployCompletePortfolio(true);
 
     portfolioSub = completePortfolio.portfolioSub;
-    portfolioMain = completePortfolio.portfolioMain;
+    portfolioMain = completePortfolio.portfolioAvax;
 
-    alot = await f.deployMockToken("ALOT", 18);
+    alot = completePortfolio.alot;
     lost = await f.deployMockToken("LOST", 18);
 
-    await f.addToken(portfolioMain, alot, 1, 0);
-    await f.addToken(portfolioSub, lost, 1, 0);
-    await f.addToken(portfolioMain, lost, 1, 0);
+    await f.addToken(portfolioMain, portfolioSub, lost, 1, 0);
 
     IncentiveDistributor = (await ethers.getContractFactory("IncentiveDistributor")) as IncentiveDistributor__factory;
     if (firstRun) {

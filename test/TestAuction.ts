@@ -68,7 +68,7 @@ let auctionAdminWallet: SignerWithAddress;
 let auctionAdminAccount: string;
 
 let exchange: ExchangeSub
-let portfolio: PortfolioSub
+let portfolioSub: PortfolioSub
 let portfolioMain: PortfolioMain
 let tradePairs: TradePairs
 let orderBooks: OrderBooks
@@ -119,24 +119,25 @@ before(async () => {
   auctionAdminAccount = accounts[1];
   console.log("Auction Admin Account:", auctionAdminAccount)
 
-  const {portfolioMain: portfolioM, portfolioSub: portfolioS} = await f.deployCompletePortfolio();
-  portfolioMain = portfolioM;
-  portfolio = portfolioS;
+  const portfolioContracts = await f.deployCompletePortfolio(true);
+  portfolioMain = portfolioContracts.portfolioAvax;
+  portfolioSub = portfolioContracts.portfolioSub;
+
 
   orderBooks = await f.deployOrderBooks();
-  exchange = await f.deployExchangeSub(portfolio, orderBooks)
-  tradePairs = await f.deployTradePairs(orderBooks, portfolio, exchange);
+  exchange = await f.deployExchangeSub(portfolioSub, orderBooks)
+  tradePairs = await f.deployTradePairs(orderBooks, portfolioSub, exchange);
 
 
   // initialize address collecting fees
   console.log("=== Set Address Collecting the Fees ===");
-  await portfolio.setFeeAddress(feeSafe);
+  await portfolioSub.setFeeAddress(feeSafe);
   console.log("Called setFeeAddress on Portfolio ");
 
   console.log();
   console.log("=== Creating and Minting Mock Tokens ===");
 
-  const srcChainId = 1;
+
 
   for (let j=0; j<tokenList.length; j++) {
       _tokenStr = tokenList[j];
@@ -146,8 +147,7 @@ before(async () => {
       let _startAuctionMode: any = 2;
       if (_tokenStr === "SER") _startAuctionMode = 0;
 
-      await f.addToken(portfolio, _token, 0.1, _startAuctionMode);
-      await f.addToken(portfolioMain, _token, 0.1, _startAuctionMode);
+      await f.addToken(portfolioMain, portfolioSub,_token, 0.1, _startAuctionMode);
 
       for (let i=0; i<numberOfAccounts; i++) {
           const account = wallets[i].address;
@@ -179,14 +179,14 @@ before(async () => {
 
       // deposit native coin for account to portfolio
       const _nativeBytes32 = Utils.fromUtf8(native);
-      let _bal = await portfolio.getBalance(account, _nativeBytes32);
+      let _bal = await portfolioSub.getBalance(account, _nativeBytes32);
       Utils.printBalances(account, _bal, 18);
       if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
         const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
           await wallet.sendTransaction({to: portfolioMain.address,
                                         value: Utils.toWei(_deposit_amount.toString())});
           //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
-          _bal = await portfolio.getBalance(account, _nativeBytes32);
+          _bal = await portfolioSub.getBalance(account, _nativeBytes32);
           Utils.printBalances(account, _bal, 18);
       }
       console.log();
@@ -199,7 +199,7 @@ before(async () => {
           console.log(`${_tokenStr} @ ${_tokenAddr}`)
           _token = MockToken.attach(_tokenAddr);
           _tokenDecimals = await _token.decimals();
-          _bal = await portfolio.getBalance(account, _tokenBytes32);
+          _bal = await portfolioSub.getBalance(account, _tokenBytes32);
           Utils.printBalances(account, _bal, _tokenDecimals);
           if ((parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) + parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals))) < initial_portfolio_deposits[_tokenStr]) {
             const _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
@@ -208,7 +208,7 @@ before(async () => {
               //console.log("Approve:", account, "to deposit ", _deposit_amount, _tokenStr, "to portfolio.");
               await portfolioMain.connect(wallet).depositToken(account, _tokenBytes32, _deposit_amount_bn, 0);
               //console.log("Deposit:", account, _deposit_amount, _tokenStr, "to portfolio.");
-              _bal = await portfolio.getBalance(account, _tokenBytes32);
+              _bal = await portfolioSub.getBalance(account, _tokenBytes32);
               //Utils.printBalances(account, _bal, _tokenDecimals);
           }
           console.log();
@@ -272,7 +272,7 @@ before(async () => {
       const account = wallets[i].address;
       for (let j=0; j<tokens.length; j++) {
           const token = tokens[j];
-          const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
+          const res = await portfolioSub.getBalance(account, Utils.fromUtf8(token));
           Utils.printBalances(account, res, decimalsMap[token]);
       }
   }
@@ -463,11 +463,11 @@ it("Should not allow anyone to transfer auction token when mode != 0 ", async ()
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(5);
 
-  await expect(portfolio.transferToken(deploymentWallet.address, Utils.fromUtf8(pair.baseSymbol), 100) ).to.be.revertedWith("P-DOTS-01");
-  await expect(portfolio.connect(deploymentWallet).transferToken(accounts[1], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
+  await expect(portfolioSub.transferToken(deploymentWallet.address, Utils.fromUtf8(pair.baseSymbol), 100) ).to.be.revertedWith("P-DOTS-01");
+  await expect(portfolioSub.connect(deploymentWallet).transferToken(accounts[1], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
   for (let mode=2; mode<=6; mode++) {
     await exchange.connect(auctionAdminWallet).setAuctionMode(tp, mode);
-    await expect(portfolio.connect(wallets[1]).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
+    await expect(portfolioSub.connect(wallets[1]).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
   }
 });
 
@@ -693,7 +693,7 @@ it("Should give correct Portfolio state after ALL OUTSTANDING ORDERS CANCELED! A
   for (let i=0; i<accounts.length; i++) {
       for (let j=0; j < tokens.length; j++) {
           const _token = tokens[j];
-          const _bal = await portfolio.getBalance(accounts[i], Utils.fromUtf8(_token));
+          const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
           if (!_bal.total.eq(_bal.available)) {
             console.log(accounts[i] , _token,  "Bal Total ", Utils.formatUnits(_bal.total, decimalsMap[_token]) , "Available", Utils.formatUnits(_bal.available, decimalsMap[_token]));
           }
@@ -733,7 +733,7 @@ it("Should give correct Portfolio state after All orders filled! All Portfolio T
   for (let i=0; i<accounts.length; i++) {
       for (let j=0; j < tokens.length; j++) {
           const _token = tokens[j];
-          const _bal = await portfolio.getBalance(accounts[i], Utils.fromUtf8(_token));
+          const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
           if (!_bal.total.eq(_bal.available)) {
             console.log(accounts[i] , _token,  "Bal Total ", Utils.formatUnits(_bal.total, decimalsMap[_token]) , "Available", Utils.formatUnits(_bal.available, decimalsMap[_token]));
           }
@@ -755,7 +755,7 @@ it("Should allow withdrawal of Auction Token after auction mode = 0 (OFF)", asyn
   for (let i=0; i<accounts.length; i++) {
     const _token = tokens[i];
     if (_token==='LFG') {
-      const _bal = await portfolio.getBalance(accounts[i], Utils.fromUtf8(_token));
+      const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
       lfgBalances[i] = _bal.total;
     }
   }
@@ -764,7 +764,7 @@ it("Should allow withdrawal of Auction Token after auction mode = 0 (OFF)", asyn
     const _token = tokens[i];
     expect(await withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals) ).to.equal(true);
     if (_token==='LFG') {
-      const _bal = await portfolio.getBalance(accounts[i], Utils.fromUtf8(_token));
+      const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
       expect(_bal.total).to.equal(lfgBalances[i].sub(Utils.parseUnits('100', pair.baseDecimals)));
     }
  }
@@ -784,8 +784,8 @@ function findOrder(owner: string, side: number, price: string, quantity: string,
   }
 }
 
-async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: number, symbolByte32: string , decimals: number) {
-  const tx = await portfolio.connect(wallet).withdrawToken(wallet.address, symbolByte32, Utils.parseUnits(withdrawal_amount.toString(), decimals), 0);
+async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: number, symbolByte32: string, decimals: number) {
+  const tx =await f.withdrawToken(portfolioSub, wallet, symbolByte32, decimals, withdrawal_amount.toString())
   await tx.wait();
   return true;
 }

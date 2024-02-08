@@ -48,13 +48,13 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
     let released: BigNumber
     let vestedAmount: BigNumber
     let vestedPercentageAmount: BigNumber
-
+    let srcChainListOrgId: number;
     let now: number;
-
-    const srcChainId: any = 1;
 
     before(async () => {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
+        const { cChain } = f.getChains();
+        srcChainListOrgId= cChain.chainListOrgId;
     })
 
     beforeEach(async function () {
@@ -62,7 +62,7 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
 
         testToken = await f.deployDexalotToken();
 
-        const { portfolioMain: portfolioM } = await f.deployCompletePortfolio();
+        const { portfolioAvax: portfolioM } = await f.deployCompletePortfolio();
 
         portfolio = portfolioM;
 
@@ -113,7 +113,7 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
 
         it("Should have correct vestedPercentageAmount, vestedAmount and releasable amounts for different key times", async function () {
             const dt = Utils.fromUtf8("ALOT");
-            const am: any = 0; // auction mode OFF
+
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -126,7 +126,10 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
 
-            await portfolio.addToken(dt, testToken.address, srcChainId, await testToken.decimals(), am, '0', ethers.utils.parseUnits('0.5', await testToken.decimals()));
+            //await f.addTokenToPortfolioMain(portfolio, testToken as MockToken, 0.5, false, 0);
+            await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), 0,
+            Utils.parseUnits('0.5', await testToken.decimals()), false);
+            // await portfolio.addToken(dt, testToken.address, srcChainListOrgId,await testToken.decimals(),  '0', ethers.utils.parseUnits('0.5', await testToken.decimals()),false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  BEFORE START OF EPOCH 1:

@@ -25,20 +25,20 @@ contract LzAppMock is LzApp {
     // solhint-disable-next-line no-empty-blocks
     function lzReceive(uint16, bytes memory, uint64, bytes memory) external override {}
 
-    function lzSend(bytes memory _payload) private returns (uint256) {
-        return super.lzSend(_payload, payable(this));
+    function lzSend(uint16 _dstChainId, bytes memory _payload) private returns (uint256) {
+        return super.lzSend(_dstChainId, _payload, payable(this));
     }
 
-    function lzSendMock(bytes memory _payload) external returns (uint256) {
-        return lzSend(_payload);
+    function lzSendMock(uint16 _dstChainId, bytes memory _payload) external returns (uint256) {
+        return lzSend(_dstChainId, _payload);
     }
 
-    function getInboundNonceMock() external view returns (uint64) {
-        return super.getInboundNonce();
+    function getInboundNonceMock(uint16 _srcChainId,  bytes calldata _srcAddress) external view returns (uint64) {
+        return super.getInboundNonce(_srcChainId, _srcAddress);
     }
 
-    function getOutboundNonceMock() external view returns (uint64) {
-        return super.getOutboundNonce();
+    function getOutboundNonceMock(uint16 _dstChainId) external view returns (uint64) {
+        return super.getOutboundNonce(_dstChainId);
     }
 
     // solhint-disable-next-line no-empty-blocks

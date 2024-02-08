@@ -4,6 +4,7 @@ pragma solidity 0.8.17;
 
 import "./IPortfolio.sol";
 import "./ITradePairs.sol";
+import "./IMainnetRFQ.sol";
 
 /**
  * @title Interface of PortfolioBridge
@@ -18,15 +19,27 @@ interface IPortfolioBridge {
 
     function unpause() external;
 
-    function sendXChainMessage(BridgeProvider _bridge, IPortfolio.XFER memory _xfer) external;
+    function sendXChainMessage(
+        uint32 _dstChainListOrgChainId,
+        BridgeProvider _bridge,
+        IPortfolio.XFER memory _xfer
+    ) external returns (uint256 messageFee);
 
-    function getXFerMessage(bytes calldata _data) external view returns (address, bytes32, uint256);
+    function getXFerMessage(bytes calldata _data) external view returns (IPortfolio.XFER memory, bytes32);
 
     function enableBridgeProvider(BridgeProvider _bridge, bool _enable) external;
 
     function isBridgeProviderEnabled(BridgeProvider _bridge) external view returns (bool);
 
     function getDefaultBridgeProvider() external view returns (BridgeProvider);
+
+    function getDefaultDestinationChain() external view returns (uint32);
+
+    function getPortfolio() external view returns (IPortfolio);
+
+    function getMainnetRfq() external view returns (IMainnetRFQ);
+
+    function getTokenList() external view returns (bytes32[] memory);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() external returns (bytes32);

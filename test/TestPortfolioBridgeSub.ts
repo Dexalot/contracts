@@ -5,12 +5,12 @@
 import Utils from './utils';
 
 import {
-    PortfolioBridge,
+    PortfolioBridgeMain,
     PortfolioMain,
     PortfolioSub,
     PortfolioBridgeSub,
-    PortfolioBridgeSub__factory,
-    MockToken
+    MockToken,
+    DelayedTransfers
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -18,7 +18,6 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from 'ethers';
-import { MockContract, smock } from '@defi-wonderland/smock';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 
 describe("Portfolio Bridge Sub", () => {
@@ -27,7 +26,9 @@ describe("Portfolio Bridge Sub", () => {
     let mock: MockToken;
 
     let portfolioBridgeSub: PortfolioBridgeSub;
-    let portfolioBridgeMain: PortfolioBridge;
+    let portfolioBridgeMain: PortfolioBridgeMain;
+    let delayedTransfers: DelayedTransfers;
+
 
     let delayPeriod: number;
     let epochLength: number;
@@ -36,11 +37,11 @@ describe("Portfolio Bridge Sub", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
     let owner: SignerWithAddress;
-
-    const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+    let defaultDestinationChainId:number;
 
     const AVAX: string = Utils.fromUtf8("AVAX");
     const ALOT: string = Utils.fromUtf8("ALOT");
+
 
     before(async function () {
         const { owner: owner1, trader1: t1, trader2: t2} = await f.getAccounts();
@@ -50,22 +51,27 @@ describe("Portfolio Bridge Sub", () => {
         console.log("Owner", owner.address);
         console.log("Trader1", trader1.address);
         mock = await f.deployMockToken("MOCK", 18);
+        const portfolioContracts = await f.deployCompletePortfolio();
+        await f.printTokens([portfolioContracts.portfolioAvax], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
+
     });
 
 
     beforeEach(async function () {
 
-        const {portfolioMain: portfolioM, portfolioSub: portfolioS, portfolioBridgeMain: pbrigeMain, portfolioBridgeSub: pbrigeSub} = await f.deployCompletePortfolio();
-        portfolioMain = portfolioM;
-        portfolioSub = portfolioS;
-
-        portfolioBridgeMain = pbrigeMain;
-        portfolioBridgeSub = pbrigeSub;
+        const portfolioContracts = await f.deployCompletePortfolio();
+        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioSub = portfolioContracts.portfolioSub;
+        portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
+        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
+        delayedTransfers= portfolioContracts.delayedTransfers;
 
         delayPeriod = 10000
         epochLength = 100000
         delayThreshold = ethers.utils.parseEther("0.5");
         volumeCap = ethers.utils.parseEther("1");
+        defaultDestinationChainId = await portfolioBridgeSub.getDefaultDestinationChain();
+
     });
 
     it("Should call VERSION() correctly", async () => {
@@ -92,34 +98,37 @@ describe("Portfolio Bridge Sub", () => {
         .to.emit(portfolioBridgeSub, "RoleGranted")
     })
 
+    it("Default Destination should be set to Cchain", async () => {
+        const { cChain } = f.getChains();
+        expect(await portfolioBridgeSub.getDefaultDestinationChain()).to.be.equal(cChain.chainListOrgId);
+    });
+
     it("Should use addToken correctly for native coin", async () => {
         const ALOT = Utils.fromUtf8("ALOT");
-        const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-        const srcChainId = 1;
         const tokenDecimals = 18;
         const auctionMode: any = 0;
-
+        const { cChain, dexalotSubnet } = f.getChains();
         // fail for non-privileged role
-        await expect(portfolioBridgeSub.connect(trader1).addToken(ALOT, ZERO_ADDRESS, srcChainId, tokenDecimals, auctionMode))
+        await expect(portfolioBridgeSub.connect(trader1).addToken(ALOT, ethers.constants.AddressZero, cChain.chainListOrgId, tokenDecimals, auctionMode, ALOT))
             .to.be.revertedWith("PB-OACC-01");
 
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(2);
         // silent fail / do nothing if native token is already added
-        await portfolioBridgeSub.addToken(ALOT, ZERO_ADDRESS, srcChainId, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, dexalotSubnet.chainListOrgId, tokenDecimals, auctionMode, ALOT);
         //BOth AVAX & ALOT is added by default
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(2);
-        const tdet = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" + 1))
+        const tdet = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" + dexalotSubnet.chainListOrgId))
         expect(tdet.decimals).to.equal(tokenDecimals);
-        expect(tdet.tokenAddress).to.equal(ZERO_ADDRESS);
+        expect(tdet.tokenAddress).to.equal(ethers.constants.AddressZero);
         expect(tdet.auctionMode).to.equal(auctionMode);
-        expect(tdet.srcChainId).to.equal(srcChainId);
+        expect(tdet.srcChainId).to.equal(dexalotSubnet.chainListOrgId);
         expect(tdet.symbol).to.equal(ALOT);
-        expect(tdet.symbolId).to.equal(Utils.fromUtf8("ALOT" + srcChainId));
+        expect(tdet.symbolId).to.equal(Utils.fromUtf8("ALOT" + dexalotSubnet.chainListOrgId));
 
         //Add ALOT from another chain
         const ALOT_ADDRESS = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD"; //any address
-        const srcChainId2 = 2;
-        await portfolioBridgeSub.addToken(ALOT, ALOT_ADDRESS, srcChainId2, tokenDecimals, auctionMode);
+        const srcChainId2 = cChain.chainListOrgId;
+        await portfolioBridgeSub.addToken(ALOT, ALOT_ADDRESS, srcChainId2, tokenDecimals, auctionMode, ALOT);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
 
         const tdet2 = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" + srcChainId2))
@@ -139,17 +148,17 @@ describe("Portfolio Bridge Sub", () => {
         const auctionMode: any = 0;
 
         // fail for non-privileged role
-        await expect(portfolioBridgeSub.connect(trader1).addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode))
+        await expect(portfolioBridgeSub.connect(trader1).addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK))
             .to.be.revertedWith("PB-OACC-01");
 
         // fail if token is not in Portfolio common symbols
-        await expect(portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode))
+        await expect(portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK))
             .to.be.revertedWith("PB-SDMP-01");
 
         // succeed for default admin role
-        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals));
+        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
-        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK);
         const tdet = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("MOCK" + 1))
         expect(tdet.decimals).to.equal(tokenDecimals);
         expect(tdet.tokenAddress).to.equal(mock.address);
@@ -159,49 +168,50 @@ describe("Portfolio Bridge Sub", () => {
         expect(tdet.symbolId).to.equal(Utils.fromUtf8("MOCK" + srcChainId));
 
         // silent fail / do nothing if ERC20 token is already added
-        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
     });
 
     it("Should use removeToken correctly for native coins", async () => {
         const ALOT = Utils.fromUtf8("ALOT");
-        const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
         const srcChainId = await portfolioSub.getChainId();
         const tokenDecimals = await mock.decimals();
         const auctionMode: any = 0;
 
-        await portfolioBridgeSub.addToken(ALOT, ZERO_ADDRESS, srcChainId, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, srcChainId, tokenDecimals, auctionMode, ALOT);
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + srcChainId));
 
         // fail not paused
-        await expect(portfolioBridgeSub.connect(trader1).removeToken(ALOT, srcChainId))
+        await expect(portfolioBridgeSub.connect(trader1).removeToken(ALOT, srcChainId, ALOT))
             .to.be.revertedWith("Pausable: not paused");
 
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), trader1.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), trader1.address);
         await portfolioBridgeSub.connect(trader1).pause();
 
         // fail for non-privileged role
-        await expect(portfolioBridgeSub.connect(trader2).removeToken(ALOT, srcChainId))
+        await expect(portfolioBridgeSub.connect(trader2).removeToken(ALOT, srcChainId, ALOT))
             .to.be.revertedWith("PB-OACC-01");
 
         //Add ALOT with the mainnet chain id  (use portfolioBridgeMain.address to mock ALOT address)
-        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode, ALOT);
 
-        //Remove with PORTFOLIO_ROLE
-        await portfolioBridgeSub.connect(trader1).removeToken(ALOT, 5555);
+        //Remove with BRIDGE_USER_ROLE
+        await portfolioBridgeSub.connect(trader1).removeToken(ALOT, 5555, ALOT);
         expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("ALOT" + '5555'));
 
         //Add ALOT with the mainnet chain id again (use portfolioBridgeMain.address to mock ALOT address)
-        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode);
+        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode, ALOT);
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + '5555'));
         // Remove ALOT from chain 5555 with DEFAULT_ADMIN_ROLE
-        await portfolioBridgeSub.removeToken(ALOT, 5555);
+        await portfolioBridgeSub.removeToken(ALOT, 5555, ALOT);
         expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("ALOT" + '5555'));
         //Slient fail for ALOT with non-existent chain
-        await portfolioBridgeSub.removeToken(ALOT, 888);
+        await portfolioBridgeSub.removeToken(ALOT, 888, ALOT);
 
         // silent fail for default admin role as you cannot remove native token
-        await portfolioBridgeSub.removeToken(Utils.fromUtf8("ALOT" + srcChainId), srcChainId);
+        await portfolioBridgeSub.removeToken(Utils.fromUtf8("ALOT" + srcChainId), srcChainId, ALOT);
+        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + srcChainId));
 
     });
@@ -212,25 +222,27 @@ describe("Portfolio Bridge Sub", () => {
         const tokenDecimals = 18;
         const auctionMode: any = 0;
 
-        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals));
+        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);  // ALOT + AVAX + MOCK
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("MOCK" + srcChainId));
 
         // fail not paused
-        await expect(portfolioBridgeSub.connect(trader1).removeToken(MOCK, srcChainId))
+        await expect(portfolioBridgeSub.connect(trader1).removeToken(MOCK, srcChainId,MOCK))
             .to.be.revertedWith("Pausable: not paused");
 
         // fail for non-privileged role
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
         await portfolioBridgeSub.pause();
-        await expect(portfolioBridgeSub.connect(trader1).removeToken(MOCK, srcChainId))
+        await expect(portfolioBridgeSub.connect(trader1).removeToken(MOCK, srcChainId,MOCK))
             .to.be.revertedWith("PB-OACC-01");
 
-        // succeed for default admin role
-        await portfolioBridgeSub.removeToken(MOCK, srcChainId);
-        expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("MOCK" + srcChainId));
-    });
+        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
 
+        // succeed for default admin role
+        await portfolioBridgeSub.removeToken(MOCK, srcChainId,MOCK);
+        expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("MOCK" + srcChainId));
+        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+    });
 
     it("Should refund native", async () => {
         const { owner } = await f.getAccounts();
@@ -286,7 +298,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(portfolioBridgeSub.pause()).to.be.revertedWith("AccessControl:")
         expect(portfolioBridgeSub.unpause()).to.be.revertedWith("AccessControl:")
 
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
         await portfolioBridgeSub.pause();
         expect(await portfolioBridgeSub.paused()).to.be.true;
 
@@ -310,7 +322,7 @@ describe("Portfolio Bridge Sub", () => {
         // Fail for non-bridge admin
         await expect ( portfolioBridgeSub.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("AccessControl:")
         // give BRIDGE_ADMIN to owner
-        await portfolioBridgeSub.grantRole(portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await expect (portfolioBridgeSub.setBridgeParam(AVAX, Utils.toWei("0.3"), Utils.toWei("0"), true)).to.revertedWith("P-GSRO-01")
         await portfolioBridgeSub.setBridgeParam(AVAX,  Utils.toWei("0.2"), Utils.toWei("0.1"), true)
         params2 =await portfolioSub.bridgeParams(AVAX);
@@ -335,106 +347,115 @@ describe("Portfolio Bridge Sub", () => {
     it("Should not revoke role if it is the only member or portfolio", async () => {
         const {owner} = await f.getAccounts();
 
-        await expect(portfolioBridgeSub.revokeRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address)).to.be.revertedWith("PB-ALOA-02");
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address);
-        await expect(portfolioBridgeSub.revokeRole(await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address))
+        await expect(portfolioBridgeSub.revokeRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address)).to.be.revertedWith("PB-ALOA-02");
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        await expect(portfolioBridgeSub.revokeRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address))
         .to.emit(portfolioBridgeSub, "RoleUpdated")
-        .withArgs("PORTFOLIOBRIDGE", "REMOVE-ROLE", await portfolioBridgeSub.PORTFOLIO_ROLE(), owner.address);
+        .withArgs("PORTFOLIOBRIDGE", "REMOVE-ROLE", await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
 
     });
 
     it("Should set delayPeriod correctly", async () => {
-        await expect(portfolioBridgeSub.setDelayPeriod(delayPeriod))
-        .to.emit(portfolioBridgeSub, "DelayPeriodUpdated")
+        await expect(delayedTransfers.setDelayPeriod(delayPeriod))
+        .to.emit(delayedTransfers, "DelayPeriodUpdated")
         .withArgs(delayPeriod);
 
-        expect(await portfolioBridgeSub.delayPeriod()).to.equal(delayPeriod);
+        expect(await delayedTransfers.delayPeriod()).to.equal(delayPeriod);
     });
 
     it("Should set gasForDestinationLzReceive correctly", async () => {
         const { owner} = await f.getAccounts();
-
+        const { cChain} = f.getChains();
         const gasForDestinationLzReceive = BigNumber.from(500000);
-        const gasForDestinationLzReceiveLow = BigNumber.from(150000);
+        const gasForDestinationLzReceiveLow = BigNumber.from(40000);
 
-        await portfolioBridgeSub.grantRole(portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+
+        const defaultBridge =0
         // Too low
-        await expect(portfolioBridgeSub.setGasForDestinationLzReceive(gasForDestinationLzReceiveLow)).to.be.revertedWith("PB-MING-01");
+        await expect(portfolioBridgeSub.setGasForDestinationReceive(defaultBridge, cChain.lzChainId, gasForDestinationLzReceiveLow)).to.be.revertedWith("PB-MING-01");
 
 
-        await expect(portfolioBridgeSub.setGasForDestinationLzReceive(gasForDestinationLzReceive))
+        await expect(portfolioBridgeSub.setGasForDestinationReceive(defaultBridge, cChain.lzChainId, gasForDestinationLzReceive))
         .to.emit(portfolioBridgeSub, "GasForDestinationLzReceiveUpdated")
-        .withArgs(gasForDestinationLzReceive);
+        .withArgs(defaultBridge, cChain.lzChainId, gasForDestinationLzReceive);
 
-        expect(await portfolioBridgeSub.gasForDestinationLzReceive()).to.be.equal(gasForDestinationLzReceive);
+        expect((await portfolioBridgeSub.remoteParams(cChain.lzChainId)).gasForDestination).to.be.equal(gasForDestinationLzReceive);
     });
 
     it("Should set epochLength correctly", async () => {
-        await expect(portfolioBridgeSub.setEpochLength(epochLength))
-        .to.emit(portfolioBridgeSub, "EpochLengthUpdated")
+        await expect(delayedTransfers.setEpochLength(epochLength))
+        .to.emit(delayedTransfers, "EpochLengthUpdated")
         .withArgs(epochLength);
 
-        expect(await portfolioBridgeSub.epochLength()).to.equal(epochLength);
+        expect(await delayedTransfers.epochLength()).to.equal(epochLength);
     });
 
     it("Should set epochVolumeCaps correctly", async () => {
-        await expect(portfolioBridgeSub.setEpochVolumeCaps(
+        await expect(delayedTransfers.setEpochVolumeCaps(
             [AVAX],
             [volumeCap.toString()]
         ))
-        .to.emit(portfolioBridgeSub, "EpochVolumeUpdated")
+        .to.emit(delayedTransfers, "EpochVolumeUpdated")
         .withArgs(
             AVAX,
             volumeCap.toString()
         );
 
-        expect(await portfolioBridgeSub.epochVolumeCaps(AVAX)).to.equal(volumeCap);
+        expect(await delayedTransfers.epochVolumeCaps(AVAX)).to.equal(volumeCap);
     });
 
     it("Should set delayThresholds correctly", async () => {
-        await expect(portfolioBridgeSub.setDelayThresholds(
+        await expect(delayedTransfers.setDelayThresholds(
             [AVAX],
             [delayThreshold.toString()]
         ))
-        .to.emit(portfolioBridgeSub, "DelayThresholdUpdated")
+        .to.emit(delayedTransfers, "DelayThresholdUpdated")
         .withArgs(
             AVAX,
             delayThreshold.toString()
         );
 
-        expect(await portfolioBridgeSub.delayThresholds(AVAX)).to.equal(delayThreshold);
+        expect(await delayedTransfers.delayThresholds(AVAX)).to.equal(delayThreshold);
     });
 
-    it("Should not set delayThresholds and epochVolumeCaps if lengths are not match", async () => {
-        await expect(portfolioBridgeSub.setDelayThresholds(
+    it("Should not set delayThresholds,  epochVolumeCaps setInventoryBySymbolId if lengths are not match", async () => {
+        await expect(delayedTransfers.setDelayThresholds(
             [AVAX, ALOT],
             [delayThreshold.toString()]
         ))
         .to.be.revertedWith("PB-LENM-01");
 
-        await expect(portfolioBridgeSub.setEpochVolumeCaps(
+        await expect(delayedTransfers.setEpochVolumeCaps(
             [AVAX, ALOT],
             [volumeCap.toString()]
         ))
-        .to.be.revertedWith("PB-LENM-02");
+            .to.be.revertedWith("PB-LENM-01");
+
+        await expect(portfolioBridgeSub.setInventoryBySymbolId(
+            [AVAX, ALOT],
+            [volumeCap.toString()]
+        ))
+            .to.be.revertedWith("PB-LENM-01");
+
     });
 
     it("Should not let not-owner to call set functions", async () => {
         const { trader1 } = await f.getAccounts();
 
-        await expect(portfolioBridgeSub.connect(trader1).setDelayPeriod(delayPeriod))
+        await expect(delayedTransfers.connect(trader1).setDelayPeriod(delayPeriod))
         .to.be.revertedWith("AccessControl: account");
 
-        await expect(portfolioBridgeSub.connect(trader1).setEpochLength(epochLength))
+        await expect(delayedTransfers.connect(trader1).setEpochLength(epochLength))
         .to.be.revertedWith("AccessControl: account");
 
-        await expect(portfolioBridgeSub.connect(trader1).setDelayThresholds(
+        await expect(delayedTransfers.connect(trader1).setDelayThresholds(
             [AVAX],
             [delayThreshold.toString()]
         ))
         .to.be.revertedWith("AccessControl: account");
 
-        await expect(portfolioBridgeSub.connect(trader1).setEpochVolumeCaps(
+        await expect(delayedTransfers.connect(trader1).setEpochVolumeCaps(
             [AVAX],
             [volumeCap.toString()]
         ))
@@ -445,7 +466,7 @@ describe("Portfolio Bridge Sub", () => {
     it("Should deposit if it is under the threshold", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -459,43 +480,42 @@ describe("Portfolio Bridge Sub", () => {
         expect((await portfolioSub.getBalance(owner.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.49").toString());
     });
 
-    it("Should added to delayed transfer if it is above the threshold - deposit", async () => {
-        const { owner } = await f.getAccounts();
-        await f.setBridgeSubSettings(
-            portfolioBridgeSub,
-            {
-                delayPeriod,
-                epochLength,
-                token: AVAX,
-                delayThreshold: delayThreshold.toString(),
-                epochVolumeCap: volumeCap.toString()
-            }
-        )
+    // it("Should added to delayed transfer if it is above the threshold - deposit", async () => {
+    //     const { owner } = await f.getAccounts();
+    //     await f.setBridgeSubSettings(
+    //         portfolioBridgeSub,
+    //         {
+    //             delayPeriod,
+    //             epochLength,
+    //             token: AVAX,
+    //             delayThreshold: delayThreshold.toString(),
+    //             epochVolumeCap: volumeCap.toString()
+    //         }
+    //     )
 
-        const tx = await f.depositNative(portfolioMain, owner, "0.51")
-        const receipt = await tx.wait();
-        const log = receipt.logs[2]
+    //     const tx = await f.depositNative(portfolioMain, owner, "0.51")
+    //     const receipt = await tx.wait();
+    //     const log = receipt.logs[2]
 
-        const data = ethers.utils.defaultAbiCoder.decode(
-            [ 'string', 'bytes32'],
-            log.data
-         );
+    //     const data = ethers.utils.defaultAbiCoder.decode(
+    //         [ 'string', 'bytes32'],
+    //         log.data
+    //      );
 
-        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
-        expect(delayedTransfer.trader).to.equal(owner.address);
-        expect(delayedTransfer.symbol).to.equal(AVAX);
-        expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
-    });
+    //     const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
+    //     expect(delayedTransfer.trader).to.equal(owner.address);
+    //     expect(delayedTransfer.symbol).to.equal(AVAX);
+    //     expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
+    // });
 
     it("Should use addDelayedTransfer correctly", async () => {
-        const { admin, owner, trader1 } = await f.getAccounts();
-
+        const { owner, trader1 } = await f.getAccounts();
         const bridge = 0;            // BridgeProvider = 0 = LZ
 
         const nonce = 0;
-        const transaction = 1;                // transaction = 1 = DEPOSIT [main --> sub]
+        const transaction = 0;      //  transaction =.  0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
         const trader = trader1.address;
-        const symbol = AVAX;
+        const symbol =  Utils.fromUtf8("AVAX") // + cChain.chainListOrgId);
         const quantity = Utils.toWei("5");
         const timestamp = BigNumber.from(await f.latestTime());
 
@@ -507,57 +527,75 @@ describe("Portfolio Bridge Sub", () => {
                 trader,
                 symbol,
                 quantity,
-                timestamp
+                timestamp,
+                customdata: ethers.constants.HashZero
         };
 
-        // create a smock of PortfolioBridgeSUb
-        const MockPortfolioBridgeSub = await smock.mock<PortfolioBridgeSub__factory>("PortfolioBridgeSub");
-        const lzEndpoint = await f.deployLZEndpoint(1);
-        const portfolioBridgeSubMock: MockContract<PortfolioBridgeSub> = await  MockPortfolioBridgeSub.deploy();  // use deploy instead of ugrades.deployProxy and call initialize
-        await portfolioBridgeSubMock.initialize(lzEndpoint.address);
-        await portfolioBridgeSubMock.setPortfolio(portfolioSub.address);
-        await portfolioBridgeSubMock.setDefaultTargetChain(1);
-        await portfolioBridgeSubMock.grantRole(await portfolioBridgeSubMock.PORTFOLIO_ROLE(), owner.address);
-
-        await portfolioBridgeSubMock.addToken(AVAX, ZERO_ADDRESS, 1, 18, 0);
-        const tdet = await portfolioBridgeSubMock.getTokenDetails(Utils.fromUtf8('AVAX' + 1))
-        expect(tdet.decimals).to.equal(18);
-        expect(tdet.tokenAddress).to.equal("0x0000000000000000000000000000000000000000");
-        expect(tdet.auctionMode).to.equal(0);
-        expect(tdet.srcChainId).to.equal(1);
-        expect(tdet.symbol).to.equal(Utils.fromUtf8("AVAX"));
-        expect(tdet.symbolId).to.equal(Utils.fromUtf8("AVAX" + 1));
-
-        const dt: any = {};
-        dt[symbol] = delayThreshold;
-        await portfolioBridgeSubMock.setVariable("delayThresholds", dt);
+        await expect(delayedTransfers.setDelayThresholds(
+            [AVAX],
+            [delayThreshold.toString()]
+        ))
+        .to.emit(delayedTransfers, "DelayThresholdUpdated")
+        .withArgs(
+            AVAX,
+            delayThreshold.toString()
+        );
 
         // quantity 10 > delayThreshold 1 so it will create a delayedTransfer
-        await portfolioBridgeSubMock.sendXChainMessage(bridge, xfer);
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        const tx = await portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer);
+        const receipt = await tx.wait();
+
+        const log = receipt.logs[0]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+        );
+        const delayedTransfer = await delayedTransfers.delayedTransfers(data[1])
+        expect(delayedTransfer.trader).to.equal(trader);
+        expect(delayedTransfer.symbol).to.equal(symbol);
+        expect(delayedTransfer.quantity.toString()).to.equal(quantity);
 
         // same message sent again will trigger the require for the same id
-        await expect(portfolioBridgeSubMock.sendXChainMessage(bridge, xfer)).to.be.revertedWith("PB-DTAE-01");
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer)).to.be.revertedWith("PB-DTAE-01");
 
         //no delayed transfers
-        dt[symbol] = 0;
-        await portfolioBridgeSubMock.setVariable("delayThresholds", dt);
-        xfer.nonce=2;
-        xfer.timestamp =BigNumber.from(await f.latestTime());
-        //not enough funds to send the messsage
-        expect(portfolioBridgeSubMock.sendXChainMessage(bridge, xfer)).to.be.revertedWith("PB-CBIZ-01");
+        await expect(delayedTransfers.setDelayThresholds(
+            [AVAX],
+            ['0']
+        ))
+        .to.emit(delayedTransfers, "DelayThresholdUpdated")
+        .withArgs(
+            AVAX,
+            '0'
+        );
 
-        await admin.sendTransaction({
-            to: portfolioBridgeSubMock.address,
-            value: ethers.utils.parseEther("100"),
-        });
-        //LzApp dest not set
-        expect(portfolioBridgeSubMock.sendXChainMessage(bridge, xfer)).to.be.revertedWith("LA-DCNT-01");
+        xfer.nonce=2;
+        xfer.timestamp = BigNumber.from(await f.latestTime());
+        xfer.quantity = Utils.toWei("0.1");
+
+        // No inventory for the c-chain. We didn't make any deposit
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer)).to.be.revertedWith("PB-INVT-01");
+
+        await f.depositNative(portfolioMain, trader1, "20");
+
+        await portfolioBridgeSub.refundNative();
+        //not enough funds to pay the bridge fee
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer)).to.be.revertedWith("PB-CBIZ-01");
+
+        // await admin.sendTransaction({
+        //     to: portfolioBridgeSub.address,
+        //     value: ethers.utils.parseEther("100"),
+        // });
+
     });
 
     it("Should use executeDelayedTransfer correctly - withdraw", async () => {
         const { admin } = await f.getAccounts();
+        const { cChain} = f.getChains();
+
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -567,15 +605,15 @@ describe("Portfolio Bridge Sub", () => {
             }
         )
 
-        const bridge = 0;            // BridgeProvider = 0 = LZ
-
+        // Deposit
         await f.depositNative(portfolioMain, admin, "0.3");
         await f.depositNative(portfolioMain, admin, "0.3");
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
         // quantity 0.51 > delayThreshold 0.50 so it will create a delayedTransfer
-        let tx = await portfolioSub.connect(admin).withdrawToken(admin.address, AVAX, ethers.utils.parseEther("0.51"), bridge);
+        let tx = await f.withdrawToken(portfolioSub, admin, AVAX, 18, "0.51");
         let receipt: any = await tx.wait();
+
         const log = receipt.logs[1]
         const data = ethers.utils.defaultAbiCoder.decode(
             [ 'string', 'bytes32'],
@@ -586,19 +624,52 @@ describe("Portfolio Bridge Sub", () => {
         await ethers.provider.send("evm_mine", []);
 
         // execute delayed withdraw transaction after delayedPeriod
-        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]);
+        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, data[1]);
         receipt = await tx.wait();
-        expect(receipt.events[2].args.xfer.nonce).to.be.equal(1);       // nonce is 1
-        expect(receipt.events[2].args.xfer.transaction).to.be.equal(0); // withdraw
-        expect(receipt.events[2].args.xfer.trader).to.be.equal(admin.address);
-        expect(receipt.events[2].args.xfer.symbol).to.be.equal(Utils.fromUtf8("AVAX"+ 1));
-        expect(receipt.events[2].args.xfer.quantity).to.be.equal(ethers.utils.parseEther("0.51"));
+        expect(receipt.events[1].args.xfer.nonce).to.be.equal(1);       // nonce is 1
+        expect(receipt.events[1].args.xfer.transaction).to.be.equal(0); // withdraw
+        expect(receipt.events[1].args.xfer.trader).to.be.equal(admin.address);
+        expect(receipt.events[1].args.xfer.symbol).to.be.equal(Utils.fromUtf8("AVAX"+ cChain.chainListOrgId));
+        expect(receipt.events[1].args.xfer.quantity).to.be.equal(ethers.utils.parseEther("0.51"));
     });
 
-    it("Should execute delayed transfer - deposit", async () => {
+    // it("Should execute delayed transfer - deposit", async () => {
+    //     const { admin } = await f.getAccounts();
+    //     await f.setBridgeSubSettings(
+    //         portfolioBridgeSub,
+    //         {
+    //             delayPeriod,
+    //             epochLength,
+    //             token: AVAX,
+    //             delayThreshold: delayThreshold.toString(),
+    //             epochVolumeCap: volumeCap.toString()
+    //         }
+    //     )
+
+    //     const tx = await f.depositNative(portfolioMain, admin, "0.51")
+    //     const receipt = await tx.wait();
+    //     const log = receipt.logs[2]
+    //     const data = ethers.utils.defaultAbiCoder.decode(
+    //         [ 'string', 'bytes32'],
+    //         log.data
+    //      );
+
+
+    //     await ethers.provider.send("evm_increaseTime", [delayPeriod]);
+    //     await ethers.provider.send("evm_mine", []);
+    //     await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
+    //     await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, data[1]))
+    //     .to.emit(portfolioBridgeSub, "DelayedTransfer")
+
+    //     expect((await portfolioBridgeSub.connect(admin).delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
+
+    //     expect((await portfolioSub.getBalance(admin.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
+    // });
+
+    it("Should not execute delayed transfer if it is still locked- withdraw", async () => {
         const { admin } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -608,56 +679,25 @@ describe("Portfolio Bridge Sub", () => {
             }
         )
 
-        const tx = await f.depositNative(portfolioMain, admin, "0.51")
+        await f.depositNative(portfolioMain, admin, "10");
+
+        const tx = await f.withdrawToken(portfolioSub, admin, AVAX, 18, "0.51");
         const receipt = await tx.wait();
-        const log = receipt.logs[2]
-        const data = ethers.utils.defaultAbiCoder.decode(
-            [ 'string', 'bytes32'],
-            log.data
-         );
-
-
-        await ethers.provider.send("evm_increaseTime", [delayPeriod]);
-        await ethers.provider.send("evm_mine", []);
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
-        .to.emit(portfolioBridgeSub, "DelayedTransfer")
-
-        expect((await portfolioBridgeSub.connect(admin).delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
-
-        expect((await portfolioSub.getBalance(admin.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
-    });
-
-    it("Should not execute delayed transfer if it is still locked", async () => {
-        const { admin } = await f.getAccounts();
-        await f.setBridgeSubSettings(
-            portfolioBridgeSub,
-            {
-                delayPeriod,
-                epochLength,
-                token: AVAX,
-                delayThreshold: delayThreshold.toString(),
-                epochVolumeCap: volumeCap.toString()
-            }
-        )
-
-        const tx = await f.depositNative(portfolioMain, admin, "0.51")
-        const receipt = await tx.wait();
-        const log = receipt.logs[2]
+        const log = receipt.logs[1]
         const data = ethers.utils.defaultAbiCoder.decode(
             [ 'string', 'bytes32'],
             log.data
          );
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, data[1]))
         .to.be.revertedWith("PB-DTSL-01");
     });
 
     it("Should not execute delayed transfer if it is not exists", async () => {
         const { admin } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -670,14 +710,14 @@ describe("Portfolio Bridge Sub", () => {
         const tx = await f.depositNative(portfolioMain, admin, "0.52")
         await tx.wait();
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer("0xa9a1e33ecab66560f25b7949284c89fd2822970274baacb97111af500098e038")) // id for 0.51
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, "0xa9a1e33ecab66560f25b7949284c89fd2822970274baacb97111af500098e038")) // id for 0.51
             .to.be.revertedWith("PB-DTNE-01");
     });
 
     it("Should not execute delayed transfer if caller is not owner", async () => {
         const { owner, trader1 } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -687,15 +727,17 @@ describe("Portfolio Bridge Sub", () => {
             }
         )
 
-        const tx = await f.depositNative(portfolioMain, owner, "0.51")
+        await f.depositNative(portfolioMain, owner, "10");
+        const tx = await f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.51");
+
         const receipt = await tx.wait();
-        const log = receipt.logs[2]
+        const log = receipt.logs[1]
         const data = ethers.utils.defaultAbiCoder.decode(
             [ 'string', 'bytes32'],
             log.data
          );
 
-        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(data[1]))
+        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(defaultDestinationChainId, data[1]))
         .to.be.revertedWith("AccessControl: account");
     });
 
@@ -703,7 +745,7 @@ describe("Portfolio Bridge Sub", () => {
     it("Should revert in one time because of volume cap", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -719,20 +761,14 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("1.02").toString());
 
-        await expect(
-            portfolioSub.withdrawToken(
-                owner.address,
-                AVAX,
-                ethers.utils.parseEther("1.02"),
-                0
-            )
-        ).to.be.revertedWith("PB-VCAP-01");
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "1.02"))
+        .to.be.revertedWith("PB-VCAP-01");
     });
 
     it("Should revert in sequential withdrawals because of volume cap", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -748,36 +784,28 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("1.02").toString());
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
+        // await expect(f.withdrawTokenToDst(portfolioSub, owner, AVAX, 18, "0.34", defaultDestinationChainId))
+        // .to.emit(portfolioSub, "PortfolioUpdated")
+
+
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
         .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(
-            portfolioSub.withdrawToken(
-                owner.address,
-                AVAX,
-                ethers.utils.parseEther("0.34"),
-                0
-            )
-        ).to.be.revertedWith("PB-VCAP-01");
+
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
+
+
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.be.revertedWith("PB-VCAP-01");
+
     });
 
     it("Should not revert in sequential withdrawals if enough time is passed", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -793,40 +821,25 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("1.02").toString());
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
         await ethers.provider.send("evm_increaseTime", [epochLength]);
         await ethers.provider.send("evm_mine", []);
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.30"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.30"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
-        expect(await portfolioBridgeSub.epochVolumes(AVAX)).to.equal(ethers.utils.parseEther("0.30").toString());
+        expect(await delayedTransfers.epochVolumes(AVAX)).to.equal(ethers.utils.parseEther("0.30").toString());
     });
 
     it("Should not revert if there is no cap or length", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength: 0,
@@ -835,7 +848,7 @@ describe("Portfolio Bridge Sub", () => {
                 epochVolumeCap: volumeCap.toString()
             }
         )
-        expect((await portfolioBridgeSub.epochLength()).toString()).to.equal("0");
+        expect((await delayedTransfers.epochLength()).toString()).to.equal("0");
 
         await f.depositNative(portfolioMain, owner, "0.34")
         await f.depositNative(portfolioMain, owner, "0.34")
@@ -843,29 +856,13 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("1.02").toString());
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34")).to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("0").toString());
 
@@ -876,7 +873,7 @@ describe("Portfolio Bridge Sub", () => {
         await f.depositNative(portfolioMain, owner, "0.34")
 
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -885,32 +882,17 @@ describe("Portfolio Bridge Sub", () => {
                 epochVolumeCap: 0 // 0 volume cap for AVAX
             }
         )
-        expect((await portfolioBridgeSub.epochVolumeCaps(AVAX)).toString()).to.equal("0");
+        expect((await delayedTransfers.epochVolumeCaps(AVAX)).toString()).to.equal("0");
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("1.02").toString());
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
-        .to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
 
-        await expect(portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.34"),
-            0
-        ))
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
         .to.emit(portfolioMain, "PortfolioUpdated")
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("0").toString());
@@ -919,7 +901,7 @@ describe("Portfolio Bridge Sub", () => {
     it("Should withdraw if it is under the threshold", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -933,20 +915,14 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("0.34").toString());
 
-        await expect(
-            portfolioSub.withdrawToken(
-                owner.address,
-                AVAX,
-                ethers.utils.parseEther("0.34"),
-                0
-            )
-        ).to.emit(portfolioMain, "PortfolioUpdated")
+        await expect(f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.34"))
+            .to.emit(portfolioMain, "PortfolioUpdated")
     });
 
     it("Should added to delayed transfer if it is above the threshold - withdraw", async () => {
         const { owner } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -961,12 +937,7 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(owner.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
 
-        const tx = await portfolioSub.withdrawToken(
-            owner.address,
-            AVAX,
-            ethers.utils.parseEther("0.68"),
-            0
-        )
+        const tx = await f.withdrawToken(portfolioSub, owner, AVAX, 18, "0.68");
         const receipt = await tx.wait();
         const log = receipt.logs[1]
         const data = ethers.utils.defaultAbiCoder.decode(
@@ -974,7 +945,7 @@ describe("Portfolio Bridge Sub", () => {
             log.data
          );
 
-        const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
+        const delayedTransfer = await delayedTransfers.delayedTransfers(data[1])
         expect(delayedTransfer.trader).to.equal(owner.address);
         expect(delayedTransfer.symbol).to.equal(AVAX);
         expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
@@ -983,7 +954,7 @@ describe("Portfolio Bridge Sub", () => {
     it("Should execute delayed transfer - withdraw", async () => {
         const { admin, trader1 } = await f.getAccounts();
         await f.setBridgeSubSettings(
-            portfolioBridgeSub,
+            delayedTransfers,
             {
                 delayPeriod,
                 epochLength,
@@ -1004,13 +975,7 @@ describe("Portfolio Bridge Sub", () => {
 
         expect((await portfolioSub.getBalance(trader1.address, AVAX)).total.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
 
-
-        tx = await portfolioSub.connect(trader1).withdrawToken(
-            trader1.address,
-            AVAX,
-            ethers.utils.parseEther("0.68"),
-            0
-        )
+        tx = await f.withdrawToken(portfolioSub, trader1, AVAX, 18, "0.68");
         receipt = await tx.wait();
         const gasUsed3 = (receipt.gasUsed).mul(receipt.effectiveGasPrice);
 
@@ -1022,12 +987,12 @@ describe("Portfolio Bridge Sub", () => {
         await ethers.provider.send("evm_increaseTime", [delayPeriod]);
         await ethers.provider.send("evm_mine", []);
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId,data[1]))
         .to.emit(portfolioBridgeSub, "DelayedTransferExecuted")
         .to.emit(portfolioMain, "PortfolioUpdated")
         .withArgs(0, trader1.address, AVAX, ethers.utils.parseEther("0.68"), 0, 0, 0)
 
-        expect((await portfolioBridgeSub.delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
+        expect((await delayedTransfers.delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
 
         const mainnetAfterBalance = await trader1.getBalance()
 

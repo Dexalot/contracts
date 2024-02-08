@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: MIT
-
-/* solhint-disable */
-
-pragma solidity >=0.5.0;
-pragma experimental ABIEncoderV2;
+pragma solidity 0.8.17;
 
 /// @title Multicall2 - Aggregate results from multiple read-only function calls
 /// @author Michael Elliot <mike@makerdao.com>
@@ -20,7 +16,7 @@ contract Multicall2 {
         bytes returnData;
     }
 
-    function aggregate(Call[] memory calls) public returns (uint256 blockNumber, bytes[] memory returnData) {
+    function aggregate(Call[] calldata calls) public returns (uint256 blockNumber, bytes[] memory returnData) {
         blockNumber = block.number;
         returnData = new bytes[](calls.length);
         for (uint256 i = 0; i < calls.length; i++) {
@@ -30,14 +26,31 @@ contract Multicall2 {
         }
     }
 
-    function blockAndAggregate(Call[] memory calls)
-        public
-        returns (
-            uint256 blockNumber,
-            bytes32 blockHash,
-            Result[] memory returnData
-        )
-    {
+    function tryAggregate(bool requireSuccess, Call[] calldata calls) public returns (Result[] memory returnData) {
+        returnData = new Result[](calls.length);
+        for (uint256 i = 0; i < calls.length; i++) {
+            (bool success, bytes memory ret) = calls[i].target.call(calls[i].callData);
+
+            if (requireSuccess) {
+                require(success, "Multicall2 aggregate: call failed");
+            }
+
+            returnData[i] = Result(success, ret);
+        }
+    }
+
+    function tryBlockAndAggregate(
+        bool requireSuccess,
+        Call[] calldata calls
+    ) public returns (uint256 blockNumber, bytes32 blockHash, Result[] memory returnData) {
+        blockNumber = block.number;
+        blockHash = blockhash(block.number);
+        returnData = tryAggregate(requireSuccess, calls);
+    }
+
+    function blockAndAggregate(
+        Call[] calldata calls
+    ) public returns (uint256 blockNumber, bytes32 blockHash, Result[] memory returnData) {
         (blockNumber, blockHash, returnData) = tryBlockAndAggregate(true, calls);
     }
 
@@ -71,31 +84,5 @@ contract Multicall2 {
 
     function getLastBlockHash() public view returns (bytes32 blockHash) {
         blockHash = blockhash(block.number - 1);
-    }
-
-    function tryAggregate(bool requireSuccess, Call[] memory calls) public returns (Result[] memory returnData) {
-        returnData = new Result[](calls.length);
-        for (uint256 i = 0; i < calls.length; i++) {
-            (bool success, bytes memory ret) = calls[i].target.call(calls[i].callData);
-
-            if (requireSuccess) {
-                require(success, "Multicall2 aggregate: call failed");
-            }
-
-            returnData[i] = Result(success, ret);
-        }
-    }
-
-    function tryBlockAndAggregate(bool requireSuccess, Call[] memory calls)
-        public
-        returns (
-            uint256 blockNumber,
-            bytes32 blockHash,
-            Result[] memory returnData
-        )
-    {
-        blockNumber = block.number;
-        blockHash = blockhash(block.number);
-        returnData = tryAggregate(requireSuccess, calls);
     }
 }
