@@ -35,6 +35,7 @@ interface ILayerZeroUserApplicationConfig {
     struct Destination {
         uint16 lzRemoteChainId;
         uint32 chainListOrgChainId;
+        bool userPaysFee;
         uint256 gasForDestination;
     }
 }

@@ -95,7 +95,7 @@ describe("Dexalot", () => {
         console.log(accounts);
         console.log();
 
-        MockToken = await ethers.getContractFactory("MockToken");
+        MockToken = await ethers.getContractFactory("MockToken") as MockToken__factory;
 
         deploymentWallet = wallets[0];
         deploymentAccount = deploymentWallet.address;
@@ -615,7 +615,7 @@ describe("Dexalot", () => {
             // fail for non-admin
             await portfolio.revokeRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[5].address);
             await expect(portfolio.connect(wallets[5]).withdrawFees(feeAddress, 10))
-            .to.be.revertedWith("P-OACC-01");
+            .to.be.revertedWith("AccessControl:");
 
             await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[0].address);
 

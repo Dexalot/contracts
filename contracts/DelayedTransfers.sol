@@ -17,7 +17,6 @@ import "./PortfolioBridgeMain.sol";
 // Copyright 2022 Dexalot.
 
 contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, IDelayedTransfers {
-
     uint256 public delayPeriod; // in seconds
     uint256 public epochLength; // in seconds
 
@@ -55,7 +54,9 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      * @param   _xfer  XFER message
      * @return  bool  True if the transfer can be executed immediately, false if it is delayed
      */
-    function checkTresholds(IPortfolio.XFER calldata _xfer) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+    function checkThresholds(
+        IPortfolio.XFER calldata _xfer
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         uint256 delayThreshold = delayThresholds[_xfer.symbol];
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW && delayThreshold > 0 && _xfer.quantity > delayThreshold) {
             bytes32 id = keccak256(
@@ -111,7 +112,9 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      * @dev     Only admin can call this function
      * @param   _id  Transfer ID
      */
-    function executeDelayedTransfer(bytes32 _id) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (IPortfolio.XFER memory xfer) {
+    function executeDelayedTransfer(
+        bytes32 _id
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (IPortfolio.XFER memory xfer) {
         xfer = delayedTransfers[_id];
         require(xfer.timestamp > 0, "PB-DTNE-01");
         require(block.timestamp > xfer.timestamp + delayPeriod, "PB-DTSL-01");
@@ -149,7 +152,7 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
     /**
      * @notice  Updates volume for token. Used only for withdrawals from the subnet.
      * @dev     Does nothing if there is no cap/limit for the token
-     * Volume treshold check for multiple small transfers within a epoch.
+     * Volume threshold check for multiple small transfers within a epoch.
      * @param   _token  Token symbol
      * @param   _amount  Amount to add to volume
      */

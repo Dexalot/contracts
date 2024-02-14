@@ -1,7 +1,7 @@
 import Utils from './utils';
 
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
-import { PromiseOrValue } from "../typechain-types/common";
+//import { PromiseOrValue } from "../typechain-types/common";
 import { MockContract, smock } from '@defi-wonderland/smock';
 import {
     DexalotToken,
@@ -17,7 +17,7 @@ import {
     LZEndpointMock,
     ExchangeSub,
     DelayedTransfers,
-    RebateAccounts,
+    PortfolioSubHelper,
     TradePairs__factory,
     PortfolioMinterMock__factory,
     GasStation__factory,
@@ -27,16 +27,16 @@ import {
     Staking,
     Staking__factory,
     TokenVestingCloneFactory,
-    TokenVestingCloneFactory__factory,
     PortfolioBridgeSub,
     PortfolioMinter,
-    PortfolioMinter__factory,
     MainnetRFQ,
+    NativeMinterMock,
+    LZEndpointMock__factory,
 } from '../typechain-types'
 
-import { NativeMinterMock } from "../typechain-types/contracts/mocks";
+// import { NativeMinterMock } from "../typechain-types/contracts/mocks";
 
-import { LZEndpointMock__factory, NativeMinterMock__factory } from "../typechain-types/factories/contracts/mocks";
+// import { LZEndpointMock__factory, NativeMinterMock__factory } from "../typechain-types/factories/contracts/mocks";
 
 import { ethers, upgrades } from "hardhat";
 import { ContractFactory, Wallet } from 'ethers';
@@ -67,7 +67,7 @@ interface PortfolioContracts {
     gasStation: GasStation,
     portfolioMinter: PortfolioMinterMock,
     delayedTransfers: DelayedTransfers,
-    rebateAccounts: RebateAccounts,
+    portfolioSubHelper: PortfolioSubHelper,
     portfolioBridgeAvax: PortfolioBridgeMain,
     portfolioBridgeSub: PortfolioBridgeSub,
     lzEndpointAvax: LZEndpointMock | MockContract<LZEndpointMock>,
@@ -114,13 +114,13 @@ export const getAccounts = async (): Promise<Signers> => {
 
 export const deployDexalotToken = async (): Promise<DexalotToken> => {
     const DexalotToken = await ethers.getContractFactory("DexalotToken");
-    const token: DexalotToken = await DexalotToken.deploy();
+    const token: DexalotToken = await DexalotToken.deploy() as DexalotToken;
     return token;
 }
 
-export const deployMockToken = async (tokenStr: PromiseOrValue<string>, tokenDecimals: number): Promise<MockToken> => {
+export const deployMockToken = async (tokenStr: string, tokenDecimals: number): Promise<MockToken> => {
     const MockToken = await ethers.getContractFactory("MockToken");
-    const mockToken: MockToken = await MockToken.deploy("Mock " + tokenStr + " Token", tokenStr, tokenDecimals);
+    const mockToken: MockToken = await MockToken.deploy("Mock " + tokenStr + " Token", tokenStr, tokenDecimals) as MockToken;
 
     return mockToken;
 }
@@ -143,7 +143,7 @@ export const deployLZEndpoint = async (sourceChainID: number): Promise<LZEndpoin
     const LZEndpointMock = await ethers.getContractFactory("LZEndpointMock");
     const lzEndpointMock: LZEndpointMock = await LZEndpointMock.deploy(
         sourceChainID
-    );
+    ) as LZEndpointMock;
     return lzEndpointMock;
 }
 
@@ -159,10 +159,10 @@ export const deployDelayedTransfers = async (portfolioBridgeSub: PortfolioBridge
     return delayedTransfers;
 }
 
-export const deployRebateAccounts = async (): Promise<RebateAccounts> => {
-    const RebateAccounts = await ethers.getContractFactory("RebateAccounts") ;
-    const rebateAccounts: RebateAccounts = await upgrades.deployProxy(RebateAccounts) as RebateAccounts
-    return rebateAccounts;
+export const deployPortfolioSubHelper = async (): Promise<PortfolioSubHelper> => {
+    const PortfolioSubHelper = await ethers.getContractFactory("PortfolioSubHelper") ;
+    const portfolioSubHelper: PortfolioSubHelper = await upgrades.deployProxy(PortfolioSubHelper) as PortfolioSubHelper
+    return portfolioSubHelper;
 }
 
 export const deployPortfolioMain = async (chainDetails:any): Promise<PortfolioMain> => {
@@ -175,12 +175,12 @@ export const deployPortfolioMain = async (chainDetails:any): Promise<PortfolioMa
 }
 
 export const deployPortfolioSub = async (native: string): Promise<PortfolioSub> => {
-    const {feeSafe} = await getAccounts();
+    const {feeSafe, treasurySafe } = await getAccounts();
 
     const PortfolioSub = await ethers.getContractFactory("PortfolioSub") ;
     const portfolioSub: PortfolioSub = await upgrades.deployProxy(PortfolioSub, [Utils.fromUtf8(native), dexalotSubnet.chainListOrgId]) as PortfolioSub;
     await portfolioSub.setFeeAddress(feeSafe.address);
-
+    await portfolioSub.setTreasury(treasurySafe.address);
     return portfolioSub;
 }
 
@@ -188,6 +188,7 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
     const MainnetRFQ = await ethers.getContractFactory("MainnetRFQ") ;
     const mainnetRFQ: MainnetRFQ = await upgrades.deployProxy(MainnetRFQ, [signer.address]) as MainnetRFQ;
     await mainnetRFQ.setPortfolioBridge(portfolioBridgeMain.address);
+    await mainnetRFQ.setPortfolioMain();
     await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
     return mainnetRFQ;
 }
@@ -286,7 +287,7 @@ export const setRemoteBridges = async (
     remoteChain: any,
     maxDestinationGas = maxGas.PortfolioMain ) => {
 
-    await sourcePortfolioBridge.setTrustedRemoteAddress(0, remoteChain.lzChainId, destinationPorfolioBridge.address, remoteChain.chainListOrgId, maxDestinationGas);
+    await sourcePortfolioBridge.setTrustedRemoteAddress(0, remoteChain.lzChainId, destinationPorfolioBridge.address, remoteChain.chainListOrgId, maxDestinationGas, false);
     // console.log("Setting portfolioBridgeSub dest id" , cChain.lzChainId, "Remote addr",portfolioBridgeMain.address)
     // const results = await portfolioBridgeSub.remoteParams(cChain.lzChainId);
     // console.log(results.lzRemoteChainId, results.chainListOrgChainId, results.gasForDestination);
@@ -296,7 +297,7 @@ export const setRemoteBridges = async (
         destinationPorfolioBridge.address,
         destLzEndPoint.address
     )
-    await destinationPorfolioBridge.setTrustedRemoteAddress(0, sourceChain.lzChainId, sourcePortfolioBridge.address, sourceChain.chainListOrgId, maxDestinationGas);
+    await destinationPorfolioBridge.setTrustedRemoteAddress(0, sourceChain.lzChainId, sourcePortfolioBridge.address, sourceChain.chainListOrgId, maxDestinationGas, false);
     // console.log("Setting portfolioBridgeMain dest id", dexalotSubnet.lzChainId, "Remote addr",portfolioBridgeSub.address)
     await destLzEndPoint.setDestLzEndpoint(
         sourcePortfolioBridge.address,
@@ -336,8 +337,8 @@ export const deployPortfolioMinterMock = async (portfolio: PortfolioSub, nativeM
 export const deployPortfolioMinterReal = async (portfolio: PortfolioSub): Promise<PortfolioMinter> => {
     const {admin} = await getAccounts();
 
-    const PortfolioMinter = await ethers.getContractFactory("PortfolioMinter") as PortfolioMinter__factory;
-    const NativeMinterMock = await ethers.getContractFactory("NativeMinterMock") as NativeMinterMock__factory;
+    const PortfolioMinter = await ethers.getContractFactory("PortfolioMinter");
+    const NativeMinterMock = await ethers.getContractFactory("NativeMinterMock");
     const nativeMinterMock: NativeMinterMock = await NativeMinterMock.deploy() as NativeMinterMock;
     const portfolioMinter: PortfolioMinterMock = await upgrades.deployProxy(PortfolioMinter, [portfolio.address, nativeMinterMock.address]) as PortfolioMinterMock;
 
@@ -415,7 +416,7 @@ export const deployStaking = async (stakingToken: string, rewardToken: string, r
 
 export const deployTokenVestingCloneFactory = async (): Promise<TokenVestingCloneFactory> => {
     const TokenVestingCloneFactory = await ethers.getContractFactory("TokenVestingCloneFactory");  //as TokenVestingCloneFactory__factory;
-    const tokenVestingCloneFactory: TokenVestingCloneFactory = await TokenVestingCloneFactory.deploy();  //as TokenVestingCloneFactory;
+    const tokenVestingCloneFactory: TokenVestingCloneFactory = await TokenVestingCloneFactory.deploy() as TokenVestingCloneFactory;
 
     return tokenVestingCloneFactory;
 }
@@ -426,11 +427,11 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
     const portfolioAvax = await deployPortfolioMain(cChain);
 
     const portfolioSub = await deployPortfolioSub(dexalotSubnet.native);
-    const rebateAccounts = await deployRebateAccounts();
-    await portfolioSub.setRebateAccounts(rebateAccounts.address);
+    const portfolioSubHelper = await deployPortfolioSubHelper();
+    await portfolioSub.setPortfolioSubHelper(portfolioSubHelper.address);
 
-    await rebateAccounts.addAdminAccountForRates(await portfolioSub.feeAddress(), "Fee Address");
-    await rebateAccounts.addAdminAccountForRates(await portfolioSub.getTreasury(), "Treasury Address");
+    await portfolioSubHelper.addAdminAccountForRates(await portfolioSub.feeAddress(), "Fee Address");
+    await portfolioSubHelper.addAdminAccountForRates(await portfolioSub.getTreasury(), "Treasury Address");
 
 
     let lzEndpointAvax: LZEndpointMock | MockContract<LZEndpointMock>;
@@ -467,7 +468,7 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
         // ALOT is automatically added and its swap ratio set to 1 in the Portfoliosub contract initialization
         // BUT ALOT needs to be added to PortfolioBridge independently with the Mainnet Address
         // PortfolioSub.addToken will ignore the call because it already has ALOT in its tokenList
-        await portfolioBridgeSub.addToken(ALOT, alot.address, cChain.chainListOrgId, alot_token_decimals, 0, ALOT);
+        await portfolioBridgeSub.addToken(ALOT, alot.address, cChain.chainListOrgId, alot_token_decimals, 0, ALOT, 0);
     }
 
     const gasStation = await deployGasStation(portfolioSub);
@@ -479,7 +480,7 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
         gasStation,
         portfolioMinter,
         delayedTransfers,
-        rebateAccounts,
+        portfolioSubHelper,
         portfolioBridgeAvax,
         portfolioBridgeSub,
         lzEndpointAvax,
@@ -518,6 +519,9 @@ export const deployCompleteMultiChainPortfolio = async (addAvaxChainAlot= false,
     await setRemoteBridges(portfolioBridgeGun, portfolioContracts.portfolioBridgeSub, lzEndpointGun, portfolioContracts.lzEndpointSub, gunzillaSubnet,dexalotSubnet);
     await setRemoteBridges(portfolioContracts.portfolioBridgeAvax, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, cChain, gunzillaSubnet);
     await setRemoteBridges(portfolioBridgeArb, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, arbitrumChain, gunzillaSubnet);
+
+    await portfolioBridgeGun.setUserPaysFeeForDestination(0, cChain.lzChainId, true);
+    await portfolioBridgeGun.setUserPaysFeeForDestination(0, arbitrumChain.lzChainId, true);
 
     await addMainnetNativeCoin(portfolioArb, portfolioContracts.portfolioSub, arbitrumChain, gasSwap.arb, bridgeFee.arb);
     await addMainnetNativeCoin(portfolioGun, portfolioContracts.portfolioSub, gunzillaSubnet, gasSwap.gun, bridgeFee.gun);

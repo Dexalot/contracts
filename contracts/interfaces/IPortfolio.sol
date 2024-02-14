@@ -50,7 +50,8 @@ interface IPortfolio {
         uint256 quantity,
         uint256 feeCharged,
         uint256 total,
-        uint256 available
+        uint256 available,
+        address walletOther
     );
 
     struct BridgeParams {
@@ -66,7 +67,7 @@ interface IPortfolio {
         bytes32 symbol;
         uint256 quantity;
         uint256 timestamp;
-        bytes32 customdata;
+        bytes28 customdata;
     }
 
     struct TokenDetails {
@@ -86,12 +87,12 @@ interface IPortfolio {
         EXECUTION,
         INCREASEAVAIL,
         DECREASEAVAIL,
-        IXFERSENT, // Subnet Sent. I for Internal to Subnet
-        IXFERREC, // Subnet Received. I for Internal to Subnet
+        IXFERSENT, // 5  Subnet Sent. I for Internal to Subnet
+        IXFERREC, //     Subnet Received. I for Internal to Subnet
         RECOVERFUNDS, // Obsolete as of 2/1/2024 CD
         ADDGAS,
         REMOVEGAS,
-        AUTOFILL,
+        AUTOFILL, // 10
         CCTRADE // Cross Chain Trade.
     }
 }

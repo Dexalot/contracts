@@ -1,6 +1,7 @@
 {
     "LA-LIZA-01": "LzApp: endpoint cannot be zero address(0)",
     "LA-DCNT-01": "LzApp: destination chain is not a trusted source",
+    "LA-IUMF-01": "LzApp: insufficient user message fee received",
 
     "CA-FINS-01": "CelerApp: this bridge implementation doesn't support this functionality",
     "CA-CINM-01": "CelerApp: caller is not message bus",
@@ -87,6 +88,8 @@
     "PB-ETNS-01": "PortfolioBridge: erc20 token is not supported",
     "PB-INVT-01": "PortfolioBridge: target chain does not have enough inventory to cover this withdrawal",
     "PB-INVZ-01": "PortfolioBridge: inventoryBySymbolId needs to be 0",
+    "PB-UFPE-01": "PortfolioBridge: user fee payer address does not exist",
+    "PB-UFPR-01": "PortfolioBridge: user gas fee not necessary and refund failed",
 
     "PM-ZADD-01": "PortfolioMinter: cannot initialize with 0 address",
     "PM-ZAMT-01": "PortfolioMinter: mint amount must be greater than 0",
@@ -141,6 +144,7 @@
     "RF-QE-01": "MainnetRFQ: quote expired due to manual override",
     "RF-QE-02": "MainnetRFQ: quote expired due to block ts",
     "RF-IN-01": "MainnetRFQ: invalid nonce",
+    "RF-IN-02": "MainnetRFQ: invalid nonce on xChain destination",
     "RF-IMS-01": "MainnetRFQ: invalid msg.sender",
     "RF-IS-01": "MainnetRFQ: invalid order signature",
     "RF-TF-01": "MainnetRFQ: transfer failed",
@@ -153,6 +157,8 @@
     "RF-PTNS-01": "MainnetRFQ: main processXFerPayload transaction not supported",
     "RF-ZADDR-01": "MainnetRFQ: trader address cannot be zero address(0)",
     "RF-ZETD-01": "MainnetRFQ: zero erc20 token quantity",
+    "RF-INVT-01": "MainnetRFQ: target chain does not have enough inventory to remove the xChainSwap from the queue",
+    "RF-DTNF-01": "MainnetRFQ: destination token not found",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",

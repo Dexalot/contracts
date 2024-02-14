@@ -103,7 +103,7 @@ describe("Exchange Shared", function () {
             const { cChain } = f.getChains();
 
             const srcChainListOrgId= cChain.chainListOrgId;
-            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals);
+            quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals) as MockToken;
 
             // fail from non admin accounts
             await expect(exchangeMain.connect(trader1).addToken(quoteSymbol, quoteToken.address,srcChainListOrgId, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.revertedWith("AccessControl:");

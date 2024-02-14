@@ -112,8 +112,7 @@ abstract contract Portfolio is
      * @param   _bridge  Enum value of the bridge provider
      * @param   _enable  True to enable, false to disable
      */
-    function enableBridgeProvider(IPortfolioBridge.BridgeProvider _bridge, bool _enable) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function enableBridgeProvider(IPortfolioBridge.BridgeProvider _bridge, bool _enable) external onlyRole(DEFAULT_ADMIN_ROLE) {
         portfolioBridge.enableBridgeProvider(_bridge, _enable);
         emit ParameterUpdated(bytes32("Portfolio"), "P-BRIDGE-ENABLE", _enable ? 0 : 1, uint256(_bridge));
     }
@@ -161,8 +160,7 @@ abstract contract Portfolio is
      * @notice  Pauses the portfolioBridge AND the contract
      * @dev     Only callable by admin
      */
-    function pause() external override {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
         portfolioBridge.pause();
     }
@@ -171,8 +169,7 @@ abstract contract Portfolio is
      * @notice  Unpauses portfolioBridge AND the contract
      * @dev     Only callable by admin
      */
-    function unpause() external override {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE){
         _unpause();
         portfolioBridge.unpause();
     }
@@ -261,8 +258,7 @@ abstract contract Portfolio is
      * @dev     Only callable by admin and portfolio should be paused. Make sure there are no
      * in-flight deposit/withdraw messages.
      * @param   _symbol  Symbol of the token
-     * @param   _srcChainId  Source Chain id
-     * _srcChainId  Source Chain id is always the mainnet chainid for PortfolioMain
+     * @param   _srcChainId  Source Chain id. It is always the mainnet chainid for PortfolioMain
      */
     function removeToken(
         bytes32 _symbol,

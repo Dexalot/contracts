@@ -117,7 +117,7 @@ describe("Exchange Sub", function () {
         console.log("Trader1", trader1.address);
         console.log("Trader1", trader2.address);
 
-        MockToken = await ethers.getContractFactory("MockToken");
+        MockToken = await ethers.getContractFactory("MockToken") as MockToken__factory;
     });
 
     beforeEach(async function () {

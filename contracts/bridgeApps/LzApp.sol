@@ -20,15 +20,15 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     //chainId ==> Remote contract address concatenated with the local contract address, 40 bytes
     mapping(uint16 => bytes) public lzTrustedRemoteLookup;
     mapping(uint16 => Destination) public remoteParams;
-    mapping(uint32 => uint16) internal lzDestinationMap; // chainListOrgChainId ==> lzChainId
 
-    uint16 internal defaultLzRemoteChainId; // Default remote chain id (LayerZero assigned ids)
+    uint16 internal defaultLzRemoteChainId; // Default remote chain id (LayerZero assigned chain id)
 
     event LzSetTrustedRemoteAddress(
         uint16 destinationLzChainId,
         bytes remoteAddress,
         uint32 chainListOrgChainId,
-        uint256 gasForDestinationLzReceive
+        uint256 gasForDestinationLzReceive,
+        bool userPaysFee
     );
 
     /**
@@ -72,6 +72,9 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
         bytes memory trustedRemote = lzTrustedRemoteLookup[_dstChainId];
         require(trustedRemote.length != 0, "LA-DCNT-01");
         (uint256 nativeFee, bytes memory adapterParams) = lzEstimateFees(_dstChainId, _payload);
+        if (_refundAddress != address(this)) {
+            require(msg.value >= nativeFee, "LA-IUMF-01");
+        }
         // solhint-disable-next-line check-send-result
         lzEndpoint.send{value: nativeFee}(
             _dstChainId, // destination LayerZero chainId
@@ -100,7 +103,7 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
         // For more details refer to LayerZero PingPong example at
         // https://github.com/LayerZero-Labs/solidity-examples/blob/main/contracts/examples/PingPong.sol
         uint16 version = 1;
-        adapterParams = abi.encodePacked(version, getGasForDestination(_dstChainId));
+        adapterParams = abi.encodePacked(version, remoteParams[_dstChainId].gasForDestination);
         (messageFee, ) = lzEndpoint.estimateFees(_dstChainId, address(this), _payload, false, adapterParams);
     }
 
@@ -207,15 +210,6 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     }
 
     /**
-     * @notice  Gets the Gas Amount in the Target Chain that is used to estimate the fee. Default value returned if target not found
-     * @param   _dstChainId  Target chain id
-     * @return  uint256  Gas Amount
-     */
-    function getGasForDestination(uint16 _dstChainId) private view returns (uint256) {
-        return remoteParams[_dstChainId].gasForDestination;
-    }
-
-    /**
      * @notice  Gets the Trusted Remote Address per given chainId
      * @param   _remoteChainId  Remote chain id
      * @return  bytes  Trusted Source Remote Address
@@ -247,27 +241,17 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
     /**
      * @dev  Get the inboundNonce of a lzApp from a source chain which could be EVM or non-EVM chain
      * @param  _srcChainId  the source chain identifier
-     * @param  _srcAddress the source chain contract address
      * @return  uint64  Inbound nonce
      */
-    function getInboundNonce(uint16 _srcChainId, bytes calldata _srcAddress) internal view returns (uint64) {
-        return lzEndpoint.getInboundNonce(_srcChainId, _srcAddress);
-    }
-
     function getInboundNonce(uint16 _srcChainId) internal view returns (uint64) {
         return lzEndpoint.getInboundNonce(_srcChainId, lzTrustedRemoteLookup[_srcChainId]);
     }
 
     /**
-     * @dev  get the outboundNonce from this source chain which, consequently, is always an EVM
-     * @param  _dstChainId  The destination chain identifier
-     * @param  _srcAddress  The source chain contract address
+     * @dev Get the outboundNonce of a lzApp for a destination chain which, consequently, is always an EVM
+     * @param _dstChainId The destination chain identifier
      * @return  uint64  Outbound nonce
      */
-    function getOutboundNonce(uint16 _dstChainId, address _srcAddress) internal view returns (uint64) {
-        return lzEndpoint.getOutboundNonce(_dstChainId, _srcAddress);
-    }
-
     function getOutboundNonce(uint16 _dstChainId) internal view returns (uint64) {
         return lzEndpoint.getOutboundNonce(_dstChainId, address(this));
     }

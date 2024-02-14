@@ -11,7 +11,7 @@ pragma solidity 0.8.17;
 // Copyright 2022 Dexalot.
 
 interface IDelayedTransfers {
-    function checkTresholds(IPortfolio.XFER calldata _xfer) external returns (bool);
+    function checkThresholds(IPortfolio.XFER calldata _xfer) external returns (bool);
 
     function updateVolume(bytes32 _token, uint256 _amount) external;
 

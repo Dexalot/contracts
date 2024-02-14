@@ -41,6 +41,11 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     IBannedAccounts internal bannedAccounts;
     uint8 public minDepositMultiplier;
 
+    /**
+     * @notice  Initializes the PortfolioMain contract
+     * @param   _native  Symbol of the native token
+     * @param   _chainId  Current chainId of the Portfolio
+     */
     function initialize(bytes32 _native, uint32 _chainId) public override initializer {
         Portfolio.initialize(_native, _chainId);
         minDepositMultiplier = 19; // 19/10 1.9 times
@@ -88,7 +93,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
                 _decimals,
                 _tokenAddress,
                 ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
-                 _isVirtual ? _srcChainId : chainId, // always add with the chain id of the Portfolio unless virtual
+                _isVirtual ? _srcChainId : chainId, // always add with the chain id of the Portfolio unless virtual
                 _symbol,
                 bytes32(0),
                 _symbol,
@@ -143,6 +148,21 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             delete (tokenMap[_symbol]);
         }
         super.removeToken(_symbol, chainId); // Can only remove the local chain's tokens in the mainnet
+    }
+
+    /**
+     * @notice  Overwrites the evm initialized fields to proper values after the March 2024 upgrade.
+     * @dev    We added sourceChainSymbol & isVirtual to the TokenDetails struct. We need to update
+     * reflect their proper values for consistency with newly added tokens in the future.
+     * This function can be removed after the upgrade CD
+     * All the current tokens in the mainnet are real tokens (non-Virtual)
+     */
+    function updateTokenDetailsAfterUpgrade() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for (uint256 i = 0; i < tokenList.length(); ++i) {
+            TokenDetails storage tokenDetails = tokenDetailsMap[tokenList.at(i)];
+            tokenDetails.sourceChainSymbol = tokenDetails.symbol;
+            // tokenDetails.isVirtual = false ; // evm_initialized
+        }
     }
 
     /**
@@ -202,13 +222,16 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         require(_quantity > this.getMinDepositAmount(_symbol), "P-DUTH-01");
         require(!bannedAccounts.isBanned(_from), "P-BANA-01");
         BridgeParams storage bridgeParam = bridgeParams[_symbol];
-        bridgeFeeCollected[_symbol] += bridgeParam.fee;
+        if (bridgeParam.fee > 0) {
+            bridgeFeeCollected[_symbol] = bridgeFeeCollected[_symbol] + bridgeParam.fee;
+        }
         emitPortfolioEvent(_from, _symbol, _quantity, bridgeParam.fee, Tx.DEPOSIT);
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage(
             portfolioBridge.getDefaultDestinationChain(),
             _bridge,
-            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp, bytes32(0))
+            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp, bytes28(0)),
+            _from
         );
     }
 
@@ -415,6 +438,6 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         uint256 _feeCharged,
         Tx transaction
     ) private {
-        emit PortfolioUpdated(transaction, _trader, _symbol, _quantity, _feeCharged, 0, 0);
+        emit PortfolioUpdated(transaction, _trader, _symbol, _quantity, _feeCharged, 0, 0, _trader);
     }
 }

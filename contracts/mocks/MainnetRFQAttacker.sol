@@ -3,13 +3,16 @@ pragma solidity 0.8.17;
 
 import "../MainnetRFQ.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "../interfaces/IPortfolio.sol";
 
 contract MainnetRFQAttacker {
     enum Function {
         SIMPLE_SWAP,
         MULTI_SWAP,
         CLAIM,
-        BATCH_CLAIM
+        BATCH_CLAIM,
+        PROCESS_XFER_PAYLOAD,
+        REMOVE_FROM_SWAP_QUEUE
     }
     MainnetRFQ private mainnetRFQ;
     Function private functionToAttack;
@@ -47,6 +50,24 @@ contract MainnetRFQAttacker {
         mainnetRFQ.batchClaimBalance(_assets, _amounts);
     }
 
+    function attackProcessXFerPayload(
+        address _trader,
+        bytes32 _symbol,
+        uint256 _quantity,
+        IPortfolio.Tx _transaction,
+        bytes28 _customdata
+    ) external payable {
+        functionToAttack = Function.PROCESS_XFER_PAYLOAD;
+        params = abi.encode(_trader, _symbol, _quantity, _transaction, _customdata);
+        mainnetRFQ.processXFerPayload(_trader, _symbol, _quantity, _transaction, _customdata);
+    }
+
+    function attackRemoveFromSwapQueue(uint256 _nonceAndMeta) external payable {
+        functionToAttack = Function.REMOVE_FROM_SWAP_QUEUE;
+        params = abi.encode(_nonceAndMeta);
+        mainnetRFQ.removeFromSwapQueue(_nonceAndMeta);
+    }
+
     receive() external payable {
         if (functionToAttack == Function.SIMPLE_SWAP) {
             (MainnetRFQ.Order memory order, bytes memory signature) = abi.decode(params, (MainnetRFQ.Order, bytes));
@@ -60,6 +81,13 @@ contract MainnetRFQAttacker {
         } else if (functionToAttack == Function.BATCH_CLAIM) {
             (address[] memory _assets, uint256[] memory _amounts) = abi.decode(params, (address[], uint256[]));
             mainnetRFQ.batchClaimBalance(_assets, _amounts);
+        } else if (functionToAttack == Function.PROCESS_XFER_PAYLOAD) {
+            (address _trader, bytes32 _symbol, uint256 _quantity, IPortfolio.Tx _transaction, bytes28 _customdata) = abi
+                .decode(params, (address, bytes32, uint256, IPortfolio.Tx, bytes28));
+            mainnetRFQ.processXFerPayload(_trader, _symbol, _quantity, _transaction, _customdata);
+        } else if (functionToAttack == Function.REMOVE_FROM_SWAP_QUEUE) {
+            uint256 _nonceAndMeta = abi.decode(params, (uint256));
+            mainnetRFQ.removeFromSwapQueue(_nonceAndMeta);
         }
     }
 }
