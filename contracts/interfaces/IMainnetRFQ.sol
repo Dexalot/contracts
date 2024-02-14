@@ -17,7 +17,7 @@ interface IMainnetRFQ {
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolio.Tx _transaction,
-        bytes32 _customdata
+        bytes28 _customdata
     ) external;
 
     function pause() external;

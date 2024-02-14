@@ -23,9 +23,12 @@ import { BigNumber } from "ethers";
 describe("Portfolio Bridge Main", () => {
     let portfolioMain: PortfolioMain;
     let lzEndpointMain: LZEndpointMock;
+    let lzEndpointSub: LZEndpointMock;
+
     let portfolioBridgeMain: PortfolioBridgeMain;
     let portfolioBridgeSub: PortfolioBridgeSub;
     let mainnetRFQAvax: MainnetRFQ;
+
 
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -33,7 +36,6 @@ describe("Portfolio Bridge Main", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
 
-    let depositAvaxMessage: string;
     let depositAvaxPayload: string;
 
     const AVAX: string = Utils.fromUtf8("AVAX");
@@ -64,38 +66,14 @@ describe("Portfolio Bridge Main", () => {
         portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
         lzEndpointMain = portfolioContracts.lzEndpointAvax as LZEndpointMock;
+        lzEndpointSub = portfolioContracts.lzEndpointSub as LZEndpointMock;
         mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
 
         const nonce = 0;
         const tx = 1;                // TX = 1 = DEPOSIT [main --> sub]
-
         const xChainMessageType = 0; // XChainMsgType = 0 = XFER
 
-        depositAvaxMessage = ethers.utils.defaultAbiCoder.encode(
-            [
-                "uint64",   // nonce,
-                "uint8",    // TX = 1 = DEPOSIT [main --> sub]
-                "address",  // trader
-                "bytes32",  // symbol
-                "uint256",  // quantity
-                "uint256",   // timestamp
-                "bytes32"  //customdata
-            ] ,
-            [
-                nonce,
-                tx,
-                trader1.address,
-                AVAX,
-                Utils.toWei("10"),
-                await f.latestTime(),
-                ethers.constants.HashZero
-            ]
-        )
-
-        depositAvaxPayload = ethers.utils.defaultAbiCoder.encode(
-            ["uint8", "bytes"],
-            [xChainMessageType, depositAvaxMessage]
-        )
+        depositAvaxPayload = Utils.generatePayload(xChainMessageType, nonce, tx, trader1.address, AVAX, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
     });
 
     it("Should not initialize again after deployment", async function () {
@@ -107,10 +85,66 @@ describe("Portfolio Bridge Main", () => {
         expect(await portfolioBridgeMain.getPortfolio()).to.equal(portfolioMain.address);
     });
 
+
+    it("Should get MainnetRFQ address correctly", async () => {
+        expect(await portfolioBridgeMain.getMainnetRfq()).to.equal(mainnetRFQAvax.address);
+    });
+
+
+    it("Should set & get default bridge provider  correctly", async () => {
+        const nonSupportedBridge = 2
+        await expect(portfolioBridgeMain.connect(trader1).setDefaultBridgeProvider(1)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.setDefaultBridgeProvider(0)).to.be.revertedWith("PB-DBCD-01");
+        await expect( portfolioBridgeMain.setDefaultBridgeProvider(nonSupportedBridge)).to.be.reverted;
+
+    });
+
+    it("Should get the Bridge Fee  correctly", async () => {
+        const nonSupportedBridge = 1
+        const { dexalotSubnet } = f.getChains();
+        // Last parameter symbol is irrelevant
+        expect(await portfolioBridgeMain.getBridgeFee(nonSupportedBridge, dexalotSubnet.chainListOrgId, AVAX )).to.equal(0);
+        // Last parameter symbol is irrelevant
+        expect(await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX )).to.equal(Utils.parseUnits('0.014303938', 18))
+        // console.log (await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX ));
+    });
+
+
     it("Default Destination should be set to Subnet", async () => {
         const { dexalotSubnet } = f.getChains();
         expect(await portfolioBridgeMain.getDefaultDestinationChain()).to.be.equal(dexalotSubnet.chainListOrgId);
+
+        // Destination not found, destChain id =0
+        await portfolioBridgeMain.setDefaultBridgeProvider(1);
+        expect(await portfolioBridgeMain.getDefaultDestinationChain()).to.be.equal(0);
     });
+
+    it("Should be able to set a different Default Destination", async () => {
+
+        const { arbitrumChain } = f.getChains();
+        const nonSupportedBridge =1
+
+        await expect(portfolioBridgeMain.connect(trader1).setTrustedRemoteAddress(0, arbitrumChain.lzChainId, portfolioBridgeSub.address, arbitrumChain.chainListOrgId, 250000, false)).to.be.revertedWith("AccessControl:");
+
+        await expect(portfolioBridgeMain.connect(trader1).setDefaultDestinationChain(0, arbitrumChain.lzChainId)).to.be.revertedWith("AccessControl:");
+
+        await expect( portfolioBridgeMain.setDefaultDestinationChain(0, arbitrumChain.lzChainId)).to.be.revertedWith("PB-DDCS-01");
+
+        // Silent fial for unsupported bridge
+        await  portfolioBridgeMain.setDefaultDestinationChain(nonSupportedBridge, arbitrumChain.lzChainId);
+
+        //silent fail for non-supported bridge
+        await portfolioBridgeMain.setTrustedRemoteAddress(nonSupportedBridge, arbitrumChain.lzChainId, portfolioBridgeSub.address, arbitrumChain.chainListOrgId, 250000, false);
+
+        // Using portfolioBridgeSub as the address for testing only. It should be Arbitrum portfolioBridgeSub
+        await portfolioBridgeMain.setTrustedRemoteAddress(0, arbitrumChain.lzChainId, portfolioBridgeSub.address, arbitrumChain.chainListOrgId, 250000, false);
+
+        await expect(portfolioBridgeMain.setDefaultDestinationChain(0, arbitrumChain.lzChainId)).to.emit(portfolioBridgeMain, "DefaultChainIdUpdated")
+            .withArgs(0, arbitrumChain.lzChainId);
+
+        //await expect(portfolioBridgeMain.getDefaultDestinationChain().to.be.equal(0);
+    });
+
 
     it("Should pause and unpause", async () => {
         // fail for non-owner
@@ -166,6 +200,8 @@ describe("Portfolio Bridge Main", () => {
         await expect(portfolioBridgeMain.revokeRole(await portfolioBridgeMain.DEFAULT_ADMIN_ROLE(), admin.address))
             .to.emit(portfolioBridgeMain, "RoleUpdated")
             .withArgs("PORTFOLIOBRIDGE", "REMOVE-ROLE", await portfolioBridgeMain.DEFAULT_ADMIN_ROLE(), admin.address);
+
+        await portfolioBridgeMain.revokeRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), admin.address);
     });
 
 
@@ -176,7 +212,7 @@ describe("Portfolio Bridge Main", () => {
         // fail for non-owner
         await expect(portfolioBridgeMain.connect(trader1).setPortfolio(portfolioMain.address)).to.be.revertedWith("AccessControl:");
 
-        // succeed for non-owner
+        // succeed owner
         await portfolioBridgeMain.setPortfolio(portfolioMain.address);
         expect(await portfolioBridgeMain.getPortfolio()).to.be.equal(portfolioMain.address);
         const { cChain } = f.getChains();
@@ -186,6 +222,24 @@ describe("Portfolio Bridge Main", () => {
         expect((await portfolioBridgeMain.getTokenList()).length).to.equal(1);
 
     });
+
+    it("Should set MainnetRFQ", async () => {
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.DEFAULT_ADMIN_ROLE(), admin.address);
+
+        // fail for non-owner
+        await expect(portfolioBridgeMain.connect(trader1).setMainnetRFQ(mainnetRFQAvax.address)).to.be.revertedWith("AccessControl:");
+
+        // succeed owner
+        await portfolioBridgeMain.setMainnetRFQ(mainnetRFQAvax.address);
+        expect(await portfolioBridgeMain.getMainnetRfq()).to.be.equal(mainnetRFQAvax.address);
+        // const { cChain } = f.getChains();
+        // const tokenDetails = await portfolioMain.getTokenDetailsById(Utils.fromUtf8("AVAX" + cChain.chainListOrgId));
+
+        // expect(tokenDetails.symbol).to.be.equal(Utils.fromUtf8("AVAX"))
+        // expect((await portfolioBridgeMain.getTokenList()).length).to.equal(1);
+
+    });
+
 
     it("Should not revoke role if it is the only member or portfolio", async () => {
         await expect(portfolioBridgeMain.revokeRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), mainnetRFQAvax.address))
@@ -204,17 +258,39 @@ describe("Portfolio Bridge Main", () => {
 
         const defaultBridge = 0;
         // fail for non-owner
-        await expect(portfolioBridgeMain.connect(trader1).setGasForDestinationReceive(defaultBridge, dexalotSubnet.lzChainId, gasForDestinationLzReceive)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).setGasForDestination(defaultBridge, dexalotSubnet.lzChainId, gasForDestinationLzReceive)).to.be.revertedWith("AccessControl:");
 
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
         // Too low
-        await expect(portfolioBridgeMain.setGasForDestinationReceive(defaultBridge, dexalotSubnet.lzChainId,gasForDestinationLzReceiveLow)).to.be.revertedWith("PB-MING-01");
+        await expect(portfolioBridgeMain.setGasForDestination(defaultBridge, dexalotSubnet.lzChainId,gasForDestinationLzReceiveLow)).to.be.revertedWith("PB-MING-01");
+
+        //Silent fail for a non supported bridge
+        await portfolioBridgeMain.setGasForDestination(1, dexalotSubnet.lzChainId, gasForDestinationLzReceive);
 
         // succeed for non-owner
-        await expect(portfolioBridgeMain.setGasForDestinationReceive(defaultBridge, dexalotSubnet.lzChainId, gasForDestinationLzReceive))
+        await expect(portfolioBridgeMain.setGasForDestination(defaultBridge, dexalotSubnet.lzChainId, gasForDestinationLzReceive))
         .to.emit(portfolioBridgeMain, "GasForDestinationLzReceiveUpdated")
         .withArgs(defaultBridge, dexalotSubnet.lzChainId, gasForDestinationLzReceive);
         expect((await portfolioBridgeMain.remoteParams(dexalotSubnet.lzChainId)).gasForDestination).to.be.equal(gasForDestinationLzReceive);
+    });
+
+    it("Should set userPaysFee correctly", async () => {
+        const { dexalotSubnet } = f.getChains();
+        const defaultBridge = 0;
+        // fail for non-owner
+        await expect(portfolioBridgeMain.connect(trader1).setUserPaysFeeForDestination(defaultBridge, dexalotSubnet.lzChainId, true)).to.be.revertedWith("AccessControl:");
+
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
+
+        // do nothing for non-supported bridge
+        await expect(portfolioBridgeMain.setUserPaysFeeForDestination(1, dexalotSubnet.lzChainId, true)).to.not.be.reverted;
+
+        const userPaysFee = true;
+        // succeed for owner
+        await expect(portfolioBridgeMain.setUserPaysFeeForDestination(defaultBridge, dexalotSubnet.lzChainId, userPaysFee))
+        .to.emit(portfolioBridgeMain, "UserPaysFeeForDestinationUpdated")
+        .withArgs(defaultBridge, dexalotSubnet.lzChainId, userPaysFee);
+        expect((await portfolioBridgeMain.remoteParams(dexalotSubnet.lzChainId)).userPaysFee).to.be.equal(userPaysFee);
     });
 
     it("Should have gas Swap Amount 1 and bridgeFee 0 for AVAX in PortfolioBridgeMain", async () => {
@@ -243,9 +319,38 @@ describe("Portfolio Bridge Main", () => {
     });
 
     it("Should use lzReceive correctly", async () => {
-        const srcChainId = 1;
+
+        const { dexalotSubnet } = f.getChains();
+        const nonce = 0;
+        const transaction = 0;      //  transaction =.  0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
+        const trader = trader1.address;
+        const symbol =  Utils.fromUtf8("AVAX") // + cChain.chainListOrgId);
+        const quantity = Utils.toWei("5");
+        const timestamp = BigNumber.from(await f.latestTime());
+
+
+        let xfer: any = {};
+        xfer = {nonce,
+                transaction,
+                trader,
+                symbol,
+                quantity,
+                timestamp,
+                customdata: Utils.emptyCustomData()
+        };
+
+
         // fail from wrong address - instead of lzEndpoint address passed trader2 address
-        await expect(portfolioBridgeMain.lzReceive(srcChainId, trader2.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-IVEC-01");
+        await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trader2.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-IVEC-01");
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        const bogusChainId = 1;
+        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
+        await portfolioBridgeSub.setTrustedRemoteAddress(0, bogusChainId, portfolioBridgeMain.address, bogusChainId, 300000, false);
+        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-INVT-01");
+
+        await portfolioBridgeMain.setLzEndPoint(owner.address);
+        await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, portfolioBridgeMain.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");
+        await expect(portfolioBridgeMain.lzReceive(1,lzEndpointSub.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");
     });
 
     it("Should use sendXChainMessage correctly", async () => {
@@ -270,28 +375,28 @@ describe("Portfolio Bridge Main", () => {
                  symbol,
                  quantity,
                  timestamp,
-                 customdata: ethers.constants.HashZero
+                 customdata: Utils.emptyCustomData()
         };
 
         const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         // fail paused contract
         await portfolioBridgeMain.pause();
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1)).to.be.revertedWith("Pausable: paused");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("Pausable: paused");
         await portfolioBridgeMain.unpause();
 
         // fail for non-message sender role
-        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId,bridge0, xfer1)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId,bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
         // fail for wrong BridgeProvider
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId,bridge3, xfer1)).to.be.revertedWith("Transaction reverted");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId,bridge3, xfer1, trader)).to.be.revertedWith("Transaction reverted");
 
         // fail - bridge provider enabled but not implemented
         await portfolioBridgeMain.enableBridgeProvider(bridge1, true);
         expect(await portfolioBridgeMain.isBridgeProviderEnabled(bridge1)).to.be.true;
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1)).to.be.revertedWith("PB-RBNE-02");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1, trader)).to.be.revertedWith("PB-RBNE-02");
 
         // succeed
-        const tx = await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1);
+        const tx = await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -325,15 +430,15 @@ describe("Portfolio Bridge Main", () => {
             //Check equality for symbolId and not the symbol below.
             expect(log.args.xfer.symbol).to.be.equal(symbolId);
             expect(log.args.xfer.quantity).to.be.equal(quantity);
-            expect(log.args.xfer.customdata).to.be.equal(ethers.constants.HashZero);
+            expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
 
         }
         // fail for unauthorized sender of lzSend
-        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId, bridge0, xfer1)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
 
         //Revoke PortfolioRole and fail for owner
         await portfolioBridgeMain.revokeRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
     });
 
     it("Should refund native", async () => {
@@ -362,4 +467,65 @@ describe("Portfolio Bridge Main", () => {
             .to.be.revertedWith("PB-NFUN-01")
     })
 
+    it("Should fail if userPaysFee is true but user address is empty", async function () {
+        const { dexalotSubnet } = f.getChains();
+        const defaultBridge = 0;
+        // fail for non-owner
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_ADMIN_ROLE(), owner.address);
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+
+        const userPaysFee = true;
+        // succeed for owner
+        await expect(portfolioBridgeMain.setUserPaysFeeForDestination(defaultBridge, dexalotSubnet.lzChainId, userPaysFee))
+        .to.emit(portfolioBridgeMain, "UserPaysFeeForDestinationUpdated")
+        .withArgs(defaultBridge, dexalotSubnet.lzChainId, userPaysFee);
+
+        const nonce = 0;
+        const transaction1 = 1;                // transaction = 1 = DEPOSIT [main --> sub]
+        const trader = trader1.address;
+        const symbol = AVAX;
+        const quantity = Utils.toWei("10");
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+        const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, defaultBridge, xfer1, ethers.constants.AddressZero)).to.be.revertedWith("PB-UFPE-01");
+    })
+
+    it("Should fail if userPaysFee is false, user address is set but unable to refund", async function () {
+        const defaultBridge = 0;
+        const nonce = 0;
+        const transaction1 = 1;                // transaction = 1 = DEPOSIT [main --> sub]
+        const trader = trader1.address;
+        const symbol = AVAX;
+        const quantity = Utils.toWei("10");
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+        const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
+
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, defaultBridge, xfer1, mainnetRFQAvax.address)).to.be.revertedWith("AccessControl:");
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+
+        // fail to refund user with address of mainnetRFQAvax
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, defaultBridge, xfer1, mainnetRFQAvax.address)).to.be.revertedWith("PB-UFPR-01");
+    })
 });

@@ -10,7 +10,6 @@ import type {
     PortfolioMain,
     PortfolioSub,
     TokenVestingCloneFactory,
-    TokenVestingCloneable,
     TokenVestingCloneable__factory,
     MockToken
 } from '../typechain-types'
@@ -49,7 +48,7 @@ describe("TokenVestingCloneable", function () {
     let released: BigNumber
     let vestedAmount: BigNumber
     let vestedPercentageAmount: BigNumber
-    let srcChainListOrgId: number;
+    // let srcChainListOrgId: number;
     let now: number;
 
     const token_decimals =18
@@ -58,7 +57,7 @@ describe("TokenVestingCloneable", function () {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
         const { cChain } = f.getChains();
 
-        srcChainListOrgId= cChain.chainListOrgId;
+        // srcChainListOrgId= cChain.chainListOrgId;
     })
 
     beforeEach(async function () {
@@ -396,7 +395,7 @@ describe("TokenVestingCloneable", function () {
             startPortfolioDeposits = start - 3000;
             cliff = 5000;
             duration = 120000;
-            const dt = Utils.fromUtf8("DEG");
+            // const dt = Utils.fromUtf8("DEG");
 
             await factory.createTokenVesting(beneficiary, start, cliff, duration, startPortfolioDeposits,
                 revocable, percentage, period, portfolio.address, owner.address);
@@ -928,7 +927,7 @@ describe("TokenVestingCloneable", function () {
             duration = 120000;
             percentage = 15;
             period = 20000;
-            const dt = Utils.fromUtf8("DEG");
+            // const dt = Utils.fromUtf8("DEG");
             let released;
             let vestedAmount;
             let vestedPercentageAmount;

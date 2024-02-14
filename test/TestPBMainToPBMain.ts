@@ -113,7 +113,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                 "bytes32",  // symbol
                 "uint256",  // quantity
                 "uint256",   // timestamp
-                "bytes32"  //customdata
+                "bytes28"  //customdata
             ] ,
             [
                 nonce,
@@ -122,7 +122,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                 gunDetails.symbolbytes32,
                 Utils.parseUnits("10", gunDetails.decimals),
                 await f.latestTime(),
-                ethers.constants.HashZero
+                Utils.emptyCustomData()
             ]
         )
 
@@ -173,12 +173,12 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  symbol,
                  quantity,
                  timestamp,
-                 customdata: ethers.constants.HashZero
+                 customdata: Utils.emptyCustomData()
         };
 
 
         // succeed
-        const tx = await portfolioBridgeMain.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1);
+        const tx = await portfolioBridgeMain.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -212,7 +212,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             //Check equality for symbolId and not the symbol below.
             expect(log.args.xfer.symbol).to.be.equal(symbolId);
             expect(log.args.xfer.quantity).to.be.equal(quantity);
-            expect(log.args.xfer.customdata).to.be.equal(ethers.constants.HashZero);
+            expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
 
         }
         // // fail for unauthorized sender of lzSend
@@ -249,12 +249,13 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  symbol,
                  quantity,
                  timestamp,
-                 customdata: ethers.constants.HashZero
+                 customdata: Utils.emptyCustomData()
         };
 
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero);
 
         // succeed
-        const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1);
+        const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value});
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -289,7 +290,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             //Check equality for symbolId and not the symbol below.
             expect(log.args.xfer.symbol).to.be.equal(symbolId);
             expect(log.args.xfer.quantity).to.be.equal(quantity);
-            expect(log.args.xfer.customdata).to.be.equal(ethers.constants.HashZero);
+            expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
 
         }
         // // fail for unauthorized sender of lzSend

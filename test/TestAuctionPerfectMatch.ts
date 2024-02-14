@@ -167,7 +167,7 @@ before(async () => {
   for (const element of tokenList) {
       _tokenStr = element;
       _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_tokenStr));
-      _token = MockToken.attach(_tokenAddr);
+      _token = MockToken.attach(_tokenAddr) as MockToken;
       tokenAddressMap[_tokenStr] = _token.address;
   }
   console.log(tokenAddressMap);
@@ -199,7 +199,7 @@ before(async () => {
           _tokenBytes32 = Utils.fromUtf8(_tokenStr);
           _tokenAddr = await portfolioMain.getToken(_tokenBytes32);
           console.log(`${_tokenStr} @ ${_tokenAddr}`)
-          _token = MockToken.attach(_tokenAddr);
+          _token = MockToken.attach(_tokenAddr) as MockToken;
           _tokenDecimals = await _token.decimals();
           _bal = await portfolio.getBalance(account, _tokenBytes32);
           Utils.printBalances(account, _bal, _tokenDecimals);

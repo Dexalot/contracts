@@ -13,7 +13,8 @@ import {
     MockToken,
     PortfolioBridgeSub,
     PortfolioMain,
-    PortfolioSub
+    PortfolioSub,
+    PortfolioSubHelper
 } from "../typechain-types";
 
 import * as f from "./MakeTestSuite";
@@ -27,6 +28,7 @@ describe("Portfolio Sub", () => {
     let portfolioMain: PortfolioMain;
     let portfolioBridgeSub: PortfolioBridgeSub;
     let gasStation: GasStation;
+    let portfolioSubHelper: PortfolioSubHelper;
 
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -57,7 +59,7 @@ describe("Portfolio Sub", () => {
     let srcChainListOrgId: number;
     const tokenDecimals = 18;
     const auctionMode: any = 0;
-
+    let defaultDestinationChainId: number;
     before(async function () {
         const { owner: owner1, admin: admin1, auctionAdmin: admin2, trader1: t1, trader2: t2, treasurySafe: ts, feeSafe: fs,other1:o1 } = await f.getAccounts();
         owner = owner1;
@@ -89,7 +91,8 @@ describe("Portfolio Sub", () => {
         gasStation = portfolioContracts.gasStation;
         alot = portfolioContracts.alot;
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
-
+        portfolioSubHelper = portfolioContracts.portfolioSubHelper;
+        defaultDestinationChainId = await portfolioBridgeSub.getDefaultDestinationChain();
         token_name = "Mock USDT Token";
         token_symbol = "USDT";
         token_decimals = 6;
@@ -114,7 +117,11 @@ describe("Portfolio Sub", () => {
         expect(res.total).to.equal(0);
         expect(res.available).to.equal(0);
 
+    });
 
+    it("Should run updateTokenDetailsAfterUpgrade properly", async function () {
+        await expect(portfolioSub.connect(trader1).updateTokenDetailsAfterUpgrade()).to.be.revertedWith("AccessControl:");
+        await portfolioSub.updateTokenDetailsAfterUpgrade();
     });
 
     it("Should create ERC20 token", async () => {
@@ -171,47 +178,59 @@ describe("Portfolio Sub", () => {
         await portfolioSub.connect(admin).setFeeAddress(feeSafe.address);
         expect(await portfolioSub.feeAddress()).to.be.equal(feeSafe.address);
         // fail for zero address
-        await expect(portfolioSub.connect(admin).setFeeAddress("0x0000000000000000000000000000000000000000")).to.revertedWith("P-OACC-02");
+        await expect(portfolioSub.connect(admin).setFeeAddress(ethers.constants.AddressZero)).to.revertedWith("P-OACC-02");
     });
 
     it("Should set treasury address for Portfolio from the admin account", async function () {
         // fail from non admin accounts
-        await expect(portfolioSub.connect(trader1).setTreasury(treasurySafe.address)).to.revertedWith("P-OACC-01");
-        await expect(portfolioSub.connect(admin).setTreasury(treasurySafe.address)).to.revertedWith("P-OACC-01");
+        await expect(portfolioSub.connect(trader1).setTreasury(treasurySafe.address)).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(admin).setTreasury(treasurySafe.address)).to.revertedWith("AccessControl:");
         // succeed from admin accounts
         await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolioSub.connect(admin).setTreasury(treasurySafe.address);
         expect(await portfolioSub.getTreasury()).to.be.equal(treasurySafe.address);
         // fail for zero address
-        await expect(portfolioSub.connect(admin).setTreasury("0x0000000000000000000000000000000000000000")).to.revertedWith("P-OACC-02");
+        await expect(portfolioSub.connect(admin).setTreasury(ethers.constants.AddressZero)).to.revertedWith("P-OACC-02");
     });
 
     it("Should set gas station address for Portfolio from the admin account", async function () {
 
         // fail from non admin accounts
-        await expect(portfolioSub.connect(trader1).setGasStation(gasStation.address)).to.revertedWith("P-OACC-01");
-        await expect(portfolioSub.connect(admin).setGasStation(gasStation.address)).to.revertedWith("P-OACC-01");
+        await expect(portfolioSub.connect(trader1).setGasStation(gasStation.address)).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(admin).setGasStation(gasStation.address)).to.revertedWith("AccessControl:");
         // succeed from admin accounts
         await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolioSub.connect(admin).setGasStation(gasStation.address);
         expect(await portfolioSub.getGasStation()).to.be.equal(gasStation.address);
         // fail for zero address
-        await expect(portfolioSub.connect(admin).setGasStation("0x0000000000000000000000000000000000000000")).to.revertedWith("P-OACC-02");
+        await expect(portfolioSub.connect(admin).setGasStation(ethers.constants.AddressZero)).to.revertedWith("P-OACC-02");
     });
 
     it("Should set portfolio minter address for Portfolio from the admin account", async function () {
         const portfolioMinter = await f.deployPortfolioMinterMock(portfolioSub, "0x0200000000000000000000000000000000000001");
 
         // fail from non admin accounts
-        await expect(portfolioSub.connect(trader1).setPortfolioMinter(portfolioMinter.address)).to.revertedWith("P-OACC-01");
-        await expect(portfolioSub.connect(admin).setPortfolioMinter(portfolioMinter.address)).to.revertedWith("P-OACC-01");
+        await expect(portfolioSub.connect(trader1).setPortfolioMinter(portfolioMinter.address)).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(admin).setPortfolioMinter(portfolioMinter.address)).to.revertedWith("AccessControl:");
         // succeed from admin accounts
         await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolioSub.connect(admin).setPortfolioMinter(portfolioMinter.address);
         expect(await portfolioSub.getPortfolioMinter()).to.be.equal(portfolioMinter.address);
         // fail for zero address
-        await expect(portfolioSub.connect(admin).setPortfolioMinter("0x0000000000000000000000000000000000000000")).to.revertedWith("P-OACC-02");
+        await expect(portfolioSub.connect(admin).setPortfolioMinter(ethers.constants.AddressZero)).to.revertedWith("P-OACC-02");
     });
+
+    it("Should set setPortfolioSubHelper address for Portfolio from the admin account", async function () {
+        // fail from non admin accounts
+        await expect(portfolioSub.connect(trader1).setPortfolioSubHelper(portfolioSubHelper.address)).to.revertedWith("AccessControl:");
+        await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), admin.address);
+        // fail for zero address
+        await expect(portfolioSub.connect(admin).setPortfolioSubHelper(ethers.constants.AddressZero)).to.revertedWith("P-OACC-02");
+        // succeed from admin accounts
+        await portfolioSub.connect(admin).setPortfolioSubHelper(portfolioSubHelper.address);
+        expect(await portfolioSub.getPortfolioSubHelper()).to.be.equal(portfolioSubHelper.address);
+    });
+
 
     it("Should fail addExecution if not called by TradePairs", async function () {
         const takerAddr = trader1.address;
@@ -267,6 +286,9 @@ describe("Portfolio Sub", () => {
 
         // fail for account other then msg.sender
         await expect(portfolioSub.connect(trader2).withdrawNative(trader1.address, Utils.toWei("100"))).to.be.revertedWith("P-OOWN-01");
+
+        // fail for amount too big
+        //await expect(portfolioSub.connect(trader1).withdrawNative(trader1.address, Utils.toWei("300"))).to.be.revertedWith("P-TFNE-01");
 
         // succeed for msg.sender
         tx = await portfolioSub.connect(trader1).withdrawNative(trader1.address, Utils.toWei("100"));
@@ -638,7 +660,8 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Bridge Fee 1 USDT
-        await portfolioSub.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
+        //await portfolioSub.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
+        await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [USDT], [Utils.parseUnits('1', token_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, USDT, token_decimals, Utils.formatUnits(usdtDepositAmount.div(2), token_decimals));
         expect(await portfolioSub.tokenTotals(USDT)).to.equal(mainnetBal.sub(await portfolioMain.bridgeFeeCollected(USDT)).div(2).add(Utils.parseUnits('1', token_decimals)));
 
@@ -774,7 +797,8 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Bridge Fee 1 ALOT
-        await portfolioSub.setBridgeParam(ALOT, Utils.parseUnits('1', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
+        //await portfolioSub.setBridgeParam(ALOT, Utils.parseUnits('1', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
+        await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [Utils.parseUnits('1', alot_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, ALOT, 18, (Number(deposit_amount) / 2).toString())
 
         // await portfolioSub.connect(trader1).withdrawToken(trader1.address, ALOT, alotDepositAmount.div(2), 0,defaultDestinationChainId);
@@ -889,8 +913,7 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Subnet Bridge Fee 1 USDT & 2 ALOT
-        await portfolioSub.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
-        await portfolioSub.setBridgeParam(ALOT, Utils.parseUnits('2', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
+        await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [USDT, ALOT], [Utils.parseUnits('1', token_decimals), Utils.parseUnits('2', alot_decimals)]);
 
         await f.withdrawToken(portfolioSub, trader1, USDT, token_decimals, Utils.formatUnits(usdtDepositAmount.div(2),token_decimals));
 
@@ -1053,10 +1076,6 @@ describe("Portfolio Sub", () => {
         await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
 
         await f.addToken(portfolioMain, portfolioSub, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
-        // await f.addToken(portfolioSub, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
-
-
-        //await f.addToken(portfolioMain, portfolioSub, alot, gasSwapRatioAlot); //gasSwapRatio 1
         await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
 
         // Start with 0 wallet balance
@@ -1119,10 +1138,9 @@ describe("Portfolio Sub", () => {
         const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
         await ethers.provider.send("hardhat_setBalance", [
             other1.address,
-            newBalanceHex, 
+            newBalanceHex,
             ]);
         await alot.mint(other1.address, (BigNumber.from(200)).mul(Utils.parseUnits(deposit_amount, 18)));
-        //await portfolioMain.addToken(ALOT, alot.address, srcChainListOrgId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals));
 
         await f.depositNative(portfolioMain, other1, deposit_amount);
         await f.depositToken(portfolioMain, other1, alot, 18, ALOT, deposit_amount, 0);
@@ -1133,16 +1151,16 @@ describe("Portfolio Sub", () => {
         // transfer AVAX native in mainnet
         await expect(portfolioSub.connect(other1).transferToken(trader2.address, AVAX, Utils.toWei(deposit_amount)))
         .to.emit(portfolioSub, "PortfolioUpdated")
-        .withArgs(5,  other1.address, AVAX, Utils.toWei(deposit_amount), 0, 0, 0)
+        .withArgs(5,  other1.address, AVAX, Utils.toWei(deposit_amount), 0, 0, 0, trader2.address )
         .to.emit(portfolioSub, "PortfolioUpdated")
-        .withArgs(6,  trader2.address, AVAX, Utils.toWei(deposit_amount), 0, ethers.BigNumber.from(Utils.toWei(deposit_amount)), ethers.BigNumber.from(Utils.toWei(deposit_amount)))
+        .withArgs(6,  trader2.address, AVAX, Utils.toWei(deposit_amount), 0, ethers.BigNumber.from(Utils.toWei(deposit_amount)), ethers.BigNumber.from(Utils.toWei(deposit_amount)), other1.address)
 
         // transfer ALOT native in subnet
         await expect(portfolioSub.connect(other1).transferToken(trader2.address, ALOT, Utils.toWei(deposit_amount)))
         .to.emit(portfolioSub, "PortfolioUpdated")
-        .withArgs(5,  other1.address, ALOT, Utils.toWei(deposit_amount), 0, 0, 0)
+        .withArgs(5,  other1.address, ALOT, Utils.toWei(deposit_amount), 0, 0, 0,  trader2.address )
         .to.emit(portfolioSub, "PortfolioUpdated")
-        .withArgs(6,  trader2.address, ALOT, Utils.toWei(deposit_amount), 0, ethers.BigNumber.from(Utils.toWei(deposit_amount)), ethers.BigNumber.from(Utils.toWei(deposit_amount)))
+        .withArgs(6,  trader2.address, ALOT, Utils.toWei(deposit_amount), 0, ethers.BigNumber.from(Utils.toWei(deposit_amount)), ethers.BigNumber.from(Utils.toWei(deposit_amount)), other1.address )
     })
 
     it("Should not transfer token from portfolio to portfolio if contract is paused", async () => {
@@ -1218,7 +1236,6 @@ describe("Portfolio Sub", () => {
         await usdt.mint(other1.address, ethers.utils.parseEther("100"))
 
         await f.addToken(portfolioMain, portfolioSub, usdt, 0.5);
-        // await f.addToken(portfolioSub, usdt, 0.5);
 
         await f.depositToken(portfolioMain, other1, usdt, token_decimals, USDT, "100")
 
@@ -1234,7 +1251,6 @@ describe("Portfolio Sub", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
         await f.addToken(portfolioMain, portfolioSub, usdt, 0.5);
-        // await f.addToken(portfolioSub, usdt, 0.5);
 
         let tokenDetails = await portfolioSub.getTokenDetails(USDT);
         expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);
@@ -1280,6 +1296,98 @@ describe("Portfolio Sub", () => {
         expect(tokenDetails.symbolId).to.equal(ethers.constants.HashZero);
     });
 
+    it("Should convert between tokens correctly", async () => {
+
+        const { cChain} = f.getChains();
+        const cChainSymbol = "USDt";
+        const orginalSubnetSymbol = "USDt"
+        const origsubnet_symbol_bytes32 = Utils.fromUtf8(orginalSubnetSymbol+ cChain.chainListOrgId);
+        const subnet_symbol = "USDT";
+        const deposit_amount = 200;
+
+        const token_decimals = 18;
+        const usdt = await f.deployMockToken(cChainSymbol, token_decimals);
+        const USDT = Utils.fromUtf8(cChainSymbol);
+        await usdt.mint(trader1.address, ethers.utils.parseEther("500"))
+        await usdt.mint(trader2.address, ethers.utils.parseEther("500"))
+        await usdt.mint(owner.address, ethers.utils.parseEther("500"))
+
+        //Add it with avalanche id
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5, 0, true, 0, orginalSubnetSymbol);
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei(deposit_amount.toString()));
+
+        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-ETNS-02");
+
+        await f.addTokenToPortfolioSub(portfolioSub, cChainSymbol, subnet_symbol, usdt.address, tokenDecimals
+            , cChain.chainListOrgId, 0.5, 0, true, 0)
+        await f.depositToken(portfolioMain, trader2, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
+
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(0);
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
+
+
+        // console.log("");
+        // console.log("Token totals Orig", orginalSubnetSymbol, await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol)));
+        // console.log("Token totals New", subnet_symbol, await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol)));
+        // console.log("Inventory by id Orig", orginalSubnetSymbol+ cChain.chainListOrgId, await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32));
+
+        // convertion from USTt to USDT is allowed
+        await portfolioSubHelper.addConvertibleToken(Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"));
+        expect(await portfolioSubHelper.getSymbolToConvert(Utils.fromUtf8("USDt"))).to.be.equal(Utils.fromUtf8("USDT"));
+        // need to rename the token in PortfolioBridge
+        await portfolioBridgeSub.renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"));
+
+        // Fail when trader1 total positions < available (outstanding orders)
+        await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), owner.address)
+        //Tx 3-increaseAvail or 4-deccreaseAvail allowed
+        await portfolioSub.adjustAvailable(4, trader1.address, USDT, Utils.toWei('10'))
+        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-TFNE-01");
+        await portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))
+
+        // Convert trader1 positins. They go under the new subnet symbol. trader2' are under the original subnet symbol
+        await portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"));
+
+        // no positions to convert. Owner has 0
+        await portfolioSub.connect(owner).convertToken(Utils.fromUtf8("USDt"));
+
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
+         // portfolio bridge has both inventory
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
+
+        // Deposit more for trader1 after the conversion
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
+
+        // old inventory from trader2 stays the same
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
+        // new deposit is Reflected under  the new inventory
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount * 3).toString()));
+
+
+        // trader2 withdraws instead of converting it
+        await f.withdrawToken(portfolioSub, trader2, Utils.fromUtf8("USDt"), token_decimals, deposit_amount.toString());
+        // old inventory is withdrawn
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(0);
+        // new inventory left only
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
+
+        //withdrawing the converted inventory and the newly deposited inventory together
+        await f.withdrawToken(portfolioSub, trader1, Utils.fromUtf8("USDT"), token_decimals, (deposit_amount * 2).toString());
+
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(0);
+        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(0);
+        expect(await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32)).to.be.equal(0);
+
+        await portfolioSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioSub.pause();
+        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("Pausable: paused");
+        await portfolioSub.unpause();
+
+    });
 
 
     it("Should add the same subnetSymbol from multiple chains", async () => {
@@ -1372,7 +1480,7 @@ describe("Portfolio Sub", () => {
         .to.emit(portfolioSub, "ParameterUpdated")
         .withArgs(subnet_symbol_bytes32, "P-REMOVETOKEN", 0, 0);
 
-        await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+        //await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
 
         //Remove mainchain ALOT from PortfolioBridgeSub, Portfolio stays intact
         await expect(portfolioSub.connect(owner)["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), cChain.chainListOrgId, Utils.fromUtf8("ALOT")))
@@ -1460,7 +1568,7 @@ describe("Portfolio Sub", () => {
 
     it("Should add and remove tokens correctly", async () => {
 
-        const native = "ALOT;"
+        const native = "ALOT";
         const symbol = "MOCK";
         const decimals = 18;
 
@@ -1473,15 +1581,18 @@ describe("Portfolio Sub", () => {
         expect(tokenList.length).to.be.equal(2);
 
         // fail not paused
-        await expect(portfolioSub["removeToken(bytes32,uint32,bytes32)"](SYMBOL, srcChainListOrgId,SYMBOL)).to.be.revertedWith("Pausable: not paused");
+        await expect(portfolioSub["removeToken(bytes32,uint32,bytes32)"](SYMBOL, srcChainListOrgId, SYMBOL)).to.be.revertedWith("Pausable: not paused");
 
         // silent fail if token is not in the token list
         await portfolioSub.pause();
         await portfolioSub["removeToken(bytes32,uint32,bytes32)"](SYMBOL, srcChainListOrgId,SYMBOL);
         tokenList = await portfolioSub.getTokenList();
         expect(tokenList.length).to.be.equal(2);
-        // fail adding 0 decimals native
-        await expect(portfolioSub.addToken(Utils.fromUtf8(native), ethers.constants.AddressZero, srcChainListOrgId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),Utils.fromUtf8(native))).to.be.revertedWith("P-CNAT-01");
+
+        // silent fail can't add native again
+        await portfolioSub.addToken(Utils.fromUtf8(native), ethers.constants.AddressZero, srcChainListOrgId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),Utils.fromUtf8(native));
+        tokenList = await portfolioSub.getTokenList();
+        expect(tokenList.length).to.be.equal(2);
 
         // fail with decimals 0 token
         await expect(portfolioSub.addToken(SYMBOL, t.address, srcChainListOrgId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),SYMBOL)).to.be.revertedWith("P-CNAT-01");

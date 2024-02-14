@@ -14,20 +14,19 @@ import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioMain.sol";
 import "./interfaces/IMainnetRFQ.sol";
-import "hardhat/console.sol";
 
 /**
  * @title   Request For Quote smart contract
  * @notice  This contract takes advantage of prices from the Dexalot subnet to provide
- * token swaps on C-Chain. Currently, users must perform a simple swap via our RFQ API.
+ * token swaps on EVM compatible chains. Users must request a quote via our RFQ API.
+ * Using this quote they can execute a swap on the current chain using simpleSwap() or partialSwap().
+ * The contract also supports cross chain swaps using xChainSwap() which locks funds in the current
+ * chain and sends a message to the destination chain to release funds.
  * @dev After getting a firm quote from our off chain RFQ API, call the simpleSwap() function with
  * the quote. This will execute a swap, exchanging the taker asset (asset you provide) with
- * the maker asset (asset we provide). In times of high volatility, the API may adjust your quoted
- * price. The price will never be lower than slippageTolerance, which represents a percentage of the
- * original quoted price. To check if your quoted price has been affected by slippage, monitor the SlippageApplied
- * event. The expiry of your quote may also be adjusted during times of high volatility. Monitor the ExpiryUpdated
- * event to verify if the deadline has been updated. It is highly unlikely that your quotes's makerAmount and expiry
- * are updated. Adjusting the quote is rare, and only resorted to in periods of high volatility for quotes that do
+ * the maker asset (asset we provide). In times of high volatility, the API may adjust the expiry of your quote.
+ * may also be adjusted during times of high volatility. Monitor the SwapExpired event to verify if a swap has been
+ * adjusted. Adjusting the quote is rare, and only resorted to in periods of high volatility for quotes that do
  * not properly represent the liquidity of the Dexalot subnet.
  */
 
@@ -53,18 +52,20 @@ contract MainnetRFQ is
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
     // portfolio bridge role
     bytes32 public constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-
+    // typehash for same chain swaps
     bytes32 private constant ORDER_TYPEHASH =
         keccak256(
             "Order(uint256 nonceAndMeta,uint128 expiry,address makerAsset,address takerAsset,address maker,address taker,uint256 makerAmount,uint256 takerAmount)"
         );
-
+    // typehash for cross chain swaps
     bytes32 private constant XCHAIN_SWAP_TYPEHASH =
         keccak256(
             "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
         );
+    // mask for nonce in cross chain transfer customdata, last 12 bytes
+    uint96 private constant NONCE_MASK = 0xffffffffffffffffffffffff;
 
-    // firm order data structure sent to user from RFQ API
+    // firm order data structure sent to user for regular swap from RFQ API
     struct Order {
         uint256 nonceAndMeta;
         uint128 expiry;
@@ -76,6 +77,7 @@ contract MainnetRFQ is
         uint256 takerAmount;
     }
 
+    // firm order data structure sent to user for cross chain swap from RFQ API
     struct XChainSwap {
         uint256 nonceAndMeta;
         uint32 expiry;
@@ -101,32 +103,38 @@ contract MainnetRFQ is
         uint256 destAmount;
     }
 
+    // data structure for swaps unable to release funds on destination chain due to lack of inventory
     struct PendingSwap {
         address trader;
         uint256 quantity;
         bytes32 symbol;
     }
 
-    // address used to sign transactions from Paraswap API
+    // address used to sign and verify swap orders
     address public swapSigner;
 
-    // max slippage tolerance for updated order in BIPs
+    // no longer in use, kept for upgradeability)
     uint256 public slippageTolerance;
 
-    // keeps track of trade nonces executed
+    // (no longer in use, kept for upgradeability)
     mapping(uint256 => bool) private nonceUsed;
-    // keeps track of trade nonces that had an updated expiry
+    // (no longer in use, kept for upgradeability)
     mapping(uint256 => uint256) private orderMakerAmountUpdated;
-    // keeps track of trade nonces that had slippage applied to their quoted price
+    // (no longer in use, kept for upgradeability)
     mapping(uint256 => uint256) private orderExpiryUpdated;
-    // keeps track of trusted contracts such as Aggregators for swap functions
+    // (no longer in use, kept for upgradeability)
     mapping(address => bool) private trustedContracts;
-
+    // uses a bitmap to keep track of nonces used in executed swaps
     mapping(uint256 => uint256) public completedSwaps;
+    // uses a bitmap to keep track of nonces of swaps that have been set to expire prior to execution
     mapping(uint256 => uint256) public expiredSwaps;
+    // keeps track of swaps that have been queued on the destination chain due to lack of inventory
     mapping(uint256 => PendingSwap) public swapQueue;
 
+    // portfolio bridge contract, sends + receives cross chain messages
     IPortfolioBridge public portfolioBridge;
+    // portfolio main contract, used to get token addresses on destination chain
+    address public portfolioMain;
     // storage gap for upgradeability
     uint256[46] __gap;
 
@@ -216,12 +224,21 @@ contract MainnetRFQ is
         _executeOrder(_order, makerAmount, _takerAmount, destTrader);
     }
 
-    function xChainSwap(XChainSwap calldata _order, bytes calldata signature) external payable whenNotPaused {
-        address destTrader = _verifyXSwap(_order, signature);
+    /**
+     * @notice Swaps two assets cross chain, based on a predetermined swap price
+     * @dev This function can only be called after generating a firm quote from the RFQ API.
+     * All parameters are generated from the RFQ API. Prices are determined based off of trade
+     * prices from the Dexalot subnet. This function is called on the source chain where is locks
+     * funds and sends a cross chain message to release funds on the destination chain.
+     * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     */
+    function xChainSwap(XChainSwap calldata _order, bytes calldata _signature) external payable whenNotPaused {
+        address destTrader = _verifyXSwap(_order, _signature);
 
         _executeXSwap(_order, destTrader);
 
-        sendCrossChainTrade(_order, destTrader);
+        _sendCrossChainTrade(_order, destTrader);
     }
 
     /**
@@ -234,24 +251,20 @@ contract MainnetRFQ is
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to be withdrawn
      * @param   _transaction  Transaction type
-     * @param   _customdata  Custom data
+     * @param   _customdata  Custom data, used to encode the nonce of the swap
      */
     function processXFerPayload(
         address _trader,
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolio.Tx _transaction,
-        bytes32 _customdata
+        bytes28 _customdata
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        console.log("Msg Received", uint256(_transaction), _trader, _quantity);
-        if (_transaction != IPortfolio.Tx.CCTRADE) {
-            revert("RF-PTNS-01");
-        }
+        require(_transaction == IPortfolio.Tx.CCTRADE, "RF-PTNS-01");
         require(_trader != address(0), "RF-ZADDR-01");
         require(_quantity > 0, "RF-ZETD-01");
-        console.logBytes32(_symbol);
-        console.logBytes32(portfolioBridge.getPortfolio().getNative());
-        _processXFerPayloadInternal(_trader, _symbol, _quantity, uint256(_customdata));
+        uint256 nonceAndMeta = (uint256(uint160(_trader)) << 96) | (uint224(_customdata) & NONCE_MASK);
+        _processXFerPayloadInternal(_trader, _symbol, _quantity, nonceAndMeta);
     }
 
     /**
@@ -266,6 +279,16 @@ contract MainnetRFQ is
         portfolioBridge = IPortfolioBridge(_portfolioBridge);
         grantRole(PORTFOLIO_BRIDGE_ROLE, _portfolioBridge);
         emit AddressSet("MAINNETRFQ", "SET-PORTFOLIOBRIDGE", _portfolioBridge);
+    }
+
+    /**
+     * @notice  Sets the portfolio main contract address
+     * @dev     Only callable by admin
+     */
+    function setPortfolioMain() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address _portfolioMain = address(portfolioBridge.getPortfolio());
+        portfolioMain = _portfolioMain;
+        emit AddressSet("MAINNETRFQ", "SET-PORTFOLIOMAIN", _portfolioMain);
     }
 
     /**
@@ -351,7 +374,12 @@ contract MainnetRFQ is
         }
     }
 
-    function removeFromSwapQueue(uint256 _nonceAndMeta) external {
+    /**
+     * @notice Releases funds which have been queued on the destination chain due to lack of inventory
+     * @dev Only worth calling once inventory has been replenished
+     * @param _nonceAndMeta Nonce of order
+     */
+    function removeFromSwapQueue(uint256 _nonceAndMeta) external nonReentrant {
         PendingSwap memory pendingSwap = swapQueue[_nonceAndMeta];
         bool success = _processXFerPayloadInternal(
             pendingSwap.trader,
@@ -359,7 +387,7 @@ contract MainnetRFQ is
             pendingSwap.quantity,
             _nonceAndMeta
         );
-        require(success, "");
+        require(success, "RF-INVT-01");
         delete swapQueue[_nonceAndMeta];
         emit SwapQueue("REMOVED", _nonceAndMeta, pendingSwap);
     }
@@ -439,8 +467,13 @@ contract MainnetRFQ is
         }
     }
 
+    /**
+     * @notice Verifies that a XChainSwap order is valid and has not been executed already.
+     * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
+     * @param _signature Signature of trade parameters generated from /api/rfq/firm
+     * @return address The address where the funds will be transferred.
+     */
     function _verifyXSwap(XChainSwap calldata _order, bytes calldata _signature) private returns (address) {
-        // TODO: check gas impact of using bytes array + slimming down symbol
         bytes32 hashedStruct = keccak256(
             abi.encode(
                 XCHAIN_SWAP_TYPEHASH,
@@ -461,6 +494,13 @@ contract MainnetRFQ is
         return (destTrader);
     }
 
+    /**
+     * @notice Handles the exchange of assets based on swap type and
+     * if the assets are ERC-20's or native tokens. Transfer assets in on the source chain
+     * and sends a cross chain message to release assets on the destination chain
+     * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
+     * @param _destTrader The address to transfer funds to on destination chain
+     **/
     function _executeXSwap(XChainSwap calldata _order, address _destTrader) private {
         SwapData memory swapData = SwapData({
             nonceAndMeta: _order.nonceAndMeta,
@@ -479,8 +519,8 @@ contract MainnetRFQ is
      * @notice Verifies that an order is valid and has not been executed already.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     * @return address The address where the funds will be transferred. It is the Aggregator address if verified by
-     * the trustedContracts which will forward the funds to the beneficiary stated in _order.taker
+     * @return address The address where the funds will be transferred. It is an Aggregator address if
+     * the address in the nonceAndMeta matches the msg.sender
      **/
     function _verifyOrder(Order calldata _order, bytes calldata _signature) private returns (address) {
         address destTrader = address(uint160(_order.nonceAndMeta >> 96));
@@ -513,8 +553,9 @@ contract MainnetRFQ is
      * @notice Handles the exchange of assets based on swap type and
      * if the assets are ERC-20's or native tokens.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
-     * @param _makerAmount the proper makerAmount for the trade
-     * @param _takerAmount the proper takerAmount for the trade
+     * @param _makerAmount The proper makerAmount for the trade
+     * @param _takerAmount The proper takerAmount for the trade
+     * @param _destTrader The address to transfer funds to
      **/
     function _executeOrder(
         Order calldata _order,
@@ -535,6 +576,16 @@ contract MainnetRFQ is
         _executeSwapInternal(swapData, true);
     }
 
+    /**
+     * @notice Verifies that a swap has a valid signature, nonce and expiry
+     * @param _nonceAndMeta Nonce of swap
+     * @param _expiry Expiry of swap
+     * @param _taker Address of originating user
+     * @param _isAggregator True if swap initiated by contract i.e. aggregator
+     * @param _hashedStruct Hashed swap struct, required for signature verification
+     * @param _signature Signature of swap
+     *
+     */
     function _verifySwapInternal(
         uint256 _nonceAndMeta,
         uint256 _expiry,
@@ -556,32 +607,52 @@ contract MainnetRFQ is
         completedSwaps[bucket] = bitmap | mask;
     }
 
-    function _executeSwapInternal(SwapData memory _swapData, bool isNotXChain) private {
-        if (_swapData.destAsset == address(0)) {
-            // swap NATIVE <=> ERC-20
-            IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(msg.sender, address(this), _swapData.srcAmount);
-            if (isNotXChain) {
-                // solhint-disable-next-line avoid-low-level-calls
-                (bool success, ) = payable(_swapData.destTrader).call{value: _swapData.destAmount}("");
-                require(success, "RF-TF-01");
-            }
-        } else if (_swapData.srcAsset == address(0)) {
-            // swap ERC-20 <=> NATIVE
+    /**
+     * @notice Pulls funds for a swap from the msg.sender
+     * @param _swapData Struct containing all information for executing a swap
+     */
+    function _takeFunds(SwapData memory _swapData) private {
+        if (_swapData.srcAsset == address(0)) {
             require(msg.value >= _swapData.srcAmount, "RF-IMV-01");
-            if (isNotXChain) {
-                IERC20Upgradeable(_swapData.destAsset).safeTransfer(_swapData.destTrader, _swapData.destAmount);
-            }
-            if (msg.value > _swapData.srcAmount) {
-                // solhint-disable-next-line avoid-low-level-calls
-                (bool success, ) = payable(msg.sender).call{value: msg.value - _swapData.srcAmount}("");
-                require(success, "RF-TF-02");
-            }
         } else {
-            // swap ERC-20 <=> ERC-20
             IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(msg.sender, address(this), _swapData.srcAmount);
-            if (isNotXChain) {
-                IERC20Upgradeable(_swapData.destAsset).safeTransfer(_swapData.destTrader, _swapData.destAmount);
-            }
+        }
+    }
+
+    /**
+     * @notice Release funds for a swap to the destTrader
+     * @param _swapData Struct containing all information for executing a swap
+     */
+    function _releaseFunds(SwapData memory _swapData) private {
+        if (_swapData.destAsset == address(0)) {
+            (bool success, ) = payable(_swapData.destTrader).call{value: _swapData.destAmount}("");
+            require(success, "RF-TF-01");
+        } else {
+            IERC20Upgradeable(_swapData.destAsset).safeTransfer(_swapData.destTrader, _swapData.destAmount);
+        }
+    }
+
+    /**
+     * @notice Refunds remaining native token to the msg.sender
+     * @param _swapData Struct containing all information for executing a swap
+     */
+    function _refundNative(SwapData memory _swapData) private {
+        if (_swapData.srcAsset == address(0) && msg.value > _swapData.srcAmount) {
+            (bool success, ) = payable(msg.sender).call{value: msg.value - _swapData.srcAmount}("");
+            require(success, "RF-TF-02");
+        }
+    }
+
+    /**
+     * @notice Executes a swap by taking funds from the msg.sender and if the swap is not cross chain
+     * funds are released to the destTrader. Emits SwapExecuted event upon completion.
+     * @param _swapData Struct containing all information for executing a swap
+     */
+    function _executeSwapInternal(SwapData memory _swapData, bool isNotXChain) private {
+        _takeFunds(_swapData);
+        if (isNotXChain) {
+            _releaseFunds(_swapData);
+            _refundNative(_swapData);
         }
 
         emit SwapExecuted(
@@ -596,12 +667,19 @@ contract MainnetRFQ is
         );
     }
 
-    function sendCrossChainTrade(XChainSwap calldata _order, address _to) private returns (uint256 messageFee) {
-        bytes32 customdata = bytes32(_order.nonceAndMeta);
-        // TODO: compare gas difference between sending asset + using token
+    /**
+     * @notice Sends a cross chain message to PortfolioBridge containing the destination token amount,
+     * symbol and trader. Sends remaining native token as gas fee for cross chain message. Refund for
+     * gas fee is handled in PorfolioBridge.
+     * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
+     * @param _to Trader address to recieve funds on destination chain
+     */
+    function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private returns (uint256 messageFee) {
+        bytes28 customdata = bytes28(uint224(_order.nonceAndMeta) & NONCE_MASK);
+        uint256 nativeAmount = _order.takerAsset == address(0) ? _order.takerAmount : 0;
+        uint256 gasFee = msg.value - nativeAmount;
         // Nonce to be assigned in PBridge
-        // TODO messageFee to be deducted from the users wallet as a part of this transaction
-        messageFee = portfolioBridge.sendXChainMessage(
+        messageFee = portfolioBridge.sendXChainMessage{value: gasFee}(
             _order.destChainId,
             IPortfolioBridge.BridgeProvider.LZ,
             IPortfolio.XFER(
@@ -612,53 +690,61 @@ contract MainnetRFQ is
                 _order.makerAmount,
                 block.timestamp,
                 customdata
-            )
+            ),
+            _order.taker
         );
     }
 
-    function _addToSwapQueue(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        uint256 _nonceAndMeta
-    ) private onlyRole(PORTFOLIO_BRIDGE_ROLE) {
+    /**
+     * @notice Adds unfulfilled swaps (due to lack of inventory) to a queue
+     * @param _trader Trader address to transfer to
+     * @param _symbol Token symbol to transfer
+     * @param _quantity Quantity of token to transfer
+     * @param _nonceAndMeta Nonce of the swap
+     */
+    function _addToSwapQueue(address _trader, bytes32 _symbol, uint256 _quantity, uint256 _nonceAndMeta) private {
         PendingSwap memory pendingSwap = PendingSwap({trader: _trader, symbol: _symbol, quantity: _quantity});
         swapQueue[_nonceAndMeta] = pendingSwap;
-        console.log("Added to Swap Queue");
-        console.logBytes32(bytes32(_nonceAndMeta));
         emit SwapQueue("ADDED", _nonceAndMeta, pendingSwap);
     }
 
+    /**
+     * @notice  Using the bridge message, releases the remaining swap funds to the trader on the
+     * destination chain and sets nonce to used. If not enough inventory swap is added to queue.
+     * @param   _trader  Address of the trader
+     * @param   _symbol  Symbol of the token
+     * @param   _quantity  Amount of token to be withdrawn
+     * @param   _nonceAndMeta  Nonce of the swap
+     */
     function _processXFerPayloadInternal(
         address _trader,
         bytes32 _symbol,
         uint256 _quantity,
         uint256 _nonceAndMeta
     ) private returns (bool) {
-        bool success;
-        if (_symbol == portfolioBridge.getPortfolio().getNative()) {
-            console.log("Sending Native", _quantity, _trader);
+        uint256 bucket = _nonceAndMeta >> 8;
+        uint256 mask = 1 << (_nonceAndMeta & 0xff);
+        require(completedSwaps[bucket] & mask == 0, "RF-IN-02");
+
+        bool success = false;
+        if (_symbol == IPortfolio(portfolioMain).getNative()) {
             // Send native
             // solhint-disable-next-line avoid-low-level-calls
             (success, ) = _trader.call{value: _quantity}("");
         } else {
-            console.log("Sending ERC20", _quantity, _trader);
-            // TODO: cache portfolioMain?
-            IPortfolioMain portfolioMain = IPortfolioMain(address(portfolioBridge.getPortfolio()));
-            IERC20Upgradeable token = portfolioMain.getToken(_symbol);
-            require(address(token) != address(0), "");
-            success = token.transfer(_trader, _quantity);
+            IERC20Upgradeable token = IPortfolioMain(portfolioMain).getToken(_symbol);
+            require(address(token) != address(0), "RF-DTNF-01");
+
+            (bool erc20Success, bytes memory data) = address(token).call(
+                abi.encodeWithSelector(token.transfer.selector, _trader, _quantity)
+            );
+            success = (erc20Success && (data.length == 0 || abi.decode(data, (bool))));
         }
         if (!success) {
             _addToSwapQueue(_trader, _symbol, _quantity, _nonceAndMeta);
             return false;
         }
-        uint256 bucket = _nonceAndMeta >> 8;
-        uint256 mask = 1 << (_nonceAndMeta & 0xff);
         completedSwaps[bucket] |= mask;
         return true;
     }
-
-    // TODO: add delayed queue if swap not enough funds
-    // TODO: add function to retry delayed queue
 }

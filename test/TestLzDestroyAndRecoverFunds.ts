@@ -94,7 +94,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
                 "bytes32", // symbol
                 "uint256", // quantity
                 "uint256" ,   // timestamp
-                "bytes32"  // customdata
+                "bytes28"  // customdata
             ] ,
             [
                 0,
@@ -103,7 +103,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
                 Utils.fromUtf8("AVAX"),
                 ethers.utils.parseEther("1"),
                 "1",
-                ethers.constants.HashZero
+                Utils.emptyCustomData()
             ]
         )
 
@@ -300,9 +300,8 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         await f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "3.0");
         const trustedRemote = await portfolioBridgeMain.lzTrustedRemoteLookup(dexalotSubnet.lzChainId);
         const payload = (await lzEndpointMain.storedPayload(dexalotSubnet.lzChainId, trustedRemote)).payloadHash;
-        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513)
-
-        const modifiedPayload = payload.slice(0, 384) + "55534454" + payload.slice(392)
+        const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194)
+        const modifiedPayload = payload.slice(0, 128) + "55534454" + payload.slice(136)
 
         expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
 
@@ -329,7 +328,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const payload = (await lzEndpointMain.storedPayload(dexalotSubnet.lzChainId, trustedRemote)).payloadHash;
 
         expect(await portfolioBridgeMain["hasStoredPayload()"]()).to.be.true;
-        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513)
+        const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194)
 
         await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(dexalotSubnet.lzChainId,
             amountModifiedPayload
@@ -359,7 +358,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
                 "bytes32",  // symbol
                 "uint256",  // quantity
                 "uint256",   // timestamp
-                "bytes32" // custom data
+                "bytes28" // custom data
             ] ,
             [
                 depositXfer.nonce,
@@ -391,7 +390,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const sp = await lzEndpointSub.storedPayload(cChain.lzChainId, trustedRemote);
         const payload = sp.payloadHash;
         //replacing 3 with 50
-        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513);
+        const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194);
 
         expect ((await portfolioBridgeMain.getXFerMessage(payload))[1]).to.be.equal(Utils.fromUtf8("AVAX"));
         // fail for non-admin
@@ -418,7 +417,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const sp = await lzEndpointMain.storedPayload(dexalotSubnet.lzChainId, trustedRemote);
         const payload = sp.payloadHash;
         // Replacing quantity 3 with 5
-        const amountModifiedPayload = payload.slice(0, 497) + "4563918244f40000" + payload.slice(513);
+        const amountModifiedPayload = payload.slice(0, 178) + "4563918244f40000" + payload.slice(194);
         // fail for non-owner, this revert consumes some gas
         await expect(portfolioBridgeMain.connect(trader1).lzRetryPayload(dexalotSubnet.lzChainId,
             payload
@@ -468,7 +467,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const sp = await lzEndpointSub.storedPayload(cChain.lzChainId, trustedRemote);
         const payload = sp.payloadHash;
         //replacing 3 with 50
-        const amountModifiedPayload = payload.slice(0, 498) + "2B5E3AF16B1880000" + payload.slice(513);
+        const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194);
 
         expect ((await portfolioBridgeMain.getXFerMessage(payload))[1]).to.be.equal(ALOT);
         // fail for non-admin
@@ -497,7 +496,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const sp = await lzEndpointMain.storedPayload(dexalotSubnet.lzChainId, trustedRemote);
         const payload = sp.payloadHash;
         // Replacing quantity 3 with 5
-        const amountModifiedPayload = payload.slice(0, 497) + "4563918244f40000" + payload.slice(513);
+        const amountModifiedPayload = payload.slice(0, 178) + "4563918244f40000" + payload.slice(194);
         // fail for non-owner, this revert consumes some gas
         await expect(portfolioBridgeMain.connect(trader1).lzRetryPayload(dexalotSubnet.lzChainId,
             payload

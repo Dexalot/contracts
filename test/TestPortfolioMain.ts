@@ -78,6 +78,19 @@ describe("Portfolio Main", () => {
         await expect(portfolioMain.initialize(AVAX, srcChainListOrgId)).to.be.revertedWith("Initializable: contract is already initialized");
     });
 
+    it("Should not add native token again after deployment", async function () {
+        //Silent fail
+        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5',18),false);
+
+    });
+
+    it("Should run updateTokenDetailsAfterUpgrade properly", async function () {
+
+        await expect(portfolioMain.connect(trader1).updateTokenDetailsAfterUpgrade()).to.be.revertedWith("AccessControl:");
+
+        await portfolioMain.updateTokenDetailsAfterUpgrade();
+    });
+
     it("Should add and remove ERC20 token to portfolio main", async () => {
         const {trader1} = await f.getAccounts();
         const token_symbol = "USDT";
@@ -268,6 +281,14 @@ describe("Portfolio Main", () => {
 
         // fail due to token not in portfolioMain
         await expect(portfolioMain.processXFerPayload(owner.address, Utils.fromUtf8("USDC"), Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-ETNS-02");
+
+        // Add virtual GUN to avalanche with gunzilla Network id
+        const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
+        const { gunzillaSubnet } = f.getChains();
+        await f.addVirtualToken(portfolioMain, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
+        // fail due to token is virtual in portfolioMain
+        await expect(portfolioMain.processXFerPayload(owner.address, gunDetails.symbolbytes32, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-VTNS-02");
+
     });
 
     it("Should set and get the banned accounts address correctly", async () => {

@@ -238,7 +238,7 @@ describe("Portfolio Shared", () => {
 
     it("Should enable bridge correctly", async () => {
         // fail for non-admin
-        await expect(portfolio.connect(trader1).enableBridgeProvider(1, true)).to.be.revertedWith("P-OACC-01");
+        await expect(portfolio.connect(trader1).enableBridgeProvider(1, true)).to.be.revertedWith("AccessControl:");
 
         // succeed
         await expect(portfolio.enableBridgeProvider(1, true))
@@ -315,14 +315,14 @@ describe("Portfolio Shared", () => {
 
     it("Should pause and unpause Portfolio from the admin account", async function () {
         // fail from non admin accounts
-        await expect(portfolio.connect(trader1).pause()).to.revertedWith("P-OACC-01");
-        await expect(portfolio.connect(admin).pause()).to.revertedWith("P-OACC-01");
+        await expect(portfolio.connect(trader1).pause()).to.revertedWith("AccessControl:");
+        await expect(portfolio.connect(admin).pause()).to.revertedWith("AccessControl:");
         // succeed from admin accounts
         await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolio.connect(admin).pause();
         expect(await portfolio.paused()).to.be.true;
         // fail for non-admin
-        await expect(portfolio.connect(trader1).unpause()).to.be.revertedWith("P-OACC-01");
+        await expect(portfolio.connect(trader1).unpause()).to.be.revertedWith("AccessControl:");
         // succeed for admin
         await portfolio.connect(admin).unpause();
         expect(await portfolio.paused()).to.be.false;

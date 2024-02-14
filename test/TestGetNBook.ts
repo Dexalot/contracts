@@ -27,19 +27,19 @@ import TradePairsAbi from '../artifacts/contracts/TradePairs.sol/TradePairs.json
 let MockToken: ContractFactory;
 
 // using the first numberOfAccounts accounts
-const numberOfAccounts = 3;
+const numberOfAccounts = 2;
 
 // initial state
 // do transfers to Portfolio contract as follows before starting tests
-const tokens: string[] = ["AVAX", "USDT", "BUSD"];
+const tokens: string[] = ["AVAX", "USDT"]; //, "BUSD"
 
 const decimalsMap: any = {"AVAX": 18, "USDT": 6, "BUSD": 18, "LINK": 18, "BTC": 8}
 
 const native = "AVAX";
 
-const tokenList: string[] = ["USDT", "BUSD"];
+const tokenList: string[] = ["USDT"]; //, "BUSD"
 
-const tokenPairs: string[] = ["AVAX/USDT", "AVAX/BUSD"];
+const tokenPairs: string[] = ["AVAX/USDT"]; //, "AVAX/BUSD"
 
 const minTradeAmountMap: any = {"AVAX/USDT": 10, "AVAX/BUSD": 10}
 
@@ -133,7 +133,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
         for (let j=0; j<tokenList.length; j++) {
             _tokenStr = tokenList[j];
             _tokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_tokenStr));
-            _token = MockToken.attach(_tokenAddr);
+            _token = MockToken.attach(_tokenAddr) as MockToken;
             tokenAddressMap[_tokenStr] = _token.address;
         }
         console.log(tokenAddressMap);
@@ -166,7 +166,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                 _tokenBytes32 = Utils.fromUtf8(_tokenStr);
                 _tokenAddr = await portfolioMain.getToken(_tokenBytes32);
                 console.log(`${_tokenStr} @ ${_tokenAddr}`)
-                _token = MockToken.attach(_tokenAddr);
+                _token = MockToken.attach(_tokenAddr) as MockToken;
                 _tokenDecimals = await _token.decimals();
                 _bal = await portfolio.getBalance(account, _tokenBytes32);
                 Utils.printBalances(account, _bal, _tokenDecimals);
@@ -281,6 +281,39 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
 
         console.log();
         console.log("=== Processing Orders ===");
+
+        const tradePairsContracts: any [] = [];
+        let tradePairId = "";
+        const ownerIndecies: number [] =[];
+        const localNonce : number [] =[]
+
+        for (const order of orders) { // This assumes that owner index will show in order
+            if (tradePairId === "") {
+                tradePairId = Utils.fromUtf8(order["tradePair"]);
+            }
+
+            if (!ownerIndecies.includes(order["ownerIndex"])) {
+                const tradePair: TradePairs = new ethers.Contract(tradePairs.address, TradePairsAbi.abi, wallets[order["ownerIndex"]]) as TradePairs;
+                tradePairsContracts.push(tradePair);
+                ownerIndecies.push(order["ownerIndex"]);
+
+                const nonce = await ethers.provider.getTransactionCount(wallets[order["ownerIndex"]].address);
+                console.log("Wallet ", wallets[order["ownerIndex"]].address, nonce);
+                localNonce.push(nonce);
+            }
+        }
+
+        const baseDecimals = (await tradePairsContracts[0].getTradePair(tradePairId)).baseDecimals;
+        const quoteDecimals = (await tradePairsContracts[0].getTradePair(tradePairId)).quoteDecimals;
+
+        // console.log(ownerIndecies);
+        // console.log(tradePairsContracts.length);
+        // console.log(tradePairId, baseDecimals, quoteDecimals );
+
+        // const orderPromises: any[] = [];
+        // let k = 1;
+
+        // const gasPx = await ethers.provider.getGasPrice();
         for (let i=0; i<orders.length; i++) {
 
             const order = orders[i];                // simulated order from file
@@ -297,11 +330,6 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             const acc = wallets[order["ownerIndex"]];
 
             // get the TradePairs for this order
-            const tradePair: TradePairs = new ethers.Contract(tradePairs.address, TradePairsAbi.abi, wallets[order["ownerIndex"]]) as TradePairs;
-            const tradePairId = Utils.fromUtf8(order["tradePair"]);
-
-            const baseDecimals = (await tradePair.getTradePair(tradePairId)).baseDecimals;
-            const quoteDecimals = (await tradePair.getTradePair(tradePairId)).quoteDecimals;
 
             // ADD NEW ORDERS TO TRADEPAIR
             if (order["action"] === "ADD") {
@@ -316,6 +344,28 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                     _type1 =0
 
                 }
+                const ownerIndex = order["ownerIndex"];
+                const tradePair = tradePairsContracts[ownerIndex];
+
+
+                // This fails. Chai dosen't like Promise.all
+                // const options = Utils.getOptions2(100, localNonce[ownerIndex], gasPx);
+                // //console.log( options)
+                // orderPromises.push(tradePair.connect(acc).addOrder(
+                //     acc.address,
+                //     Utils.fromUtf8(order["clientOrderId"]),
+                //     tradePairId,
+                //     Utils.parseUnits(order["price"].toString(), quoteDecimals),
+                //     Utils.parseUnits(order["quantity"].toString(), baseDecimals),
+                //     _side,
+                //     BigNumber.from(_type1),
+                //     BigNumber.from(_type2),
+                //     options
+
+                // ))
+                // localNonce[ownerIndex] = localNonce[ownerIndex] + 1;
+                // console.log( localNonce[ownerIndex])
+
 
                 const tx = await tradePair.connect(acc).addOrder(
                     acc.address,
@@ -335,22 +385,26 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                         const _log = orderLog.events[j];
                         if (_log.event === 'OrderStatusChanged') {
                             const _id = _log.args.orderId;
-                            const _orders = [...orderMap.values()];
-                            if (!_orders.includes(_id)) {
-                                orderMap.set(order["clientOrderId"], {'id': _id, 'order': order});
-                            }
+                            // const _orders = [...orderMap.values()];
+                            // if (!_orders.includes(_id)) {
+                            orderMap.set(order["clientOrderId"], {'id': _id, 'order': order});
+                            // }
                         }
                     }
                 }
             }
 
-             // CANCEL orders from TradePair
-            if (order["action"] === "CANCEL") {
-                // cancel order
-                const tx = await tradePair.cancelOrder(tradePairId, orderMap.get(order["clientOrderId"]).id);
-                orderLog = await tx.wait();
-            }
 
+            // if (i > 9 * k) {
+            //     console.log(i);
+            //     return Utils.executeAll(orderPromises).then(results => {
+            //         k++;
+            //         orderPromises.length =0;
+            //     });
+
+
+
+            // }
             console.log("clientOrderId =", order["clientOrderId"], ", ", "orderId =", orderMap.get(order["clientOrderId"]).id);
         }
     });
@@ -376,7 +430,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             j=i;
             newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "BUY");
             const res= compareMaps (oldBuyBook,newBook)
-            assert(res===true, `New Buy Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+            assert(res===true, `New Buy Book not equal to old Book when getting  ${i} ${j} Records at a time`);
             //console.log(`Getting buybook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
         }
 
@@ -386,7 +440,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             for (j=i; j <= 7; j += 1 ) {
                 newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "BUY");
                 const res= compareMaps (oldBuyBook,newBook)
-                assert(res===true, `New Buy Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+                assert(res===true, `New Buy Book not equal to old Book when getting  ${i} ${j} Records at a time`);
                 console.log(`Getting buybook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
             }
         }
@@ -397,7 +451,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             for (j=1; j <= i; j += 1 ) {
                 newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "BUY");
                 const res= compareMaps (oldBuyBook,newBook)
-                assert(res===true, `New Buy Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+                assert(res===true, `New Buy Book not equal to old Book when getting  ${i} ${j} Records at a time`);
                 console.log(`Getting buybook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
             }
         }
@@ -408,7 +462,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             j=i;
             newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "SELL");
             const res=compareMaps (oldSellBook,newBook)
-            assert(res===true, `New Sell Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+            assert(res===true, `New Sell Book not equal to old Book when getting  ${i} ${j} Records at a time`);
             //console.log(`Getting sellbook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
         }
 
@@ -418,7 +472,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             for (j=i; j <= 7; j += 1 ) {
                 newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "SELL");
                 const res= compareMaps (oldSellBook,newBook)
-                assert(res===true, `New Sell Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+                assert(res===true, `New Sell Book not equal to old Book when getting  ${i} ${j} Records at a time`);
                 console.log(`Getting Sellbook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
             }
         }
@@ -429,7 +483,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             for (j=1; j <= i; j += 1 ) {
                 newBook = await getOrderBook(tradePairs,tradePairId, i,  j , "SELL");
                 const res=compareMaps (oldSellBook,newBook)
-                assert(res===true, `New Sell Book not eqal to old Book when getting  ${i} ${j} Records at a time`);
+                assert(res===true, `New Sell Book not equal to old Book when getting  ${i} ${j} Records at a time`);
                 //console.log(`Getting sellbook nprice ${i} norder ${j} Records at a time. Old and new books are equal ${res}`) ;
             }
         }

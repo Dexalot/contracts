@@ -22,8 +22,9 @@ interface IPortfolioBridge {
     function sendXChainMessage(
         uint32 _dstChainListOrgChainId,
         BridgeProvider _bridge,
-        IPortfolio.XFER memory _xfer
-    ) external returns (uint256 messageFee);
+        IPortfolio.XFER memory _xfer,
+        address _userFeePayer
+    ) external payable returns (uint256 messageFee);
 
     function getXFerMessage(bytes calldata _data) external view returns (IPortfolio.XFER memory, bytes32);
 
@@ -43,6 +44,12 @@ interface IPortfolioBridge {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() external returns (bytes32);
+
+    function getBridgeFee(
+        BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes32 _symbol
+    ) external view returns (uint256 bridgeFee);
 
     enum XChainMsgType {
         XFER

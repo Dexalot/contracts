@@ -12,7 +12,6 @@ import { BigNumber, BigNumberish, ethers } from "ethers";
 const assetMap: any = {"0": "NATIVE", "1": "ERC20 ", "2": "NONE"}
 
 export default class utils {
-
     static fromUtf8(txt: string) {
         return ethers.utils.formatBytes32String(txt)
     }
@@ -74,6 +73,37 @@ export default class utils {
             if (value.id === searchValue)
                 return key;
         }
+    }
+
+    static emptyCustomData() {
+      return ethers.utils.hexZeroPad("0x", 28);
+    }
+
+    static generatePayload(xChainMsgType: number, nonce: number, tx: number, trader: string, symbol: string, quantity: BigNumber, timestamp: number, customdata: string) {
+      const types = ["uint160", "uint64", "uint16", "uint16", "bytes32", "uint256", "bytes28", "uint32"];
+      const values = [trader, nonce, tx, xChainMsgType, symbol, quantity, customdata, timestamp];
+      return ethers.utils.solidityPack(types, values);
+    }
+
+    static async getOptions2 (gasMultiplier=110, nonce=0, gasPx= BigNumber.from(2500000000)): any {
+      const gastoSend = Math.ceil(gasPx.mul(gasMultiplier).div(100).toNumber());
+      const  maxPriorityFeePerGas= 1;
+      const  optionsWithNonce = {gasLimit: 700000,  maxFeePerGas:gastoSend , maxPriorityFeePerGas }
+      if (nonce>0 ){
+        optionsWithNonce.nonce= nonce;
+      }
+      return optionsWithNonce;
+    }
+
+    static async executeAll(promises: any[]) {
+      const txs = await Promise.all(promises);
+      const results =  await Promise.all(txs.map((tx) => {
+        if (tx.status === "fulfilled") {
+          return tx.value.wait();
+        }
+      })
+      );
+      return results;
     }
 
     static async getClientOrderId(provider: any, account: string, counter=1) {

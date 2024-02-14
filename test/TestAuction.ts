@@ -108,7 +108,7 @@ before(async () => {
   console.log(accounts);
   console.log();
 
-  MockToken = await ethers.getContractFactory("MockToken");
+  MockToken = await ethers.getContractFactory("MockToken") as MockToken__factory;
 
   deploymentWallet = wallets[0];
   deploymentAccount = deploymentWallet.address;

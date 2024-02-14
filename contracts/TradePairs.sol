@@ -39,7 +39,7 @@ contract TradePairs is
     // version
     bytes32 public constant VERSION = bytes32("2.5.0");
 
-    // denominator for rate calculations
+    // denominator for rate calculations obsolete as of Feb 9 2024 CD
     uint256 public constant TENK = 10000;
 
     // id counter to build a unique handle for each new order/execution
@@ -1229,7 +1229,7 @@ contract TradePairs is
      * Call with Maximum ~15 orders at a time for a block size of 30M
      * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already
      * canceled/filled while continuing to cancel/replace the remaining open orders in the list. \
-     * Because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
+     * In this case, because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
      * event except "orderId", "traderaddress", "status" and "code" fields will be empty/default values. This includes the
      * indexed field "pair" which you may use as filters for your event listeners. Hence you should process the
      * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
@@ -1239,7 +1239,10 @@ contract TradePairs is
      * It can potentially revert if type2= FOK is used. Safe to use with IOC. \
      * For the rest of the order level check failures, It will reject those orders by emitting
      * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
-     * The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
+     * Event though the new order is rejected, the cancel operation still holds. For example, you try to C/R list
+     * 5 orders, the very first, Order1 gets canceled and at the time of new order entry for Order1.1, it may get rejected
+     * because of type2=PO and it will match an active order. Order1 is still canceled. Order1.1 gets a REJECT with
+     * "T-T2PO-01". The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
      * added to the blockchain. \
      * Order rejects will only be raised if called from this function. Single orders entered using addOrder
      * function will revert as before for backward compatibility. \
@@ -1277,21 +1280,21 @@ contract TradePairs is
                     side,
                     type1,
                     type2,
-                    true
+                    false
                 );
             } else {
                 emit OrderStatusChanged(
                     ORDER_STATUS_CHANGED_VERSION,
                     msg.sender, //assuming msg sender is the owner of the order to be canceled.
-                    bytes32(0), //assigning empty value as actual order value not available
+                    bytes32(0), //assigning empty value as it is not available
                     _orderIds[i],
-                    bytes32(0), //assigning empty value as actual order value not available
+                    bytes32(0), //assigning empty value as it is not available
                     0,
                     0,
                     0,
-                    Side.BUY, //assigning default value as actual order value not available
-                    Type1.LIMIT, //assigning default value as actual order value not available
-                    Type2.GTC, //assigning default value as actual order value not available
+                    Side.BUY, //assigning default value as it is not available
+                    Type1.LIMIT, //assigning default value as it is not available
+                    Type2.GTC, //assigning default value as it is not available
                     Status.CANCEL_REJECT,
                     0,
                     0,
@@ -1327,15 +1330,15 @@ contract TradePairs is
                 emit OrderStatusChanged(
                     ORDER_STATUS_CHANGED_VERSION,
                     msg.sender, //assuming msg sender is the owner of the order to be canceled.
-                    bytes32(0), //assigning empty value as actual order value not available
+                    bytes32(0), //assigning empty value as it is not available
                     _orderIds[i],
-                    bytes32(0), //assigning empty value as actual order value not available
+                    bytes32(0), //assigning empty value as it is not available
                     0,
                     0,
                     0,
-                    Side.BUY, //assigning default value as actual order value not available
-                    Type1.LIMIT, //assigning default value as actual order value not available
-                    Type2.GTC, //assigning default value as actual order value not available
+                    Side.BUY, //assigning default value as it is not available
+                    Type1.LIMIT, //assigning default value as it is not available
+                    Type2.GTC, //assigning default value as it is not available
                     Status.CANCEL_REJECT,
                     0,
                     0,

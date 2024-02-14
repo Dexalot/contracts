@@ -15,6 +15,7 @@ import {
     BannedAccounts__factory,
     TokenVestingCloneFactory,
     TokenVestingCloneable__factory,
+    PortfolioBridgeSub,
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -27,7 +28,7 @@ describe("Portfolio Interactions", () => {
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
-    let portfolioBridgeSub: PortfolioBridgeMain;
+    let portfolioBridgeSub: PortfolioBridgeSub;
 
     let TokenVestingCloneable: TokenVestingCloneable__factory;
 
@@ -281,8 +282,7 @@ describe("Portfolio Interactions", () => {
         const bridgeFee = Utils.toWei("0.01")
 
         await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1',token_decimals), true)
-        await portfolioSub.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1',token_decimals), true)
-
+        await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [Utils.fromUtf8("AVAX")], [bridgeFee])
         // fail paused
         await portfolioMain.connect(owner).pause()
         await expect(f.depositNative(portfolioMain, trader1, "0.009")).to.be.revertedWith("Pausable: paused")
@@ -334,7 +334,10 @@ describe("Portfolio Interactions", () => {
 
         await alot.mint(trader1.address, ethers.utils.parseUnits('100',alot_token_decimals))
         await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
-        await portfolioSub.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
+        await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [bridgeFee])
+        //no bridge fee to collect, // Silent exit
+        await portfolioMain.collectBridgeFees([ALOT]);
+        expect(await portfolioBridgeSub.getBridgeFee(0, defaultDestinationChainId, ALOT)).to.be.equal(bridgeFee);
         expect( (await portfolioMain.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
         expect( (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
 

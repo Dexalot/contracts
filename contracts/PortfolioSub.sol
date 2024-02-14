@@ -8,7 +8,7 @@ import "./interfaces/IGasStation.sol";
 import "./interfaces/IPortfolioMinter.sol";
 import "./interfaces/IPortfolioBridgeSub.sol";
 import "./interfaces/ITradePairs.sol";
-import "./interfaces/IRebateAccounts.sol";
+import "./interfaces/IPortfolioSubHelper.sol";
 
 /**
  * @title  Subnet Portfolio
@@ -72,7 +72,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // version
     bytes32 public constant VERSION = bytes32("2.5.0");
 
-    IRebateAccounts private rebateAccounts;
+    IPortfolioSubHelper private portfolioSubHelper;
 
     /**
      * @notice  Initializer for upgradeable Portfolio Sub
@@ -191,7 +191,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 srcChainId,
                 _details.decimals,
                 _details.auctionMode,
-                _details.symbol
+                _details.symbol,
+                _fee
             );
         }
     }
@@ -304,8 +305,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // Only TradePairs can call PORTFOLIO addExecution
         require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
 
-
-        (uint8 makerRate, uint8 takerRate) = rebateAccounts.getRates(_makerAddr, _takerAddr, _tradePairId, _tradePair.makerRate, _tradePair.takerRate);
+        (uint256 makerRate, uint256 takerRate) = portfolioSubHelper.getRates(
+            _makerAddr,
+            _takerAddr,
+            _tradePairId,
+            _tradePair.makerRate,
+            _tradePair.takerRate
+        );
         makerfee = calculateFee(_tradePair, _makerSide, _baseAmount, _quoteAmount, makerRate);
         takerfee = calculateFee(
             _tradePair,
@@ -344,7 +350,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         ITradePairs.Side _side,
         uint256 _quantity,
         uint256 _quoteAmount,
-        uint8 _rate
+        uint256 _rate
     ) private pure returns (uint256 lastFeeRounded) {
         lastFeeRounded = _side == ITradePairs.Side.BUY
             ? UtilsLibrary.floor((_quantity * _rate) / TENK, _tradePair.baseDecimals - _tradePair.baseDisplayDecimals)
@@ -377,7 +383,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // Only allow deposits in the subnet from PortfolioBridgeSub that has PORTFOLIO_BRIDGE_ROLE and not from the users
         if (_transaction == Tx.DEPOSIT) {
             // Deposit the entire amount to the portfolio first
-            safeIncrease(_trader, _symbol, _quantity, 0, _transaction);
+            safeIncrease(_trader, _symbol, _quantity, 0, _transaction, _trader);
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
             autoFillPrivate(_trader, _symbol, _transaction);
         } else {
@@ -475,7 +481,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // using autoFill. Currently 0.1*2= 0.2 ALOT
         require(_from.balance >= gasStation.gasAmount() * 2, "P-BLTH-01");
         totalNativeBurned += msg.value;
-        safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS);
+        safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS, _from);
     }
 
     /**
@@ -496,7 +502,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _quantity  Amount of the native ALOT to withdraw
      */
     function withdrawNativePrivate(address _to, uint256 _quantity) private {
-        safeDecrease(_to, native, _quantity, 0, Tx.ADDGAS);
+        safeDecrease(_to, native, _quantity, 0, Tx.ADDGAS, _to);
         portfolioMinter.mint(_to, _quantity);
     }
 
@@ -538,8 +544,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
         // bridgeFee = bridge Fees both in the Mainnet the subnet
         // no bridgeFees for treasury and feeCollector
-        uint256 bridgeFee = (_to != feeAddress && _to != treasury) ? bridgeParams[_symbol].fee : 0;
-        safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW);
+        // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
+        uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
+            ? 0
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol);
+        safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
         portfolioBridge.sendXChainMessage(
             _dstChainListOrgChainId,
             _bridge,
@@ -551,8 +560,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
                 block.timestamp,
-                bytes32(0)
-            )
+                bytes28(0)
+            ),
+            _to
         );
     }
 
@@ -572,19 +582,20 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _symbol,
         uint256 _amount,
         uint256 _feeCharged,
-        Tx _transaction
+        Tx _transaction,
+        address _traderOther
     ) private {
         require(_amount > 0 && _amount >= _feeCharged, "P-TNEF-01");
         uint256 quantityLessFee = _amount - _feeCharged;
         AssetEntry storage asset = assets[_trader][_symbol];
-        asset.total += quantityLessFee;
-        asset.available += quantityLessFee;
+        asset.total = asset.total + quantityLessFee;
+        asset.available = asset.available + quantityLessFee;
         //Commissions are always taken from incoming currency. This takes care of ALL EXECUTION and DEPOSIT and INTXFER
         safeTransferFee(feeAddress, _symbol, _feeCharged);
         if (_transaction == Tx.DEPOSIT) {
-            tokenTotals[_symbol] += _amount;
+            tokenTotals[_symbol] = tokenTotals[_symbol] + _amount;
         }
-        emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction);
+        emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
     }
 
     /**
@@ -603,21 +614,21 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _symbol,
         uint256 _amount,
         uint256 _feeCharged,
-        Tx _transaction
+        Tx _transaction,
+        address _traderOther
     ) private {
         AssetEntry storage asset = assets[_trader][_symbol];
         require(_amount > 0 && _amount > _feeCharged, "P-WUTH-01");
         require(_amount <= asset.total, "P-TFNE-01");
         // decrease the total quantity from the user balances.
-        asset.total -= _amount;
+        asset.total = asset.total - _amount;
         // This is bridge fee going to treasury. Commissions go to feeAddress
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
-            //cd probably redundant check because _amount can never be > tokenTotals amount
             require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
-            tokenTotals[_symbol] -= (_amount - _feeCharged); // _feeCharged is still left in the subnet
+            tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged); // _feeCharged is still left in the subnet
         }
-        emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction);
+        emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
     }
 
     /**
@@ -633,12 +644,13 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _symbol,
         uint256 _amount,
         uint256 _feeCharged,
-        Tx _transaction
+        Tx _transaction,
+        address _traderOther
     ) private {
         AssetEntry storage asset = assets[_trader][_symbol];
         require(_amount <= asset.available, "P-AFNE-02");
-        asset.available -= _amount;
-        safeDecreaseTotal(_trader, _symbol, _amount, _feeCharged, _transaction);
+        asset.available = asset.available - _amount;
+        safeDecreaseTotal(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
     }
 
     /**
@@ -653,14 +665,14 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
         AssetEntry storage asset = assets[_trader][_symbol];
         if (_transaction == Tx.INCREASEAVAIL) {
-            asset.available += _amount;
+            asset.available = asset.available + _amount;
         } else if (_transaction == Tx.DECREASEAVAIL) {
             require(_amount <= asset.available, "P-AFNE-01");
-            asset.available -= _amount;
+            asset.available = asset.available - _amount;
         } else {
             revert("P-WRTT-02");
         }
-        emitPortfolioEvent(_trader, _symbol, _amount, 0, _transaction);
+        emitPortfolioEvent(_trader, _symbol, _amount, 0, _transaction, _trader);
     }
 
     /**
@@ -684,13 +696,18 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // _feeCharged is always in incoming currency when transferring as a part of EXECUTION
         // Hence both safeDecreaseTotal and safeDecrease that handle outgoing currency, overwrite _feeCharged to 0.
         _decreaseTotalOnly
-            ? safeDecreaseTotal(_from, _symbol, _quantity, 0, _transaction)
-            : safeDecrease(_from, _symbol, _quantity, 0, _transaction);
+            ? safeDecreaseTotal(_from, _symbol, _quantity, 0, _transaction, _to)
+            : safeDecrease(_from, _symbol, _quantity, 0, _transaction, _to);
 
         // Replaced with IXFERREC in SafeIncrease because we want this event to be captured and showed to the recipient
-        _transaction == Tx.IXFERSENT
-            ? safeIncrease(_to, _symbol, _quantity, _feeCharged, Tx.IXFERREC)
-            : safeIncrease(_to, _symbol, _quantity, _feeCharged, _transaction);
+        safeIncrease(
+            _to,
+            _symbol,
+            _quantity,
+            _feeCharged,
+            _transaction == Tx.IXFERSENT ? Tx.IXFERREC : _transaction,
+            _from
+        );
     }
 
     /**
@@ -722,8 +739,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function safeTransferFee(address _to, bytes32 _symbol, uint256 _feeCharged) private {
         if (_feeCharged > 0) {
             AssetEntry storage asset = assets[_to][_symbol];
-            asset.total += _feeCharged;
-            asset.available += _feeCharged;
+            asset.total = asset.total + _feeCharged;
+            asset.available = asset.available + _feeCharged;
         }
     }
 
@@ -733,8 +750,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _from  address that can withdraw collected fees
      * @param   _maxCount  maximum number of ERC20 tokens with a non-zero balance to process at one time
      */
-    function withdrawFees(address _from, uint8 _maxCount) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function withdrawFees(address _from, uint8 _maxCount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_from == feeAddress || _from == treasury, "P-OWTF-01");
         bytes32 symbol;
         uint256 feeAccumulated = assets[_from][native].available;
@@ -786,13 +802,19 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     /**
      * @notice  Sets the Rebate Accounts contract
      * @dev     Only admin can call this function
-     * @param   _rebateAccounts  Rebate Accounts contract to be set
+     * @param   _portfolioSubHelper  Rebate Accounts contract to be set
      */
-    function setRebateAccounts(IRebateAccounts _rebateAccounts) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
-        require(address(_rebateAccounts) != address(0), "P-OACC-02");
-        emit AddressSet("PORTFOLIO", "SET_REBATEACCTS", address(rebateAccounts), address(_rebateAccounts));
-        rebateAccounts = _rebateAccounts;
+    function setPortfolioSubHelper(IPortfolioSubHelper _portfolioSubHelper) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(_portfolioSubHelper) != address(0), "P-OACC-02");
+        emit AddressSet("PORTFOLIO", "SET_SUBNETHELPER", address(portfolioSubHelper), address(_portfolioSubHelper));
+        portfolioSubHelper = _portfolioSubHelper;
+    }
+
+    /**
+     * @return  IPortfolioSubHelper  PortfolioSubHelper contract
+     */
+    function getPortfolioSubHelper() external view returns (IPortfolioSubHelper) {
+        return portfolioSubHelper;
     }
 
     /**
@@ -807,8 +829,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @dev     Only admin can call this function
      * @param   _gasStation  Gas station contract to be set
      */
-    function setGasStation(IGasStation _gasStation) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function setGasStation(IGasStation _gasStation) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(address(_gasStation) != address(0), "P-OACC-02");
         emit AddressSet("PORTFOLIO", "SET_GASSTATION", address(gasStation), address(_gasStation));
         gasStation = _gasStation;
@@ -826,8 +847,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @dev     Only admin can call this function
      * @param   _treasury  Address of the treasury wallet
      */
-    function setTreasury(address _treasury) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function setTreasury(address _treasury) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_treasury != address(0), "P-OACC-02");
         emit AddressSet("PORTFOLIO", "SET_TREASURY", treasury, _treasury);
         treasury = _treasury;
@@ -845,8 +865,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @dev     Only admin can call this function
      * @param   _portfolioMinter  Portfolio minter contract to be set
      */
-    function setPortfolioMinter(IPortfolioMinter _portfolioMinter) external {
-        require(hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "P-OACC-01");
+    function setPortfolioMinter(IPortfolioMinter _portfolioMinter) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(address(_portfolioMinter) != address(0), "P-OACC-02");
         emit AddressSet("PORTFOLIO", "SET_PORTFOLIOMINTER", address(portfolioMinter), address(_portfolioMinter));
         portfolioMinter = _portfolioMinter;
@@ -865,7 +884,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _symbol,
         uint256 _quantity,
         uint256 _feeCharged,
-        Tx _transaction
+        Tx _transaction,
+        address _traderOther
     ) private {
         emit PortfolioUpdated(
             _transaction,
@@ -874,7 +894,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             _quantity,
             _feeCharged,
             assets[_trader][_symbol].total,
-            assets[_trader][_symbol].available
+            assets[_trader][_symbol].available,
+            _traderOther
         );
     }
 
@@ -922,5 +943,49 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         }
 
         super.removeToken(_subnetSymbol, _srcChainId);
+    }
+
+    /**
+     * @notice  Overwrites the evm initialized fields to proper values after the March 2024 upgrade.
+     * @dev    We added sourceChainSymbol & isVirtual to the TokenDetails struct. We need to update
+     * reflect their proper values for consistency with newly added tokens in the future.
+     * This function can be removed after the upgrade CD
+     * All tokens except the native ALOT is virtual in the subnet
+     */
+    function updateTokenDetailsAfterUpgrade() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for (uint256 i = 0; i < tokenList.length(); ++i) {
+            TokenDetails storage tokenDetails = tokenDetailsMap[tokenList.at(i)];
+            tokenDetails.sourceChainSymbol = tokenDetails.symbol;
+            if (tokenDetails.symbol != native && tokenDetails.srcChainId != chainId) {
+                tokenDetails.isVirtual = true;
+            }
+        }
+    }
+
+    /**
+     * @notice  Moves the inventory of the trader from one symbol to the other symbol
+     * @dev     Only the user can call this function. The user have the option to withdraw their funds back
+     * to the C-Chain if they chose to. But if they want to stay in the subnet and continue trading, they need
+     * to convert to the new naming convention.
+     * After the March 2024 upgrade we need to rename 3 current subnet symbols BTC.b, WETH.e and USDt to
+     * BTC, ETH, USDT to support multichain trading.
+     * The current inventory is completely from Avalanche C Chain which is the default destination for
+     * the subnet. So there is no inventory comingling until we onboard a new chain. The conversions can
+     * be done after the second mainnet but better to do it before for simplicity
+     * Token to convert to is controlled by the PortfolioSubHelper
+     * @param   _fromSymbol  Token to be converted from.
+     */
+    function convertToken(bytes32 _fromSymbol) external whenNotPaused nonReentrant {
+        bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_fromSymbol);
+        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-02");
+        AssetEntry memory currentBalance = assets[msg.sender][_fromSymbol];
+        if (currentBalance.total > 0) {
+            require(currentBalance.total == currentBalance.available, "P-TFNE-01"); // no outstanding orders
+            require(currentBalance.total <= tokenTotals[_fromSymbol], "P-AMVL-01"); // not enough inventory to convert
+            assets[msg.sender][toSymbol] = currentBalance;
+            delete assets[msg.sender][_fromSymbol];
+            tokenTotals[toSymbol] = tokenTotals[toSymbol] + currentBalance.total;
+            tokenTotals[_fromSymbol] = tokenTotals[_fromSymbol] - currentBalance.total;
+        }
     }
 }

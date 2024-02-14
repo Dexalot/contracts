@@ -4,15 +4,17 @@ pragma solidity 0.8.17;
 
 import "../bridgeApps/LzApp.sol";
 
+import "../PortfolioBridgeMain.sol";
+
 /**
- * @title Mock contract to test LzApp.sol
+ * @title Mock contract to test LzApp.sol using inheritance from PortfolioBridgeMain.sol
  */
 
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
 
-contract LzAppMock is LzApp {
+contract LzAppMock is PortfolioBridgeMain {
     constructor() {
         initialize();
     }
@@ -22,8 +24,9 @@ contract LzAppMock is LzApp {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
     }
 
-    // solhint-disable-next-line no-empty-blocks
-    function lzReceive(uint16, bytes memory, uint64, bytes memory) external override {}
+    function lzReceive(uint16, bytes memory, uint64, bytes memory) external pure override {
+        return;
+    }
 
     function lzSend(uint16 _dstChainId, bytes memory _payload) private returns (uint256) {
         return super.lzSend(_dstChainId, _payload, payable(this));
@@ -33,17 +36,11 @@ contract LzAppMock is LzApp {
         return lzSend(_dstChainId, _payload);
     }
 
-    function getInboundNonceMock(uint16 _srcChainId,  bytes calldata _srcAddress) external view returns (uint64) {
-        return super.getInboundNonce(_srcChainId, _srcAddress);
+    function getInboundNonceMock(uint16 _dstChainId) external view returns (uint64) {
+        return super.getInboundNonce(_dstChainId);
     }
 
     function getOutboundNonceMock(uint16 _dstChainId) external view returns (uint64) {
         return super.getOutboundNonce(_dstChainId);
     }
-
-    // solhint-disable-next-line no-empty-blocks
-    receive() external payable {}
-
-    // solhint-disable-next-line no-empty-blocks
-    fallback() external payable {}
 }
