@@ -24,6 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
+    bytes32 public constant VERSION = bytes32("3.0.0");
     // A value for the invariant calculations
     uint256 public A;
 
