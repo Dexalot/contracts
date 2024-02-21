@@ -547,7 +547,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
             ? 0
-            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol);
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
         safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
         portfolioBridge.sendXChainMessage(
             _dstChainListOrgChainId,
@@ -869,6 +869,21 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(address(_portfolioMinter) != address(0), "P-OACC-02");
         emit AddressSet("PORTFOLIO", "SET_PORTFOLIOMINTER", address(portfolioMinter), address(_portfolioMinter));
         portfolioMinter = _portfolioMinter;
+    }
+
+    /**
+     * @notice  Returns the bridge fees for all the host chain tokens of a given subnet token
+     * @dev     Calls the PortfolioBridgeSub contract to get the bridge fees
+     * @param   _symbol  subnet symbol of the token
+     * @param   _quantity  quantity of the token to withdraw
+     * @return  bridgeFees  Array of bridge fees for each corresponding chainId
+     * @return  chainIds  Array of chainIds for each corresponding bridgeFee
+     */
+    function getAllBridgeFees(
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
+        return IPortfolioBridgeSub(address(portfolioBridge)).getAllBridgeFees(_symbol, _quantity);
     }
 
     /**

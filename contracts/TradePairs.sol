@@ -1241,13 +1241,13 @@ contract TradePairs is
      * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
      * Event though the new order is rejected, the cancel operation still holds. For example, you try to C/R list
      * 5 orders, the very first, Order1 gets canceled and at the time of new order entry for Order1.1, it may get rejected
-     * because of type2=PO and it will match an active order. Order1 is still canceled. Order1.1 gets a REJECT with
+     * because of type2=PO as it will match an active order. Order1 is still canceled. Order1.1 gets a REJECT with
      * "T-T2PO-01". The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
      * added to the blockchain. \
      * Order rejects will only be raised if called from this function. Single orders entered using addOrder
      * function will revert as before for backward compatibility. \
      * See addOrderChecks function. Every line that starts with  return (0, rejectReason) will be rejected.
-     * @param   _orderIds  order ids to be replaces
+     * @param   _orderIds  order ids to be replaced
      * @param   _clientOrderIds  Array of unique id provided by the owner of the orders that will be assigned
      * to replaced orders
      * @param   _prices  Array of prices

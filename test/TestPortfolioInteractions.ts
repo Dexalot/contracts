@@ -337,7 +337,7 @@ describe("Portfolio Interactions", () => {
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [bridgeFee])
         //no bridge fee to collect, // Silent exit
         await portfolioMain.collectBridgeFees([ALOT]);
-        expect(await portfolioBridgeSub.getBridgeFee(0, defaultDestinationChainId, ALOT)).to.be.equal(bridgeFee);
+        expect(await portfolioBridgeSub.getBridgeFee(0, defaultDestinationChainId, ALOT, 0)).to.be.equal(bridgeFee);
         expect( (await portfolioMain.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
         expect( (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
 

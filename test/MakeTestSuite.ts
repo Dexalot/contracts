@@ -32,6 +32,7 @@ import {
     MainnetRFQ,
     NativeMinterMock,
     LZEndpointMock__factory,
+    InventoryManager,
 } from '../typechain-types'
 
 // import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -67,6 +68,7 @@ interface PortfolioContracts {
     gasStation: GasStation,
     portfolioMinter: PortfolioMinterMock,
     delayedTransfers: DelayedTransfers,
+    inventoryManager: InventoryManager,
     portfolioSubHelper: PortfolioSubHelper,
     portfolioBridgeAvax: PortfolioBridgeMain,
     portfolioBridgeSub: PortfolioBridgeSub,
@@ -82,6 +84,7 @@ interface MultiPortfolioContracts {
     portfolioGun: PortfolioMain,
     portfolioSub: PortfolioSub,
     gasStation: GasStation,
+    inventoryManager: InventoryManager,
     portfolioMinter: PortfolioMinterMock,
     portfolioBridgeAvax: PortfolioBridgeMain,
     portfolioBridgeArb: PortfolioBridgeMain,
@@ -191,6 +194,12 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
     await mainnetRFQ.setPortfolioMain();
     await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
     return mainnetRFQ;
+}
+
+export const deployInventoryManager = async (portfolioBridgeSub: PortfolioBridgeSub): Promise<InventoryManager> => {
+    const InventoryManager = await ethers.getContractFactory("InventoryManager") ;
+    const inventoryManager: InventoryManager = await upgrades.deployProxy(InventoryManager, [portfolioBridgeSub.address, 256]) as InventoryManager;
+    return inventoryManager;
 }
 
 export const addToken = async (portfolioMain: PortfolioMain , portfolioSub: PortfolioSub, token: MockToken, gasSwapRatio: number, auctionMode = 0, usedForGasSwap=false, bridgeFee=0, subnetSymbol=""): Promise<void> => {
@@ -449,6 +458,8 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
     const portfolioBridgeSub = await deployPortfolioBridge(lzEndpointSub, portfolioSub) as PortfolioBridgeSub;
     const delayedTransfers = await deployDelayedTransfers(portfolioBridgeSub);
     await portfolioBridgeSub.setDelayedTransfer(delayedTransfers.address);
+    const inventoryManager = await deployInventoryManager(portfolioBridgeSub);
+    await portfolioBridgeSub.setInventoryManager(inventoryManager.address);
 
     await setRemoteBridges(portfolioBridgeAvax, portfolioBridgeSub, lzEndpointAvax, lzEndpointSub, cChain, dexalotSubnet);
 
@@ -480,6 +491,7 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
         gasStation,
         portfolioMinter,
         delayedTransfers,
+        inventoryManager,
         portfolioSubHelper,
         portfolioBridgeAvax,
         portfolioBridgeSub,
@@ -537,6 +549,7 @@ export const deployCompleteMultiChainPortfolio = async (addAvaxChainAlot= false,
         portfolioGun,
         portfolioSub: portfolioContracts.portfolioSub,
         gasStation: portfolioContracts.gasStation,
+        inventoryManager: portfolioContracts.inventoryManager,
         portfolioMinter: portfolioContracts.portfolioMinter,
         portfolioBridgeAvax: portfolioContracts.portfolioBridgeAvax,
         portfolioBridgeArb,
@@ -627,17 +640,19 @@ export const depositNativeWithContractCall = async (portfolio: PortfolioMain, fr
 
 export const depositToken = async (portfolio: PortfolioMain, from:SignerWithAddress, token: MockToken, tokenDecimals: number, tokenSymbol: string, amount: string, bridgeProvider =0): Promise<any> => {
     await token.connect(from).approve(portfolio.address, Utils.parseUnits(amount, tokenDecimals), {
-        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
+        gasLimit: 1000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
     });
 
     return await portfolio.connect(from).depositToken(from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider, {
-        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
+        gasLimit: 1000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
     });
 }
 
 
 export const withdrawToken = async (portfolio: PortfolioSub, from:SignerWithAddress, tokenSymbol: string, tokenDecimals: number, amount: string, bridgeProvider =0): Promise<any> => {
-     return await (<any> portfolio).connect(from)["withdrawToken(address,bytes32,uint256,uint8)"]( from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider);
+     return await (<any> portfolio).connect(from)["withdrawToken(address,bytes32,uint256,uint8)"]( from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider, {
+        gasLimit: 1000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
+    });
 }
 
 export const withdrawTokenToDst = async (portfolio: PortfolioSub, from:SignerWithAddress, tokenSymbol: string, tokenDecimals: number, amount: string, dstChainId: number , bridgeProvider =0): Promise<any> => {

@@ -112,7 +112,10 @@ abstract contract Portfolio is
      * @param   _bridge  Enum value of the bridge provider
      * @param   _enable  True to enable, false to disable
      */
-    function enableBridgeProvider(IPortfolioBridge.BridgeProvider _bridge, bool _enable) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function enableBridgeProvider(
+        IPortfolioBridge.BridgeProvider _bridge,
+        bool _enable
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         portfolioBridge.enableBridgeProvider(_bridge, _enable);
         emit ParameterUpdated(bytes32("Portfolio"), "P-BRIDGE-ENABLE", _enable ? 0 : 1, uint256(_bridge));
     }
@@ -169,7 +172,7 @@ abstract contract Portfolio is
      * @notice  Unpauses portfolioBridge AND the contract
      * @dev     Only callable by admin
      */
-    function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE){
+    function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
         portfolioBridge.unpause();
     }
@@ -307,6 +310,26 @@ abstract contract Portfolio is
      */
     function getTokenDetailsById(bytes32 _symbolId) external view override returns (TokenDetails memory) {
         return tokenDetailsMap[tokenDetailsMapById[_symbolId]];
+    }
+
+    /**
+     * @notice  Returns the bridge fee for the given bridge provider, token,
+     * destination chain and quantity
+     * @dev    Calls the portfolioBridge contract to get the bridge fee which
+     * in addition includes withdrawal fee for PortfolioSub but only bridge fee for PortfolioMain
+     * @param   _bridge  Enum value of the bridge provider
+     * @param   _dstChainListOrgChainId  Chain id of the destination chain
+     * @param   _symbol  Symbol of the token
+     * @param   _quantity  Quantity of the token
+     * @return  bridgeFee  Bridge fee
+     */
+    function getBridgeFee(
+        IPortfolioBridge.BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external view returns (uint256 bridgeFee) {
+        return portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
     }
 
     /**

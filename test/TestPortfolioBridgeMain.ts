@@ -103,9 +103,9 @@ describe("Portfolio Bridge Main", () => {
         const nonSupportedBridge = 1
         const { dexalotSubnet } = f.getChains();
         // Last parameter symbol is irrelevant
-        expect(await portfolioBridgeMain.getBridgeFee(nonSupportedBridge, dexalotSubnet.chainListOrgId, AVAX )).to.equal(0);
+        expect(await portfolioBridgeMain.getBridgeFee(nonSupportedBridge, dexalotSubnet.chainListOrgId, AVAX, 0)).to.equal(0);
         // Last parameter symbol is irrelevant
-        expect(await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX )).to.equal(Utils.parseUnits('0.014303938', 18))
+        expect(await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX, 0)).to.equal(Utils.parseUnits('0.014303938', 18))
         // console.log (await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX ));
     });
 
@@ -346,7 +346,7 @@ describe("Portfolio Bridge Main", () => {
         const bogusChainId = 1;
         await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
         await portfolioBridgeSub.setTrustedRemoteAddress(0, bogusChainId, portfolioBridgeMain.address, bogusChainId, 300000, false);
-        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-INVT-01");
+        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("IM-INVT-01");
 
         await portfolioBridgeMain.setLzEndPoint(owner.address);
         await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, portfolioBridgeMain.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");

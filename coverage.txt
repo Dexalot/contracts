@@ -1,21 +1,22 @@
 --------------------------------------|----------|----------|----------|----------|----------------|
 File                                  |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 --------------------------------------|----------|----------|----------|----------|----------------|
- contracts\                           |      100 |    96.39 |      100 |    99.92 |                |
+ contracts\                           |      100 |    96.52 |      100 |    99.93 |                |
   BannedAccounts.sol                  |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol                |      100 |      100 |      100 |      100 |                |
   Exchange.sol                        |      100 |      100 |      100 |      100 |                |
   ExchangeMain.sol                    |      100 |      100 |      100 |      100 |                |
   ExchangeSub.sol                     |      100 |      100 |      100 |      100 |                |
-  GasStation.sol                      |      100 |    93.33 |      100 |      100 |                |
+  GasStation.sol                      |      100 |    96.67 |      100 |      100 |                |
+  InventoryManager.sol                |      100 |      100 |      100 |      100 |                |
   MainnetRFQ.sol                      |      100 |      100 |      100 |      100 |                |
   OrderBooks.sol                      |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                       |      100 |    95.45 |      100 |      100 |                |
-  PortfolioBridgeMain.sol             |      100 |    95.45 |      100 |      100 |                |
-  PortfolioBridgeSub.sol              |      100 |    92.59 |      100 |      100 |                |
+  PortfolioBridgeMain.sol             |      100 |    95.37 |      100 |      100 |                |
+  PortfolioBridgeSub.sol              |      100 |       90 |      100 |      100 |                |
   PortfolioMain.sol                   |      100 |       93 |      100 |      100 |                |
   PortfolioMinter.sol                 |      100 |      100 |      100 |      100 |                |
-  PortfolioSub.sol                    |      100 |    93.09 |      100 |    99.47 |            960 |
+  PortfolioSub.sol                    |      100 |    93.09 |      100 |    99.47 |            975 |
   PortfolioSubHelper.sol              |      100 |      100 |      100 |      100 |                |
   TradePairs.sol                      |      100 |    96.82 |      100 |      100 |                |
  contracts\bridgeApps\                |      100 |      100 |      100 |      100 |                |
@@ -25,6 +26,7 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   IDelayedTransfers.sol               |      100 |      100 |      100 |      100 |                |
   IERC1271.sol                        |      100 |      100 |      100 |      100 |                |
   IGasStation.sol                     |      100 |      100 |      100 |      100 |                |
+  IInventoryManager.sol               |      100 |      100 |      100 |      100 |                |
   IMainnetRFQ.sol                     |      100 |      100 |      100 |      100 |                |
   INativeMinter.sol                   |      100 |      100 |      100 |      100 |                |
   IPortfolio.sol                      |      100 |      100 |      100 |      100 |                |
@@ -39,8 +41,9 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   ILayerZeroEndpoint.sol              |      100 |      100 |      100 |      100 |                |
   ILayerZeroReceiver.sol              |      100 |      100 |      100 |      100 |                |
   ILayerZeroUserApplicationConfig.sol |      100 |      100 |      100 |      100 |                |
- contracts\library\                   |      100 |    99.11 |      100 |      100 |                |
+ contracts\library\                   |    98.78 |    99.18 |      100 |    99.31 |                |
   Bytes32LinkedListLibrary.sol        |      100 |    92.86 |      100 |      100 |                |
+  InvariantMathLibrary.sol            |    93.55 |      100 |      100 |    95.24 |         69,111 |
   RBTLibrary.sol                      |      100 |      100 |      100 |      100 |                |
   UtilsLibrary.sol                    |      100 |      100 |      100 |      100 |                |
  contracts\others\                    |      100 |      100 |      100 |      100 |                |
@@ -54,5 +57,5 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   TokenVestingCloneFactory.sol        |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol           |      100 |    96.67 |      100 |      100 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|
-All files                             |      100 |     96.6 |      100 |    99.95 |                |
+All files                             |    99.86 |    96.71 |      100 |    99.85 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|

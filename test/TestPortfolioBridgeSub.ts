@@ -10,7 +10,8 @@ import {
     PortfolioSub,
     PortfolioBridgeSub,
     MockToken,
-    DelayedTransfers
+    DelayedTransfers,
+    InventoryManager
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -28,6 +29,7 @@ describe("Portfolio Bridge Sub", () => {
     let portfolioBridgeSub: PortfolioBridgeSub;
     let portfolioBridgeMain: PortfolioBridgeMain;
     let delayedTransfers: DelayedTransfers;
+    let inventoryManager: InventoryManager;
 
 
     let delayPeriod: number;
@@ -65,6 +67,7 @@ describe("Portfolio Bridge Sub", () => {
         portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
         delayedTransfers= portfolioContracts.delayedTransfers;
+        inventoryManager = portfolioContracts.inventoryManager;
 
         delayPeriod = 10000
         epochLength = 100000
@@ -257,39 +260,6 @@ describe("Portfolio Bridge Sub", () => {
         const userBalanceAfter = await owner.getBalance()
 
         expect(userBalanceAfter.add(receipt.gasUsed.mul(receipt.effectiveGasPrice)).sub(bridgeBalance)).to.equal(userBalance);
-    })
-
-    it("Should refund erc20", async () => {
-        const { owner } = await f.getAccounts();
-
-        const token = await f.deployMockToken("TEST", 18)
-        await token.mint(owner.address, ethers.utils.parseEther("100"))
-        await token.transfer(portfolioBridgeSub.address, ethers.utils.parseEther("1"))
-
-        const userBalance = await token.balanceOf(owner.address)
-
-        await portfolioBridgeSub.refundTokens(
-            [token.address],
-        )
-
-        const userBalanceAfter = await token.balanceOf(owner.address)
-
-        expect(userBalanceAfter.sub(ethers.utils.parseEther("1"))).to.equal(userBalance);
-    })
-
-    it("Should not refund if not admin", async () => {
-        const { owner, trader1 } = await f.getAccounts();
-
-        const token = await f.deployMockToken("TEST", 18)
-        await token.mint(owner.address, ethers.utils.parseEther("100"))
-        await token.transfer(portfolioBridgeSub.address, ethers.utils.parseEther("1"))
-
-        await expect(portfolioBridgeSub.connect(trader1).refundTokens(
-            [token.address],
-        )).to.be.revertedWith("AccessControl: account")
-
-        await expect(portfolioBridgeSub.connect(trader1).refundNative()).to.be.revertedWith("AccessControl:")
-
     })
 
     it("Should pause and unpause", async () => {
@@ -487,35 +457,6 @@ describe("Portfolio Bridge Sub", () => {
         .to.be.revertedWith("Initializable: contract is already initialized");
       });
 
-
-
-    it("Should set InventoryBySymbolId correctly", async () => {
-        const { cChain } = f.getChains();
-
-        const AlotId =Utils.fromUtf8("ALOT" + cChain.chainListOrgId )
-        const AvaxId = Utils.fromUtf8("AVAX" + cChain.chainListOrgId)
-        const NonExistentId=Utils.fromUtf8("NEX" + cChain.chainListOrgId )
-        const tokens = [AlotId, AvaxId, NonExistentId ];
-        const quantity1 = Utils.toWei('99');
-        const quantity2 = Utils.toWei('75');
-        const quantities  = [quantity1, quantity2, quantity2];
-
-        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, cChain.chainListOrgId, 18, 0, ALOT, 0);
-
-        await expect(portfolioBridgeSub.connect(trader1).setInventoryBySymbolId(tokens,quantities))
-            .to.revertedWith("AccessControl:");
-
-
-        await expect(portfolioBridgeSub.setInventoryBySymbolId(tokens,[quantity1]))
-            .to.revertedWith("PB-LENM-01");
-        // success for owner
-        await portfolioBridgeSub.setInventoryBySymbolId(tokens, quantities);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(AlotId)).to.be.equal(quantity1);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(AvaxId)).to.be.equal(quantity2);
-        // non existent, not set 0 qty
-        expect(await portfolioBridgeSub.inventoryBySymbolId(NonExistentId)).to.be.equal(0);
-    });
-
     it("Should set BridgeFees correctly", async () => {
         const { cChain } = f.getChains();
 
@@ -531,8 +472,10 @@ describe("Portfolio Bridge Sub", () => {
             .to.revertedWith("PB-LENM-01");
         // success for owner
         await portfolioBridgeSub.setBridgeFees(cChain.chainListOrgId, tokens, fees)
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, ALOT)).to.be.equal(fee1);
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX)).to.be.equal(fee2);
+
+        // need to deposit for inventory to be initialised and withdrawal fee to be set
+        await f.depositNative(portfolioMain, trader1, "0.5");
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0)).to.be.equal(fee2);
 
     });
 
@@ -612,13 +555,13 @@ describe("Portfolio Bridge Sub", () => {
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
         // start with 0 inventory
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(0);
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(0);
 
         // silent fail for ignored TxType
         xfer.transaction = 11 // CCTRADE
         await portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader);
         //still 0
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(0);
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(0);
 
         //destination not found
         xfer.transaction = 0;
@@ -640,7 +583,7 @@ describe("Portfolio Bridge Sub", () => {
         const tx = await portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader);
         const receipt = await tx.wait();
 
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(0);
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(0);
 
         const log = receipt.logs[0]
         const data = ethers.utils.defaultAbiCoder.decode(
@@ -671,7 +614,7 @@ describe("Portfolio Bridge Sub", () => {
         xfer.timestamp = BigNumber.from(await f.latestTime());
 
         // No inventory for the c-chain. We didn't make any deposit
-        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("PB-INVT-01");
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("IM-INVT-01");
 
         await f.depositNative(portfolioMain, trader1, "20");
 
@@ -697,7 +640,7 @@ describe("Portfolio Bridge Sub", () => {
 
 
         // Deposit 20 , delayed transfer withdrawal 5 => 15
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.toWei((20 - 5).toString()));
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(Utils.toWei((20 - 5).toString()));
 
     });
 

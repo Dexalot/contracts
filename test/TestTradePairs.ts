@@ -132,6 +132,12 @@ describe("TradePairs", function () {
         quoteAssetAddr = quoteToken.address;
         await f.addToken(portfolioMain, portfolio, quoteToken, 0.1, mode);
 
+        const newBalance = ethers.utils.parseEther('1000000');
+        const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+        await ethers.provider.send("hardhat_setBalance", [
+            trader1.address,
+            newBalanceHex,
+        ]);
     });
 
     describe("TradePairs", function () {

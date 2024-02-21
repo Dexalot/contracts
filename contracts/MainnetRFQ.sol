@@ -136,7 +136,7 @@ contract MainnetRFQ is
     // portfolio main contract, used to get token addresses on destination chain
     address public portfolioMain;
     // storage gap for upgradeability
-    uint256[46] __gap;
+    uint256[44] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);

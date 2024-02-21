@@ -48,7 +48,8 @@ interface IPortfolioBridge {
     function getBridgeFee(
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
-        bytes32 _symbol
+        bytes32 _symbol,
+        uint256 _quantity
     ) external view returns (uint256 bridgeFee);
 
     enum XChainMsgType {

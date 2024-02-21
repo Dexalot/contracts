@@ -34,12 +34,10 @@ interface IPortfolioBridgeSub {
 
     function executeDelayedTransfer(uint16 _dstChainId, bytes32 _id) external;
 
-    // function convertInventoryBySymbolId(
-    //     uint32 _dstChainListOrgChainId,
-    //     bytes32 _fromSymbol,
-    //     bytes32 _toSymbol,
-    //     uint256 _amount
-    // ) external;
+    function getAllBridgeFees(
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds);
 
     function setBridgeFees(
         uint32 _dstChainListOrgChainId,
@@ -51,5 +49,4 @@ interface IPortfolioBridgeSub {
         bytes32 symbolId;
         uint256 bridgeFee;
     }
-
 }
