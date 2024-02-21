@@ -5,6 +5,7 @@ pragma solidity 0.8.17;
 import "./interfaces/IPortfolioBridgeSub.sol";
 import "./interfaces/IDelayedTransfers.sol";
 import "./PortfolioBridgeMain.sol";
+import "./interfaces/IInventoryManager.sol";
 
 /**
  * @title PortfolioBridgeSub: Bridge aggregator and message relayer for subnet using multiple different bridges
@@ -37,7 +38,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
 
     // key is symbolId (symbol + srcChainId)
-    mapping(bytes32 => IPortfolio.TokenDetails) public tokenDetailsMapById;
+    mapping(bytes32 => IPortfolio.TokenDetails) private tokenDetailsMapById;
 
     // key is subnet subnet symbol then chainlistOrgid of the mainnet the token is added from.
     // the symbolId and bridgeFee of each destination is different
@@ -46,8 +47,8 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // Add by symbolId rather than symbol
     EnumerableSetUpgradeable.Bytes32Set private tokenListById;
-    mapping(bytes32 => uint256) public inventoryBySymbolId; // key is symbolId
     IDelayedTransfers public delayedTransfers;
+    IInventoryManager public inventoryManager;
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
@@ -142,7 +143,6 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     ) external override whenPaused returns (bool deleted) {
         require(hasRole(BRIDGE_USER_ROLE, msg.sender) || hasRole(DEFAULT_ADMIN_ROLE, msg.sender), "PB-OACC-01");
         bytes32 symbolId = UtilsLibrary.getIdForToken(_srcChainSymbol, _srcChainId);
-        require(inventoryBySymbolId[symbolId] == 0, "PB-INVZ-01");
         if (
             // We can't remove the native that was added from current chainId,
             // but the native symbol added from a mainnet can be removed.
@@ -150,7 +150,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             tokenListById.contains(symbolId) &&
             !(_subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId())
         ) {
-            delete (inventoryBySymbolId[symbolId]);
+            require(inventoryManager.remove(_subnetSymbol, symbolId), "PB-INVZ-01");
             delete (tokenDetailsMapById[symbolId]);
             delete (tokenInfoMapBySymbolChainId[_srcChainSymbol][_srcChainId]);
             tokenListById.remove(symbolId);
@@ -183,22 +183,32 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Returns the minimum bridgeFee calculated offChain for the targetChainId.
-     * @dev     This is in terms of token transferred. LZ charges us using based on the payload size and gas px at
-     * destination. Our offchain app monitors the gas at the destination and sets the gas using LZ based estimation
-     * and the Token/ALOT parity at that point.
-     * @param   _dstChainListOrgChainId  destination chain id
+     * @notice  Returns the bridge fees for all the host chain tokens of a given subnet token
      * @param   _symbol  subnet symbol of the token
-     * @return  bridgeFee  bridge fee for the destination
+     * @param   _quantity  quantity of the token to withdraw
+     * @return  bridgeFees  Array of bridge fees for each corresponding chainId
+     * @return  chainIds  Array of chainIds for each corresponding bridgeFee
      */
-
-    function getBridgeFee(
-        BridgeProvider _bridge,
-        uint32 _dstChainListOrgChainId,
-        bytes32 _symbol
-    ) external view override returns (uint256 bridgeFee) {
-        if (_bridge == BridgeProvider.LZ) {
-            bridgeFee = tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].bridgeFee;
+    function getAllBridgeFees(
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
+        uint256 numTokens = tokenListById.length();
+        bridgeFees = new uint256[](numTokens);
+        chainIds = new uint32[](numTokens);
+        for (uint256 i = 0; i < numTokens; ++i) {
+            bytes32 symbolId = tokenListById.at(i);
+            IPortfolio.TokenDetails memory tokenDetails = tokenDetailsMapById[symbolId];
+            if (tokenDetails.symbol != _symbol) {
+                continue;
+            }
+            chainIds[i] = tokenDetails.srcChainId;
+            bridgeFees[i] = getBridgeFee(
+                defaultBridgeProvider,
+                tokenDetails.srcChainId,
+                tokenDetails.symbol,
+                _quantity
+            );
         }
     }
 
@@ -284,34 +294,10 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * Inventory available per host chain. i.e. USDC may exist in both Avalanche and Arbitrum
      */
     function updateInventoryBySource(IPortfolio.XFER memory _xfer) internal override {
-        uint256 inventory = inventoryBySymbolId[_xfer.symbol];
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
-            require(_xfer.quantity <= inventory, "PB-INVT-01");
-            inventoryBySymbolId[_xfer.symbol] = inventory - _xfer.quantity;
+            inventoryManager.decrement(tokenDetailsMapById[_xfer.symbol].symbol, _xfer.symbol, _xfer.quantity);
         } else if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
-            inventoryBySymbolId[_xfer.symbol] = inventory + _xfer.quantity;
-        }
-    }
-
-    /**
-     * @notice  Sets host chains inventories for each token
-     * @dev     Only admin can call this function. After the March 2024 we need to equal
-     * inventoryBySymbolId portfolioSub.tokenTotals as the C-Chain will still be the only
-     * destination from the subnet right after the upgrade. This function can be removed
-     * after the upgrade
-     * @param   _tokens  Array of tokens in the from of SYMBOL + srcChainId
-     * @param   _quantities  Array of quantities
-     */
-    function setInventoryBySymbolId(
-        bytes32[] calldata _tokens,
-        uint256[] calldata _quantities
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokens.length == _quantities.length, "PB-LENM-01");
-
-        for (uint256 i = 0; i < _tokens.length; ++i) {
-            if (tokenDetailsMapById[_tokens[i]].symbolId != bytes32(0)) {
-                inventoryBySymbolId[_tokens[i]] = _quantities[i];
-            }
+            inventoryManager.increment(tokenDetailsMapById[_xfer.symbol].symbol, _xfer.symbol, _xfer.quantity);
         }
     }
 
@@ -323,8 +309,8 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * the subnet. So there is no inventory comingling until we onboard a new chain. The conversions can
      * be done after the second mainnet but better to do it before for simplicity
      * @param   _dstChainListOrgChainId   destination ChainListOrg chain id
-     * @param   _fromSymbol  Array of tokens in the from of SYMBOL + srcChainId
-     * @param   _toSymbol  Array of quantities
+     * @param   _fromSymbol  Original subnet token symbol
+     * @param   _toSymbol  New subnet token symbol
      */
     function renameToken(
         uint32 _dstChainListOrgChainId,
@@ -338,6 +324,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         tokenInfoMapBySymbolChainId[_toSymbol][_dstChainListOrgChainId] = tokenInfoMapBySymbolChainId[_fromSymbol][
             _dstChainListOrgChainId
         ];
+        inventoryManager.convertSymbol(fromSymbolId, _fromSymbol, _toSymbol);
         // By not deleting the below entry in the mapping, the user can withdraw the the token back to the mainnet without having to convert it
         // using portfolioSub.convertToken function. There is no way to delete this entry from the mapping afterwards
         //delete tokenInfoMapBySymbolChainId[_fromSymbol][_dstChainListOrgChainId];
@@ -361,5 +348,36 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     function executeDelayedTransfer(uint16 _dstChainId, bytes32 _id) external override onlyRole(BRIDGE_ADMIN_ROLE) {
         IPortfolio.XFER memory xfer = delayedTransfers.executeDelayedTransfer(_id);
         sendXChainMessageInternal(_dstChainId, defaultBridgeProvider, xfer, address(0));
+    }
+
+    function setInventoryManager(address _inventoryManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        inventoryManager = IInventoryManager(_inventoryManager);
+    }
+
+    /**
+     * @notice  Returns the minimum bridgeFee calculated offChain for the targetChainId, in addition to the
+     * inventoryManager calculated withdrawal fee
+     * @dev     This is in terms of token transferred. LZ charges us using based on the payload size and gas px at
+     * destination. Our offchain app monitors the gas at the destination and sets the gas using LZ based estimation
+     * and the Token/ALOT parity at that point. The inventoryManager calculates the withdrawal fee based on the
+     * quantity of the token to be withdrawn, current inventory in the receiving chain and other chains.
+     * @param   _bridge  Bridge provider to use
+     * @param   _dstChainListOrgChainId  destination chain id
+     * @param   _symbol  subnet symbol of the token
+     * @param   _quantity  quantity of the token to withdraw
+     * @return  bridgeFee  bridge fee for the destination
+     */
+
+    function getBridgeFee(
+        BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes32 _symbol,
+        uint256 _quantity
+    ) public view override returns (uint256 bridgeFee) {
+        if (_bridge == BridgeProvider.LZ) {
+            bridgeFee = tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].bridgeFee;
+        }
+        bytes32 symbolId = getTokenId(_dstChainListOrgChainId, _symbol);
+        bridgeFee += inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity);
     }
 }

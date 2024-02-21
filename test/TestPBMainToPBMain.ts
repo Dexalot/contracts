@@ -12,6 +12,8 @@ import {
     PortfolioMain,
     LZEndpointMock,
     MainnetRFQ,
+    PortfolioSub,
+    MockToken,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -252,7 +254,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
 
-        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero);
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0);
 
         // succeed
         const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value});

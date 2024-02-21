@@ -249,5 +249,13 @@
     "ID-TACM-02": "IncentiveDistributor: number of tokens and claim amounts mismatch, no. of tokens greater than no. of claims",
     "ID-AGCB-01": "IncentiveDistributor: amount greater than contract balance",
 
-    "BA-LENM-01": "BannedAccounts: number of banned accounts and ban reasons do not match"
+    "BA-LENM-01": "BannedAccounts: number of banned accounts and ban reasons do not match",
+
+    "IM-INVT-01": "InventoryManager: target chain does not have enough inventory to cover this withdrawal",
+    "IM-INVT-02": "InventoryManager: target chain does not have enough inventory to cover this withdrawal",
+    "IM-LENM-01": "InventoryManager: length mismatch in array type function parameters",
+    "IM-SIAE-01": "InventoryManager: symbolId and inventory already exist",
+    "IM-ZADDR-01":"InventoryManager: portfolio bridge sub cannot be the zero address",
+    "IM-SMEB-01": "InventoryManager: symbols cannot be empty bytes",
+    "IM-ZVFA-01": "InventoryManager: zero value for A is not permitted"
 }

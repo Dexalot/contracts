@@ -73,7 +73,4 @@ interface IPortfolioSub {
     ) external;
 
     function removeToken(bytes32 _subnetSymbol, uint32 _srcChainId, bytes32 _srcChainSymbol) external;
-
-
-
 }

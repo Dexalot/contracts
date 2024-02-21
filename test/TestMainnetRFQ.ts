@@ -274,7 +274,7 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should trade two tokens Native -> ERC20 w/ user gas fee", async () => {
     const {xChainSwap, signature} = await generateXChainOrder("GUN", "USDC");
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(
@@ -327,7 +327,7 @@ describe("Mainnet RFQ Multichain", () => {
       value: ethers.utils.parseEther("100.0"),
     });
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
 
     await expect(
       mainnetRFQGun.connect(trader1).xChainSwap(
@@ -447,7 +447,7 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should trade and transfer two tokens Native -> ERC20 w/ user gas fee", async () => {
     const {xChainSwap, signature} = await generateXChainOrder("GUN", "USDC", true);
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(

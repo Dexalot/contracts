@@ -14,6 +14,7 @@ import {
     MainnetRFQ,
     PortfolioSub,
     MockToken,
+    InventoryManager,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -27,6 +28,7 @@ describe("MultiChain Deployments & Interactions", () => {
     let portfolioArb: PortfolioMain;
     let portfolioGun: PortfolioMain;
     let portfolioSub: PortfolioSub;
+    let inventoryManager: InventoryManager;
 
     let lzEndpointMain: LZEndpointMock;
     let lzEndpointGun: LZEndpointMock;
@@ -85,6 +87,8 @@ describe("MultiChain Deployments & Interactions", () => {
         portfolioArb = portfolioContracts.portfolioArb;
         portfolioGun = portfolioContracts.portfolioGun;
         portfolioSub = portfolioContracts.portfolioSub;
+
+        inventoryManager = portfolioContracts.inventoryManager;
 
         portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
         portfolioBridgeArb = portfolioContracts.portfolioBridgeArb;
@@ -241,8 +245,8 @@ describe("MultiChain Deployments & Interactions", () => {
                 continue;
             }
             const symbolId = Utils.fromUtf8(c.native + c.chainListOrgId);
-            expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.toWei(deposit_amount.toString()));
-            console.log("inventory", c.native + c.chainListOrgId, Utils.fromWei(await portfolioBridgeSub.inventoryBySymbolId(symbolId)));
+            expect(await inventoryManager.get(c.nativeBytes32, symbolId)).to.be.equal(Utils.toWei(deposit_amount.toString()));
+            console.log("inventory", c.native + c.chainListOrgId, Utils.fromWei(await inventoryManager.get(c.nativeBytes32, symbolId)));
             deposit_amount += 10;
         }
 
@@ -273,8 +277,8 @@ describe("MultiChain Deployments & Interactions", () => {
                 continue;
             }
             const symbolId = Utils.fromUtf8(c.native + c.chainListOrgId);
-            expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.toWei((deposit_amount / 2).toString()));
-            console.log("inventory", c.native, Utils.fromWei(await portfolioBridgeSub.inventoryBySymbolId(symbolId)));
+            expect(await inventoryManager.get(c.nativeBytes32, symbolId)).to.be.equal(Utils.toWei((deposit_amount / 2).toString()));
+            console.log("inventory", c.native, Utils.fromWei(await inventoryManager.get(c.nativeBytes32, symbolId)));
             deposit_amount += 10;
         }
     });
@@ -333,41 +337,45 @@ describe("MultiChain Deployments & Interactions", () => {
 
         //expect(await ethers.provider.getBalance(portfolioAvax.address)).to.equal(Utils.toWei(deposit_amount.toString()));
 
-
+        const symbol = Utils.fromUtf8("USDt");
         let symbolId = Utils.fromUtf8("USDt" + cChain.chainListOrgId);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals));
-        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await portfolioBridgeSub.inventoryBySymbolId(symbolId)), token_decimals));
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals));
+        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
+        // symbol = Utils.fromUtf8("USDt");
         symbolId = Utils.fromUtf8("USDT" + arbitrumChain.chainListOrgId);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals));
-        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await portfolioBridgeSub.inventoryBySymbolId(symbolId)), token_decimals));
-
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals));
+        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
 
         const withdraw_amount = (Number(deposit_amount) / 2).toString();
+        let cChainfee = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
+        console.log("Fee", Utils.formatUnits(cChainfee, token_decimals));
 
-        await f.withdrawTokenToDst(portfolioSub, trader1, Utils.fromUtf8("USDt"), token_decimals, withdraw_amount, cChain.chainListOrgId)
+        await f.withdrawTokenToDst(portfolioSub, trader1, symbol, token_decimals, withdraw_amount, cChain.chainListOrgId)
         totalDeposits = totalDeposits - 5;
-        expect((await portfolioSub.getBalance(trader1.address, Utils.fromUtf8("USDt"))).total).to.equal(Utils.parseUnits(totalDeposits.toString(), token_decimals));
+
+        expect((await portfolioSub.getBalance(trader1.address, symbol)).total).to.equal(Utils.parseUnits(totalDeposits.toString(), token_decimals));
         // no other deposits in the portfolioMain so trader1 subnet balance should be equal
-        expect(await USDtAvax.balanceOf(portfolioAvax.address)).to.equal(Utils.parseUnits(withdraw_amount, token_decimals));
+        expect(await USDtAvax.balanceOf(portfolioAvax.address)).to.equal(Utils.parseUnits(withdraw_amount, token_decimals).add(cChainfee));
 
-
-        await f.withdrawTokenToDst(portfolioSub, trader1, Utils.fromUtf8("USDt"), token_decimals, withdraw_amount, arbitrumChain.chainListOrgId);
+        const arbFee = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
+        console.log("Fee", Utils.formatUnits(arbFee, token_decimals));
+        await f.withdrawTokenToDst(portfolioSub, trader1, symbol, token_decimals, withdraw_amount, arbitrumChain.chainListOrgId);
         totalDeposits = totalDeposits - 5;
-        expect((await portfolioSub.getBalance(trader1.address, Utils.fromUtf8("USDt"))).total).to.equal(Utils.parseUnits(totalDeposits.toString(), token_decimals));
+        expect((await portfolioSub.getBalance(trader1.address, symbol)).total).to.equal(Utils.parseUnits(totalDeposits.toString(), token_decimals));
         // no other deposits in the portfolioMain so trader1 subnet balance should be equal
-        expect(await USDTArb.balanceOf(portfolioArb.address)).to.equal(Utils.parseUnits(withdraw_amount, token_decimals));
+        expect(await USDTArb.balanceOf(portfolioArb.address)).to.equal(Utils.parseUnits(withdraw_amount, token_decimals).add(arbFee));
 
         symbolId = Utils.fromUtf8("USDt" + cChain.chainListOrgId);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.parseUnits(withdraw_amount, token_decimals));
-        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await portfolioBridgeSub.inventoryBySymbolId(symbolId)), token_decimals));
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(Utils.parseUnits(withdraw_amount, token_decimals).add(cChainfee));
+        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
 
         symbolId = Utils.fromUtf8("USDT" + arbitrumChain.chainListOrgId);
-        expect(await portfolioBridgeSub.inventoryBySymbolId(symbolId)).to.be.equal(Utils.parseUnits(withdraw_amount, token_decimals));
-        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await portfolioBridgeSub.inventoryBySymbolId(symbolId)), token_decimals));
+        expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(Utils.parseUnits(withdraw_amount, token_decimals).sub(arbFee));
+        console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
 
         // Try to withdraw the entire USDt inventory to Arbitrum
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8("USDt"))).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals))
-        await expect(f.withdrawTokenToDst(portfolioSub, trader1, Utils.fromUtf8("USDt"), token_decimals, deposit_amount, arbitrumChain.chainListOrgId)).to.be.revertedWith("PB-INVT-01");
+        expect(await portfolioSub.tokenTotals(symbol)).to.be.equal(Utils.parseUnits(deposit_amount, token_decimals).add(cChainfee).add(arbFee))
+        await expect(f.withdrawTokenToDst(portfolioSub, trader1, Utils.fromUtf8("USDt"), token_decimals, deposit_amount, arbitrumChain.chainListOrgId)).to.be.revertedWith("IM-INVT-02");
 
 
     });

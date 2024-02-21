@@ -422,13 +422,15 @@ contract PortfolioBridgeMain is
      * @param   _bridge  Bridge
      * @param   _dstChainListOrgChainId  destination chain id
      *           _symbol  symbol of the token, not relevant in for this function
+     *           _quantity quantity of the token, not relevant in for this function
      * @return  bridgeFee  bridge fee for the destination
      */
 
     function getBridgeFee(
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
-        bytes32
+        bytes32,
+        uint256
     ) external view virtual override returns (uint256 bridgeFee) {
         if (_bridge == BridgeProvider.LZ) {
             uint16 dstChainId = lzDestinationMap[_dstChainListOrgChainId];
@@ -673,19 +675,6 @@ contract PortfolioBridgeMain is
         (bool sent, ) = (msg.sender).call{value: address(this).balance}("");
         require(sent, "PB-FRFD-01");
     }
-
-    /**
-     * @notice  Refunds the ERC20 balance inside contract
-     * @dev     Only admin can call
-     * @param   _tokens  Array of ERC20 tokens to refund
-     */
-    function refundTokens(address[] calldata _tokens) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        for (uint256 i = 0; i < _tokens.length; ++i) {
-            IERC20Upgradeable(_tokens[i]).transfer(msg.sender, IERC20Upgradeable(_tokens[i]).balanceOf(address(this)));
-        }
-    }
-
-    // solhint-disable no-empty-blocks
 
     /**
      * @notice  Overridden by PortfolioBridgeSub
