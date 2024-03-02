@@ -12,13 +12,7 @@ import "./IPortfolio.sol";
 // Copyright 2022 Dexalot.
 
 interface IMainnetRFQ {
-    function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolio.Tx _transaction,
-        bytes28 _customdata
-    ) external;
+    function processXFerPayload(IPortfolio.XFER calldata _xfer) external;
 
     function pause() external;
 

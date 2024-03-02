@@ -14,20 +14,19 @@ import "./interfaces/IInventoryManager.sol";
  * @dev Unlike PortfolioBridgeMain, PortfolioBridgeSub has its own internal list of tokenDetailsMapById and
  * tokenInfoMapBySymbolChainId because it has to keep track of the tokenDetails from each chain independently.
  * As a result the PortfolioSub tokenDetails are quite different than the PortfolioBridgeSub tokenDetails.
- * PortfolioBridgeSub always maps the symbol that it receives into a subnet symbol on receipt, that PortfolioSub
- * expects. i.e USDC43114 is mapped to USDC. Similarly USDC1 can also be mapped to USDC. This way liquidity can
+ * PortfolioBridgeSub always maps the symbol that it receives into a subnet symbol and also attaches the source
+ * chainId to the source Symbol to construct a symbolId to facilitate inventory management on receipt.
+ * PortfolioSub expects the subnet symbol. i.e USDt is mapped to USDT43113 & USDT as symbolId and subnet symbol
+ * respectively. Similarly USDTx from another chain can also be mapped to USDC. This way liquidity can
  * be combined and traded together in a multichain implementation.
  * Similarly it keeps track of the token positions from each chain independently and it will have a different bridge
  * fee depending on the available inventory at the target chain (where the token will be withdrawn).
- * When sending back to the target chain, it maps it back to the expected symbol by the target chain,
- * i.e USDC to USDC1 if sent back to Ethereum, USDC43114 if sent to Avalanche. \
- * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getTokenId that has
- * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol
- * mapping will happen in processPayload. getSymbolForId is called by getXFerMessage and it returns the
- * Xfer Message as is but also returns the reverse mapped local symbol. \
- * We need to raise the XChainXFerMessage & update the inventory with the symbolId so the
- * incoming and the outgoing xfer messages always contain the symbolId rather than symbol and then processPayload
- * can use the local symbol when calling portfolio methods \
+ * When sending back to the target chain, it maps the subnet symbol back to the expected symbol by the target chain,
+ * i.e ETH to ETH if sent back to Ethereum, WETH.e if sent to Avalanche. \
+ * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getDestChainSymbol.
+ * On the receival, the symbol mapping will happen in unpackXFerMessage. getSymbolForId is called
+ * where xfer.symbol is overriden with symbolId (sourceSymbol + sourceChainId) and also the subnet symbol is returned. \
+ * The XChainXFerMessage always contain the source Symbol & source Chain id on the way in and out.
  */
 
 // The code in this file is part of Dexalot project.
@@ -52,7 +51,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("3.0.0");
+        return bytes32("3.1.0");
     }
 
     /**
@@ -178,7 +177,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @return  bytes32  symbolId for the destination
      */
 
-    function getTokenId(uint32 _dstChainListOrgChainId, bytes32 _symbol) internal view override returns (bytes32) {
+    function getTokenId(uint32 _dstChainListOrgChainId, bytes32 _symbol) internal view returns (bytes32) {
         return tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].symbolId;
     }
 
@@ -231,14 +230,42 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Returns the locally used symbol given the symbolId
-     * @dev     Mainnet receives the messages in the same format that it sent out, by symbolId
-     * @return  bytes32  symbolId
+     * @notice  Returns the locally used symbol, symbolId given the chainListOrgChainId
+     * @dev     Mainnet receives the messages in the same format that it sent out, by its ERC20 symbol
+     * Subnet has its own standardized list of symbols i.e. BTC.b in the mainnet may be mapped to BTC
+     * in the subnet
+     * The subnet knows which chain the message is coming from and will tag the chainId to the sourceSymbol
+     * for certain inventory operations before mapping it to and uses this function.
+     * It needs to keep track of the inventory coming from different mainnets.
+     * @param   _chainListOrgChainId source/Destination chain id
+     * @return  localSymbol (subnetSymbol)
+     * @return  symbolId symbolId of the source/destination Chain, symbol + chainId
      */
-    function getSymbolForId(bytes32 _id) internal view override returns (bytes32) {
-        bytes32 symbol = tokenDetailsMapById[_id].symbol;
-        require(symbol != bytes32(0), "PB-ETNS-01");
-        return symbol;
+    function getSymbolForId(
+        uint32 _chainListOrgChainId,
+        bytes32 _symbol
+    ) internal view override returns (bytes32 localSymbol, bytes32 symbolId) {
+        symbolId = UtilsLibrary.getIdForToken(_symbol, _chainListOrgChainId);
+        localSymbol = tokenDetailsMapById[symbolId].symbol;
+        require(localSymbol != bytes32(0), "PB-ETNS-01");
+    }
+
+    /**
+     * @notice  Returns the symbol given the destination chainId
+     * @dev     When sending from Mainnet to Subnet we send out the symbol of the sourceChain. BTC.b => BTC.b
+     * When sending messages back to mainnet we use this function to resolve the symbol.
+     * BTC could be resolved to BTC.b for avalanche and WBTC for Arbitrum
+     * @param   _dstChainListOrgChainId destination chain id
+     * @param   _subnetSymbol  subet symbol of the token
+     * @return  bytes32  symbol of the target chain
+     */
+
+    function getDestChainSymbol(
+        uint32 _dstChainListOrgChainId,
+        bytes32 _subnetSymbol
+    ) internal view override returns (bytes32) {
+        bytes32 symbolId = getTokenId(_dstChainListOrgChainId, _subnetSymbol);
+        return tokenDetailsMapById[symbolId].sourceChainSymbol;
     }
 
     /**
@@ -277,14 +304,14 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
-    ) external payable virtual override onlyRole(BRIDGE_USER_ROLE) returns (uint256 messageFee) {
+    ) external payable virtual override onlyRole(BRIDGE_USER_ROLE) {
         // Volume threshold check for multiple small transfers within a given amount of time
         // Used only for withdrawals from the subnet.
         delayedTransfers.updateVolume(_xfer.symbol, _xfer.quantity); // Reverts if breached. Does not add to delayTranfer.
 
         //Check individual thresholds again for withdrawals. And set them in delayed transfer if necessary.
         if (delayedTransfers.checkThresholds(_xfer)) {
-            messageFee = sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
+            sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
         }
     }
 
@@ -293,11 +320,17 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @dev     Update the inventory by each chain only in the Subnet.
      * Inventory available per host chain. i.e. USDC may exist in both Avalanche and Arbitrum
      */
-    function updateInventoryBySource(IPortfolio.XFER memory _xfer) internal override {
-        if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
-            inventoryManager.decrement(tokenDetailsMapById[_xfer.symbol].symbol, _xfer.symbol, _xfer.quantity);
-        } else if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
-            inventoryManager.increment(tokenDetailsMapById[_xfer.symbol].symbol, _xfer.symbol, _xfer.quantity);
+
+    function updateInventoryBySource(
+        bytes32 _localSymbol,
+        bytes32 _sourceSymbolId,
+        uint256 _quantity,
+        IPortfolio.Tx _transaction
+    ) internal override {
+        if (_transaction == IPortfolio.Tx.WITHDRAW) {
+            inventoryManager.decrement(_localSymbol, _sourceSymbolId, _quantity);
+        } else if (_transaction == IPortfolio.Tx.DEPOSIT) {
+            inventoryManager.increment(_localSymbol, _sourceSymbolId, _quantity);
         }
     }
 
@@ -325,9 +358,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             _dstChainListOrgChainId
         ];
         inventoryManager.convertSymbol(fromSymbolId, _fromSymbol, _toSymbol);
-        // By not deleting the below entry in the mapping, the user can withdraw the the token back to the mainnet without having to convert it
-        // using portfolioSub.convertToken function. There is no way to delete this entry from the mapping afterwards
-        //delete tokenInfoMapBySymbolChainId[_fromSymbol][_dstChainListOrgChainId];
+        delete tokenInfoMapBySymbolChainId[_fromSymbol][_dstChainListOrgChainId];
     }
 
     /**

@@ -45,21 +45,9 @@ import "./bridgeApps/LzApp.sol";
  * Sell GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited to the buyer's
  * wallet via MainnetRFQ(Avax)
  * The same flow can be replicated with any other L1 like Arb as well. \
- *
- * PortfolioBridgeMain also serves as a symbol mapper to support multichain symbol handling.
- * PortfolioBridgeMain always maps the symbol as SYMBOL + portolio.srcChainId and expects the same back,
- * i.e USDC43114 if USDC is from Avalanche Mainnet.
- * It makes use of the PortfolioMain's tokenDetailsMap when mapping symbol to symbolId back
- * and forth as token details can not be different when in the mainnet.
- * Symbol mapping happens in packXferMessage on the way out. packXferMessage calls getTokenId that has
- * different implementations in PortfolioBridgeMain & PortfolioBridgeSub. On the receival, the symbol
- * mapping will happen in processPayload. getSymbolForId is called by getXFerMessage and it returns the
- * Xfer Message as is but also returns the reverse mapped local symbol. \
- * We need to raise the XChainXFerMessage & update the inventory with the symbolId so the
- * incoming and the outgoing xfer messages always contain the symbolId rather than symbol and then processPayload
- * can use the local symbol when calling portfolio methods \
- * getXFerMessage is also called by lzDestroyAndRecoverFunds to handle a stuck message from the LZ bridge,
- * and to return the funds to the depositor/withdrawer.
+ * PortfolioBridgeMain always sends the ERC20 Symbol and expects the same back,
+ * i.e USDt in Avalanche Mainnet.
+
  * Use multiple inheritance to add additional bridge implementations in the future. Currently LzApp only.
  */
 
@@ -104,7 +92,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("3.0.0");
+        return bytes32("3.1.0");
     }
 
     /**
@@ -391,28 +379,32 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Returns the symbolId used in the mainnet given the srcChainId
-     * @dev     It uses PortfolioMain's token list to get the symbolId,
-     * On the other hand, PortfolioBridgeSub uses its internal list & the defaultTargetChain
-     * When sending from Mainnet to Subnet we send out the symbolId of the sourceChain. USDC => USDC1337
-     * When receiving messages back it expects the same symbolId if USDC1337 sent, USDC1337 to receive
-     * Because the subnet needs to know about different ids from different mainnets.
-     * param   _dstChainListOrgChainId lz destination chain id only relevant in the overriding function PortfolioBridgeSub
+     * @notice  Returns the symbol given the destination chainId
+     * @dev    Returns itself in the mainnet but
+     * Overridden in PortfolioBridgeSub to return the destination chains local symbol
+     * param   _dstChainListOrgChainId  destination chain id
      * @param   _symbol  symbol of the token
-     * @return  bytes32  symbolId
+     * @return  bytes32  destination symbol
      */
 
-    function getTokenId(uint32, bytes32 _symbol) internal view virtual returns (bytes32) {
-        return portfolio.getTokenDetails(_symbol).symbolId;
+    function getDestChainSymbol(uint32, bytes32 _symbol) internal view virtual returns (bytes32) {
+        return _symbol;
     }
 
     /**
-     * @notice  Returns the locally used symbol given the symbolId
-     * @dev     Mainnet receives the messages in the same format that it sent out, by symbolId
-     * @return  bytes32  symbolId
+     * @notice  Returns the locally used symbol, symbolId given the chainListOrgChainId
+     * @dev     Mainnet receives the messages in the same format that it sent out, by its ERC20 Symbol
+     * Returns itself in the mainnet but overridden in PortfolioBridgeSub
+     * param   _chainListOrgChainId src/dest chain id only relevant in the overriding function PortfolioBridgeSub
+     * @return  localSymbol
+     * @return  symbolId
      */
-    function getSymbolForId(bytes32 _symbolId) internal view virtual returns (bytes32) {
-        return portfolio.getTokenDetailsById(_symbolId).symbol;
+    function getSymbolForId(
+        uint32,
+        bytes32 _symbol
+    ) internal view virtual returns (bytes32 localSymbol, bytes32 symbolId) {
+        localSymbol = _symbol;
+        symbolId = _symbol;
     }
 
     /**
@@ -467,31 +459,31 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice  Unpacks XChainMsgType & XFER message from the payload and returns the local symbol using symbolId
-     * @dev     It is called by lzDestroyAndRecoverFunds to handle a stuck message & by processPaylod
-     * Currently only XChainMsgType.XFER possible. For more details on payload packing see packXferMessage
+     * @dev     Currently only XChainMsgType.XFER possible. For more details on payload packing see packXferMessage
+     * @param   _srcChainListOrgChainId the source chain id
      * @param   _payload  Payload passed from the bridge
-     * @return  IPortfolio.XFER  Xfer Message
-     * @return  bytes32  Local Symbol of the token
+     * @return  xfer IPortfolio.XFER  Xfer Message
+     * @return  localSymbol  Local Symbol of the token
      */
-    function getXFerMessage(bytes calldata _payload) external view returns (IPortfolio.XFER memory, bytes32) {
+    function unpackXFerMessage(
+        uint32 _srcChainListOrgChainId,
+        bytes calldata _payload
+    ) external view returns (IPortfolio.XFER memory xfer, bytes32 localSymbol) {
         // There is only a single type in the XChainMsgType enum.
         bytes32[4] memory msgData = abi.decode(_payload, (bytes32[4]));
         uint256 slot0 = uint256(msgData[0]);
         // will revert if anything else other than XChainMsgType.XFER is passed
         XChainMsgType(uint16(slot0));
-
-        IPortfolio.XFER memory xfer;
         slot0 >>= 16;
         xfer.transaction = IPortfolio.Tx(uint16(slot0));
         slot0 >>= 16;
         xfer.nonce = uint64(slot0);
         xfer.trader = address(uint160(slot0 >> 64));
-        xfer.symbol = msgData[1];
         xfer.quantity = uint256(msgData[2]);
         xfer.timestamp = uint32(bytes4(msgData[3]));
         xfer.customdata = bytes28(uint224(uint256(msgData[3]) >> 32));
 
-        return (xfer, getSymbolForId(xfer.symbol));
+        (localSymbol, xfer.symbol) = getSymbolForId(_srcChainListOrgChainId, msgData[1]);
     }
 
     /**
@@ -504,14 +496,15 @@ contract PortfolioBridgeMain is
      * @param   _dstChainListOrgChainId the destination chain identifier
      * @param   _xfer  XFER message to encode
      * @return  message  Encoded XFER message
+     * @return  localSymbol  Local Symbol used. ERC20 in the mainnet
      */
     function packXferMessage(
         uint32 _dstChainListOrgChainId,
         IPortfolio.XFER memory _xfer
-    ) internal view returns (bytes memory message) {
-        //overwrite with the symbol+chainid
-        _xfer.symbol = getTokenId(_dstChainListOrgChainId, _xfer.symbol);
-
+    ) internal view returns (bytes memory message, bytes32 localSymbol) {
+        localSymbol = _xfer.symbol;
+        //overwrite with the destination Chain's symbol
+        _xfer.symbol = getDestChainSymbol(_dstChainListOrgChainId, _xfer.symbol);
         bytes32 slot0 = bytes32(
             (uint256(uint160(_xfer.trader)) << 96) |
                 (uint256(_xfer.nonce) << 32) |
@@ -537,8 +530,8 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
-    ) external payable virtual override onlyRole(BRIDGE_USER_ROLE) returns (uint256 messageFee) {
-        messageFee = sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
+    ) external payable virtual override onlyRole(BRIDGE_USER_ROLE) {
+        sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
     }
 
     /**
@@ -553,7 +546,7 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
-    ) internal nonReentrant whenNotPaused returns (uint256 messageFee) {
+    ) internal nonReentrant whenNotPaused {
         require(bridgeEnabled[_bridge], "PB-RBNE-01");
         uint16 dstChainId = lzDestinationMap[_dstChainListOrgChainId];
         require(dstChainId != 0, "PB-DDNS-02");
@@ -561,17 +554,25 @@ contract PortfolioBridgeMain is
         if (_xfer.nonce == 0) {
             _xfer.nonce = incrementOutNonce(_bridge, dstChainId);
         }
-        //_xfer.symbol is overriden with _xfer.symbolId in the below method
-        bytes memory _payload = packXferMessage(_dstChainListOrgChainId, _xfer);
+        //_xfer.symbol is overridden with the symbol the destination expects in the below method
+        (bytes memory _payload, bytes32 localSymbol) = packXferMessage(_dstChainListOrgChainId, _xfer);
 
         // If this is a cross chain transfer, it doesn't affect the inventory
         if (_xfer.transaction != IPortfolio.Tx.CCTRADE) {
-            updateInventoryBySource(_xfer);
+            (, bytes32 dstSymbolId) = getSymbolForId(_dstChainListOrgChainId, _xfer.symbol);
+            updateInventoryBySource(localSymbol, dstSymbolId, _xfer.quantity, _xfer.transaction);
         }
 
         if (_bridge == BridgeProvider.LZ) {
-            messageFee = _lzSend(dstChainId, _payload, _userFeePayer);
-            emit XChainXFerMessage(XCHAIN_XFER_MESSAGE_VERSION, _bridge, Direction.SENT, dstChainId, messageFee, _xfer);
+            uint256 messageFee = _lzSend(dstChainId, _payload, _userFeePayer);
+            emit XChainXFerMessage(
+                XCHAIN_XFER_MESSAGE_VERSION,
+                _bridge,
+                Direction.SENT,
+                _dstChainListOrgChainId,
+                messageFee,
+                _xfer
+            );
         } else {
             // Just in case a bridge other than LZ is enabled accidentally
             revert("PB-RBNE-02");
@@ -611,7 +612,7 @@ contract PortfolioBridgeMain is
     ) external nonReentrant onlyRole(BRIDGE_ADMIN_ROLE) {
         // Destroys the message. This will revert if no message is blocking the bridge
         lzEndpoint.forceResumeReceive(_srcChainId, lzTrustedRemoteLookup[_srcChainId]);
-        processPayload(BridgeProvider.LZ, _srcChainId, _payload);
+        processPayload(BridgeProvider.LZ, remoteParams[_srcChainId].chainListOrgChainId, _payload);
     }
 
     /**
@@ -623,7 +624,7 @@ contract PortfolioBridgeMain is
      * @param   _payload  Payload received
      */
     function processPayload(BridgeProvider _bridge, uint32 _srcChainListOrgChainId, bytes calldata _payload) private {
-        (IPortfolio.XFER memory xfer, bytes32 symbol) = this.getXFerMessage(_payload);
+        (IPortfolio.XFER memory xfer, bytes32 localSymbol) = this.unpackXFerMessage(_srcChainListOrgChainId, _payload);
         xfer.timestamp = block.timestamp; // log receival/process timestamp
         emit XChainXFerMessage(
             XCHAIN_XFER_MESSAGE_VERSION,
@@ -636,14 +637,14 @@ contract PortfolioBridgeMain is
 
         // If this is a cross chain transfer, it doesn't affect the inventory
         if (xfer.transaction == IPortfolio.Tx.CCTRADE) {
-            mainnetRfq.processXFerPayload(xfer.trader, symbol, xfer.quantity, xfer.transaction, xfer.customdata);
+            mainnetRfq.processXFerPayload(xfer);
         } else {
             // Update the totals by symbolId for multichain inventory management.
             // Add xfer.quantity to the totals by SymbolId. It will be used to see how much the user
             // can withdraw from the target chain.
-            updateInventoryBySource(xfer);
+            updateInventoryBySource(localSymbol, xfer.symbol, xfer.quantity, xfer.transaction);
             //After the inventory is updated, process the XFer with the local symbol that Portfolio needs
-            portfolio.processXFerPayload(xfer.trader, symbol, xfer.quantity, xfer.transaction);
+            portfolio.processXFerPayload(xfer.trader, localSymbol, xfer.quantity, xfer.transaction);
         }
     }
 
@@ -663,7 +664,7 @@ contract PortfolioBridgeMain is
         bytes memory trustedRemote = lzTrustedRemoteLookup[_srcChainId];
         require(_msgSender() == address(lzEndpoint), "PB-IVEC-01");
         require(trustedRemote.length != 0 && keccak256(_srcAddress) == keccak256(trustedRemote), "PB-SINA-01");
-        processPayload(BridgeProvider.LZ, _srcChainId, _payload);
+        processPayload(BridgeProvider.LZ, remoteParams[_srcChainId].chainListOrgChainId, _payload);
     }
 
     /**
@@ -681,7 +682,12 @@ contract PortfolioBridgeMain is
      * @dev     Update the inventory by each chain only in the Subnet.
      * Inventory in the host chains are already known and don't need to be calculated
      */
-    function updateInventoryBySource(IPortfolio.XFER memory) internal virtual {}
+    function updateInventoryBySource(
+        bytes32 _localSymbol,
+        bytes32 _sourceSymbolId,
+        uint256 _quantity,
+        IPortfolio.Tx _transaction
+    ) internal virtual {}
 
     /**
      * @notice  private function that handles the addition of native token

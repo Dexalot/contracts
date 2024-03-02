@@ -346,7 +346,7 @@ describe("Portfolio Bridge Main", () => {
         const bogusChainId = 1;
         await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
         await portfolioBridgeSub.setTrustedRemoteAddress(0, bogusChainId, portfolioBridgeMain.address, bogusChainId, 300000, false);
-        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("IM-INVT-01");
+        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-ETNS-01");
 
         await portfolioBridgeMain.setLzEndPoint(owner.address);
         await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, portfolioBridgeMain.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");
@@ -411,24 +411,25 @@ describe("Portfolio Bridge Main", () => {
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeMain.address) {
-                expect(log.args.remoteChainId).to.be.equal(dexalotSubnet.lzChainId);
+                expect(log.args.remoteChainId).to.be.equal(dexalotSubnet.chainListOrgId);
                 expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
                 expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
+                 //For PortfolioBridgeMain, symbol has not changed
+                expect(log.args.xfer.symbol).to.be.equal(symbol);
 
             } else if (log.address == portfolioBridgeSub.address) { //Subnet event
-                expect(log.args.remoteChainId).to.be.equal(cChain.lzChainId); //message from mainnet
+                expect(log.args.remoteChainId).to.be.equal(cChain.chainListOrgId); //message from mainnet
                 expect(log.args.msgDirection).to.be.equal(1); // 0 SENT 1 RECEIVED
                 // timestamp is overwritten at receival block.timestamp
                 const txnBlock = await ethers.provider.getBlock(log.blockNumber);
                 expect(log.args.xfer.timestamp).to.be.equal(txnBlock.timestamp);
+                //unpackXferMessage which maps symbol to symbolId.
+                expect(log.args.xfer.symbol).to.be.equal(symbolId);
             }
 
             expect(log.args.xfer.nonce).to.be.equal(1);
             expect(log.args.xfer.transaction).to.be.equal(transaction1);
             expect(log.args.xfer.trader).to.be.equal(trader);
-            //sendXChainMessage calls packXferMessage which maps symbol to symbolId.
-            //Check equality for symbolId and not the symbol below.
-            expect(log.args.xfer.symbol).to.be.equal(symbolId);
             expect(log.args.xfer.quantity).to.be.equal(quantity);
             expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
 

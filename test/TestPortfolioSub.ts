@@ -1317,6 +1317,11 @@ describe("Portfolio Sub", () => {
         await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
         expect(await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei(deposit_amount.toString()));
 
+        // console.log("after USDt");
+        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+        // console.log(subnet_symbol, await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32));
+        // console.log(orginalSubnetSymbol, await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32));
+
         await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-ETNS-02");
 
         await f.addTokenToPortfolioSub(portfolioSub, cChainSymbol, subnet_symbol, usdt.address, tokenDecimals
@@ -1326,12 +1331,14 @@ describe("Portfolio Sub", () => {
         expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
         expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(0);
         expect(await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
-
+        // console.log("after USDt with USDT subnetSYmbol");
+        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+        // console.log(subnet_symbol, await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32));
+        // console.log(orginalSubnetSymbol, await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32));
 
         // console.log("");
         // console.log("Token totals Orig", orginalSubnetSymbol, await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol)));
         // console.log("Token totals New", subnet_symbol, await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol)));
-        // console.log("Inventory by id Orig", orginalSubnetSymbol+ cChain.chainListOrgId, await portfolioBridgeSub.inventoryBySymbolId(origsubnet_symbol_bytes32));
 
         // convertion from USTt to USDT is allowed
         await portfolioSubHelper.addConvertibleToken(Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"));
@@ -1346,7 +1353,7 @@ describe("Portfolio Sub", () => {
         await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-TFNE-01");
         await portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))
 
-        // Convert trader1 positins. They go under the new subnet symbol. trader2' are under the original subnet symbol
+        // Convert trader1 positions. They go under the new subnet symbol. trader2' are under the original subnet symbol
         await portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"));
 
         // no positions to convert. Owner has 0

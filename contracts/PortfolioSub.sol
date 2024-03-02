@@ -70,7 +70,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.0");
+    bytes32 public constant VERSION = bytes32("2.5.1");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -127,10 +127,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _tokenAddress,
                 _mode, // Auction Mode is ignored as it is irrelevant in the Mainnet
                 _srcChainId,
-                _subnetSymbol,
-                bytes32(0),
-                _srcChainSymbol,
-                true // All tokens in the subnet are virtual TODO
+                _subnetSymbol, //symbol
+                bytes32(0), //symbolId
+                _srcChainSymbol, //sourceChainSymbol
+                true // All tokens in the subnet are virtual except native ALOT
             );
 
             addTokenInternal(details, _fee, _gasSwapRatio);
@@ -549,6 +549,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             ? 0
             : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
         safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
+        //if the token is in the conversion list, overwrite it with the new symbol before withdrawal
+        //message for proper inventory management
+        bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_symbol);
+        if (toSymbol != bytes32(0)) {
+            _symbol = toSymbol;
+        }
         portfolioBridge.sendXChainMessage(
             _dstChainListOrgChainId,
             _bridge,
@@ -971,7 +977,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         for (uint256 i = 0; i < tokenList.length(); ++i) {
             TokenDetails storage tokenDetails = tokenDetailsMap[tokenList.at(i)];
             tokenDetails.sourceChainSymbol = tokenDetails.symbol;
-            if (tokenDetails.symbol != native && tokenDetails.srcChainId != chainId) {
+            if (tokenDetails.symbol != native) {
                 tokenDetails.isVirtual = true;
             }
         }
