@@ -1,7 +1,7 @@
 --------------------------------------|----------|----------|----------|----------|----------------|
 File                                  |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 --------------------------------------|----------|----------|----------|----------|----------------|
- contracts\                           |      100 |     96.7 |      100 |      100 |                |
+ contracts\                           |      100 |    96.63 |      100 |      100 |                |
   BannedAccounts.sol                  |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol                |      100 |      100 |      100 |      100 |                |
   Exchange.sol                        |      100 |      100 |      100 |      100 |                |
@@ -12,8 +12,8 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   MainnetRFQ.sol                      |      100 |      100 |      100 |      100 |                |
   OrderBooks.sol                      |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                       |      100 |    95.45 |      100 |      100 |                |
-  PortfolioBridgeMain.sol             |      100 |    95.37 |      100 |      100 |                |
-  PortfolioBridgeSub.sol              |      100 |       92 |      100 |      100 |                |
+  PortfolioBridgeMain.sol             |      100 |    95.54 |      100 |      100 |                |
+  PortfolioBridgeSub.sol              |      100 |    90.38 |      100 |      100 |                |
   PortfolioMain.sol                   |      100 |       93 |      100 |      100 |                |
   PortfolioMinter.sol                 |      100 |      100 |      100 |      100 |                |
   PortfolioSub.sol                    |      100 |    93.68 |      100 |      100 |                |
@@ -57,5 +57,5 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   TokenVestingCloneFactory.sol        |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol           |      100 |    96.67 |      100 |      100 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|
-All files                             |    99.86 |    96.85 |      100 |     99.9 |                |
+All files                             |    99.86 |     96.8 |      100 |     99.9 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|

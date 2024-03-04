@@ -541,20 +541,19 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
         require(tokenList.contains(_symbol), "P-ETNS-02");
-
-        // bridgeFee = bridge Fees both in the Mainnet the subnet
-        // no bridgeFees for treasury and feeCollector
-        // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
-        uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
-            ? 0
-            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
-        safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
-        //if the token is in the conversion list, overwrite it with the new symbol before withdrawal
+        //if the token is in the conversion list, we need to use it in the withdrawal
         //message for proper inventory management
         bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_symbol);
-        if (toSymbol != bytes32(0)) {
-            _symbol = toSymbol;
-        }
+        toSymbol == bytes32(0) ? toSymbol = _symbol : toSymbol;
+        // bridgeFee = bridge Fees both in the Mainnet the subnet
+        // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
+        // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
+        // We need to get the bridgeFee with the new(after conversion) toSymbol
+        uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
+            ? 0
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, toSymbol, _quantity);
+        // We need to safeDecrease with the original(non-converted _symbol)
+        safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
         portfolioBridge.sendXChainMessage(
             _dstChainListOrgChainId,
             _bridge,
@@ -562,7 +561,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 0, // Nonce to be assigned in PBridge
                 Tx.WITHDRAW,
                 _to,
-                _symbol,
+                toSymbol,
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
                 block.timestamp,

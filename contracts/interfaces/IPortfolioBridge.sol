@@ -26,10 +26,7 @@ interface IPortfolioBridge {
         address _userFeePayer
     ) external payable;
 
-    function unpackXFerMessage(
-        uint32 _srcChainListOrgChainId,
-        bytes calldata _data
-    ) external view returns (IPortfolio.XFER memory xfer, bytes32 localSymbol);
+    function unpackXFerMessage(bytes calldata _data) external view returns (IPortfolio.XFER memory xfer);
 
     function enableBridgeProvider(BridgeProvider _bridge, bool _enable) external;
 

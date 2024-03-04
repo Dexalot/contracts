@@ -414,8 +414,7 @@ describe("Portfolio Bridge Main", () => {
                 expect(log.args.remoteChainId).to.be.equal(dexalotSubnet.chainListOrgId);
                 expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
                 expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
-                 //For PortfolioBridgeMain, symbol has not changed
-                expect(log.args.xfer.symbol).to.be.equal(symbol);
+
 
             } else if (log.address == portfolioBridgeSub.address) { //Subnet event
                 expect(log.args.remoteChainId).to.be.equal(cChain.chainListOrgId); //message from mainnet
@@ -423,10 +422,10 @@ describe("Portfolio Bridge Main", () => {
                 // timestamp is overwritten at receival block.timestamp
                 const txnBlock = await ethers.provider.getBlock(log.blockNumber);
                 expect(log.args.xfer.timestamp).to.be.equal(txnBlock.timestamp);
-                //unpackXferMessage which maps symbol to symbolId.
-                expect(log.args.xfer.symbol).to.be.equal(symbolId);
             }
 
+            //Symbol is always the source Symbol
+            expect(log.args.xfer.symbol).to.be.equal(symbol);
             expect(log.args.xfer.nonce).to.be.equal(1);
             expect(log.args.xfer.transaction).to.be.equal(transaction1);
             expect(log.args.xfer.trader).to.be.equal(trader);

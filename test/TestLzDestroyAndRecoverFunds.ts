@@ -307,7 +307,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
 
         await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(dexalotSubnet.lzChainId,
             modifiedPayload
-        )).to.be.revertedWith(`P-ETNS-02`)
+        )).to.be.revertedWith(`PB-ETNS-01`)
 
         await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(dexalotSubnet.lzChainId,
             amountModifiedPayload
@@ -349,7 +349,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const payload = sp.payloadHash;
 
         // Try a malformed message with xChainMessageNonExistant =5
-        const depositXfer = (await portfolioBridgeSub.unpackXFerMessage(cChain.chainListOrgId, payload))[0];
+        const depositXfer = await portfolioBridgeSub.unpackXFerMessage(payload);
         const depositAvaxMessage = ethers.utils.defaultAbiCoder.encode(
             [
                 "uint64",   // nonce,
@@ -376,7 +376,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
             ["uint8", "bytes"],
             [xChainMessageNonExistant, depositAvaxMessage]
         )
-        await expect (portfolioBridgeSub.unpackXFerMessage(cChain.chainListOrgId, MalFormedPayload)).to.revertedWith("call revert exception");
+        await expect (portfolioBridgeSub.unpackXFerMessage(MalFormedPayload)).to.revertedWith("call revert exception");
         expect(await portfolioBridgeSub["hasStoredPayload()"]()).to.be.true;
 
     });
@@ -391,8 +391,8 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         const payload = sp.payloadHash;
         //replacing 3 with 50
         const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194);
-
-        expect ((await portfolioBridgeMain.unpackXFerMessage(dexalotSubnet.chainListOrgId, payload))[1]).to.be.equal(Utils.fromUtf8("AVAX"));
+        //console.log(await portfolioBridgeMain.unpackXFerMessage(payload))
+        expect ((await portfolioBridgeMain.unpackXFerMessage(payload))[3]).to.be.equal(Utils.fromUtf8("AVAX"));
         // fail for non-admin
         await expect(portfolioBridgeSub.connect(trader1).lzRetryPayload(cChain.lzChainId, payload)).to.be.revertedWith("AccessControl: account");
 
@@ -469,7 +469,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
         //replacing 3 with 50
         const amountModifiedPayload = payload.slice(0, 177) + "2B5E3AF16B1880000" + payload.slice(194);
 
-        expect ((await portfolioBridgeMain.unpackXFerMessage(cChain.chainListOrgId , payload))[1]).to.be.equal(ALOT);
+        expect ((await portfolioBridgeMain.unpackXFerMessage(payload))[3]).to.be.equal(ALOT);
         // fail for non-admin
         await expect(portfolioBridgeSub.connect(trader1).lzRetryPayload(cChain.lzChainId, payload)).to.be.revertedWith("AccessControl: account");
 

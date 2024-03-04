@@ -111,7 +111,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         await f.addVirtualToken(portfolioAvax, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
         // Add virtual USDC to gunzilla with avalanche Network id (Which is the default destination). But USDC can be
         // sent to Arb as well
-        await f.addVirtualToken(portfolioGun, usdcDetails.symbol, usdcDetails.decimals, cChain.chainListOrgId);
+        //await f.addVirtualToken(portfolioGun, usdcDetails.symbol, usdcDetails.decimals, cChain.chainListOrgId);
         await f.addToken(portfolioAvax, portfolioSub, usdc, 0.5, 0, true, 0);
         await f.addToken(portfolioArb, portfolioSub, usdcArb, 0.5, 0, true, 0);
 
@@ -252,6 +252,11 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
 
+        await expect(portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-ETNS-01");
+
+        // Add virtual GUN to avalanche with gunzilla Network id
+        await f.addVirtualToken(portfolioArb, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
+
         const tx = await portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
         const receipt: any = await tx.wait();
 
@@ -318,6 +323,9 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0);
 
+        await expect(portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value})).to.be.revertedWith("PB-ETNS-01");
+
+        await f.addVirtualToken(portfolioGun, usdcDetails.symbol, usdcDetails.decimals, cChain.chainListOrgId);
         const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value});
         const receipt: any = await tx.wait();
 
@@ -370,7 +378,10 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         const quantity = Utils.parseUnits("10", usdcDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
 
-        const { arbitrumChain, gunzillaSubnet } = f.getChains();
+        const { cChain, arbitrumChain, gunzillaSubnet } = f.getChains();
+
+        // Adding virtual USDC with cchain chain id , NOT ARB, IT SHOULD NOT MATTER
+        await f.addVirtualToken(portfolioGun, usdcDetails.symbol, usdcDetails.decimals, cChain.chainListOrgId);
 
         await portfolioBridgeGun.grantRole(await portfolioBridgeGun.BRIDGE_USER_ROLE(), owner.address);
 
