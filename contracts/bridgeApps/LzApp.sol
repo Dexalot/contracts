@@ -23,6 +23,9 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
 
     uint16 internal defaultLzRemoteChainId; // Default remote chain id (LayerZero assigned chain id)
 
+    // storage gap for upgradeability
+    uint256[50] private __gap;
+
     event LzSetTrustedRemoteAddress(
         uint16 destinationLzChainId,
         bytes remoteAddress,
