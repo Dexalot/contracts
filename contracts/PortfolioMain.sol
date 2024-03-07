@@ -93,10 +93,10 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
                 _decimals,
                 _tokenAddress,
                 ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
-                _isVirtual ? _srcChainId : chainId, // always add with the chain id of the Portfolio unless virtual
-                _symbol,
-                bytes32(0),
-                _symbol,
+                _isVirtual ? _srcChainId : chainId, // srcChainId. always add with the chain id of the Portfolio unless virtual
+                _symbol, //symbol
+                bytes32(0), //symbolId
+                _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
                 _isVirtual
             );
 

@@ -646,7 +646,6 @@ describe("Portfolio Bridge Sub", () => {
 
     it("Should use executeDelayedTransfer correctly - withdraw", async () => {
         const { admin } = await f.getAccounts();
-        const { cChain} = f.getChains();
 
         await f.setBridgeSubSettings(
             delayedTransfers,
@@ -683,7 +682,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(receipt.events[1].args.xfer.nonce).to.be.equal(1);       // nonce is 1
         expect(receipt.events[1].args.xfer.transaction).to.be.equal(0); // withdraw
         expect(receipt.events[1].args.xfer.trader).to.be.equal(admin.address);
-        expect(receipt.events[1].args.xfer.symbol).to.be.equal(Utils.fromUtf8("AVAX"+ cChain.chainListOrgId));
+        expect(receipt.events[1].args.xfer.symbol).to.be.equal(AVAX);
         expect(receipt.events[1].args.xfer.quantity).to.be.equal(ethers.utils.parseEther("0.51"));
     });
 

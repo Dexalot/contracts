@@ -59,7 +59,8 @@ contract MainnetRFQAttacker {
     ) external payable {
         functionToAttack = Function.PROCESS_XFER_PAYLOAD;
         params = abi.encode(_trader, _symbol, _quantity, _transaction, _customdata);
-        mainnetRFQ.processXFerPayload(_trader, _symbol, _quantity, _transaction, _customdata);
+        IPortfolio.XFER memory xfer = IPortfolio.XFER(0, _transaction, _trader, _symbol, _quantity, 0, _customdata);
+        mainnetRFQ.processXFerPayload(xfer);
     }
 
     function attackRemoveFromSwapQueue(uint256 _nonceAndMeta) external payable {
@@ -84,7 +85,8 @@ contract MainnetRFQAttacker {
         } else if (functionToAttack == Function.PROCESS_XFER_PAYLOAD) {
             (address _trader, bytes32 _symbol, uint256 _quantity, IPortfolio.Tx _transaction, bytes28 _customdata) = abi
                 .decode(params, (address, bytes32, uint256, IPortfolio.Tx, bytes28));
-            mainnetRFQ.processXFerPayload(_trader, _symbol, _quantity, _transaction, _customdata);
+            IPortfolio.XFER memory xfer = IPortfolio.XFER(0, _transaction, _trader, _symbol, _quantity, 0, _customdata);
+            mainnetRFQ.processXFerPayload(xfer);
         } else if (functionToAttack == Function.REMOVE_FROM_SWAP_QUEUE) {
             uint256 _nonceAndMeta = abi.decode(params, (uint256));
             mainnetRFQ.removeFromSwapQueue(_nonceAndMeta);

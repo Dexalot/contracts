@@ -218,7 +218,7 @@ export const addToken = async (portfolioMain: PortfolioMain , portfolioSub: Port
         Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), usedForGasSwap);
 
 
-    await addTokenToPortfolioSub(portfolioSub, await token.symbol(), subnetSymbol, token.address, tokenDecimals
+    await addTokenToPortfolioSub(portfolioSub, symbol, subnetSymbol, token.address, tokenDecimals
         , sourceChainID, gasSwapRatio, auctionMode, usedForGasSwap, bridgeFee);
 }
 
@@ -530,7 +530,7 @@ export const deployCompleteMultiChainPortfolio = async (addAvaxChainAlot= false,
     await setRemoteBridges(portfolioBridgeArb, portfolioContracts.portfolioBridgeSub, lzEndpointArb, portfolioContracts.lzEndpointSub, arbitrumChain,dexalotSubnet);
     await setRemoteBridges(portfolioBridgeGun, portfolioContracts.portfolioBridgeSub, lzEndpointGun, portfolioContracts.lzEndpointSub, gunzillaSubnet,dexalotSubnet);
     await setRemoteBridges(portfolioContracts.portfolioBridgeAvax, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, cChain, gunzillaSubnet);
-    await setRemoteBridges(portfolioBridgeArb, portfolioBridgeGun, portfolioContracts.lzEndpointAvax, lzEndpointGun, arbitrumChain, gunzillaSubnet);
+    await setRemoteBridges(portfolioBridgeArb, portfolioBridgeGun, lzEndpointArb, lzEndpointGun, arbitrumChain, gunzillaSubnet);
 
     await portfolioBridgeGun.setUserPaysFeeForDestination(0, cChain.lzChainId, true);
     await portfolioBridgeGun.setUserPaysFeeForDestination(0, arbitrumChain.lzChainId, true);

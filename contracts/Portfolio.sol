@@ -246,8 +246,8 @@ abstract contract Portfolio is
         bytes32 symbolId = UtilsLibrary.getIdForToken(_details.symbol, tokenDetails.srcChainId);
         tokenDetails.symbolId = symbolId;
         tokenDetails.isVirtual = _details.isVirtual;
-        //sourceChainSymbol is always equal to symbol for Portfolios.abi
-        //It is needed and can be different in PortfolioBrigeSub
+        //sourceChainSymbol is always equal to symbol for Portfolios
+        //It is needed specifically in PortfolioBridgeSub and can be different
         tokenDetails.sourceChainSymbol = _details.symbol;
         //add to the list by symbol
         tokenList.add(_details.symbol);

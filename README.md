@@ -50,38 +50,42 @@ npx hardhat test test/TestAirdrop.ts
 Available tests are as follows:
 
 ```sh
-TestAirdrop.ts
-TestAuction.ts
-TestAuctionPerfectMatch.ts
-TestBannedAccounts.ts
-TestBytes32LinkedListLibrary.ts
-TestDexalot.ts
-TestDexalotToken.ts
-TestExchangeMain.ts
-TestExchangeShared.ts
-TestExchangeSub.ts
-TestGasStation.ts
-TestGetNBook.ts
-TestIncentiveDistributor.ts
-TestLzApp.ts
-TestLzDestroyAndRecoverFunds.ts
-TestMockToken.ts
-TestMulticall2.ts
-TestMainnetRFQ.ts
-TestOrderBooks.ts
-TestPortfolioBridgeMain.ts
-TestPortfolioBridgeSub.ts
-TestPortfolioInteractions.ts
-TestPortfolioMain.ts
-TestPortfolioMinter.ts
-TestPortfolioShared.ts
-TestPortfolioSub.ts
-TestRBTLibrary.ts
-TestStaking.ts
-TestTokenVestingCloneable.ts
-TestTokenVestingCloneFactory.ts
-TestTradePairs.ts
-TestUtilsLibrary.ts
+npx hardhat  test ./test/TestAirdrop.ts
+npx hardhat  test ./test/TestAuction.ts
+npx hardhat  test ./test/TestAuctionPerfectMatch.ts
+npx hardhat  test ./test/TestBannedAccounts.ts
+npx hardhat  test ./test/TestBytes32LinkedListLibrary.ts
+npx hardhat  test ./test/TestDexalot.ts
+npx hardhat  test ./test/TestDexalotToken.ts
+npx hardhat  test ./test/TestExchangeMain.ts
+npx hardhat  test ./test/TestExchangeShared.ts
+npx hardhat  test ./test/TestExchangeSub.ts
+npx hardhat  test ./test/TestGasStation.ts
+npx hardhat  test ./test/TestGetNBook.ts
+npx hardhat  test ./test/TestIncentiveDistributor.ts
+npx hardhat  test ./test/TestLzApp.ts
+npx hardhat  test ./test/TestLzDestroyAndRecoverFunds.ts
+npx hardhat  test ./test/TestMockToken.ts
+npx hardhat  test ./test/TestMulticall2.ts
+npx hardhat  test ./test/TestMainnetRFQ.ts
+npx hardhat  test ./test/TestOrderBooks.ts
+npx hardhat  test ./test/TestPortfolioBridgeMain.ts
+npx hardhat  test ./test/TestPortfolioBridgeSub.ts
+npx hardhat  test ./test/TestPortfolioInteractions.ts
+npx hardhat  test ./test/TestPortfolioMain.ts
+npx hardhat  test ./test/TestPortfolioMinter.ts
+npx hardhat  test ./test/TestPortfolioShared.ts
+npx hardhat  test ./test/TestPortfolioSub.ts
+npx hardhat  test ./test/TestRBTLibrary.ts
+npx hardhat  test ./test/TestTokenVestingCloneable.ts
+npx hardhat  test ./test/TestTokenVestingCloneFactory.ts
+npx hardhat  test ./test/TestTradePairs.ts
+npx hardhat  test ./test/TestUtilsLibrary.ts
+npx hardhat  test ./test/TestInventoryManager.ts
+npx hardhat  test ./test/TestMainnetRFQ.ts
+npx hardhat  test ./test/TestMultiChain.ts
+npx hardhat  test ./test/TestPBMainToPBMain.ts
+npx hardhat  test ./test/TestPortfolioSubHelper.ts
 ```
 
 The scripts `TestDexalot.ts`, `TestAuction.ts` and `TestGetNBook.ts` run a set of simulated trades to test the whole system.  Before running any simulator a second time you need to stop a running ```yarn hh-start-clean``` script and rerun ```yarn hh-start-clean``` to reset all the counters.

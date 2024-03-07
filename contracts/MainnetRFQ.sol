@@ -46,7 +46,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.0");
+    bytes32 public constant VERSION = bytes32("1.1.1");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -247,24 +247,16 @@ contract MainnetRFQ is
      * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
      * flight then upgrade
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of token to be withdrawn
-     * @param   _transaction  Transaction type
-     * @param   _customdata  Custom data, used to encode the nonce of the swap
+     * @param  _xfer  XFER message
      */
     function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolio.Tx _transaction,
-        bytes28 _customdata
+        IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        require(_transaction == IPortfolio.Tx.CCTRADE, "RF-PTNS-01");
-        require(_trader != address(0), "RF-ZADDR-01");
-        require(_quantity > 0, "RF-ZETD-01");
-        uint256 nonceAndMeta = (uint256(uint160(_trader)) << 96) | (uint224(_customdata) & NONCE_MASK);
-        _processXFerPayloadInternal(_trader, _symbol, _quantity, nonceAndMeta);
+        require(_xfer.transaction == IPortfolio.Tx.CCTRADE, "RF-PTNS-01");
+        require(_xfer.trader != address(0), "RF-ZADDR-01");
+        require(_xfer.quantity > 0, "RF-ZETD-01");
+        uint256 nonceAndMeta = (uint256(uint160(_xfer.trader)) << 96) | (uint224(_xfer.customdata) & NONCE_MASK);
+        _processXFerPayloadInternal(_xfer.trader, _xfer.symbol, _xfer.quantity, nonceAndMeta);
     }
 
     /**
@@ -674,12 +666,12 @@ contract MainnetRFQ is
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _to Trader address to recieve funds on destination chain
      */
-    function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private returns (uint256 messageFee) {
+    function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private {
         bytes28 customdata = bytes28(uint224(_order.nonceAndMeta) & NONCE_MASK);
         uint256 nativeAmount = _order.takerAsset == address(0) ? _order.takerAmount : 0;
         uint256 gasFee = msg.value - nativeAmount;
         // Nonce to be assigned in PBridge
-        messageFee = portfolioBridge.sendXChainMessage{value: gasFee}(
+        portfolioBridge.sendXChainMessage{value: gasFee}(
             _order.destChainId,
             IPortfolioBridge.BridgeProvider.LZ,
             IPortfolio.XFER(

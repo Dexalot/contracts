@@ -11,6 +11,7 @@ import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
 import { MainnetRFQ, MockToken, PortfolioBridgeMain } from '../typechain-types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { BigNumber } from 'ethers';
 
 interface Order {
   nonceAndMeta: string,
@@ -484,23 +485,47 @@ describe("Mainnet RFQ Multichain", () => {
     // make owner part of PORTFOLIO_BRIDGE_ROLE on PortfolioMain
     await mainnetRFQAvax.grantRole(await mainnetRFQAvax.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
+    let xfer: any = {};
     // processing of deposit messages will fail on mainnet
-    let Tx = 1;  // DEPOSIT
+    const transaction = 1;  // DEPOSIT
+    const nonce = 0;
+    const trader = trader2.address;
+    const symbol = Utils.fromUtf8("AVAX")
+    const quantity =  Utils.toWei("0.01")
+    const timestamp = BigNumber.from(await f.latestTime());
+    const customdata = Utils.emptyCustomData();
+
+    xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata
+    }
+
+
     // fail for non-admin
-    await expect(mainnetRFQAvax.connect(trader1).processXFerPayload(trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei("0.01"), Tx, Utils.emptyCustomData()))
+    await expect(mainnetRFQAvax.connect(trader1).processXFerPayload(xfer))
         .to.be.revertedWith("AccessControl");
     // succeed for admin but Tx not supported
-    await expect(mainnetRFQAvax.processXFerPayload(trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei("0.01"), Tx, Utils.emptyCustomData()))
-        .to.be.revertedWith("RF-PTNS-01");
-    Tx = 11;  // CCTRADE
+    await expect(mainnetRFQAvax.processXFerPayload(xfer))
+      .to.be.revertedWith("RF-PTNS-01");
+
+    xfer.transaction = 11;   // CCTRADE
+    xfer.trader = owner.address;
+    xfer.quantity = 0;
     // fail with 0 quantity
-    await expect(mainnetRFQAvax.processXFerPayload(owner.address, Utils.fromUtf8("AVAX"), 0, Tx, Utils.emptyCustomData())).to.be.revertedWith("RF-ZETD-01");
-
+    await expect(mainnetRFQAvax.processXFerPayload(xfer)).to.be.revertedWith("RF-ZETD-01");
+    xfer.trader = ethers.constants.AddressZero;
     // fail for trader witrh zero address(0)
-    await expect(mainnetRFQAvax.processXFerPayload(ethers.constants.AddressZero, Utils.fromUtf8("AVAX"), Utils.toWei("0.01"), Tx, Utils.emptyCustomData())).to.be.revertedWith("RF-ZADDR-01");
-
+    await expect(mainnetRFQAvax.processXFerPayload(xfer)).to.be.revertedWith("RF-ZADDR-01");
+    xfer.trader = owner.address;
+    xfer.quantity = Utils.toWei("0.01");
+    xfer.symbol = Utils.fromUtf8("USDt");
     // fail due to token not in portfolioBridge
-    await expect(mainnetRFQAvax.processXFerPayload(owner.address, Utils.fromUtf8("USDt"), Utils.toWei("0.01"), Tx,  Utils.emptyCustomData())).to.be.revertedWith("RF-DTNF-01");
+    await expect(mainnetRFQAvax.processXFerPayload(xfer)).to.be.revertedWith("RF-DTNF-01");
   });
 
   it("Should fail on reentrancy for processXFerPayload()", async () => {
@@ -521,11 +546,29 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should add/remove from swap queue if native inventory missing in MainnetRFQ contract", async () => {
     await mainnetRFQAvax.grantRole(await mainnetRFQAvax.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
-    const tx = 11;
+
+    let xfer: any = {};
+    const transaction = 11;
+    const nonce = 0;
+    const trader = trader1.address;
+    const symbol = Utils.fromUtf8("AVAX")
+    const quantity =  Utils.toWei("1")
+    const timestamp = BigNumber.from(await f.latestTime());
     const customdata = ethers.utils.hexZeroPad("0xff", 28);
     const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
-    const amount = Utils.toWei("1")
-    await expect(mainnetRFQAvax.processXFerPayload(trader1.address, Utils.fromUtf8("AVAX"), amount, tx, customdata))
+
+
+    xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata
+    }
+
+    await expect(mainnetRFQAvax.processXFerPayload(xfer))
         .to.emit(mainnetRFQAvax, "SwapQueue");
 
 
@@ -543,11 +586,27 @@ describe("Mainnet RFQ Multichain", () => {
     await mainnetRFQAvax.grantRole(await mainnetRFQAvax.PORTFOLIO_BRIDGE_ROLE(), owner.address);
     await mainnetRFQAvax.connect(rebalancer).claimBalance(mockUSDC.address, initialUSDCBalance);
 
-    const tx = 11;
+    let xfer: any = {};
+
+    const transaction = 11;
     const customdata = ethers.utils.hexZeroPad("0xff", 28);
+    const nonce = 1112
+    const quantity = ethers.utils.parseUnits("1", 6)
+    const trader = trader1.address;
+    const symbol =  Utils.fromUtf8("USDC")
+    const timestamp = BigNumber.from(await f.latestTime());
     const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
-    const amount = ethers.utils.parseUnits("1", 6)
-    await expect(mainnetRFQAvax.processXFerPayload(trader1.address, Utils.fromUtf8("USDC"), amount, tx, customdata))
+    xfer = {nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata
+    };
+
+
+    await expect(mainnetRFQAvax.processXFerPayload(xfer))
         .to.emit(mainnetRFQAvax, "SwapQueue");
 
     await expect(mainnetRFQAvax.removeFromSwapQueue(nonceAndMeta)).to.be.revertedWith("RF-INVT-01");
@@ -564,11 +623,28 @@ describe("Mainnet RFQ Multichain", () => {
 
     await mainnetRFQAvax.grantRole(await mainnetRFQAvax.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
-    const tx = 11;
+
+    let xfer: any = {};
+
+    const transaction = 11;
     const customdata = ethers.utils.hexZeroPad("0xff", 28);
-    const nonceAndMeta = `${mainnetRFQAttacker.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
-    const amount = Utils.toWei("1")
-    await expect(mainnetRFQAvax.processXFerPayload(mainnetRFQAttacker.address, Utils.fromUtf8("AVAX"), amount, tx, customdata))
+    const nonce = 1112;
+    const quantity =  Utils.toWei("1")
+    const trader = mainnetRFQAttacker.address;
+    const symbol =  Utils.fromUtf8("AVAX")
+    const timestamp = BigNumber.from(await f.latestTime());
+    const nonceAndMeta = `${mainnetRFQAttacker.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`;
+
+    xfer = {nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata
+    };
+
+    await expect(mainnetRFQAvax.processXFerPayload(xfer))
         .to.emit(mainnetRFQAvax, "SwapQueue");
 
 
@@ -587,12 +663,27 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should fail to process swaps with same nonce", async () => {
     await mainnetRFQGun.grantRole(await mainnetRFQGun.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
-    const tx = 11;
+    let xfer: any = {};
+    const transaction = 11;
+    const nonce = 1112;
+    const trader = trader1.address;
+    const symbol = Utils.fromUtf8("GUN")
+    const quantity =  Utils.toWei("1")
+    const timestamp = BigNumber.from(await f.latestTime());
     const customdata = ethers.utils.hexZeroPad("0xff", 28);
-    const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
-    const amount = Utils.toWei("1")
-    await expect(mainnetRFQGun.processXFerPayload(trader1.address, Utils.fromUtf8("GUN"), amount, tx, customdata)).to.not.be.reverted;
-    await expect(mainnetRFQGun.processXFerPayload(trader1.address, Utils.fromUtf8("GUN"), amount, tx, customdata)).to.be.revertedWith("RF-IN-02");
+
+    xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata
+    }
+
+    await expect(mainnetRFQGun.processXFerPayload(xfer)).to.not.be.reverted;
+    await expect(mainnetRFQGun.processXFerPayload(xfer)).to.be.revertedWith("RF-IN-02");
   });
 });
 
@@ -779,8 +870,8 @@ describe("Mainnet RFQ", () => {
     await expect(mainnetRFQ.connect(signer).setSwapSigner(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).addAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).removeAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
-    await expect(mainnetRFQ.connect(signer).addRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);;
-    await expect(mainnetRFQ.connect(signer).removeRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);;
+    await expect(mainnetRFQ.connect(signer).addRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).removeRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(owner).removeAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
 
     await mainnetRFQ.connect(owner).setSwapSigner(dummyAddress);
