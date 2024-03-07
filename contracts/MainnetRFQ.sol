@@ -193,7 +193,7 @@ contract MainnetRFQ is
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
-    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused {
+    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyOrder(_order, _signature);
 
         _executeOrder(_order, _order.makerAmount, _order.takerAmount, destTrader);
@@ -213,7 +213,7 @@ contract MainnetRFQ is
         Order calldata _order,
         bytes calldata _signature,
         uint256 _takerAmount
-    ) external payable whenNotPaused {
+    ) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyOrder(_order, _signature);
 
         uint256 makerAmount = _order.makerAmount;
