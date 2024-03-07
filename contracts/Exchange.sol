@@ -41,7 +41,7 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      * @notice  Initializer for upgradeable contract.
      * @dev     Grants admin role to the deployer.
      */
-    function initialize() public virtual initializer {
+    function initialize() external virtual initializer {
         __AccessControlEnumerable_init();
         // initialize deployment account to have DEFAULT_ADMIN_ROLE
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -51,7 +51,7 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      * @notice  Adds Default Admin role to the address
      * @param   _address  address to add role to
      */
-    function addAdmin(address _address) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+    function addAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         emit RoleUpdated("EXCHANGE", "ADD-ROLE", DEFAULT_ADMIN_ROLE, _address);
         grantRole(DEFAULT_ADMIN_ROLE, _address);
     }
@@ -60,7 +60,7 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      * @notice  Removes Default Admin role from the address
      * @param   _address  address to remove role from
      */
-    function removeAdmin(address _address) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+    function removeAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "E-ALOA-01");
         emit RoleUpdated("EXCHANGE", "REMOVE-ROLE", DEFAULT_ADMIN_ROLE, _address);
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
@@ -70,7 +70,7 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      * @param   _address  address to check
      * @return  bool    true if address has Default Admin role
      */
-    function isAdmin(address _address) public view returns (bool) {
+    function isAdmin(address _address) external view returns (bool) {
         return hasRole(DEFAULT_ADMIN_ROLE, _address);
     }
 

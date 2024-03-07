@@ -80,7 +80,7 @@ contract TradePairs is
      * @param   _orderbooks  orderbooks instance
      * @param   _portfolio  portfolio instance
      */
-    function initialize(address _orderbooks, address _portfolio) public initializer {
+    function initialize(address _orderbooks, address _portfolio) external initializer {
         __AccessControlEnumerable_init();
         __Pausable_init();
         __ReentrancyGuard_init();

@@ -99,7 +99,7 @@ contract PortfolioBridgeMain is
      * @dev     Grant admin, pauser and msg_sender role to the sender. Set gas for lz. Set endpoint and enable bridge
      * @param   _endpoint  Endpoint of the LZ bridge
      */
-    function initialize(address _endpoint) public initializer {
+    function initialize(address _endpoint) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
