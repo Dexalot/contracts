@@ -22,7 +22,7 @@ import "./OrderBooks.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -197,7 +197,6 @@ contract ExchangeSub is Exchange {
             _maxTradeAmount,
             _mode
         );
-
     }
 
     /**

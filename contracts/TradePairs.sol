@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.0");
+    bytes32 public constant VERSION = bytes32("2.5.1");
 
     // denominator for rate calculations obsolete as of Feb 9 2024 CD
     uint256 public constant TENK = 10000;

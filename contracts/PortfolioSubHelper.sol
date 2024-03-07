@@ -26,7 +26,7 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
     mapping(bytes32 => bytes32) private convertableTokens;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.0");
+    bytes32 public constant VERSION = bytes32("2.5.1");
 
     // storage gap for upgradeability
     uint256[50] __gap;

@@ -18,7 +18,7 @@ import "./Exchange.sol";
 
 contract ExchangeMain is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     // price feed contract address from Chainlink Oracle set externally with setPriceFeed as part of deployment
     AggregatorV3Interface internal priceFeed;
