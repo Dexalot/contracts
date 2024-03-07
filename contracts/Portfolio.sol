@@ -180,10 +180,10 @@ abstract contract Portfolio is
     /**
      * @notice  (Dis)allows the deposit functionality only
      * @dev     Only callable by admin
-     * @param   _pause  True to allow, false to disallow
+     * @param   _depositPause  True to allow, false to disallow
      */
-    function pauseDeposit(bool _pause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        allowDeposit = !_pause;
+    function pauseDeposit(bool _depositPause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        allowDeposit = !_depositPause;
     }
 
     /**

@@ -234,20 +234,20 @@ contract TradePairs is
      * @dev     Can only be called by DEFAULT_ADMIN.
      * Public instead of external because it saves 0.184(KiB) in contract size
      * @param   _tradePairId  id of the trading pair
-     * @param   _pause  true to pause, false to unpause
+     * @param   _tradePairPause  true to pause, false to unpause
      */
-    function pauseTradePair(bytes32 _tradePairId, bool _pause) public override onlyRole(DEFAULT_ADMIN_ROLE) {
-        tradePairMap[_tradePairId].pairPaused = _pause;
+    function pauseTradePair(bytes32 _tradePairId, bool _tradePairPause) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].pairPaused = _tradePairPause;
     }
 
     /**
      * @notice  Pauses adding new orders to a specific Trade Pair
      * @dev     Can only be called by DEFAULT_ADMIN.
      * @param   _tradePairId  id of the trading pair
-     * @param   _pause  true to pause, false to unpause
+     * @param   _addOrderPause  true to pause, false to unpause
      */
-    function pauseAddOrder(bytes32 _tradePairId, bool _pause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        tradePairMap[_tradePairId].addOrderPaused = _pause;
+    function pauseAddOrder(bytes32 _tradePairId, bool _addOrderPause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].addOrderPaused = _addOrderPause;
     }
 
     /**

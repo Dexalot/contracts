@@ -18,7 +18,7 @@ interface IPortfolio {
 
     function unpause() external;
 
-    function pauseDeposit(bool _pause) external;
+    function pauseDeposit(bool _depositPause) external;
 
     function removeToken(bytes32 _symbol, uint32 _srcChainId) external;
 
