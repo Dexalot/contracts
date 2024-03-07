@@ -12,6 +12,7 @@ import {
   PortfolioSub
 } from "../typechain-types";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { BigNumber } from "ethers";
 
 describe("InventoryManager", () => {
   let mockUSDC: MockToken;
@@ -31,20 +32,21 @@ describe("InventoryManager", () => {
   const usdcGun = Utils.fromUtf8("USDC" + gunzillaSubnet.chainListOrgId);
 
   const initialUSDCBalance: string = Utils.parseUnits("100000000000000", 6).toString();
-  const lowUSDCBalance: string = Utils.parseUnits("100", 6).toString();
-  const mediumUSDCBalance: string = Utils.parseUnits("10000", 6).toString();
-  const highUSDCBalance: string = Utils.parseUnits("100000", 6).toString();
 
   let owner: SignerWithAddress;
   let trader1: SignerWithAddress;
-  let trader2: SignerWithAddress;
+
+  const updateA = async (newA: number) => {
+    await inventoryManager.updateFutureA(newA, 3600);
+    await ethers.provider.send("evm_mine", [(await inventoryManager.futureATime()).toNumber()]);
+    await inventoryManager.updateA();
+  }
 
   beforeEach(async function () {
     const accounts = await f.getAccounts();
 
     owner = accounts.owner;
     trader1 = accounts.trader1;
-    trader2 = accounts.trader2;
 
     const portfolioContracts = await f.deployCompleteMultiChainPortfolio(true);
 
@@ -55,7 +57,6 @@ describe("InventoryManager", () => {
     portfolioArb = portfolioContracts.portfolioArb;
     portfolioGun = portfolioContracts.portfolioGun;
     portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
-    const inventoryManagerAddr = await portfolioBridgeSub.inventoryManager();
 
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);
@@ -75,8 +76,7 @@ describe("InventoryManager", () => {
 
   it("Should not initialize again after deployment", async function () {
     await expect(inventoryManager.initialize(
-        "0x0000000000000000000000000000000000000000",
-        0
+        "0x0000000000000000000000000000000000000000"
     ))
     .to.be.revertedWith("Initializable: contract is already initialized");
   });
@@ -107,7 +107,7 @@ describe("InventoryManager", () => {
     .to.be.revertedWith("IM-ZADDR-01");
 
     const InventoryManager = await ethers.getContractFactory("InventoryManager") ;
-    await expect(upgrades.deployProxy(InventoryManager, [ethers.constants.AddressZero, 256]))
+    await expect(upgrades.deployProxy(InventoryManager, [ethers.constants.AddressZero]))
     .to.be.revertedWith("IM-ZADDR-01");
   });
 
@@ -118,21 +118,76 @@ describe("InventoryManager", () => {
     expect(await inventoryManager.portfolioBridgeSub()).to.be.equal(dummyAddress);
   });
 
-  it("Should fail to set A if not Admin", async function () {
-    await expect(inventoryManager.connect(trader1).updateA(0))
+  it("Should fail to update future A if not Admin", async function () {
+    await expect(inventoryManager.connect(trader1).updateFutureA(0, 0))
     .to.be.revertedWith("AccessControl:");
   });
 
-  it("Should fail to set A to 0", async function () {
-    await expect(inventoryManager.updateA(0))
-    .to.be.revertedWith("IM-ZVFA-01");
+  it("Should fail to update A if not Admin", async function () {
+    await expect(inventoryManager.connect(trader1).updateA())
+    .to.be.revertedWith("AccessControl:");
   });
 
-  it("Should update A correctly", async function () {
-    const newA = 50;
-    await expect(inventoryManager.updateA(newA)).to.not.be.reverted;
+  it("Should fail to update future A if new A less than min", async function () {
+    await expect(inventoryManager.updateFutureA(0, 10000)).to.be.revertedWith("IM-AVNP-01");
+  });
 
+  it("Should fail to update future A if new A more than max", async function () {
+    await expect(inventoryManager.updateFutureA(BigNumber.from(10).pow(9), 10000)).to.be.revertedWith("IM-AVNP-01");
+  });
+
+  it("Should fail to update future A if time period less than 1 hour", async function () {
+    await expect(inventoryManager.updateFutureA(20, 60)).to.be.revertedWith("IM-ATNP-01");
+  });
+
+  it("Should successfuly update future A", async function () {
+    const startTime = Math.floor(Date.now() / 1000);
+    const timePeriod = 3600;
+    const newA = 20;
+    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+
+    expect(await inventoryManager.futureA()).to.be.equal(newA);
+    expect((await inventoryManager.futureATime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
+  });
+
+  it("Should fail to update A if time has not elapsed", async function () {
+    const startTime = Math.floor(Date.now() / 1000);
+    const timePeriod = 3600;
+    const newA = 20;
+    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+
+    expect(await inventoryManager.futureA()).to.be.equal(newA);
+    expect((await inventoryManager.futureATime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
+
+    await expect(inventoryManager.updateA()).to.be.revertedWith("IM-BTNE-01");
+  });
+
+  it("Should successfully update A if time has elapsed", async function () {
+    const startTime = Math.floor(Date.now() / 1000);
+    const timePeriod = 3600;
+    const newA = 20;
+    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+
+    expect(await inventoryManager.futureA()).to.be.equal(newA);
+    const futureATime = (await inventoryManager.futureATime()).toNumber();
+    expect(futureATime).to.be.greaterThanOrEqual(startTime + timePeriod);
+
+    await ethers.provider.send("evm_mine", [futureATime])
+
+    await expect(inventoryManager.updateA()).to.emit(inventoryManager, "AUpdated");
     expect(await inventoryManager.A()).to.be.equal(newA);
+  });
+
+  it("Should fail to update scaling factor if not Admin", async function () {
+    await expect(inventoryManager.connect(trader1).setScalingFactor(ethers.constants.HashZero, 0))
+    .to.be.revertedWith("AccessControl:");
+  });
+
+  it("Should successfully update scaling factor if Admin", async function () {
+    expect(await inventoryManager.scalingFactor(usdcAvax)).to.be.equal(0);
+    await expect(inventoryManager.setScalingFactor(usdcAvax, 5))
+    .to.emit(inventoryManager, "ScalingFactorUpdated");
+    expect(await inventoryManager.scalingFactor(usdcAvax)).to.be.equal(5);
   });
 
   it("Should set InventoryBySymbolId correctly", async () => {
@@ -300,7 +355,6 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "100000000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10");
-    const quantity = Utils.parseUnits("10000", usdcDecimals);
 
     const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, Utils.parseUnits("1", usdcDecimals));
     const gun = await portfolioSub.getBridgeFee(0, gunzillaSubnet.chainListOrgId, usdcHex, Utils.parseUnits("100000", usdcDecimals));
@@ -314,7 +368,7 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "100000000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10");
-    await inventoryManager.updateA(1);
+    await updateA(11);
 
     const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, Utils.parseUnits("1", usdcDecimals));
     const gun = await portfolioSub.getBridgeFee(0, gunzillaSubnet.chainListOrgId, usdcHex, Utils.parseUnits("100000", usdcDecimals));
@@ -328,7 +382,7 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "100000000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10");
-    await inventoryManager.updateA(999999);
+    await updateA(999999);
 
     const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, Utils.parseUnits("1", usdcDecimals));
     const gun = await portfolioSub.getBridgeFee(0, gunzillaSubnet.chainListOrgId, usdcHex, Utils.parseUnits("100000", usdcDecimals));
@@ -336,6 +390,40 @@ describe("InventoryManager", () => {
 
     expect(avax.gt(gun));
     expect(gun.gt(arb));
+  });
+
+  it("Should get varying bridge fees for multiple chains given different scaling factors", async () => {
+    await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
+    await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
+    await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
+
+    await inventoryManager.setScalingFactor(usdcAvax, 1);
+    await inventoryManager.setScalingFactor(usdcGun, 2);
+    await inventoryManager.setScalingFactor(usdcArb, 3);
+
+    const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+    const gun = await portfolioSub.getBridgeFee(0, gunzillaSubnet.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+    const arb = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+
+    expect(avax.lt(gun));
+    expect(gun.lt(arb));
+  });
+
+  it("Should get similar bridge fees for multiple chains given different scaling factors and scaled quantities", async () => {
+    await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
+    await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "20000");
+    await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "30000");
+
+    await inventoryManager.setScalingFactor(usdcAvax, 1);
+    await inventoryManager.setScalingFactor(usdcGun, 2);
+    await inventoryManager.setScalingFactor(usdcArb, 3);
+
+    const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+    const gun = await portfolioSub.getBridgeFee(0, gunzillaSubnet.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+    const arb = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, usdcHex, Utils.parseUnits("100", usdcDecimals));
+
+    expect(avax.gt(gun));
+    expect(gun.eq(arb));
   });
 
   it("Should successfully remove if symbol does not exist in inventory", async () => {
@@ -374,5 +462,24 @@ describe("InventoryManager", () => {
     });
     const decodedResult = ethers.utils.defaultAbiCoder.decode(["bool"], txResult);
     expect(decodedResult[0]).to.be.equal(false);
+  });
+
+  it("Should successfully get inventory by subnet symbol", async () => {
+    const avaxBalance = "100000"
+    const gunBalance = "1000"
+    const arbBalance = "10000"
+    await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, avaxBalance);
+    await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, gunBalance);
+    await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, arbBalance);
+
+    const [symbols, inventories] = await inventoryManager.getInventoryBySubnetSymbol(usdcHex);
+    expect(symbols.length).to.be.equal(3);
+    expect(inventories.length).to.be.equal(3);
+    expect(symbols[0]).to.be.equal(usdcAvax);
+    expect(symbols[1]).to.be.equal(usdcGun);
+    expect(symbols[2]).to.be.equal(usdcArb);
+    expect(inventories[0]).to.be.equal(ethers.utils.parseUnits(avaxBalance, usdcDecimals));
+    expect(inventories[1]).to.be.equal(ethers.utils.parseUnits(gunBalance, usdcDecimals));
+    expect(inventories[2]).to.be.equal(ethers.utils.parseUnits(arbBalance, usdcDecimals));
   });
 });

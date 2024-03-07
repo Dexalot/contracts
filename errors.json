@@ -257,5 +257,7 @@
     "IM-SIAE-01": "InventoryManager: symbolId and inventory already exist",
     "IM-ZADDR-01":"InventoryManager: portfolio bridge sub cannot be the zero address",
     "IM-SMEB-01": "InventoryManager: symbols cannot be empty bytes",
-    "IM-ZVFA-01": "InventoryManager: zero value for A is not permitted"
+    "IM-AVNP-01": "InventoryManager: new value for A is not permitted",
+    "IM-ATNP-01": "InventoryManager: new time for future A is not permitted",
+    "IM-BTNE-01": "InventoryManager: block time not elapsed for future A time and A to be updated"
 }

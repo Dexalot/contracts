@@ -198,7 +198,7 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
 
 export const deployInventoryManager = async (portfolioBridgeSub: PortfolioBridgeSub): Promise<InventoryManager> => {
     const InventoryManager = await ethers.getContractFactory("InventoryManager") ;
-    const inventoryManager: InventoryManager = await upgrades.deployProxy(InventoryManager, [portfolioBridgeSub.address, 256]) as InventoryManager;
+    const inventoryManager: InventoryManager = await upgrades.deployProxy(InventoryManager, [portfolioBridgeSub.address]) as InventoryManager;
     return inventoryManager;
 }
 
