@@ -278,6 +278,91 @@ describe("Portfolio Sub", () => {
         await expect(portfolioSub.adjustAvailable(0, owner.address, USDT, Utils.toWei('10'))).to.revertedWith("P-WRTT-02");
     });
 
+
+    it("Should call getBalances", async () => {
+
+        await usdt.mint(trader1.address, ethers.utils.parseEther("100"));
+        await alot.mint(trader1.address, Utils.toWei('100'));
+
+        //get all tokens without pagination by seting pageno =0
+        let pageNo = 0;
+
+        let res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(2);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+        pageNo = 1; // 0 or 1 give the same results
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(2);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+        // Add new token
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5);
+
+        pageNo = 2; // Overwrite out of bound pageNo. should be same as 1
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(3);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+
+        //revert to get all tokens without pagination
+        pageNo = 0;
+        await f.depositNative(portfolioMain, trader1, '50');
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+
+        expect(res.symbols.length).to.equal(3);
+        expect(res.symbols[0]).to.equal(AVAX);
+        expect(res.total[0]).to.equal(Utils.toWei('50'));
+        expect(res.available[0]).to.equal( Utils.toWei('50'));
+        expect(res.symbols[1]).to.equal(ethers.constants.HashZero);
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, '100');
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+
+        expect(res.symbols.length ).to.equal(3);
+        expect(res.symbols[0]).to.equal(AVAX);
+        expect(res.total[0] ).to.equal( Utils.toWei('50'));
+        expect(res.available[0] ).to.equal( Utils.toWei('50'));
+        expect(res.symbols[1] ).to.equal( ALOT);
+        expect(res.total[1] ).to.equal( Utils.toWei('100'));
+        expect(res.available[1]).to.equal(Utils.toWei('100'));
+        //USDT is non existent still because it has 0 positions
+        expect(res.symbols[2] ).to.equal( ethers.constants.HashZero);
+
+
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, '200')
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(3);
+
+        // USDT takes the 0 index as it is added last
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+        expect(res.symbols[1]).to.equal(AVAX);
+        expect(res.total[1] ).to.equal( Utils.toWei('50'));
+        expect(res.available[1] ).to.equal( Utils.toWei('50'));
+        expect(res.symbols[2] ).to.equal( ALOT);
+        expect(res.total[2] ).to.equal( Utils.toWei('100'));
+        expect(res.available[2]).to.equal( Utils.toWei('100'));
+
+
+        pageNo = 1;// 0 or 1 give the same results
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+
+        pageNo = 2; // Overwrite out of bound pageNo. should be same as 1
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+    } );
+
+
     it("Should withdraw native tokens from portfolio to subnet", async () => {
 
         const initial_amount = await trader1.getBalance();

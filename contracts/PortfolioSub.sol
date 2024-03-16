@@ -70,7 +70,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.1");
+    bytes32 public constant VERSION = bytes32("2.5.2");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -547,7 +547,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         toSymbol == bytes32(0) ? toSymbol = _symbol : toSymbol;
         // bridgeFee = bridge Fees both in the Mainnet the subnet
         // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
-        // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
+        // bridgeParams[_symbol].fee is redundant in the subnet and has been replaced
+        // with portfolioBridge.getBridgeFee which uses
+        // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
         // We need to get the bridgeFee with the new(after conversion) toSymbol
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
             ? 0
@@ -750,46 +752,58 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws collected fees from the feeAddress or treasury to the mainnet
-     * @dev     Only admin can call this function
-     * @param   _from  address that can withdraw collected fees
-     * @param   _maxCount  maximum number of ERC20 tokens with a non-zero balance to process at one time
+     * @notice  Function to show Trader's balances for all available tokens.
+     * @dev     If you pass pageNo == 0 it will scan all available tokens but as the tokenlist grows,
+     * it may eventually run out of gas. Use _pageNo in this case to get 50 tokens at a time.
+     * The returned arrays will be ordered to have the tokens with balances first then empty entries
+     * next. You can discard all the entries starting from when symbols[i] == bytes32(0)
+     * or total[i] == 0
+     * @param   _owner  Address of the trader
+     * @param   _pageNo  Page no for pagination
+     * @return  symbols  Array of Symbol
+     * @return  total    Array of Totals
+     * @return  available  Array of availables
      */
-    function withdrawFees(address _from, uint8 _maxCount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_from == feeAddress || _from == treasury, "P-OWTF-01");
-        bytes32 symbol;
-        uint256 feeAccumulated = assets[_from][native].available;
-        if (feeAccumulated > 0) {
-            this.withdrawToken(
-                _from,
-                native,
-                feeAccumulated,
-                portfolioBridge.getDefaultBridgeProvider(),
-                portfolioBridge.getDefaultDestinationChain()
-            );
+    function getBalances(
+        address _owner,
+        uint256 _pageNo
+    ) external view returns (bytes32[] memory symbols, uint256[] memory total, uint256[] memory available) {
+        uint256 nbrOfTokens = tokenList.length();
+        uint256 pageSize = 50;
+        // Default to all available tokens if _pageNo==0. Otherwise either 50 or the last page's count
+        if (_pageNo == 0) {
+            //returns all tokens in a single page
+            _pageNo = 1;
+        } else {
+            uint256 maxPageNo = nbrOfTokens % pageSize == 0 ? nbrOfTokens / pageSize : (nbrOfTokens / pageSize) + 1;
+            // Override the pageNo if it is not possible
+            _pageNo = _pageNo > maxPageNo ? maxPageNo : _pageNo;
+            nbrOfTokens = _pageNo == maxPageNo && nbrOfTokens % pageSize != 0 ? nbrOfTokens % pageSize : pageSize;
         }
-        uint256 tokenCount = tokenList.length();
+
+        symbols = new bytes32[](nbrOfTokens);
+        total = new uint256[](nbrOfTokens);
+        available = new uint256[](nbrOfTokens);
+
         uint256 i;
-        while (_maxCount > 0) {
-            symbol = tokenList.at(i);
-            feeAccumulated = assets[_from][symbol].available;
-            if (feeAccumulated > 0) {
-                this.withdrawToken(
-                    _from,
-                    symbol,
-                    feeAccumulated,
-                    portfolioBridge.getDefaultBridgeProvider(),
-                    portfolioBridge.getDefaultDestinationChain()
-                );
-                _maxCount--;
+        bytes32 symbol;
+        uint256 tokenLocation = (_pageNo - 1) * pageSize;
+        while (nbrOfTokens > 0) {
+            symbol = tokenList.at(nbrOfTokens + tokenLocation - 1);
+            AssetEntry storage asset = assets[_owner][symbol];
+            if (asset.total > 0) {
+                symbols[i] = symbol;
+                total[i] = asset.total;
+                available[i] = asset.available;
+                unchecked {
+                    i++;
+                }
             }
             unchecked {
-                ++i;
-            }
-            if (i == tokenCount) {
-                _maxCount = 0;
+                nbrOfTokens--;
             }
         }
+        return (symbols, total, available);
     }
 
     /**

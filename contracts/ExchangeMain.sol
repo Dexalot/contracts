@@ -133,6 +133,9 @@ contract ExchangeMain is Exchange {
      * before closing the auction. Then it calls this function at random intervals (3-10 min) until it reaches
      * its target. Nobody, including us to some extent, has control over the effective auction close time.
      * We chose 6th-7th digits of the Oracle provided average AVAX/USD price to avoid manipulation.
+     * We realize that this is only Pseudo-randomness and is derived from seemingly predictable market prices but it
+     * effectively serves its purpose because there are enough additional other randomness (i.e randomly picking the
+     * number of heads) controlled by the offchain application that is not visible to the public
      */
     function flipCoin() external {
         (uint80 r, int256 p, bool o) = isHead();

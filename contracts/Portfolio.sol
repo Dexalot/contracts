@@ -165,7 +165,9 @@ abstract contract Portfolio is
      */
     function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
-        portfolioBridge.pause();
+        if (!PausableUpgradeable(address(portfolioBridge)).paused()) {
+            portfolioBridge.pause();
+        }
     }
 
     /**
@@ -174,7 +176,9 @@ abstract contract Portfolio is
      */
     function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
-        portfolioBridge.unpause();
+        if (PausableUpgradeable(address(portfolioBridge)).paused()) {
+            portfolioBridge.unpause();
+        }
     }
 
     /**

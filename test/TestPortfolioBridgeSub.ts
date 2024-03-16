@@ -497,33 +497,16 @@ describe("Portfolio Bridge Sub", () => {
         expect((await portfolioSub.getBalance(owner.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.49").toString());
     });
 
-    // it("Should added to delayed transfer if it is above the threshold - deposit", async () => {
-    //     const { owner } = await f.getAccounts();
-    //     await f.setBridgeSubSettings(
-    //         portfolioBridgeSub,
-    //         {
-    //             delayPeriod,
-    //             epochLength,
-    //             token: AVAX,
-    //             delayThreshold: delayThreshold.toString(),
-    //             epochVolumeCap: volumeCap.toString()
-    //         }
-    //     )
+    it("Should rename token", async () => {
+        const { cChain} = f.getChains();
+        await expect(portfolioBridgeSub.connect(trader1).renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"))).to.revertedWith("AccessControl:");
+        await expect(portfolioBridgeSub.renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDT"), Utils.fromUtf8("USDT"))).to.revertedWith("PB-LENM-01");
+    });
 
-    //     const tx = await f.depositNative(portfolioMain, owner, "0.51")
-    //     const receipt = await tx.wait();
-    //     const log = receipt.logs[2]
+    it("Should fail setting Inventory Manager for non-admin", async () => {
+        await expect(portfolioBridgeSub.connect(trader1).setInventoryManager(inventoryManager.address)).to.revertedWith("AccessControl:");
 
-    //     const data = ethers.utils.defaultAbiCoder.decode(
-    //         [ 'string', 'bytes32'],
-    //         log.data
-    //      );
-
-    //     const delayedTransfer = await portfolioBridgeSub.delayedTransfers(data[1])
-    //     expect(delayedTransfer.trader).to.equal(owner.address);
-    //     expect(delayedTransfer.symbol).to.equal(AVAX);
-    //     expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.51").toString());
-    // });
+    });
 
     it("Should use addDelayedTransfer correctly", async () => {
         const { owner, trader1 } = await f.getAccounts();

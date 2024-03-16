@@ -156,6 +156,34 @@ describe("Portfolio Main", () => {
         .to.be.revertedWith("P-NZBL-01");
     });
 
+    it("Should pause and unpause Portfolio & PBridge when out of synch", async function () {
+        await expect(portfolioBridgeMain.pause()).to.be.revertedWith("AccessControl: account");
+
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeMain.connect(owner).pause();
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioMain.pause();
+        expect(await portfolioMain.paused()).to.be.true;
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioBridgeMain.connect(owner).unpause();
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+        // succeed for admin
+        await portfolioMain.unpause();
+        expect(await portfolioMain.paused()).to.be.false;
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+
+        // they are in synch
+        await portfolioMain.pause();
+        expect(await portfolioMain.paused()).to.be.true;
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioMain.unpause();
+        expect(await portfolioMain.paused()).to.be.false;
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+    });
+
 
     it("Should add/remove virtual tokens properly", async () => {
         const {trader1} = await f.getAccounts();
