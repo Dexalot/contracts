@@ -24,7 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.0.1");
+    bytes32 public constant VERSION = bytes32("3.0.2");
     uint256 private constant STARTING_A = 50;
     uint256 private constant MIN_A = 10;
     uint256 private constant MAX_A = 10 ** 8;
@@ -46,6 +46,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
     event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
     event AUpdated(uint256 A, uint256 timestamp);
+    event InventorySet(bytes32 indexed symbol, bytes32 indexed symbolId, uint256 quantity, uint256 timestamp);
 
     /**
      * @notice  Initialize the upgradeable contract
@@ -282,6 +283,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
         require(!map.contains(_symbolId), "IM-SIAE-01");
         map.set(_symbolId, _quantity);
+        emit InventorySet(_symbol, _symbolId, _quantity, block.timestamp);
     }
 
     /**

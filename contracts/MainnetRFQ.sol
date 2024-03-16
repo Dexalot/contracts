@@ -46,7 +46,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.2");
+    bytes32 public constant VERSION = bytes32("1.1.3");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -152,6 +152,13 @@ contract MainnetRFQ is
         address destAsset,
         uint256 srcAmount,
         uint256 destAmount
+    );
+    event XChainFinalized(
+        uint256 indexed nonceAndMeta,
+        address trader,
+        bytes32 symbol,
+        uint256 amount,
+        uint256 timestamp
     );
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
@@ -737,6 +744,7 @@ contract MainnetRFQ is
             return false;
         }
         completedSwaps[bucket] |= mask;
+        emit XChainFinalized(_nonceAndMeta, _trader, _symbol, _quantity, block.timestamp);
         return true;
     }
 }
