@@ -37,12 +37,12 @@ import "./bridgeApps/LzApp.sol";
  * In addition, to be able to support cross chain trades for subnets like Gunzilla that only has their gas token
  * and no ERC20 available, we introduced a new flow where you provide the counter token in an L1 and receive your GUN
  * in Gunzilla network. Similarly you can sell your GUN in Gunzilla network and receive your counter token in any L1.
+ * When Buying GUN from Avalanche with counter token USDC, USDC is kept in MainnetRFQ(Avax) and GUN is deposited
+ * to the buyer's wallet via MainnetRFQ(Gun). The flow is : \
  * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => BridgeProviderA/B/n => PortfolioBridgeMain(Gun) => MainnetRFQ(Gun) \
- * Buy GUN from Avalanche with counter token USDC. USDC is kept in MainnetRFQ(Avax) and GUN is deposited to the buyer's
- * wallet via MainnetRFQ(Gun)
+ * When Selling GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited
+ * to the buyer's wallet via MainnetRFQ(Avax) The flow is : \
  * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => BridgeProviderA/B/n => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
- * Sell GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited to the buyer's
- * wallet via MainnetRFQ(Avax)
  * The same flow can be replicated with any other L1 like Arb as well. \
  * PortfolioBridgeMain always sends the ERC20 Symbol from its own network and expects the same back
  * i.e USDt sent & received in Avalanche Mainnet whereas USDT is sent & received in Arbitrum.
