@@ -31,6 +31,6 @@ interface IPortfolioSubHelper {
     ) external view returns (uint256 makerRate, uint256 takerRate);
 
     function isAdminAccountForRates(address _account) external view returns (bool);
-    function getSymbolToConvert(bytes32 _fromSymbol) external view returns (bytes32);
 
+    function getSymbolToConvert(bytes32 _fromSymbol) external view returns (bytes32);
 }

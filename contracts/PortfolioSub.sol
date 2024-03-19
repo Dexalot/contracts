@@ -366,28 +366,23 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly.
      * CAUTION: if Paused for upgrade, wait to make sure no messages are in flight, then upgrade.
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _transaction  Transaction type
+     * @param   _xfer  Transfer message
      */
     function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        Tx _transaction
+        IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
         // Should not avoid revert if symbol not found. This will block the bridge
-        require(tokenList.contains(_symbol), "P-ETNS-01");
-        require(_quantity > 0, "P-ZETD-01");
-        // Only allow deposits in the subnet from PortfolioBridgeSub that has PORTFOLIO_BRIDGE_ROLE and not from the users
-        if (_transaction == Tx.DEPOSIT) {
+        require(tokenList.contains(_xfer.symbol), "P-ETNS-01");
+        require(_xfer.quantity > 0, "P-ZETD-01");
+        // Only allow deposits in the subnet from PortfolioBridgeSub that has
+        // PORTFOLIO_BRIDGE_ROLE and not from the users
+        if (_xfer.transaction == Tx.DEPOSIT) {
             // Deposit the entire amount to the portfolio first
-            safeIncrease(_trader, _symbol, _quantity, 0, _transaction, _trader);
+            safeIncrease(_xfer.trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction, _xfer.trader);
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
-            autoFillPrivate(_trader, _symbol, _transaction);
+            autoFillPrivate(_xfer.trader, _xfer.symbol, _xfer.transaction);
         } else {
-            revert("P-PTNS-02");
+            revert("P-PTNS-01");
         }
     }
 
@@ -540,7 +535,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external override whenNotPaused nonReentrant {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
-        require(tokenList.contains(_symbol), "P-ETNS-02");
+        require(tokenList.contains(_symbol), "P-ETNS-01");
         //if the token is in the conversion list, we need to use it in the withdrawal
         //message for proper inventory management
         bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_symbol);
@@ -633,7 +628,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
             require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
-            tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged); // _feeCharged is still left in the subnet
+            // _feeCharged is still left in the subnet
+            tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged);
         }
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
     }
@@ -937,12 +933,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @notice  Remove token from the tokenMap
      * @dev     tokenTotals for the symbol should be 0 before it can be removed
      * Make sure that there are no in-flight deposit messages.
-     * Calling this function also removes the token from portfolioBridge. If multiple tokens in the portfolioBridgeSub shares
-     * the subnet symbol, the symbol is not deleted from the PortfolioSub
+     * Calling this function also removes the token from portfolioBridge. If multiple tokens in the
+     * portfolioBridgeSub shares the subnet symbol, the symbol is not deleted from the PortfolioSub
      * @param   _srcChainSymbol  Source Chain Symbol of the token
-     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub. Don't use the subnet id here
-     * Always use the chain id that the token is being removed. Otherwise it will silently fail as it can't find the token to delete
-     * in PortfolioBridgeSub
+     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub.
+     * Don't use the subnet id here. Always use the chain id that the token is being removed. Otherwise
+     * it will silently fail as it can't find the token to delete in PortfolioBridgeSub
      * @param   _subnetSymbol  Subnet Symbol of the token
      */
     function removeToken(
@@ -1011,7 +1007,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      */
     function convertToken(bytes32 _fromSymbol) external whenNotPaused nonReentrant {
         bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_fromSymbol);
-        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-02");
+        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-01");
         AssetEntry memory currentBalance = assets[msg.sender][_fromSymbol];
         if (currentBalance.total > 0) {
             require(currentBalance.total == currentBalance.available, "P-TFNE-01"); // no outstanding orders

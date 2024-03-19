@@ -4,11 +4,11 @@ pragma solidity 0.8.17;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 
 import "./library/UtilsLibrary.sol";
-
 import "./interfaces/IPortfolio.sol";
-import "./interfaces/ITradePairs.sol";
+
 
 /**
  * @title Abstract contract to be inherited in ExchangeMain and ExchangeSub
@@ -123,9 +123,13 @@ abstract contract Exchange is Initializable, AccessControlEnumerableUpgradeable 
      */
     function pausePortfolio(bool _pause) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_pause) {
-            portfolio.pause();
+            if (!PausableUpgradeable(address(portfolio)).paused()) {
+                portfolio.pause();
+            }
         } else {
-            portfolio.unpause();
+            if (PausableUpgradeable(address(portfolio)).paused()) {
+                portfolio.unpause();
+            }
         }
     }
 

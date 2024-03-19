@@ -8,7 +8,7 @@ import "./interfaces/IPortfolioSub.sol";
 
 import "./Exchange.sol";
 import "./OrderBooks.sol";
-
+import "./interfaces/ITradePairs.sol";
 /**
  * @title Subnet Exchange
  * @notice This contract is the subnet version of the Dexalot Exchange.
@@ -22,7 +22,7 @@ import "./OrderBooks.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.2");
+    bytes32 public constant VERSION = bytes32("2.2.3");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;

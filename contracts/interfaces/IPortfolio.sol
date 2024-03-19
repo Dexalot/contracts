@@ -24,12 +24,7 @@ interface IPortfolio {
 
     function depositNative(address payable _from, IPortfolioBridge.BridgeProvider _bridge) external payable;
 
-    function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolio.Tx _transaction
-    ) external;
+    function processXFerPayload(IPortfolio.XFER calldata _xfer) external;
 
     function getNative() external view returns (bytes32);
 

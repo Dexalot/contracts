@@ -5,6 +5,7 @@ pragma solidity 0.8.17;
 import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "./interfaces/IPortfolioMain.sol";
 import "./Exchange.sol";
+import "./interfaces/IMainnetRFQ.sol";
 
 /**
  * @title Mainnet Exchange
@@ -18,19 +19,54 @@ import "./Exchange.sol";
 
 contract ExchangeMain is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.2");
+    bytes32 public constant VERSION = bytes32("2.2.3");
 
     // price feed contract address from Chainlink Oracle set externally with setPriceFeed as part of deployment
     AggregatorV3Interface internal priceFeed;
+    IMainnetRFQ internal mainnetRfq;
 
     event CoinFlipped(uint80 roundid, int256 price, bool outcome);
 
     /**
-     * @notice  (Un)pauses portfolioMain and portfolioBridgeMain for upgrade
+     * @notice  (Un)pauses portfolioMain, portfolioBridgeMain & MainnetRFQ for upgrade
      * @param   _pause  true to pause, false to unpause
      */
     function pauseForUpgrade(bool _pause) external override {
         pausePortfolio(_pause);
+        pauseMainnetRfq(_pause);
+    }
+
+    /**
+     * @notice  Set MainnetRFQ address
+     * @dev     Only admin can set MainnetRFQ address.
+     * There is a one to one relationship between MainnetRFQ and ExchangeMain.
+     * @param   _mainnetRfq  MainnetRFQ address
+     */
+    function setMainnetRFQ(address payable _mainnetRfq) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        mainnetRfq = IMainnetRFQ(_mainnetRfq);
+    }
+
+    /**
+     * @return  IMainnetRFQ  MainnetRFQ contract
+     */
+    function getMainnetRfq() external view returns (IMainnetRFQ) {
+        return mainnetRfq;
+    }
+
+    /**
+     * @notice  (Un)pause pauseMainnetRfq operations
+     * @param   _pause  true to pause, false to unpause
+     */
+    function pauseMainnetRfq(bool _pause) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_pause) {
+            if (!PausableUpgradeable(address(mainnetRfq)).paused()) {
+                mainnetRfq.pause();
+            }
+        } else {
+            if (PausableUpgradeable(address(mainnetRfq)).paused()) {
+                mainnetRfq.unpause();
+            }
+        }
     }
 
     /**
@@ -56,7 +92,8 @@ contract ExchangeMain is Exchange {
      * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
      * @param   _symbol  symbol of the token
      * @param   _tokenaddress  address of the token
-     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by the current chainid
+     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by
+     * the current chainid
      * @param   _decimals  decimals of the token
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT

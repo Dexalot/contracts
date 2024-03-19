@@ -354,17 +354,9 @@ abstract contract Portfolio is
     /**
      * @notice  Processes the XFER message coming from the bridge
      * @dev     Overridden in the child contracts, as the logic differs.
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _transaction  Transaction type Enum
+     * @param   _xfer  Transfer message
      */
-    function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        Tx _transaction
-    ) external virtual override;
+    function processXFerPayload(IPortfolio.XFER calldata _xfer) external virtual override;
 
     /**
      * @dev     Overridden in the child contracts, as the logic differs.

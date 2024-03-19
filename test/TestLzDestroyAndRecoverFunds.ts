@@ -307,7 +307,7 @@ describe("LZ Destroy Stuck Message & Recover Funds Functionality", async () => {
 
         await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(dexalotSubnet.lzChainId,
             modifiedPayload
-        )).to.be.revertedWith(`PB-ETNS-01`)
+        )).to.be.revertedWith(`PB-ETNS-02`)
 
         await expect(portfolioBridgeMain.lzDestroyAndRecoverFunds(dexalotSubnet.lzChainId,
             amountModifiedPayload

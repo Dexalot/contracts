@@ -63,8 +63,8 @@ abstract contract LzApp is AccessControlEnumerableUpgradeable, ILayerZeroReceive
      * @notice  send a LayerZero message to the specified address at a LayerZero endpoint.
      * @param   _dstChainId the destination chain identifier
      * @param   _payload  a custom bytes payload to send to the destination contract
-     * @param   _refundAddress  if the source transaction is cheaper than the amount of value passed, refund the additional amount to this address
-
+     * @param   _refundAddress  if the source transaction is cheaper than the amount of value passed, refund the
+     * additional amount to this address
      * @return  uint256  Message fee
      */
     function lzSend(

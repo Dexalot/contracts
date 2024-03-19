@@ -8,6 +8,7 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     ExchangeMain,
+    MainnetRFQ,
     MockToken,
     PortfolioMain,
 } from "../typechain-types";
@@ -22,6 +23,7 @@ describe("Exchange Shared", function () {
     let MockToken: ContractFactory;
     let exchangeMain: ExchangeMain;
     let portfolio: PortfolioMain;
+    let mainnetRFQAvax: MainnetRFQ;
 
     let quoteToken: MockToken;
     let owner: SignerWithAddress;
@@ -40,7 +42,8 @@ describe("Exchange Shared", function () {
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
         portfolio = portfolioContracts.portfolioAvax;
-        exchangeMain = await f.deployExchangeMain(portfolio)
+        mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
+        exchangeMain = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
 
     });
 
@@ -138,6 +141,10 @@ describe("Exchange Shared", function () {
             await exchangeMain.addAdmin(admin.address);
             await exchangeMain.connect(admin).pausePortfolio(true);
             expect(await portfolio.paused()).to.be.true;
+            await exchangeMain.connect(admin).pausePortfolio(true);
+            expect(await portfolio.paused()).to.be.true;
+            await exchangeMain.connect(admin).pausePortfolio(false);
+            expect(await portfolio.paused()).to.be.false;
             await exchangeMain.connect(admin).pausePortfolio(false);
             expect(await portfolio.paused()).to.be.false;
         });

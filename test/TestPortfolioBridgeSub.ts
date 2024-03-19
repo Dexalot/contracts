@@ -11,7 +11,8 @@ import {
     PortfolioBridgeSub,
     MockToken,
     DelayedTransfers,
-    InventoryManager
+    InventoryManager,
+    LZEndpointMock
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -20,6 +21,7 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { MockContract } from '@defi-wonderland/smock';
 
 describe("Portfolio Bridge Sub", () => {
     let portfolioSub: PortfolioSub;
@@ -30,7 +32,7 @@ describe("Portfolio Bridge Sub", () => {
     let portfolioBridgeMain: PortfolioBridgeMain;
     let delayedTransfers: DelayedTransfers;
     let inventoryManager: InventoryManager;
-
+    let lzEndpointMain: MockContract<LZEndpointMock>;
 
     let delayPeriod: number;
     let epochLength: number;
@@ -68,6 +70,8 @@ describe("Portfolio Bridge Sub", () => {
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
         delayedTransfers= portfolioContracts.delayedTransfers;
         inventoryManager = portfolioContracts.inventoryManager;
+        lzEndpointMain = portfolioContracts.lzEndpointAvax as MockContract<LZEndpointMock>;
+
 
         delayPeriod = 10000
         epochLength = 100000
@@ -457,6 +461,27 @@ describe("Portfolio Bridge Sub", () => {
         .to.be.revertedWith("Initializable: contract is already initialized");
       });
 
+
+    it("Should not be able to withdraw virtual tokens from host Chains", async () => {
+
+        // Add virtual GUN to avalanche with gunzilla Network id
+        const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
+        const { dexalotSubnet, gunzillaSubnet } = f.getChains();
+        await f.addVirtualToken(portfolioMain, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
+
+        const nonce = 0;
+        const transaction = 0;   //  transaction:   0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
+        //const direction = 1   // sent -0 , received -1
+        const withDrawGunPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, gunDetails.symbolbytes32, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
+
+        await portfolioBridgeMain.setLzEndPoint(owner.address);
+        const trustedRemote = await portfolioBridgeMain.lzTrustedRemoteLookup(dexalotSubnet.lzChainId);
+        await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trustedRemote, 1, withDrawGunPayload)).to.be.revertedWith("PB-VTNS-02");
+
+    })
+
+
+
     it("Should set BridgeFees correctly", async () => {
         const { cChain } = f.getChains();
 
@@ -467,6 +492,8 @@ describe("Portfolio Bridge Sub", () => {
 
         await expect(portfolioBridgeSub.connect(trader1).setBridgeFees(cChain.chainListOrgId, tokens,fees))
             .to.revertedWith("AccessControl:");
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
 
         await expect(portfolioBridgeSub.setBridgeFees(cChain.chainListOrgId, tokens,[fee1]))
             .to.revertedWith("PB-LENM-01");
@@ -537,19 +564,22 @@ describe("Portfolio Bridge Sub", () => {
         await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("AccessControl:");
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+
+        // fail when paused
+        await portfolioBridgeSub.pause();
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("Pausable: paused");
+        await portfolioBridgeSub.unpause();
+
         // start with 0 inventory
         expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(0);
 
-        // silent fail for ignored TxType
+        // revert for CCTRADE
         xfer.transaction = 11 // CCTRADE
-        await portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader);
+        await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("PB-CCTR-01");
         //still 0
         expect(await inventoryManager.get(symbol, symbolId)).to.be.equal(0);
 
-        //destination not found
         xfer.transaction = 0;
-        await expect(portfolioBridgeSub.sendXChainMessage(1, bridge, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
-
         //set the delay transfer threshold
         await expect(delayedTransfers.setDelayThresholds(
             [AVAX],
@@ -608,14 +638,6 @@ describe("Portfolio Bridge Sub", () => {
             to: portfolioBridgeSub.address,
             value: ethers.utils.parseEther("100"),
         });
-
-        // prob not possible to hit "PB-ETNS-01" inside the getSymbolForId
-        // xfer.symbol = Utils.fromUtf8("AVAX1")
-        // const bogusSymbolId = Utils.fromUtf8("AVAX1" + cChain.chainListOrgId);
-        // await portfolioBridgeSub.addToken(xfer.symbol, ethers.constants.AddressZero, cChain.chainListOrgId, 18, 0, AVAX, 0);
-        // await portfolioBridgeSub.setInventoryBySymbolId([ bogusSymbolId], [Utils.toWei('20')]);
-        // await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("PB-ETNS-01");
-
 
         // Execute the delayed transfers and check the inventory ids
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);

@@ -669,9 +669,9 @@ contract MainnetRFQ is
     /**
      * @notice Sends a cross chain message to PortfolioBridge containing the destination token amount,
      * symbol and trader. Sends remaining native token as gas fee for cross chain message. Refund for
-     * gas fee is handled in PorfolioBridge.
+     * gas fee is handled in PortfolioBridge.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
-     * @param _to Trader address to recieve funds on destination chain
+     * @param _to Trader address to receive funds on destination chain
      */
     function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private {
         bytes28 customdata = bytes28(uint224(_order.nonceAndMeta) & NONCE_MASK);
