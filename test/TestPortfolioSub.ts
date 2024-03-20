@@ -886,7 +886,7 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Bridge Fee 1 ALOT
-        //await portfolioSub.setBridgeParam(ALOT, Utils.parseUnits('1', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [Utils.parseUnits('1', alot_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, ALOT, 18, (Number(deposit_amount) / 2).toString())
 
@@ -1001,6 +1001,7 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Subnet Bridge Fee 1 USDT & 2 ALOT
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [USDT, ALOT], [Utils.parseUnits('1', token_decimals), Utils.parseUnits('2', alot_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, USDT, token_decimals, Utils.formatUnits(usdtDepositAmount.div(2),token_decimals));
 

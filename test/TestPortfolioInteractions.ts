@@ -334,7 +334,9 @@ describe("Portfolio Interactions", () => {
         const bridgeFee = Utils.toWei("0.01")
 
         await alot.mint(trader1.address, ethers.utils.parseUnits('100',alot_token_decimals))
-        await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
+        await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1', token_decimals), true)
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [bridgeFee])
         //no bridge fee to collect, // Silent exit
         await portfolioMain.collectBridgeFees([ALOT]);
