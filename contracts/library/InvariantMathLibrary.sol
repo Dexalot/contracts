@@ -126,12 +126,13 @@ library InvariantMathLibrary {
         uint256 _i,
         uint256[] memory _xp,
         uint256 _totalInventory,
+        uint256 _scaleFactor,
         uint256 _A,
         uint256 _N
     ) internal pure returns (uint256 fee) {
         // Calculate d0 and d1
-        uint256 d0 = getD(_xp, _A, _N);
-        uint256 d1 = d0 - (d0 * _quantity) / _totalInventory;
+        uint256 d0 = getD(_xp, _A, _N) / _scaleFactor;
+        uint256 d1 = d0 - (d0 * _quantity) / (_totalInventory);
 
         uint256 dy = (_xp[_i] - getYD(_i, _xp, d1, _A, _N) - 1);
         if (dy > _quantity) {

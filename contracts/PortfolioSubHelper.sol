@@ -26,7 +26,7 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
     mapping(bytes32 => bytes32) private convertableTokens;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.0");
+    bytes32 public constant VERSION = bytes32("2.5.1");
 
     // storage gap for upgradeability
     uint256[50] __gap;
@@ -36,7 +36,7 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
     /**
      * @notice  Initialize the upgradeable contract
      */
-    function initialize() public initializer {
+    function initialize() external initializer {
         __AccessControl_init();
         // admin account that can call inherited grantRole and revokeRole functions from OpenZeppelin AccessControl
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
@@ -138,7 +138,6 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
         uint8 _makerRate,
         uint8 _takerRate
     ) external view override returns (uint256 makerRate, uint256 takerRate) {
-
         if (adminAccountsForRates[_makerAddr]) {
             makerRate = 0;
         } else {
@@ -156,7 +155,7 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
             Rates memory rates = rateOverrides[_takerAddr][_tradePairId];
             if (rates.tradePairId != bytes32(0)) {
                 takerRate = uint256(rates.takerRate);
-            }else {
+            } else {
                 takerRate = uint256(_takerRate);
             }
         }

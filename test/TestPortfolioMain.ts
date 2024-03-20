@@ -19,6 +19,7 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
+import { BigNumber } from "ethers";
 
 describe("Portfolio Main", () => {
     let portfolioSub: PortfolioSub;
@@ -156,6 +157,34 @@ describe("Portfolio Main", () => {
         .to.be.revertedWith("P-NZBL-01");
     });
 
+    it("Should pause and unpause Portfolio & PBridge when out of synch", async function () {
+        await expect(portfolioBridgeMain.pause()).to.be.revertedWith("AccessControl: account");
+
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeMain.connect(owner).pause();
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioMain.pause();
+        expect(await portfolioMain.paused()).to.be.true;
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioBridgeMain.connect(owner).unpause();
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+        // succeed for admin
+        await portfolioMain.unpause();
+        expect(await portfolioMain.paused()).to.be.false;
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+
+        // they are in synch
+        await portfolioMain.pause();
+        expect(await portfolioMain.paused()).to.be.true;
+        expect(await portfolioBridgeMain.paused()).to.be.true;
+
+        await portfolioMain.unpause();
+        expect(await portfolioMain.paused()).to.be.false;
+        expect(await portfolioBridgeMain.paused()).to.be.false;
+    });
+
 
     it("Should add/remove virtual tokens properly", async () => {
         const {trader1} = await f.getAccounts();
@@ -261,33 +290,40 @@ describe("Portfolio Main", () => {
         await portfolioMain.grantRole(await portfolioMain.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
         // processing of deposit messages will fail on mainnet
-        let Tx = 1;  // DEPOSIT
+        let xfer: any = {};
+        xfer = {nonce:0,
+                 transaction: 1, // DEPOSIT
+                 trader:trader2.address,
+                 symbol: AVAX,
+                 quantity: Utils.toWei("0.01"),
+                 timestamp: BigNumber.from(await f.latestTime()),
+                 customdata: Utils.emptyCustomData()
+        };
+
+
         // fail for non-admin
-        await expect(portfolioMain.connect(trader1).processXFerPayload(trader2.address, AVAX, Utils.toWei("0.01"), Tx))
+        await expect(portfolioMain.connect(trader1).processXFerPayload(xfer))
             .to.be.revertedWith("AccessControl");
         // succeed for admin
-        await expect(portfolioMain.processXFerPayload(trader2.address, AVAX, Utils.toWei("0.01"), Tx))
-            .to.be.revertedWith("P-PTNS-01");
+        xfer.trader = trader2.address;
+        await expect(portfolioMain.processXFerPayload(xfer))
+            .to.be.revertedWith("P-PTNS-02");
 
-        Tx = 0;  // WITHDRAW
+        xfer.trader = owner.address;
+        xfer.transaction = 0; // WITHDRAW
+        xfer.quantity = 0;
         // fail with 0 quantity
-        await expect(portfolioMain.processXFerPayload(owner.address, AVAX, 0, Tx)).to.be.revertedWith("P-ZETD-01");
+        await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-ZETD-01");
 
         // fail for trader witrh zero address(0)
-        await expect(portfolioMain.processXFerPayload(ethers.constants.AddressZero, AVAX, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-ZADDR-02");
+        xfer.trader = ethers.constants.AddressZero;
+        xfer.quantity = Utils.toWei("0.01");
+        await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-ZADDR-02");
 
         // fail due to failed send
-        await expect(portfolioMain.processXFerPayload(owner.address, AVAX, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-WNFA-01");
+        xfer.trader = owner.address;
+        await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-WNFA-01");
 
-        // fail due to token not in portfolioMain
-        await expect(portfolioMain.processXFerPayload(owner.address, Utils.fromUtf8("USDC"), Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-ETNS-02");
-
-        // Add virtual GUN to avalanche with gunzilla Network id
-        const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
-        const { gunzillaSubnet } = f.getChains();
-        await f.addVirtualToken(portfolioMain, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
-        // fail due to token is virtual in portfolioMain
-        await expect(portfolioMain.processXFerPayload(owner.address, gunDetails.symbolbytes32, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-VTNS-02");
 
     });
 

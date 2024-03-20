@@ -14,6 +14,7 @@ import {
     //MainnetRFQ,
     PortfolioSub,
     MockToken,
+    LZEndpointMock,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -30,7 +31,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
     // let inventoryManager: InventoryManager;
 
     // let lzEndpointMain: LZEndpointMock;
-    // let lzEndpointGun: LZEndpointMock;
+    let lzEndpointGun: LZEndpointMock;
     // let lzEndpointArb: LZEndpointMock;
 
     let portfolioBridgeAvax: PortfolioBridgeMain;
@@ -53,7 +54,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
     let usdcDetails: any;
 
     let gunCcTrade: string;
-    let gunCcPayload: string;
+    //let gunCcPayload: string;
 
     let usdc: MockToken;
     let usdcArb: MockToken;
@@ -93,7 +94,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         //portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
 
         // lzEndpointMain = portfolioContracts.lzEndpointAvax as LZEndpointMock;
-        // lzEndpointGun = portfolioContracts.lzEndpointGun as LZEndpointMock;
+        lzEndpointGun = portfolioContracts.lzEndpointGun as LZEndpointMock;
         // lzEndpointArb = portfolioContracts.lzEndpointArb as LZEndpointMock;
 
         // mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
@@ -105,7 +106,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         usdc = await f.deployMockToken(usdcDetails.symbol, usdcDetails.decimals)
         usdcArb = await f.deployMockToken(usdcDetails.symbol, usdcDetails.decimals)
-        const { cChain, gunzillaSubnet } = f.getChains();
+        const { gunzillaSubnet } = f.getChains();
 
         // Add virtual GUN to avalanche with gunzilla Network id
         await f.addVirtualToken(portfolioAvax, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
@@ -118,7 +119,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         const nonce = 0;
         const tx = 11;                // TX = 1 = CCTRADE [main --> sub]
 
-        const xChainMessageType = 0; // XChainMsgType = 0 = XFER
+        //const xChainMessageType = 0; // XChainMsgType = 0 = XFER
 
         gunCcTrade = ethers.utils.defaultAbiCoder.encode(
             [
@@ -141,17 +142,11 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             ]
         )
 
-        gunCcPayload = ethers.utils.defaultAbiCoder.encode(
-            ["uint8", "bytes"],
-            [xChainMessageType, gunCcTrade]
-        )
-
-
-
-
+        // gunCcPayload = ethers.utils.defaultAbiCoder.encode(
+        //     ["uint8", "bytes"],
+        //     [xChainMessageType, gunCcTrade]
+        // )
         // await usdc.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
-
-
 
     });
 
@@ -163,6 +158,75 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         const srcChainId = 1;
         // fail from wrong address - instead of lzEndpoint address passed trader2 address
         await expect(portfolioBridgeGun.lzReceive(srcChainId, trader2.address, 0, gunCcTrade)).to.be.revertedWith("PB-IVEC-01");
+    });
+
+    it("Should not send non-virtual tokens with CCTRADE", async () => {
+        const bridge0 = 0;            // BridgeProvider = 0 = LZ
+
+        const nonce = 0;
+        const transaction1 = 11;                // transaction = 1 = DEPOSIT [main --> sub]
+        const trader = trader1.address;
+        const symbol = Utils.fromUtf8("AVAX");
+        const quantity = Utils.parseUnits("10", gunDetails.decimals);
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        const { gunzillaSubnet } = f.getChains();
+
+        await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+         await expect(portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+
+    });
+
+    it("Should non-virtual tokens with CCTRADE fail at the destination", async () => {
+
+        const { cChain, gunzillaSubnet } = f.getChains();
+        // Add virtual GUN2 to avalanche with gunzilla Network id
+        await f.addVirtualToken(portfolioAvax, "GUN2", gunDetails.decimals, gunzillaSubnet.chainListOrgId);
+        // Add virtual GUN2 to Gunzilla as well
+        await f.addVirtualToken(portfolioGun, "GUN2",  gunDetails.decimals, cChain.chainListOrgId);
+
+        const bridge0 = 0;            // BridgeProvider = 0 = LZ
+        const nonce = 0;
+        const transaction1 = 11;                // transaction = 1 = DEPOSIT [main --> sub]
+        const trader = trader1.address;
+        const symbol = Utils.fromUtf8("GUN2");
+        const quantity = Utils.parseUnits("10", gunDetails.decimals);
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+        // This transaction reverts with PB-CCTR-03 but it goes into storedPayload instead of raising the error.
+        await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
+
+        const trustedRemote = await portfolioBridgeGun.lzTrustedRemoteLookup(cChain.lzChainId);
+        const sp = await lzEndpointGun.storedPayload(cChain.lzChainId, trustedRemote);
+        const payload = sp.payloadHash;
+        await portfolioBridgeGun.grantRole(await portfolioBridgeGun.BRIDGE_ADMIN_ROLE(), owner.address);
+        //Only retry payload will give us the real error
+        await expect(portfolioBridgeGun.lzRetryPayload(cChain.lzChainId, payload)).to.be.revertedWith("PB-CCTR-03");
+        expect(await portfolioBridgeGun["hasStoredPayload()"]()).to.be.false;
+
     });
 
     it("Should use sendXChainMessage from cChain to GUN correctly", async () => {
@@ -252,7 +316,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
 
-        await expect(portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-ETNS-01");
+        await expect(portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-ETNS-02");
 
         // Add virtual GUN to avalanche with gunzilla Network id
         await f.addVirtualToken(portfolioArb, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
@@ -323,7 +387,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0);
 
-        await expect(portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value})).to.be.revertedWith("PB-ETNS-01");
+        await expect(portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value})).to.be.revertedWith("PB-ETNS-02");
 
         await f.addVirtualToken(portfolioGun, usdcDetails.symbol, usdcDetails.decimals, cChain.chainListOrgId);
         const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value});

@@ -20,7 +20,7 @@ import {
 
 import * as f from "./MakeTestSuite";
 
-import { assert, expect } from "chai";
+import { assert } from "chai";
 import { ethers } from "hardhat";
 
 import TradePairsAbi from '../artifacts/contracts/TradePairs.sol/TradePairs.json';
@@ -612,42 +612,21 @@ describe("Dexalot", () => {
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
             const feeAddress = await portfolio.feeAddress();
-            // fail for non-admin
-            await portfolio.revokeRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[5].address);
-            await expect(portfolio.connect(wallets[5]).withdrawFees(feeAddress, 10))
-            .to.be.revertedWith("AccessControl:");
-
-            await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), wallets[0].address);
-
-            //fail for non-treasury or non-feeAddress
-            await expect(portfolio.connect(wallets[0]).withdrawFees(wallets[0].address, 10))
-            .to.be.revertedWith("P-OWTF-01");
-
-            const treasury = await portfolio.getTreasury();
-            await portfolio.connect(wallets[0]).withdrawFees(feeAddress, 10);
-            await portfolio.connect(wallets[0]).withdrawFees(treasury, 10);
 
             // check fee balance for base symbol
             _checkName = "Fee balance ::: " + order["baseSymbol"];
-            if (order["baseSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
-            } else {
-                const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(order["baseSymbol"]));
-                const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[order["baseSymbol"]]));
-            }
+            let _bal = await portfolio.getBalance(feeAddress, Utils.fromUtf8(order["baseSymbol"]));
+            _contractValue = BigNumber(Utils.formatUnits(_bal.total, decimalsMap[order["baseSymbol"]]));
+
             _checkValue = feeLumped[order["baseSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
             // check fee balance for quote symbol
             _checkName = "Fee balance ::: " + order["quoteSymbol"];
-            if (order["quoteSymbol"] === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
-            } else {
-                const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(order["quoteSymbol"]));
-                const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[order["quoteSymbol"]]));
-            }
+
+            _bal = await portfolio.getBalance(feeAddress, Utils.fromUtf8(order["quoteSymbol"]));
+            _contractValue = BigNumber(Utils.formatUnits(_bal.total, decimalsMap[order["quoteSymbol"]]));
+
             _checkValue = feeLumped[order["quoteSymbol"]];
             doNumberAssert(_checkName, _contractValue, _checkValue);
 
@@ -682,12 +661,13 @@ describe("Dexalot", () => {
         }
 
         console.log("===== PORTFOLIO CONTRACT LUMPED END STATE =====")
+
         const portfolioLumped: any = {};
         for (const element of tokens) {
             portfolioLumped[element] = BigNumber(0);
         }
 
-        for (let i=0; i<numberOfAccounts; i++) {
+        for (let i=0; i < numberOfAccounts; i++) {
             const _owner = accounts[i];
             for (const element of tokens) {
                 _tokenStr = element;
@@ -699,7 +679,7 @@ describe("Dexalot", () => {
         // portfolio lumped balance for native tokens
         let _checkName = "Ending Potfolio contract lumped balance ::: " + native + " ::: total";
         let _contractValue = BigNumber(Utils.formatUnits(await portfolio.tokenTotals(Utils.fromUtf8(native)), decimalsMap['AVAX']));
-        let _checkValue = portfolioLumped[native];
+        let _checkValue = portfolioLumped[native].plus(feeLumped[native]);
         doNumberAssert(_checkName, _contractValue, _checkValue);
 
         // portfolio lumped balance for erc20 tokens
@@ -708,30 +688,10 @@ describe("Dexalot", () => {
             _token = MockToken.attach(_tokenAddr);
             _checkName = "Ending Potfolio contract lumped balance ::: " + element + " ::: total";
             _contractValue = BigNumber(Utils.formatUnits(await portfolio.tokenTotals(Utils.fromUtf8(element)), await _token.decimals()));
-            _checkValue = portfolioLumped[element]
+            _checkValue = portfolioLumped[element].plus(feeLumped[element]);
             doNumberAssert(_checkName, _contractValue, _checkValue);
         }
 
-        // Fees final checks
-        console.log()
-        console.log("===== FEE CONTRACT LUMPED END STATE =====")
-        const feeAddress = await portfolio.feeAddress();
-        await portfolio.withdrawFees(feeAddress, 10);
-
-        for(const _token in feeLumped) {
-            _checkName = "Ending Fee balance ::: " + _token;
-            if (_token === "AVAX") {
-                _contractValue = BigNumber(Utils.formatUnits(await ethers.provider.getBalance(feeSafe), decimalsMap['AVAX']));
-            } else {
-                const baseTokenAddr = await portfolioMain.getToken(Utils.fromUtf8(_token));
-                const token = MockToken.attach(baseTokenAddr);
-                _contractValue = BigNumber(Utils.formatUnits(await token.balanceOf(feeSafe), decimalsMap[_token]));
-            }
-            _checkValue = feeLumped[_token];
-            doNumberAssert(_checkName, _contractValue, _checkValue);
-        }
-
-        console.log()
     });
 
 }).timeout(60000);

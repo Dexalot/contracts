@@ -8,6 +8,7 @@ import "./interfaces/IPortfolioSub.sol";
 
 import "./Exchange.sol";
 import "./OrderBooks.sol";
+import "./interfaces/ITradePairs.sol";
 
 /**
  * @title Subnet Exchange
@@ -22,7 +23,7 @@ import "./OrderBooks.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.4");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -74,20 +75,26 @@ contract ExchangeSub is Exchange {
     }
 
     /**
-     * @notice  Un(pause) trading functionality. Affects both addorder and cancelorder functions.
+     * @notice  Un(pause) all trading functionality for all pairs
+     * @dev     No new orders or cancellations allowed
      * @param   _tradingPause  true to pause trading, false to unpause
      */
     function pauseTrading(bool _tradingPause) public onlyRole(DEFAULT_ADMIN_ROLE) {
         if (_tradingPause) {
-            tradePairs.pause();
+            if (!PausableUpgradeable(address(tradePairs)).paused()) {
+                tradePairs.pause();
+            }
         } else {
-            tradePairs.unpause();
+            if (PausableUpgradeable(address(tradePairs)).paused()) {
+                tradePairs.unpause();
+            }
         }
     }
 
     /**
-     * @notice  Un(pause) trading functionality for a trade pair. Affects both addorder and cancelorder functions.
+     * @notice  Un(pause) all trading functionality for a trade pair. Affects both addorder and cancelorder functions.
      * @param   _tradePairId  id of the trading pair
+     * @dev     No new orders or cancellations allowed for the given pair
      * @param   _tradePairPause  true to pause trading, false to unpause
      */
     function pauseTradePair(bytes32 _tradePairId, bool _tradePairPause) external {
@@ -197,7 +204,6 @@ contract ExchangeSub is Exchange {
             _maxTradeAmount,
             _mode
         );
-
     }
 
     /**

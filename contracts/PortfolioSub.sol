@@ -70,7 +70,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.1");
+    bytes32 public constant VERSION = bytes32("2.5.2");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -366,28 +366,23 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly.
      * CAUTION: if Paused for upgrade, wait to make sure no messages are in flight, then upgrade.
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _transaction  Transaction type
+     * @param   _xfer  Transfer message
      */
     function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        Tx _transaction
+        IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
         // Should not avoid revert if symbol not found. This will block the bridge
-        require(tokenList.contains(_symbol), "P-ETNS-01");
-        require(_quantity > 0, "P-ZETD-01");
-        // Only allow deposits in the subnet from PortfolioBridgeSub that has PORTFOLIO_BRIDGE_ROLE and not from the users
-        if (_transaction == Tx.DEPOSIT) {
+        require(tokenList.contains(_xfer.symbol), "P-ETNS-01");
+        require(_xfer.quantity > 0, "P-ZETD-01");
+        // Only allow deposits in the subnet from PortfolioBridgeSub that has
+        // PORTFOLIO_BRIDGE_ROLE and not from the users
+        if (_xfer.transaction == Tx.DEPOSIT) {
             // Deposit the entire amount to the portfolio first
-            safeIncrease(_trader, _symbol, _quantity, 0, _transaction, _trader);
+            safeIncrease(_xfer.trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction, _xfer.trader);
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
-            autoFillPrivate(_trader, _symbol, _transaction);
+            autoFillPrivate(_xfer.trader, _xfer.symbol, _xfer.transaction);
         } else {
-            revert("P-PTNS-02");
+            revert("P-PTNS-01");
         }
     }
 
@@ -540,14 +535,16 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external override whenNotPaused nonReentrant {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
-        require(tokenList.contains(_symbol), "P-ETNS-02");
+        require(tokenList.contains(_symbol), "P-ETNS-01");
         //if the token is in the conversion list, we need to use it in the withdrawal
         //message for proper inventory management
         bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_symbol);
         toSymbol == bytes32(0) ? toSymbol = _symbol : toSymbol;
         // bridgeFee = bridge Fees both in the Mainnet the subnet
         // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
-        // bridgeParams[_symbol].fee is redundant as of Feb 10, 2024 CD
+        // bridgeParams[_symbol].fee is redundant in the subnet and has been replaced
+        // with portfolioBridge.getBridgeFee which uses
+        // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
         // We need to get the bridgeFee with the new(after conversion) toSymbol
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
             ? 0
@@ -631,7 +628,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
             require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
-            tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged); // _feeCharged is still left in the subnet
+            // _feeCharged is still left in the subnet
+            tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged);
         }
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
     }
@@ -750,46 +748,58 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws collected fees from the feeAddress or treasury to the mainnet
-     * @dev     Only admin can call this function
-     * @param   _from  address that can withdraw collected fees
-     * @param   _maxCount  maximum number of ERC20 tokens with a non-zero balance to process at one time
+     * @notice  Function to show Trader's balances for all available tokens.
+     * @dev     If you pass pageNo == 0 it will scan all available tokens but as the tokenlist grows,
+     * it may eventually run out of gas. Use _pageNo in this case to get 50 tokens at a time.
+     * The returned arrays will be ordered to have the tokens with balances first then empty entries
+     * next. You can discard all the entries starting from when symbols[i] == bytes32(0)
+     * or total[i] == 0
+     * @param   _owner  Address of the trader
+     * @param   _pageNo  Page no for pagination
+     * @return  symbols  Array of Symbol
+     * @return  total    Array of Totals
+     * @return  available  Array of availables
      */
-    function withdrawFees(address _from, uint8 _maxCount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_from == feeAddress || _from == treasury, "P-OWTF-01");
-        bytes32 symbol;
-        uint256 feeAccumulated = assets[_from][native].available;
-        if (feeAccumulated > 0) {
-            this.withdrawToken(
-                _from,
-                native,
-                feeAccumulated,
-                portfolioBridge.getDefaultBridgeProvider(),
-                portfolioBridge.getDefaultDestinationChain()
-            );
+    function getBalances(
+        address _owner,
+        uint256 _pageNo
+    ) external view returns (bytes32[] memory symbols, uint256[] memory total, uint256[] memory available) {
+        uint256 nbrOfTokens = tokenList.length();
+        uint256 pageSize = 50;
+        // Default to all available tokens if _pageNo==0. Otherwise either 50 or the last page's count
+        if (_pageNo == 0) {
+            //returns all tokens in a single page
+            _pageNo = 1;
+        } else {
+            uint256 maxPageNo = nbrOfTokens % pageSize == 0 ? nbrOfTokens / pageSize : (nbrOfTokens / pageSize) + 1;
+            // Override the pageNo if it is not possible
+            _pageNo = _pageNo > maxPageNo ? maxPageNo : _pageNo;
+            nbrOfTokens = _pageNo == maxPageNo && nbrOfTokens % pageSize != 0 ? nbrOfTokens % pageSize : pageSize;
         }
-        uint256 tokenCount = tokenList.length();
+
+        symbols = new bytes32[](nbrOfTokens);
+        total = new uint256[](nbrOfTokens);
+        available = new uint256[](nbrOfTokens);
+
         uint256 i;
-        while (_maxCount > 0) {
-            symbol = tokenList.at(i);
-            feeAccumulated = assets[_from][symbol].available;
-            if (feeAccumulated > 0) {
-                this.withdrawToken(
-                    _from,
-                    symbol,
-                    feeAccumulated,
-                    portfolioBridge.getDefaultBridgeProvider(),
-                    portfolioBridge.getDefaultDestinationChain()
-                );
-                _maxCount--;
+        bytes32 symbol;
+        uint256 tokenLocation = (_pageNo - 1) * pageSize;
+        while (nbrOfTokens > 0) {
+            symbol = tokenList.at(nbrOfTokens + tokenLocation - 1);
+            AssetEntry storage asset = assets[_owner][symbol];
+            if (asset.total > 0) {
+                symbols[i] = symbol;
+                total[i] = asset.total;
+                available[i] = asset.available;
+                unchecked {
+                    i++;
+                }
             }
             unchecked {
-                ++i;
-            }
-            if (i == tokenCount) {
-                _maxCount = 0;
+                nbrOfTokens--;
             }
         }
+        return (symbols, total, available);
     }
 
     /**
@@ -923,12 +933,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @notice  Remove token from the tokenMap
      * @dev     tokenTotals for the symbol should be 0 before it can be removed
      * Make sure that there are no in-flight deposit messages.
-     * Calling this function also removes the token from portfolioBridge. If multiple tokens in the portfolioBridgeSub shares
-     * the subnet symbol, the symbol is not deleted from the PortfolioSub
+     * Calling this function also removes the token from portfolioBridge. If multiple tokens in the
+     * portfolioBridgeSub shares the subnet symbol, the symbol is not deleted from the PortfolioSub
      * @param   _srcChainSymbol  Source Chain Symbol of the token
-     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub. Don't use the subnet id here
-     * Always use the chain id that the token is being removed. Otherwise it will silently fail as it can't find the token to delete
-     * in PortfolioBridgeSub
+     * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub.
+     * Don't use the subnet id here. Always use the chain id that the token is being removed. Otherwise
+     * it will silently fail as it can't find the token to delete in PortfolioBridgeSub
      * @param   _subnetSymbol  Subnet Symbol of the token
      */
     function removeToken(
@@ -997,7 +1007,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      */
     function convertToken(bytes32 _fromSymbol) external whenNotPaused nonReentrant {
         bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_fromSymbol);
-        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-02");
+        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-01");
         AssetEntry memory currentBalance = assets[msg.sender][_fromSymbol];
         if (currentBalance.total > 0) {
             require(currentBalance.total == currentBalance.available, "P-TFNE-01"); // no outstanding orders

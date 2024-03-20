@@ -154,6 +154,36 @@ describe("Exchange Sub", function () {
             expect(await tradePairs.paused()).to.be.false;
         });
 
+
+        it("Should pause and unpause Portfolio & tradePairs when out of synch", async function () {
+            await expect(exchange.connect(trader1).pauseForUpgrade(true)).to.revertedWith("AccessControl:");
+            await expect(tradePairs.connect(trader1).pause()).to.be.revertedWith("AccessControl: account");
+
+            await tradePairs.grantRole(await tradePairs.DEFAULT_ADMIN_ROLE(), owner.address);
+            await tradePairs.connect(owner).pause();
+            expect(await tradePairs.paused()).to.be.true;
+
+            await exchange.pauseForUpgrade(true);
+            expect(await portfolioSub.paused()).to.be.true;
+            expect(await tradePairs.paused()).to.be.true;
+
+            await tradePairs.connect(owner).unpause();
+            expect(await tradePairs.paused()).to.be.false;
+
+            await exchange.pauseForUpgrade(false);
+            expect(await portfolioSub.paused()).to.be.false;
+            expect(await tradePairs.paused()).to.be.false;
+
+            // they are in synch
+            await exchange.pauseForUpgrade(true);
+            expect(await portfolioSub.paused()).to.be.true;
+            expect(await tradePairs.paused()).to.be.true;
+
+            await exchange.pauseForUpgrade(false);
+            expect(await portfolioSub.paused()).to.be.false;
+            expect(await tradePairs.paused()).to.be.false;
+        });
+
         it("Should use setOrderBooks correctly", async function () {
             // fail from non admin accounts
             await expect(exchange.connect(trader1).setOrderBooks(orderBooks.address)).to.revertedWith("AccessControl:");
@@ -569,6 +599,7 @@ describe("Exchange Sub", function () {
             await exchange.pauseTrading(false);
             expect(await tradePairs.paused()).to.be.false;
         });
+
 
         it("Should pause a specific trade pair from admin or auctionAdmin accounts based on mode", async function () {
             await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)

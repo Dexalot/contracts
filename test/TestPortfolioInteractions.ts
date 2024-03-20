@@ -195,7 +195,7 @@ describe("Portfolio Interactions", () => {
         // fail for 0 quantity
          await expect(f.withdrawToken(portfolioSub, owner, USDT, token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
-         await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-02");
+         await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-01");
         // succeed for msg.sender
         await f.withdrawToken(portfolioSub, owner, USDT, token_decimals, withdrawal_amount)
         const res = await portfolioSub.getBalance(owner.address, USDT);
@@ -227,7 +227,7 @@ describe("Portfolio Interactions", () => {
         // fail for 0 quantity
         await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("AVAX"), token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
-        await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-02");
+        await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("NONE"), token_decimals, withdrawal_amount)).to.be.revertedWith("P-ETNS-01");
          // succeed for msg.sender
         await f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("AVAX"), token_decimals, withdrawal_amount)
         const res = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
@@ -281,7 +281,8 @@ describe("Portfolio Interactions", () => {
     it("Should reduce bridge fee during AVAX deposit and withdraw & collect them", async () => {
         const bridgeFee = Utils.toWei("0.01")
 
-        await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1',token_decimals), true)
+        await portfolioMain.setBridgeParam(Utils.fromUtf8("AVAX"), bridgeFee, ethers.utils.parseUnits('0.1', token_decimals), true)
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [Utils.fromUtf8("AVAX")], [bridgeFee])
         // fail paused
         await portfolioMain.connect(owner).pause()
@@ -333,7 +334,9 @@ describe("Portfolio Interactions", () => {
         const bridgeFee = Utils.toWei("0.01")
 
         await alot.mint(trader1.address, ethers.utils.parseUnits('100',alot_token_decimals))
-        await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1',token_decimals), true)
+        await portfolioMain.setBridgeParam(ALOT, bridgeFee, ethers.utils.parseUnits('1', token_decimals), true)
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [bridgeFee])
         //no bridge fee to collect, // Silent exit
         await portfolioMain.collectBridgeFees([ALOT]);

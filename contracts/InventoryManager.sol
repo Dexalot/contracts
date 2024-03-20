@@ -24,26 +24,54 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.0.0");
+    bytes32 public constant VERSION = bytes32("3.0.2");
+    uint256 private constant STARTING_A = 50;
+    uint256 private constant MIN_A = 10;
+    uint256 private constant MAX_A = 10 ** 8;
+    uint256 private constant MIN_A_UPDATE_TIME = 1 hours;
     // A value for the invariant calculations
     uint256 public A;
+    // Future A value for the invariant calculations
+    uint256 public futureA;
+    // Time at which futureA can take effect
+    uint256 public futureATime;
 
     // subnetSymbol => [symbolId => quantity]
     mapping(bytes32 => EnumerableMap.Bytes32ToUintMap) private inventoryBySubnetSymbol;
+    // symbolId => scalingFactor
+    mapping(bytes32 => uint256) public scalingFactor;
 
     IPortfolioBridgeSub public portfolioBridgeSub;
+
+    event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
+    event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
+    event AUpdated(uint256 A, uint256 timestamp);
+    event InventorySet(bytes32 indexed symbol, bytes32 indexed symbolId, uint256 quantity, uint256 timestamp);
 
     /**
      * @notice  Initialize the upgradeable contract
      * @param   _portfolioBridgeSub  Address of PortfolioBridgeSub contract
-     * @param   _A  A value for the invariant
      */
-    function initialize(address _portfolioBridgeSub, uint256 _A) external initializer {
+    function initialize(address _portfolioBridgeSub) external initializer {
         require(_portfolioBridgeSub != address(0), "IM-ZADDR-01");
         portfolioBridgeSub = IPortfolioBridgeSub(_portfolioBridgeSub);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PORTFOLIO_BRIDGE_ROLE, _portfolioBridgeSub);
-        A = _A;
+        A = STARTING_A;
+        futureA = STARTING_A;
+    }
+
+    function getInventoryBySubnetSymbol(bytes32 _symbol) external view returns (bytes32[] memory, uint256[] memory) {
+        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
+        uint256 length = map.length();
+        bytes32[] memory symbolIds = new bytes32[](length);
+        uint256[] memory quantities = new uint256[](length);
+        for (uint256 i = 0; i < length; ++i) {
+            (bytes32 symbolId, uint256 quantity) = map.at(i);
+            symbolIds[i] = symbolId;
+            quantities[i] = quantity;
+        }
+        return (symbolIds, quantities);
     }
 
     /**
@@ -103,13 +131,38 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     }
 
     /**
-     * @notice  Updates the A value for the invariant
+     * @notice  Updates the scaling factor for a token
      * @dev     Only admin can call this function
-     * @param   _A  A value for the invariant
+     * @param   _symbolId  SymbolId of the token
+     * @param   _scalingFactor  New scaling factor
      */
-    function updateA(uint256 _A) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_A > 0, "IM-ZVFA-01");
-        A = _A;
+    function setScalingFactor(bytes32 _symbolId, uint8 _scalingFactor) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        scalingFactor[_symbolId] = _scalingFactor;
+        emit ScalingFactorUpdated(_symbolId, _scalingFactor, block.timestamp);
+    }
+
+    /**
+     * @notice  Updates the Future A value for the invariant
+     * @dev     Only admin can call this function
+     * @param   _A  New A value for the invariant
+     * @param   _timePeriod  Time period for the new A value to take effect
+     */
+    function updateFutureA(uint256 _A, uint256 _timePeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_A > MIN_A && _A < MAX_A, "IM-AVNP-01");
+        require(_timePeriod >= MIN_A_UPDATE_TIME, "IM-ATNP-01");
+        futureA = _A;
+        futureATime = block.timestamp + _timePeriod;
+        emit FutureAUpdated(_A, futureATime, block.timestamp);
+    }
+
+    /**
+     * @notice  Updates the A value for the invariant using futureA
+     * @dev     Only admin can call this function
+     */
+    function updateA() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(futureATime > 0 && block.timestamp >= futureATime, "IM-BTNE-01");
+        A = futureA;
+        emit AUpdated(A, block.timestamp);
     }
 
     /**
@@ -183,19 +236,30 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
 
         // Generates all non-zero inventories and calculates total inventory
         uint256 j = 0;
+        uint256 scaleFactor;
         for (uint256 i = 0; i < numChains; ++i) {
             (bytes32 symbolId, uint256 inventory) = map.at(i);
             if (inventory == 0) {
                 continue;
             }
-            inventories[j] = inventory;
-            totalInventory += inventory;
+            (uint256 scaledInventory, uint256 sf) = scaleInventory(symbolId, inventory);
+            inventories[j] = scaledInventory;
+            totalInventory += scaledInventory;
             if (symbolId == _symbolId) {
                 index = j;
+                scaleFactor = sf;
             }
             j++;
         }
-        fee = InvariantMathLibrary.calcWithdrawOneChain(_quantity, index, inventories, totalInventory, A, j);
+        fee = InvariantMathLibrary.calcWithdrawOneChain(
+            _quantity,
+            index,
+            inventories,
+            totalInventory,
+            scaleFactor,
+            A,
+            j
+        );
     }
 
     /**
@@ -219,5 +283,21 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
         require(!map.contains(_symbolId), "IM-SIAE-01");
         map.set(_symbolId, _quantity);
+        emit InventorySet(_symbol, _symbolId, _quantity, block.timestamp);
+    }
+
+    /**
+     * @notice  Scales the inventory of a token using its scaling factor
+     * @param   _symbolId  SymbolId of the token
+     * @param   _inventory  Inventory to scale
+     * @return  scaledInventory  Scaled inventory
+     * @return  sf  Scaling factor
+     */
+    function scaleInventory(bytes32 _symbolId, uint256 _inventory) private view returns (uint256, uint256) {
+        uint256 sf = scalingFactor[_symbolId];
+        if (sf == 0) {
+            return (_inventory, 1);
+        }
+        return (_inventory / sf, sf);
     }
 }

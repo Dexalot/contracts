@@ -198,7 +198,7 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
 
 export const deployInventoryManager = async (portfolioBridgeSub: PortfolioBridgeSub): Promise<InventoryManager> => {
     const InventoryManager = await ethers.getContractFactory("InventoryManager") ;
-    const inventoryManager: InventoryManager = await upgrades.deployProxy(InventoryManager, [portfolioBridgeSub.address, 256]) as InventoryManager;
+    const inventoryManager: InventoryManager = await upgrades.deployProxy(InventoryManager, [portfolioBridgeSub.address]) as InventoryManager;
     return inventoryManager;
 }
 
@@ -400,7 +400,7 @@ export const deployExchangeSub = async (portfolio: PortfolioSub, orderBooks: Ord
     return exchangeSub;
 }
 
-export const deployExchangeMain = async (portfolio: PortfolioMain): Promise<ExchangeMain> => {
+export const deployExchangeMain = async (portfolio: PortfolioMain, mainnetRFQ : MainnetRFQ): Promise<ExchangeMain> => {
     const {admin, treasurySafe} = await getAccounts();
 
     const ExchangeMain = await ethers.getContractFactory("ExchangeMain") as ExchangeMain__factory;
@@ -408,6 +408,9 @@ export const deployExchangeMain = async (portfolio: PortfolioMain): Promise<Exch
 
     await exchangeMain.setPortfolio(portfolio.address);
     await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), exchangeMain.address);
+
+    await exchangeMain.setMainnetRFQ(mainnetRFQ.address);
+    await mainnetRFQ.grantRole(await mainnetRFQ.DEFAULT_ADMIN_ROLE(), exchangeMain.address);
 
     await exchangeMain.addAdmin(admin.address);
     await exchangeMain.addAdmin(treasurySafe.address);

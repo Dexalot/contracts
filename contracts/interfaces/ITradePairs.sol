@@ -97,12 +97,11 @@ interface ITradePairs {
 
     function unpause() external;
 
-    function pauseTradePair(bytes32 _tradePairId, bool _pairPause) external;
+    function pauseTradePair(bytes32 _tradePairId, bool _tradePairPause) external;
 
-    function pauseAddOrder(bytes32 _tradePairId, bool _allowAddOrder) external;
+    function pauseAddOrder(bytes32 _tradePairId, bool _addOrderPause) external;
 
     function postOnly(bytes32 _tradePairId, bool _postOnly) external;
-
 
     function addTradePair(
         bytes32 _tradePairId,

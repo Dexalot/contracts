@@ -278,6 +278,91 @@ describe("Portfolio Sub", () => {
         await expect(portfolioSub.adjustAvailable(0, owner.address, USDT, Utils.toWei('10'))).to.revertedWith("P-WRTT-02");
     });
 
+
+    it("Should call getBalances", async () => {
+
+        await usdt.mint(trader1.address, ethers.utils.parseEther("100"));
+        await alot.mint(trader1.address, Utils.toWei('100'));
+
+        //get all tokens without pagination by seting pageno =0
+        let pageNo = 0;
+
+        let res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(2);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+        pageNo = 1; // 0 or 1 give the same results
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(2);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+        // Add new token
+        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5);
+
+        pageNo = 2; // Overwrite out of bound pageNo. should be same as 1
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(3);
+        expect(res.symbols[0]).to.equal(ethers.constants.HashZero);
+
+
+        //revert to get all tokens without pagination
+        pageNo = 0;
+        await f.depositNative(portfolioMain, trader1, '50');
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+
+        expect(res.symbols.length).to.equal(3);
+        expect(res.symbols[0]).to.equal(AVAX);
+        expect(res.total[0]).to.equal(Utils.toWei('50'));
+        expect(res.available[0]).to.equal( Utils.toWei('50'));
+        expect(res.symbols[1]).to.equal(ethers.constants.HashZero);
+
+        await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, '100');
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+
+        expect(res.symbols.length ).to.equal(3);
+        expect(res.symbols[0]).to.equal(AVAX);
+        expect(res.total[0] ).to.equal( Utils.toWei('50'));
+        expect(res.available[0] ).to.equal( Utils.toWei('50'));
+        expect(res.symbols[1] ).to.equal( ALOT);
+        expect(res.total[1] ).to.equal( Utils.toWei('100'));
+        expect(res.available[1]).to.equal(Utils.toWei('100'));
+        //USDT is non existent still because it has 0 positions
+        expect(res.symbols[2] ).to.equal( ethers.constants.HashZero);
+
+
+        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, '200')
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols.length).to.equal(3);
+
+        // USDT takes the 0 index as it is added last
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+        expect(res.symbols[1]).to.equal(AVAX);
+        expect(res.total[1] ).to.equal( Utils.toWei('50'));
+        expect(res.available[1] ).to.equal( Utils.toWei('50'));
+        expect(res.symbols[2] ).to.equal( ALOT);
+        expect(res.total[2] ).to.equal( Utils.toWei('100'));
+        expect(res.available[2]).to.equal( Utils.toWei('100'));
+
+
+        pageNo = 1;// 0 or 1 give the same results
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+
+        pageNo = 2; // Overwrite out of bound pageNo. should be same as 1
+        res = await portfolioSub.getBalances(trader1.address, pageNo);
+        expect(res.symbols[0] ).to.equal( USDT);
+        expect(res.total[0] ).to.equal( Utils.parseUnits('200',token_decimals));
+        expect(res.available[0]).to.equal(Utils.parseUnits('200', token_decimals));
+
+    } );
+
+
     it("Should withdraw native tokens from portfolio to subnet", async () => {
 
         const initial_amount = await trader1.getBalance();
@@ -487,6 +572,7 @@ describe("Portfolio Sub", () => {
         // .to.be.revertedWith("Pausable: paused");
     })
 
+
     it("Should not deposit native tokens from subnet if parameters are incorrect", async () => {
         // native is AVAX for testing, but it will be ALOT in the subnet
 
@@ -664,6 +750,7 @@ describe("Portfolio Sub", () => {
         // half withdrawn - Sanity Check
         // set the Bridge Fee 1 USDT
         //await portfolioSub.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [USDT], [Utils.parseUnits('1', token_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, USDT, token_decimals, Utils.formatUnits(usdtDepositAmount.div(2), token_decimals));
         expect(await portfolioSub.tokenTotals(USDT)).to.equal(mainnetBal.sub(await portfolioMain.bridgeFeeCollected(USDT)).div(2).add(Utils.parseUnits('1', token_decimals)));
@@ -799,7 +886,7 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Bridge Fee 1 ALOT
-        //await portfolioSub.setBridgeParam(ALOT, Utils.parseUnits('1', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [Utils.parseUnits('1', alot_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, ALOT, 18, (Number(deposit_amount) / 2).toString())
 
@@ -914,6 +1001,7 @@ describe("Portfolio Sub", () => {
 
         // half withdrawn - Sanity Check
         // set the Subnet Bridge Fee 1 USDT & 2 ALOT
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [USDT, ALOT], [Utils.parseUnits('1', token_decimals), Utils.parseUnits('2', alot_decimals)]);
         await f.withdrawToken(portfolioSub, trader1, USDT, token_decimals, Utils.formatUnits(usdtDepositAmount.div(2),token_decimals));
 
@@ -1261,10 +1349,6 @@ describe("Portfolio Sub", () => {
         expect(tokenDetails.sourceChainSymbol).to.equal(USDT);
         expect(tokenDetails.symbolId).to.equal(Utils.fromUtf8("USDT"+ srcChainListOrgId));
 
-
-
-
-
         tokenDetails = await portfolioSub.getTokenDetails(ALOT);
         expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);
         expect(tokenDetails.auctionMode).to.equal(0);
@@ -1273,7 +1357,6 @@ describe("Portfolio Sub", () => {
         expect(tokenDetails.isVirtual).to.equal(false);
         expect(tokenDetails.sourceChainSymbol).to.equal(ALOT);
         expect(tokenDetails.symbolId).to.equal(Utils.fromUtf8("ALOT"+ srcChainListOrgId));
-
 
         tokenDetails = await portfolioSub.getTokenDetails(AVAX);
         expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);
@@ -1322,7 +1405,7 @@ describe("Portfolio Sub", () => {
         // console.log(subnet_symbol, await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32));
         // console.log(orginalSubnetSymbol, await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32));
 
-        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-ETNS-02");
+        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-ETNS-01");
 
         await f.addTokenToPortfolioSub(portfolioSub, cChainSymbol, subnet_symbol, usdt.address, tokenDecimals
             , cChain.chainListOrgId, 0.5, 0, true, 0)
@@ -1529,49 +1612,70 @@ describe("Portfolio Sub", () => {
     });
 
     it("Should use processXFerPayload() correctly", async () => {
-        let Tx = 0;  // WITHDRAW
 
-        // fail for unpriviliged account
-        await expect(portfolioSub.connect(trader2).processXFerPayload(trader2.address, AVAX, Utils.toWei("0.01"), Tx))
+
+        let xfer: any = {};
+        xfer = {nonce:0,
+                 transaction: 0,  // WITHDRAW
+                 trader:trader2.address,
+                 symbol: AVAX,
+                 quantity: Utils.toWei("0.01"),
+                 timestamp: BigNumber.from(await f.latestTime()),
+                 customdata: Utils.emptyCustomData()
+        };
+
+
+        // fail for non-admin
+        await expect(portfolioSub.connect(trader2).processXFerPayload(xfer))
             .to.be.revertedWith("AccessControl:");
 
         // make owner part of PORTFOLIO_BRIDGE_ROLE on PortfolioSub
         await portfolioSub.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address)
 
         // processing of withdraw messages will fail on subnet
-        Tx = 0;  // WITHDRAW
-        await expect(portfolioSub.processXFerPayload(trader2.address, AVAX, Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-PTNS-02");
+
+        await expect(portfolioSub.processXFerPayload(xfer)).to.be.revertedWith("P-PTNS-01");
 
         // fail with 0 quantity
-        await expect(portfolioSub.processXFerPayload(trader2.address, AVAX, 0, Tx)).to.be.revertedWith("P-ZETD-01");
+        xfer.quantity = 0;
+        await expect(portfolioSub.processXFerPayload(xfer)).to.be.revertedWith("P-ZETD-01");
         // fail due to non existent token
-        await expect(portfolioSub.processXFerPayload(trader2.address, Utils.fromUtf8("NOT_EXISTING_TOKEN"), Utils.toWei("0.01"), Tx)).to.be.revertedWith("P-ETNS-01");
+        xfer.quantity = Utils.toWei("0.01");
+        xfer.symbol = Utils.fromUtf8("NOT_EXISTING_TOKEN");
+        await expect(portfolioSub.processXFerPayload(xfer)).to.be.revertedWith("P-ETNS-01");
 
         // try as many path ways as possible making sure they don't revert
-        Tx = 1;  // DEPOSIT
+        xfer.transaction = 1;  // DEPOSIT
+        xfer.symbol = ALOT;
         // funded account
         await portfolioSub.setAuctionMode(AVAX, 0);
-        await portfolioSub.processXFerPayload(trader2.address, ALOT, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(AVAX, 1);
-        await portfolioSub.processXFerPayload(trader2.address, ALOT, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         // using an unfunded address
+
+        xfer.trader = "0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D"
+        xfer.symbol = AVAX;
         await portfolioSub.setAuctionMode(AVAX, 1);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", AVAX, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(AVAX, 0);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", AVAX, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(ALOT, 0);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", ALOT, Utils.toWei("0.01"), Tx);
+
+        xfer.symbol = ALOT;
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(ALOT, 1);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", ALOT, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await gasStation.setGasAmount(Utils.toWei("0.0101"));
         await portfolioSub.setAuctionMode(ALOT, 1);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", ALOT, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(ALOT, 0);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", ALOT, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(AVAX, 1);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", AVAX, Utils.toWei("0.01"), Tx);
+        xfer.symbol = AVAX;
+        await portfolioSub.processXFerPayload(xfer);
         await portfolioSub.setAuctionMode(AVAX, 1);
-        await portfolioSub.processXFerPayload("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D", AVAX, Utils.toWei("0.01"), Tx);
+        await portfolioSub.processXFerPayload(xfer);
     });
 
     it("Should add and remove tokens correctly", async () => {

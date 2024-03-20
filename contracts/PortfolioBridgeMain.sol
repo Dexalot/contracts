@@ -11,7 +11,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IMainnetRFQ.sol";
-
 import "./bridgeApps/LzApp.sol";
 
 /**
@@ -38,12 +37,12 @@ import "./bridgeApps/LzApp.sol";
  * In addition, to be able to support cross chain trades for subnets like Gunzilla that only has their gas token
  * and no ERC20 available, we introduced a new flow where you provide the counter token in an L1 and receive your GUN
  * in Gunzilla network. Similarly you can sell your GUN in Gunzilla network and receive your counter token in any L1.
+ * When Buying GUN from Avalanche with counter token USDC, USDC is kept in MainnetRFQ(Avax) and GUN is deposited
+ * to the buyer's wallet via MainnetRFQ(Gun). The flow is : \
  * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => BridgeProviderA/B/n => PortfolioBridgeMain(Gun) => MainnetRFQ(Gun) \
- * Buy GUN from Avalanche with counter token USDC. USDC is kept in MainnetRFQ(Avax) and GUN is deposited to the buyer's
- * wallet via MainnetRFQ(Gun)
- * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => BridgeProviderA/B/n => PortfolioBridgeMain(Avax)  => MainnetRFQ(Avax) \
- * Sell GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited to the buyer's
- * wallet via MainnetRFQ(Avax)
+ * When Selling GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited
+ * to the buyer's wallet via MainnetRFQ(Avax) The flow is : \
+ * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => BridgeProviderA/B/n => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
  * The same flow can be replicated with any other L1 like Arb as well. \
  * PortfolioBridgeMain always sends the ERC20 Symbol from its own network and expects the same back
  * i.e USDt sent & received in Avalanche Mainnet whereas USDT is sent & received in Arbitrum.
@@ -91,7 +90,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("3.1.0");
+        return bytes32("3.2.0");
     }
 
     /**
@@ -99,7 +98,7 @@ contract PortfolioBridgeMain is
      * @dev     Grant admin, pauser and msg_sender role to the sender. Set gas for lz. Set endpoint and enable bridge
      * @param   _endpoint  Endpoint of the LZ bridge
      */
-    function initialize(address _endpoint) public initializer {
+    function initialize(address _endpoint) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -253,7 +252,7 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Set whether a user must pay the brigde fee for message delivery at the destination chain
+     * @notice  Set whether a user must pay the bridge fee for message delivery at the destination chain
      * @dev     Only admin can set user pays fee for destination chain
      * @param   _bridge  Bridge
      * @param   _dstChainIdBridgeAssigned Remote chain id assigned by the Bridge (lz)
@@ -378,42 +377,29 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Returns the symbol & symbolId given the destination chainId
-     * @dev    Returns ERC20 Symbol in the host chain for both symbol & symbolId as long
-     * as the token has been added to the Portfolio
-     * Overridden in PortfolioBridgeSub
+     * @notice  Validates the symbol from portfolio and transaction type
+     * @dev     This function is called both when sending & receiving a message.
+     * Deposit/ Withdraw Tx can only be done with non-virtual tokens.
+     * You can only send Virtual Tokens to a destination chain using CCTRADE.
+     * But at the destination, received token has to be non-virtual token.
      * @param   _symbol  symbol of the token
-     * @return  dstSymbol  destination symbol
-     * @return  dstSymbolId  symbolId of the target chain
+     * @param   _transaction transaction type
+     * @param   _direction direction of the message (SENT-0 || RECEIVED-1)
      */
 
-    function getDestChainSymbol(
-        uint32,
-        bytes32 _symbol
-    ) internal view virtual returns (bytes32 dstSymbol, bytes32 dstSymbolId) {
-        IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(_symbol); //returns _symbol
-        dstSymbol = details.symbol; // dest Symbol is equal to _symbol
-        dstSymbolId = dstSymbol; // dest SymbolId is equal to _symbol for host chains
-        require(dstSymbol != bytes32(0), "PB-ETNS-01");
-    }
-
-    /**
-     * @notice  Returns the locally used symbol, and source symbolId given the chainListOrgChainId
-     * @dev     Returns ERC20 Symbol in the host chain for both symbol & symbolId as long
-     * as the token has been added to the Portfolio
-     * Host chain expect to receive the symbol in the same format that it sent out.(ERC20 Symbol)
-     * Overridden in PortfolioBridgeSub
-     * @return  localSymbol
-     * @return  symbolId
-     */
-    function getMappedSymbols(
-        uint32,
-        bytes32 _symbol
-    ) internal view virtual returns (bytes32 localSymbol, bytes32 symbolId) {
-        IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(_symbol); //returns _symbol
-        localSymbol = details.symbol; // Local Symbol is equal to _symbol
-        symbolId = localSymbol; // symbolId is equal to _symbol for host chains
-        require(localSymbol != bytes32(0), "PB-ETNS-01");
+    function validateSymbol(bytes32 _symbol, IPortfolio.Tx _transaction, Direction _direction) private view {
+        //Validate the symbol
+        IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(_symbol);
+        require(details.symbol != bytes32(0), "PB-ETNS-02");
+        //Validate symbol & transaction type;
+        if (_transaction == IPortfolio.Tx.CCTRADE) {
+            _direction == Direction.SENT
+                ? require(details.isVirtual, "PB-CCTR-02")
+                : require(!details.isVirtual, "PB-CCTR-03");
+        } else if (_transaction == IPortfolio.Tx.WITHDRAW) {
+            //Withdraw check only. Deposit check in Portfolio.depositToken
+            require(!details.isVirtual, "PB-VTNS-02"); // Virtual tokens can't be withdrawn
+        }
     }
 
     /**
@@ -525,7 +511,8 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
-    ) external payable virtual override onlyRole(BRIDGE_USER_ROLE) {
+    ) external payable virtual override nonReentrant whenNotPaused onlyRole(BRIDGE_USER_ROLE) {
+        validateSymbol(_xfer.symbol, _xfer.transaction, Direction.SENT);
         sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
     }
 
@@ -541,19 +528,13 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
-    ) internal nonReentrant whenNotPaused {
+    ) internal virtual {
         require(bridgeEnabled[_bridge], "PB-RBNE-01");
         uint16 dstChainId = lzDestinationMap[_dstChainListOrgChainId];
         require(dstChainId != 0, "PB-DDNS-02");
-
         if (_xfer.nonce == 0) {
             _xfer.nonce = incrementOutNonce(_bridge, dstChainId);
         }
-        bytes32 localSymbol = _xfer.symbol;
-        bytes32 destSymbolId;
-        //_xfer.symbol is overridden with the symbol the destination expects in the below method
-        (_xfer.symbol, destSymbolId) = getDestChainSymbol(_dstChainListOrgChainId, _xfer.symbol);
-
         bytes memory _payload = packXferMessage(_xfer);
         if (_bridge == BridgeProvider.LZ) {
             uint256 messageFee = _lzSend(dstChainId, _payload, _userFeePayer);
@@ -568,12 +549,6 @@ contract PortfolioBridgeMain is
         } else {
             // Just in case a bridge other than LZ is enabled accidentally
             revert("PB-RBNE-02");
-        }
-        // If this is NOT a cross chain transfer, update the inventory
-        if (_xfer.transaction != IPortfolio.Tx.CCTRADE) {
-            // overrite the symbol with symbolId for proper inventory calculations
-            _xfer.symbol = destSymbolId;
-            updateInventoryBySource(localSymbol, _xfer);
         }
     }
 
@@ -615,15 +590,17 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice  Processes message received from source chain via bridge
-     * @dev     if bridge is disabled or PAUSED and there are messages in flight, we still need to
-                process them when received at the destination. This also updates the receival timestamp
+     * @dev     Unpacks the message and updates the receival timestamp
      * @param   _bridge  Bridge to receive message from
      * @param   _srcChainListOrgChainId  Source chain ID
      * @param   _payload  Payload received
      */
-    function processPayload(BridgeProvider _bridge, uint32 _srcChainListOrgChainId, bytes calldata _payload) private {
-        IPortfolio.XFER memory xfer = this.unpackXFerMessage(_payload);
-
+    function processPayloadShared(
+        BridgeProvider _bridge,
+        uint32 _srcChainListOrgChainId,
+        bytes calldata _payload
+    ) internal returns (IPortfolio.XFER memory xfer) {
+        xfer = this.unpackXFerMessage(_payload);
         xfer.timestamp = block.timestamp; // log receival/process timestamp
         emit XChainXFerMessage(
             XCHAIN_XFER_MESSAGE_VERSION,
@@ -633,20 +610,28 @@ contract PortfolioBridgeMain is
             0,
             xfer
         );
-        bytes32 localSymbol;
-        // check the validity of the symbol(mainnet) or overwrite the xfer.symbol with the
-        // sourceSymbol + chainId (in the subnet)
-        (localSymbol, xfer.symbol) = getMappedSymbols(_srcChainListOrgChainId, xfer.symbol);
-        if (xfer.transaction == IPortfolio.Tx.CCTRADE) {
-            mainnetRfq.processXFerPayload(xfer);
-        } else {
-            // Update the totals by symbolId for multichain inventory management.
-            // Add xfer.quantity to the totals by SymbolId. It will be used to see how much the user
-            // can withdraw from the target chain.
-            updateInventoryBySource(localSymbol, xfer);
-            //After the inventory is updated, process the XFer with the local symbol that Portfolio needs
-            portfolio.processXFerPayload(xfer.trader, localSymbol, xfer.quantity, xfer.transaction);
-        }
+    }
+
+    /**
+     * @notice  Processes message received from source chain via bridge in the host chain.
+     * @dev     if bridge is disabled or PAUSED and there are messages in flight, we still need to
+                process them when received at the destination.
+                Overrides in the subnet
+     * @param   _bridge  Bridge to receive message from
+     * @param   _srcChainListOrgChainId  Source chain ID
+     * @param   _payload  Payload received
+     */
+    function processPayload(
+        BridgeProvider _bridge,
+        uint32 _srcChainListOrgChainId,
+        bytes calldata _payload
+    ) internal virtual {
+        IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
+        // check the validity of the symbol
+        validateSymbol(xfer.symbol, xfer.transaction, Direction.RECEIVED);
+        xfer.transaction == IPortfolio.Tx.CCTRADE
+            ? mainnetRfq.processXFerPayload(xfer)
+            : portfolio.processXFerPayload(xfer);
     }
 
     /**
@@ -677,13 +662,6 @@ contract PortfolioBridgeMain is
         (bool sent, ) = (msg.sender).call{value: address(this).balance}("");
         require(sent, "PB-FRFD-01");
     }
-
-    /**
-     * @notice  Overridden by PortfolioBridgeSub
-     * @dev     Update the inventory by each chain only in the Subnet.
-     * Inventory in the host chains are already known and don't need to be calculated
-     */
-    function updateInventoryBySource(bytes32 _localSymbol, IPortfolio.XFER memory _xfer) internal virtual {}
 
     /**
      * @notice  private function that handles the addition of native token

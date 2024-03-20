@@ -165,7 +165,9 @@ abstract contract Portfolio is
      */
     function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
-        portfolioBridge.pause();
+        if (!PausableUpgradeable(address(portfolioBridge)).paused()) {
+            portfolioBridge.pause();
+        }
     }
 
     /**
@@ -174,16 +176,18 @@ abstract contract Portfolio is
      */
     function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
-        portfolioBridge.unpause();
+        if (PausableUpgradeable(address(portfolioBridge)).paused()) {
+            portfolioBridge.unpause();
+        }
     }
 
     /**
      * @notice  (Dis)allows the deposit functionality only
      * @dev     Only callable by admin
-     * @param   _pause  True to allow, false to disallow
+     * @param   _depositPause  True to allow, false to disallow
      */
-    function pauseDeposit(bool _pause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        allowDeposit = !_pause;
+    function pauseDeposit(bool _depositPause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        allowDeposit = !_depositPause;
     }
 
     /**
@@ -350,17 +354,9 @@ abstract contract Portfolio is
     /**
      * @notice  Processes the XFER message coming from the bridge
      * @dev     Overridden in the child contracts, as the logic differs.
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _transaction  Transaction type Enum
+     * @param   _xfer  Transfer message
      */
-    function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        Tx _transaction
-    ) external virtual override;
+    function processXFerPayload(IPortfolio.XFER calldata _xfer) external virtual override;
 
     /**
      * @dev     Overridden in the child contracts, as the logic differs.

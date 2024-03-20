@@ -25,7 +25,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.3.0");
+    bytes32 public constant VERSION = bytes32("2.5.2");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -72,11 +72,13 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * Native symbol is also added by default with 0 address.
      * @param   _symbol  Symbol of the token
      * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by the current chainid
+     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by the
+     * current chainid
      * @param   _decimals  Decimals of the token
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     * @param   _isVirtual  Not an ERC20 or native. It is only used to facilitate Cross Chain Trades where the token doesn't exist
+     * @param   _isVirtual  Not an ERC20 or native. It is only used to facilitate Cross Chain Trades where the
+     * token doesn't exist
      */
     function addToken(
         bytes32 _symbol,
@@ -92,8 +94,10 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             TokenDetails memory details = TokenDetails(
                 _decimals,
                 _tokenAddress,
-                ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
-                _isVirtual ? _srcChainId : chainId, // srcChainId. always add with the chain id of the Portfolio unless virtual
+                // Auction Mode is ignored as it is irrelevant in the Mainnet
+                ITradePairs.AuctionMode.OFF,
+                //always add with the chain id of the Portfolio unless virtual
+                _isVirtual ? _srcChainId : chainId, // srcChainId.
                 _symbol, //symbol
                 bytes32(0), //symbolId
                 _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
@@ -360,36 +364,28 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * Even when the contract is paused, this method is allowed for the messages that
      * are in flight to complete properly. Pause for upgrade, then wait to make sure no messages are in
      * flight then upgrade
-     * @param   _trader  Address of the trader
-     * @param   _symbol  Symbol of the token in form of _symbol + chainId
-     * @param   _quantity  Amount of token to be withdrawn
-     * @param   _transaction  Transaction type
+     * @param   _xfer  Transfer message
      */
     function processXFerPayload(
-        address _trader,
-        bytes32 _symbol,
-        uint256 _quantity,
-        Tx _transaction
+        IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        if (_transaction == Tx.WITHDRAW) {
-            require(_trader != address(0), "P-ZADDR-02");
-            require(_quantity > 0, "P-ZETD-01");
-            if (_symbol == native) {
+        if (_xfer.transaction == Tx.WITHDRAW) {
+            require(_xfer.trader != address(0), "P-ZADDR-02");
+            require(_xfer.quantity > 0, "P-ZETD-01");
+            if (_xfer.symbol == native) {
                 //Withdraw native
                 // solhint-disable-next-line avoid-low-level-calls
-                (bool success, ) = _trader.call{value: _quantity}("");
+                (bool success, ) = _xfer.trader.call{value: _xfer.quantity}("");
                 require(success, "P-WNFA-01");
             } else {
                 //Withdraw Token
                 //We don't check the AuctionMode of the token in the mainnet. If Subnet allows the message to be sent
                 //Then the token is no longer is auction
-                require(tokenList.contains(_symbol), "P-ETNS-02");
-                require(tokenDetailsMap[_symbol].isVirtual == false, "P-VTNS-02");
-                tokenMap[_symbol].safeTransfer(_trader, _quantity);
+                tokenMap[_xfer.symbol].safeTransfer(_xfer.trader, _xfer.quantity);
             }
-            emitPortfolioEvent(_trader, _symbol, _quantity, 0, _transaction);
+            emitPortfolioEvent(_xfer.trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction);
         } else {
-            revert("P-PTNS-01");
+            revert("P-PTNS-02");
         }
     }
 

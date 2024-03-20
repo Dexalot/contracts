@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.0");
+    bytes32 public constant VERSION = bytes32("2.5.1");
 
     // denominator for rate calculations obsolete as of Feb 9 2024 CD
     uint256 public constant TENK = 10000;
@@ -80,7 +80,7 @@ contract TradePairs is
      * @param   _orderbooks  orderbooks instance
      * @param   _portfolio  portfolio instance
      */
-    function initialize(address _orderbooks, address _portfolio) public initializer {
+    function initialize(address _orderbooks, address _portfolio) external initializer {
         __AccessControlEnumerable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
@@ -234,20 +234,20 @@ contract TradePairs is
      * @dev     Can only be called by DEFAULT_ADMIN.
      * Public instead of external because it saves 0.184(KiB) in contract size
      * @param   _tradePairId  id of the trading pair
-     * @param   _pause  true to pause, false to unpause
+     * @param   _tradePairPause  true to pause, false to unpause
      */
-    function pauseTradePair(bytes32 _tradePairId, bool _pause) public override onlyRole(DEFAULT_ADMIN_ROLE) {
-        tradePairMap[_tradePairId].pairPaused = _pause;
+    function pauseTradePair(bytes32 _tradePairId, bool _tradePairPause) public override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].pairPaused = _tradePairPause;
     }
 
     /**
      * @notice  Pauses adding new orders to a specific Trade Pair
      * @dev     Can only be called by DEFAULT_ADMIN.
      * @param   _tradePairId  id of the trading pair
-     * @param   _pause  true to pause, false to unpause
+     * @param   _addOrderPause  true to pause, false to unpause
      */
-    function pauseAddOrder(bytes32 _tradePairId, bool _pause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        tradePairMap[_tradePairId].addOrderPaused = _pause;
+    function pauseAddOrder(bytes32 _tradePairId, bool _addOrderPause) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        tradePairMap[_tradePairId].addOrderPaused = _addOrderPause;
     }
 
     /**

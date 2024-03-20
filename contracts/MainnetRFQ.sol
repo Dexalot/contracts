@@ -46,7 +46,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.1");
+    bytes32 public constant VERSION = bytes32("1.1.3");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -153,6 +153,13 @@ contract MainnetRFQ is
         uint256 srcAmount,
         uint256 destAmount
     );
+    event XChainFinalized(
+        uint256 indexed nonceAndMeta,
+        address trader,
+        bytes32 symbol,
+        uint256 amount,
+        uint256 timestamp
+    );
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
@@ -193,7 +200,7 @@ contract MainnetRFQ is
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
-    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused {
+    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyOrder(_order, _signature);
 
         _executeOrder(_order, _order.makerAmount, _order.takerAmount, destTrader);
@@ -213,7 +220,7 @@ contract MainnetRFQ is
         Order calldata _order,
         bytes calldata _signature,
         uint256 _takerAmount
-    ) external payable whenNotPaused {
+    ) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyOrder(_order, _signature);
 
         uint256 makerAmount = _order.makerAmount;
@@ -662,9 +669,9 @@ contract MainnetRFQ is
     /**
      * @notice Sends a cross chain message to PortfolioBridge containing the destination token amount,
      * symbol and trader. Sends remaining native token as gas fee for cross chain message. Refund for
-     * gas fee is handled in PorfolioBridge.
+     * gas fee is handled in PortfolioBridge.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
-     * @param _to Trader address to recieve funds on destination chain
+     * @param _to Trader address to receive funds on destination chain
      */
     function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private {
         bytes28 customdata = bytes28(uint224(_order.nonceAndMeta) & NONCE_MASK);
@@ -737,6 +744,7 @@ contract MainnetRFQ is
             return false;
         }
         completedSwaps[bucket] |= mask;
+        emit XChainFinalized(_nonceAndMeta, _trader, _symbol, _quantity, block.timestamp);
         return true;
     }
 }

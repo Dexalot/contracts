@@ -10,6 +10,7 @@ import {
     ExchangeMain,
     MockToken,
     PortfolioMain,
+    MainnetRFQ,
     TokenVestingCloneable__factory,
     TokenVestingCloneFactory,
     TokenVestingCloneable,
@@ -26,6 +27,8 @@ describe("Exchange Main", function () {
     let PriceFeed: ContractFactory;
     let mockToken: MockToken;
     let exchange: ExchangeMain;
+    let mainnetRFQAvax: MainnetRFQ;
+
     let portfolio: PortfolioMain;
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -57,7 +60,9 @@ describe("Exchange Main", function () {
     beforeEach(async function () {
         const portfolioContracts = await f.deployCompletePortfolio(true);
         portfolio = portfolioContracts.portfolioAvax;
-        exchange = await f.deployExchangeMain(portfolio)
+        mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
+
+        exchange = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
         mockToken = await f.deployMockToken("MOCK", 18);
         PriceFeed = await ethers.getContractFactory("PriceFeedMock");
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
@@ -67,6 +72,12 @@ describe("Exchange Main", function () {
 
         it("Should not initialize again after deployment", async function () {
             await expect(exchange.initialize()).to.be.revertedWith("Initializable: contract is already initialized");
+
+        });
+
+        it("Should be initialized correctly", async function () {
+            expect(await exchange.getMainnetRfq()).to.be.equal(mainnetRFQAvax.address);
+            expect(await exchange.getPortfolio()).to.be.equal(portfolio.address);
         });
 
         it("Should use addToken correctly by auction admin", async function () {
@@ -139,9 +150,52 @@ describe("Exchange Main", function () {
                 .withArgs(ethers.BigNumber.from("36893488147419156216"), 7504070821, false);
         });
 
+        it("Should fail to pause mainnetrfq if not admin", async function () {
+            await expect(exchange.connect(trader1).pauseMainnetRfq(true)).to.be.revertedWith("AccessControl:");
+        });
+
         it("Should pause for upgrading", async function () {
             await exchange.pauseForUpgrade(true)
             expect(await portfolio.paused()).to.be.true;
+            expect(await mainnetRFQAvax.paused()).to.be.true;
+
+        });
+
+        it("Should set and get mainnetRFQ contract address correctly", async function () {
+            // fail for non admin account
+            await expect(exchange.connect(trader1).setMainnetRFQ(mainnetRFQAvax.address)).to.be.revertedWith("AccessControl:");
+            // succeed for admin account
+            await exchange.setMainnetRFQ(mainnetRFQAvax.address);
+            expect(await exchange.getMainnetRfq()).to.be.equal(mainnetRFQAvax.address);
+        });
+
+
+        it("Should pause and unpause Portfolio & mainnetRFQ when out of synch", async function () {
+            await expect(mainnetRFQAvax.connect(trader1).pause()).to.be.revertedWith("AccessControl: account");
+
+            await mainnetRFQAvax.grantRole(await mainnetRFQAvax.DEFAULT_ADMIN_ROLE(), owner.address);
+            await mainnetRFQAvax.connect(owner).pause();
+            expect(await mainnetRFQAvax.paused()).to.be.true;
+
+            await exchange.pauseForUpgrade(true);
+            expect(await portfolio.paused()).to.be.true;
+            expect(await mainnetRFQAvax.paused()).to.be.true;
+
+            await mainnetRFQAvax.connect(owner).unpause();
+            expect(await mainnetRFQAvax.paused()).to.be.false;
+
+            await exchange.pauseForUpgrade(false);
+            expect(await portfolio.paused()).to.be.false;
+            expect(await mainnetRFQAvax.paused()).to.be.false;
+
+            // they are in synch
+            await exchange.pauseForUpgrade(true);
+            expect(await portfolio.paused()).to.be.true;
+            expect(await mainnetRFQAvax.paused()).to.be.true;
+
+            await exchange.pauseForUpgrade(false);
+            expect(await portfolio.paused()).to.be.false;
+            expect(await mainnetRFQAvax.paused()).to.be.false;
         });
 
 

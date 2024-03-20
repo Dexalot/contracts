@@ -119,6 +119,7 @@ describe("Portfolio Bridge Main", () => {
         expect(await portfolioBridgeMain.getDefaultDestinationChain()).to.be.equal(0);
     });
 
+
     it("Should be able to set a different Default Destination", async () => {
 
         const { arbitrumChain } = f.getChains();
@@ -320,7 +321,7 @@ describe("Portfolio Bridge Main", () => {
 
     it("Should use lzReceive correctly", async () => {
 
-        const { dexalotSubnet } = f.getChains();
+        const { cChain, dexalotSubnet } = f.getChains();
         const nonce = 0;
         const transaction = 0;      //  transaction =.  0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
         const trader = trader1.address;
@@ -342,12 +343,22 @@ describe("Portfolio Bridge Main", () => {
 
         // fail from wrong address - instead of lzEndpoint address passed trader2 address
         await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trader2.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-IVEC-01");
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         const bogusChainId = 1;
-        await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
+        await expect(portfolioBridgeMain.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-DDNS-02");
+
+        // token not found when sending from subnet
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
         await portfolioBridgeSub.setTrustedRemoteAddress(0, bogusChainId, portfolioBridgeMain.address, bogusChainId, 300000, false);
         await expect(portfolioBridgeSub.sendXChainMessage(bogusChainId, 0, xfer, trader)).to.be.revertedWith("PB-ETNS-01");
 
+        // token not found when receiving in the subnet
+        await portfolioBridgeSub.setLzEndPoint(owner.address);
+        const trustedRemote = await portfolioBridgeSub.lzTrustedRemoteLookup(cChain.lzChainId);
+        const depositPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, Utils.fromUtf8("NONEEXIST"), Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
+        await expect(portfolioBridgeSub.lzReceive(cChain.lzChainId, trustedRemote, 0, depositPayload)).to.be.revertedWith("PB-ETNS-01");
+
+        //
         await portfolioBridgeMain.setLzEndPoint(owner.address);
         await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, portfolioBridgeMain.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");
         await expect(portfolioBridgeMain.lzReceive(1,lzEndpointSub.address, 0, depositAvaxPayload)).to.be.revertedWith("PB-SINA-01");
@@ -366,7 +377,7 @@ describe("Portfolio Bridge Main", () => {
         const timestamp = BigNumber.from(await f.latestTime());
 
         const { cChain , dexalotSubnet} = f.getChains();
-        const symbolId = Utils.fromUtf8("AVAX"+ cChain.chainListOrgId)
+        //const symbolId = Utils.fromUtf8("AVAX"+ cChain.chainListOrgId)
 
         let xfer1: any = {};
         xfer1 = {nonce,
@@ -395,6 +406,12 @@ describe("Portfolio Bridge Main", () => {
         expect(await portfolioBridgeMain.isBridgeProviderEnabled(bridge1)).to.be.true;
         await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1, trader)).to.be.revertedWith("PB-RBNE-02");
 
+
+        //fail for non-virtual token and CCTRADE
+        xfer1.transaction = 11 // CCTRADE
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+
+        xfer1.transaction = transaction1;
         // succeed
         const tx = await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader);
         const receipt: any = await tx.wait();
