@@ -26,11 +26,14 @@ interface IPortfolioSubHelper {
         address _makerAddr,
         address _takerAddr,
         bytes32 _tradePairId,
-        uint8 _makerRate,
-        uint8 _takerRate
-    ) external view returns (uint256 makerRate, uint256 takerRate);
+        uint256 _makerRate,
+        uint256 _takerRate
+    ) external view returns (uint256 maker, uint256 taker);
 
     function isAdminAccountForRates(address _account) external view returns (bool);
 
-    function getSymbolToConvert(bytes32 _fromSymbol) external view returns (bytes32);
+    struct Rebates {
+        uint8 maker;
+        uint8 taker;
+    }
 }

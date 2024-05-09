@@ -33,6 +33,7 @@ import {
     NativeMinterMock,
     LZEndpointMock__factory,
     InventoryManager,
+    MockWrappedToken,
 } from '../typechain-types'
 
 // import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -124,7 +125,12 @@ export const deployDexalotToken = async (): Promise<DexalotToken> => {
 export const deployMockToken = async (tokenStr: string, tokenDecimals: number): Promise<MockToken> => {
     const MockToken = await ethers.getContractFactory("MockToken");
     const mockToken: MockToken = await MockToken.deploy("Mock " + tokenStr + " Token", tokenStr, tokenDecimals) as MockToken;
+    return mockToken;
+}
 
+export const deployMockWrappedToken = async (tokenStr: string, tokenDecimals: number): Promise<MockWrappedToken> => {
+    const MockToken = await ethers.getContractFactory("MockWrappedToken");
+    const mockToken: MockWrappedToken = await MockToken.deploy("Mock Wrapped " + tokenStr + " Token", tokenStr, tokenDecimals) as MockWrappedToken;
     return mockToken;
 }
 

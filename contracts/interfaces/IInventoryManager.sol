@@ -12,8 +12,6 @@ interface IInventoryManager {
 
     function get(bytes32 _symbol, bytes32 _symbolId) external view returns (uint256);
 
-    function convertSymbol(bytes32 _symbolId, bytes32 _fromSymbol, bytes32 _toSymbol) external;
-
     function calculateWithdrawalFee(
         bytes32 _symbol,
         bytes32 _symbolId,

@@ -52,7 +52,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("3.2.2");
+        return bytes32("3.2.3");
     }
 
     /**
@@ -302,7 +302,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         delayedTransfers.updateVolume(_xfer.symbol, _xfer.quantity);
 
         //Check individual thresholds again for withdrawals. And set them in delayed transfer if necessary.
-        if (delayedTransfers.checkThresholds(_xfer)) {
+        if (delayedTransfers.checkThresholds(_xfer, _dstChainListOrgChainId)) {
             sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
         }
     }
@@ -372,33 +372,6 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Changes the mapping from one symbol to the other symbol
-     * @dev     Only admin can call this function. After the March 2024 upgrade we need to rename
-     * 3 current subnet symbols BTC.b, WETH.e and USDt to BTC, ETH, USDT to support multichain trading.
-     * The current inventory is completely from Avalanche C Chain which is the default destination for
-     * the subnet. So there is no inventory comingling until we onboard a new chain. The conversions can
-     * be done after the second mainnet but better to do it before for simplicity
-     * @param   _dstChainListOrgChainId   destination ChainListOrg chain id
-     * @param   _fromSymbol  Original subnet token symbol
-     * @param   _toSymbol  New subnet token symbol
-     */
-    function renameToken(
-        uint32 _dstChainListOrgChainId,
-        bytes32 _fromSymbol,
-        bytes32 _toSymbol
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_fromSymbol != _toSymbol, "PB-LENM-01");
-        (, bytes32 fromSymbolId) = getDestChainSymbol(_dstChainListOrgChainId, _fromSymbol);
-        IPortfolio.TokenDetails storage tokenDetails = tokenDetailsMapById[fromSymbolId];
-        tokenDetails.symbol = _toSymbol;
-        tokenInfoMapBySymbolChainId[_toSymbol][_dstChainListOrgChainId] = tokenInfoMapBySymbolChainId[_fromSymbol][
-            _dstChainListOrgChainId
-        ];
-        inventoryManager.convertSymbol(fromSymbolId, _fromSymbol, _toSymbol);
-        delete tokenInfoMapBySymbolChainId[_fromSymbol][_dstChainListOrgChainId];
-    }
-
-    /**
      * @notice  Set DelayedTransfers address
      * @dev     Only admin can set DelayedTransfers address.
      * @param   _delayedTransfers  DelayedTransfers address
@@ -410,15 +383,11 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     /**
      * @notice  Executes delayed transfer if the delay period has passed
      * @dev     Only admin can call this function
-     * @param   _dstChainId  lz destination chain id
      * @param   _id  Transfer ID
      */
-    function executeDelayedTransfer(
-        uint16 _dstChainId,
-        bytes32 _id
-    ) external override nonReentrant onlyRole(BRIDGE_ADMIN_ROLE) {
-        IPortfolio.XFER memory xfer = delayedTransfers.executeDelayedTransfer(_id);
-        sendXChainMessageInternal(_dstChainId, defaultBridgeProvider, xfer, address(0));
+    function executeDelayedTransfer(bytes32 _id) external override nonReentrant onlyRole(BRIDGE_ADMIN_ROLE) {
+        (IPortfolio.XFER memory xfer, uint32 dstChainListOrgChainId) = delayedTransfers.executeDelayedTransfer(_id);
+        sendXChainMessageInternal(dstChainListOrgChainId, defaultBridgeProvider, xfer, address(0));
     }
 
     function setInventoryManager(address _inventoryManager) external onlyRole(DEFAULT_ADMIN_ROLE) {

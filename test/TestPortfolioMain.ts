@@ -7,6 +7,7 @@ import Utils from './utils';
 
 import {
     PortfolioBridgeMain,
+    PortfolioBridgeSub,
     PortfolioMain,
     PortfolioSub,
     TokenVestingCloneFactory,
@@ -25,7 +26,7 @@ describe("Portfolio Main", () => {
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
-
+    let portfolioBridgeSub: PortfolioBridgeSub;
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
     let auctionAdmin: SignerWithAddress;
@@ -68,7 +69,7 @@ describe("Portfolio Main", () => {
         portfolioMain = portfolioContracts.portfolioAvax;
         portfolioSub = portfolioContracts.portfolioSub;
         portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
-
+        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
 
         const { cChain } = f.getChains();
         srcChainListOrgId = cChain.chainListOrgId;
@@ -80,17 +81,107 @@ describe("Portfolio Main", () => {
     });
 
     it("Should not add native token again after deployment", async function () {
-        //Silent fail
-        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5',18),false);
-
+        await expect(portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5',18),false)).to.be.revertedWith("P-TAEX-01");
     });
 
-    it("Should run updateTokenDetailsAfterUpgrade properly", async function () {
-
-        await expect(portfolioMain.connect(trader1).updateTokenDetailsAfterUpgrade()).to.be.revertedWith("AccessControl:");
-
-        await portfolioMain.updateTokenDetailsAfterUpgrade();
+    it("Can only remove mainnet native token if no balances", async function () {
+        await f.depositNative(portfolioMain, trader1, '50');
+        await portfolioMain.pause();
+        // fail when there is a balance
+        await expect(portfolioMain.removeToken(AVAX, srcChainListOrgId)).to.be.revertedWith("P-NZBL-01");
+        expect(await portfolioMain.nativeDepositsRestricted()).to.be.false;
+        await portfolioMain.unpause()
+        f.withdrawToken(portfolioSub, trader1, AVAX, 18, "50");
+        // succeed if 0 balance
+        await portfolioMain.pause()
+        await expect(portfolioMain.removeToken(AVAX, srcChainListOrgId)).to.emit(portfolioMain, "ParameterUpdated")
+            .withArgs(AVAX, "P-REMOVETOKEN", 0, 0);
+        expect(await portfolioMain.nativeDepositsRestricted()).to.be.true;
     });
+
+
+    it("Should not allow native deposits if restricted", async function () {
+        await portfolioMain.pause();
+        // fail when there is a balance
+        await expect(portfolioMain.removeToken(AVAX, srcChainListOrgId)).to.emit(portfolioMain, "ParameterUpdated")
+            .withArgs(AVAX, "P-REMOVETOKEN", 0, 0);
+        expect(await portfolioMain.nativeDepositsRestricted()).to.be.true;
+        await portfolioMain.unpause();
+        await expect( f.depositNative(portfolioMain, trader1, '50')).to.be.revertedWith("P-NDNS-01");
+    });
+
+    it("Should be able to add native token again if native is removed", async function () {
+        await portfolioMain.pause();
+        // fail when there is a balance
+        await expect(portfolioMain.removeToken(AVAX, srcChainListOrgId)).to.emit(portfolioMain, "ParameterUpdated")
+            .withArgs(AVAX, "P-REMOVETOKEN", 0, 0);
+        expect(await portfolioMain.nativeDepositsRestricted()).to.be.true;
+        await portfolioMain.unpause();
+        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5', 18), false);
+
+        expect(await portfolioMain.nativeDepositsRestricted()).to.be.false;
+        await f.depositNative(portfolioMain, trader1, '50');
+        const res = await portfolioSub.getBalance(trader1.address, AVAX);
+        expect(res.total).to.equal( ethers.utils.parseUnits('50', 18));
+    });
+
+    // it("Should update token references if ERC20 symbol has been renamed", async function () {
+
+    //     const {trader1} = await f.getAccounts();
+    //     const token_symbol = "EUROC";
+    //     const token_decimals = 6;
+    //     const euro_coin = await f.deployMockToken(token_symbol, token_decimals);
+    //     const EUROC = Utils.fromUtf8(await euro_coin.symbol());
+    //     const EURC = Utils.fromUtf8("EURC");
+    //     await euro_coin.mint(trader1.address, ethers.utils.parseEther("100"));
+    //     // succeed for admin
+    //     await f.addToken(portfolioMain, portfolioSub, euro_coin, 1);
+    //     let tokens = await portfolioMain.getTokenList();
+    //     expect(tokens.find((token: string) => token === EUROC)).to.equal(EUROC);
+    //     await f.depositToken(portfolioMain, trader1, euro_coin, token_decimals, EUROC, "100")
+    //     expect((await portfolioSub.getBalance(trader1.address, EUROC)).total.toString()).to.equal(Utils.parseUnits("100", token_decimals));
+    //     expect(await euro_coin.balanceOf(portfolioMain.address)).to.equal(Utils.parseUnits("100", token_decimals));
+    //     // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+
+    //     await expect(portfolioMain.renameToken(EUROC, EURC)).to.be.revertedWith("Pausable: not paused");
+    //     await portfolioMain.pause();
+    //     await expect(portfolioMain.connect(trader1).renameToken(EUROC, EURC)).to.be.revertedWith("AccessControl: account");
+
+    //     await expect(portfolioMain.renameToken(EUROC, EUROC)).to.be.revertedWith("P-LENM-01");
+    //     await expect(portfolioMain.renameToken(EUROC, EURC)).to.be.revertedWith("P-TSDM-01");
+
+
+    //     await euro_coin.renameSymbol("EURC");
+    //     expect(await euro_coin.symbol()).to.be.equal("EURC");
+    //     // rename works
+    //     await expect(portfolioMain.renameToken(EUROC, EURC)).to.emit(portfolioMain, "ParameterUpdated")
+    //         .withArgs(EUROC, "P-REMOVETOKEN", 0, 0);
+    //     tokens = await portfolioMain.getTokenList();
+    //     expect(tokens.find((token: string) => token === EURC)).to.equal(EURC);
+    //     expect(tokens.find((token: string) => token === EUROC)).to.equal(undefined);
+    //     // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
+    //     // no change in eurocoin balances
+    //     expect(await euro_coin.balanceOf(portfolioMain.address)).to.equal(Utils.parseUnits("100", token_decimals));
+    //     await portfolioMain.unpause();
+    //     const {dexalotSubnet } = f.getChains();
+
+    //     // The below mocks messages to test PB-ETNS-02 on PortfolioBridgeMain ()
+    //     const nonce = 0;
+    //     const transaction = 0;   //  transaction:   0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
+
+    //     await portfolioBridgeMain.setLzEndPoint(owner.address);
+    //     const trustedRemote = await portfolioBridgeMain.lzTrustedRemoteLookup(dexalotSubnet.lzChainId);
+    //     // Try withdrawing EUROC - fails
+    //     let withDrawEURCPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, EUROC, Utils.parseUnits("100", token_decimals), await f.latestTime(), Utils.emptyCustomData());
+    //     await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trustedRemote, 1, withDrawEURCPayload)).to.be.revertedWith("PB-ETNS-02");
+
+    //     //Succeed with EURC. This assumes that subnet symbols don't change, it has already been converted as a part of March upgrade.
+    //     withDrawEURCPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, EURC, Utils.parseUnits("100", token_decimals), await f.latestTime(), Utils.emptyCustomData());
+    //     await portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trustedRemote, 1, withDrawEURCPayload)
+    //     expect(await euro_coin.balanceOf(portfolioMain.address)).to.equal(0);
+
+    // });
+
 
     it("Should add and remove ERC20 token to portfolio main", async () => {
         const {trader1} = await f.getAccounts();
@@ -116,9 +207,6 @@ describe("Portfolio Main", () => {
 
         // do nothing for non-existent token
         await portfolioMain.removeToken(Utils.fromUtf8("MOCK"), srcChainListOrgId)
-
-        // can't remove AVAX token
-        await portfolioMain.removeToken(Utils.fromUtf8("AVAX"), srcChainListOrgId)
     });
 
     it("Should not add ERC20 token to portfolio main if parameters are incorrect", async () => {
@@ -126,9 +214,6 @@ describe("Portfolio Main", () => {
         const token_decimals = 18;
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
-
-        await portfolioMain.pause()
-        await portfolioMain.removeToken(AVAX, srcChainListOrgId); // silent fail
 
 
         await expect(portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId,  0,  '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("P-CNAT-01");
@@ -228,7 +313,7 @@ describe("Portfolio Main", () => {
     });
 
 
-    it("Should set Minimum Deposit Multipler", async () => {
+    it("Should set Minimum Deposit Multiplier", async () => {
         const token_symbol = "USDT";
         const token_decimals = 18;
         const usdt = await f.deployMockToken(token_symbol, token_decimals);

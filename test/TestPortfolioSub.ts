@@ -114,6 +114,11 @@ describe("Portfolio Sub", () => {
         await expect(portfolioSub.initialize(ALOT, srcChainListOrgId)).to.be.revertedWith("Initializable: contract is already initialized");
     });
 
+    it("Should not add native token again after deployment", async function () {
+        //Silent fail
+        await portfolioSub.addToken(ALOT, ethers.constants.AddressZero, srcChainListOrgId, 18, auctionMode, '0', ethers.utils.parseUnits('0.5',18), ALOT);
+    });
+
     it("Should have starting portfolio with zero total and available balances for native token", async () => {
         const res = await portfolioSub.getBalance(owner.address, native);
         //Utils.printResults(owner.address, "before deposit", res, avax_decimals);
@@ -122,9 +127,29 @@ describe("Portfolio Sub", () => {
 
     });
 
-    it("Should run updateTokenDetailsAfterUpgrade properly", async function () {
-        await expect(portfolioSub.connect(trader1).updateTokenDetailsAfterUpgrade()).to.be.revertedWith("AccessControl:");
-        await portfolioSub.updateTokenDetailsAfterUpgrade();
+    it("Can't remove native ALOT from subnet ", async function () {
+
+        const { cChain, dexalotSubnet } = f.getChains();
+        //  native ALOT of the subnet can't be removed from neither PortfolioSub nor PortfolioBridgeSub
+        await expect(portfolioSub["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), dexalotSubnet.chainListOrgId, Utils.fromUtf8("ALOT"))).to.be.revertedWith("P-TTNZ-02");
+        //Still in Prtf
+        let tokenDetails = await portfolioSub.getTokenDetails(Utils.fromUtf8("ALOT"));
+        expect(tokenDetails.symbol).to.equal(Utils.fromUtf8("ALOT"));
+        //Still in Pb
+        tokenDetails = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" +  dexalotSubnet.chainListOrgId));
+        expect(tokenDetails.symbol).to.equal(Utils.fromUtf8("ALOT"));
+
+        await portfolioSub.pause();
+        //Remove mainchain ALOT from PortfolioBridgeSub, Portfolio stays intact
+        await expect(portfolioSub.connect(owner)["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), cChain.chainListOrgId, Utils.fromUtf8("ALOT")))
+        .not.to.emit(portfolioSub, "ParameterUpdated");
+        //Still in Prtf
+        tokenDetails = await portfolioSub.getTokenDetails(Utils.fromUtf8("ALOT"));
+        expect(tokenDetails.symbol).to.equal(Utils.fromUtf8("ALOT"));
+
+        tokenDetails = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" +  cChain.chainListOrgId));
+        expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);  // non existent
+
     });
 
     it("Should create ERC20 token", async () => {
@@ -1315,8 +1340,6 @@ describe("Portfolio Sub", () => {
         // do nothing for non-existent token
         await portfolioSub["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("MOCK"), srcChainListOrgId,Utils.fromUtf8("MOCK"))
 
-        // can't remove ALOT token
-        await portfolioSub["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), srcChainListOrgId,Utils.fromUtf8("MOCK"))
 
     });
 
@@ -1379,103 +1402,6 @@ describe("Portfolio Sub", () => {
         expect(tokenDetails.symbolId).to.equal(ethers.constants.HashZero);
     });
 
-    it("Should convert between tokens correctly", async () => {
-
-        const { cChain} = f.getChains();
-        const cChainSymbol = "USDt";
-        const orginalSubnetSymbol = "USDt"
-        const origsubnet_symbol_bytes32 = Utils.fromUtf8(orginalSubnetSymbol+ cChain.chainListOrgId);
-        const subnet_symbol = "USDT";
-        const deposit_amount = 200;
-
-        const token_decimals = 18;
-        const usdt = await f.deployMockToken(cChainSymbol, token_decimals);
-        const USDT = Utils.fromUtf8(cChainSymbol);
-        await usdt.mint(trader1.address, ethers.utils.parseEther("500"))
-        await usdt.mint(trader2.address, ethers.utils.parseEther("500"))
-        await usdt.mint(owner.address, ethers.utils.parseEther("500"))
-
-        //Add it with avalanche id
-        await f.addToken(portfolioMain, portfolioSub, usdt, 0.5, 0, true, 0, orginalSubnetSymbol);
-        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
-        expect(await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei(deposit_amount.toString()));
-
-        // console.log("after USDt");
-        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
-        // console.log(subnet_symbol, await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32));
-        // console.log(orginalSubnetSymbol, await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32));
-
-        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-ETNS-01");
-
-        await f.addTokenToPortfolioSub(portfolioSub, cChainSymbol, subnet_symbol, usdt.address, tokenDecimals
-            , cChain.chainListOrgId, 0.5, 0, true, 0)
-        await f.depositToken(portfolioMain, trader2, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
-
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(0);
-        expect(await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
-        // console.log("after USDt with USDT subnetSYmbol");
-        // await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
-        // console.log(subnet_symbol, await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32));
-        // console.log(orginalSubnetSymbol, await inventoryManager.get(Utils.fromUtf8(orginalSubnetSymbol), origsubnet_symbol_bytes32));
-
-        // console.log("");
-        // console.log("Token totals Orig", orginalSubnetSymbol, await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol)));
-        // console.log("Token totals New", subnet_symbol, await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol)));
-
-        // convertion from USTt to USDT is allowed
-        await portfolioSubHelper.addConvertibleToken(Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"));
-        expect(await portfolioSubHelper.getSymbolToConvert(Utils.fromUtf8("USDt"))).to.be.equal(Utils.fromUtf8("USDT"));
-        // need to rename the token in PortfolioBridge
-        await portfolioBridgeSub.renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"));
-
-        // Fail when trader1 total positions < available (outstanding orders)
-        await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), owner.address)
-        //Tx 3-increaseAvail or 4-deccreaseAvail allowed
-        await portfolioSub.adjustAvailable(4, trader1.address, USDT, Utils.toWei('10'))
-        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("P-TFNE-01");
-        await portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))
-
-        // Convert trader1 positions. They go under the new subnet symbol. trader2' are under the original subnet symbol
-        await portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"));
-
-        // no positions to convert. Owner has 0
-        await portfolioSub.connect(owner).convertToken(Utils.fromUtf8("USDt"));
-
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
-        // portfolio bridge has both inventory
-        expect(await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount*2).toString()));
-
-        // Deposit more for trader1 after the conversion
-        await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount.toString(), 0);
-
-        // old inventory from trader2 stays the same
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(Utils.toWei(deposit_amount.toString()));
-        // new deposit is Reflected under  the new inventory
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
-        expect(await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount * 3).toString()));
-
-        // trader2 withdraws instead of converting it
-        await f.withdrawToken(portfolioSub, trader2, Utils.fromUtf8("USDt"), token_decimals, deposit_amount.toString());
-        // old inventory is withdrawn
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(0);
-        // new inventory left only
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
-        expect(await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32)).to.be.equal(Utils.toWei((deposit_amount * 2).toString()));
-
-        //withdrawing the converted inventory and the newly deposited inventory together
-        await f.withdrawToken(portfolioSub, trader1, Utils.fromUtf8("USDT"), token_decimals, (deposit_amount * 2).toString());
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(orginalSubnetSymbol))).to.be.equal(0);
-        expect(await portfolioSub.tokenTotals(Utils.fromUtf8(subnet_symbol))).to.be.equal(0);
-        expect(await inventoryManager.get(Utils.fromUtf8(subnet_symbol), origsubnet_symbol_bytes32)).to.be.equal(0);
-
-        await portfolioSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
-        await portfolioSub.pause();
-        await expect(portfolioSub.connect(trader1).convertToken(Utils.fromUtf8("USDt"))).to.be.revertedWith("Pausable: paused");
-        await portfolioSub.unpause();
-
-    });
 
 
     it("Should add the same subnetSymbol from multiple chains", async () => {
@@ -1572,24 +1498,6 @@ describe("Portfolio Sub", () => {
         .withArgs(subnet_symbol_bytes32, "P-REMOVETOKEN", 0, 0);
 
         //await f.printTokens([portfolioMain], portfolioSub, portfolioBridgeSub);
-
-        //Remove mainchain ALOT from PortfolioBridgeSub, Portfolio stays intact
-        await expect(portfolioSub.connect(owner)["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), cChain.chainListOrgId, Utils.fromUtf8("ALOT")))
-            .not.to.emit(portfolioSub, "ParameterUpdated");
-
-        tokenDetails = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" +  cChain.chainListOrgId));
-        expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);  // non existent
-
-        // Silent fail, native ALOT of the subnet can't be removed from neither PortfolioSub nor PortfolioBridgeSub
-        await expect(portfolioSub.connect(owner)["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("ALOT"), dexalotSubnet.chainListOrgId, Utils.fromUtf8("ALOT")))
-            .not.to.emit(portfolioSub, "ParameterUpdated");
-
-        //Still in Prtf
-        tokenDetails = await portfolioSub.getTokenDetails(Utils.fromUtf8("ALOT"));
-        expect(tokenDetails.symbol).to.equal(Utils.fromUtf8("ALOT"))
-        //Still in Pb
-        tokenDetails = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" +  dexalotSubnet.chainListOrgId));
-        expect(tokenDetails.symbol).to.equal(Utils.fromUtf8("ALOT"))
 
         // AVAX removed from both PBridgeSub and USDT removed from the portfoliosub
         await expect(portfolioSub.connect(owner)["removeToken(bytes32,uint32,bytes32)"](Utils.fromUtf8("AVAX"), cChain.chainListOrgId, Utils.fromUtf8("AVAX")))

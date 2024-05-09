@@ -24,7 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.0.2");
+    bytes32 public constant VERSION = bytes32("3.0.3");
     uint256 private constant STARTING_A = 50;
     uint256 private constant MIN_A = 10;
     uint256 private constant MAX_A = 10 ** 8;
@@ -185,28 +185,6 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
                 set(tokenDetails.symbol, _tokens[i], _quantities[i]);
             }
         }
-    }
-
-    /**
-     * @notice  Converts the inventory of a token from one subnet symbol to another
-     * @dev     Only portfolio bridge can call this function
-     * @param   _symbolId  SymbolId of the token
-     * @param   _fromSymbol  Subnet symbol of the token to convert from
-     * @param   _toSymbol  Subnet symbol of the token to convert to
-     */
-    function convertSymbol(
-        bytes32 _symbolId,
-        bytes32 _fromSymbol,
-        bytes32 _toSymbol
-    ) external onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        require(_fromSymbol != bytes32(0) && _toSymbol != bytes32(0), "IM-SMEB-01");
-        EnumerableMap.Bytes32ToUintMap storage fromMap = inventoryBySubnetSymbol[_fromSymbol];
-        (bool success, uint256 inventory) = fromMap.tryGet(_symbolId);
-        if (success) {
-            fromMap.remove(_symbolId);
-        }
-        uint256 curInventory = get(_toSymbol, _symbolId);
-        inventoryBySubnetSymbol[_toSymbol].set(_symbolId, curInventory + inventory);
     }
 
     /**

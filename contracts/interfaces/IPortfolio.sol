@@ -88,6 +88,8 @@ interface IPortfolio {
         ADDGAS,
         REMOVEGAS,
         AUTOFILL, // 10
-        CCTRADE // Cross Chain Trade.
+        CCTRADE, // Cross Chain Trade.
+        CONVERTFROM,
+        CONVERTTO
     }
 }

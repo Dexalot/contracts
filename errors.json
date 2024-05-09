@@ -59,6 +59,10 @@
     "P-BANA-01": "Portfolio: account banned",
     "P-MDML-01": "Portfolio: minimum deposit multipler can not be less than 10 (10/10)",
     "P-NFUN-01": "Portfolio: unknown function call",
+    "P-TNBC-01": "Portfolio: token not been converted",
+    "P-LENM-01": "Portfolio: length mismatch in array type function parameters",
+    "P-MTNZ-01": "Portfolio: min taker rate can not be 0",
+    "P-NDNS-01": "Portfolio: native deposits not supported",
 
     "PB-OACC-01": "PortfolioBridge: admin account or PORTFOLIO_ROLE needed for this function",
     "PB-RBNE-01": "PortfolioBridge: requested bridge not enabled",

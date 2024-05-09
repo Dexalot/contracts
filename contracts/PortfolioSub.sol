@@ -70,7 +70,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.2");
+    bytes32 public constant VERSION = bytes32("2.5.4");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -309,8 +309,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             _makerAddr,
             _takerAddr,
             _tradePairId,
-            _tradePair.makerRate,
-            _tradePair.takerRate
+            uint256(_tradePair.makerRate),
+            uint256(_tradePair.takerRate)
         );
         makerfee = calculateFee(_tradePair, _makerSide, _baseAmount, _quoteAmount, makerRate);
         takerfee = calculateFee(
@@ -536,19 +536,14 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
         require(tokenList.contains(_symbol), "P-ETNS-01");
-        //if the token is in the conversion list, we need to use it in the withdrawal
-        //message for proper inventory management
-        bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_symbol);
-        toSymbol == bytes32(0) ? toSymbol = _symbol : toSymbol;
         // bridgeFee = bridge Fees both in the Mainnet the subnet
         // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
         // bridgeParams[_symbol].fee is redundant in the subnet and has been replaced
         // with portfolioBridge.getBridgeFee which uses
         // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
-        // We need to get the bridgeFee with the new(after conversion) toSymbol
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
             ? 0
-            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, toSymbol, _quantity);
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
         // We need to safeDecrease with the original(non-converted _symbol)
         safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
         portfolioBridge.sendXChainMessage(
@@ -558,7 +553,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 0, // Nonce to be assigned in PBridge
                 Tx.WITHDRAW,
                 _to,
-                toSymbol,
+                _symbol,
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
                 block.timestamp,
@@ -947,6 +942,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         bytes32 _subnetSymbol
     ) public override onlyRole(DEFAULT_ADMIN_ROLE) {
         require(tokenTotals[_subnetSymbol] == 0, "P-TTNZ-01");
+        require(_subnetSymbol != native || (_subnetSymbol == native && _srcChainId != chainId), "P-TTNZ-02");
+
         bool deleted = IPortfolioBridgeSub(address(portfolioBridge)).removeToken(
             _srcChainSymbol,
             _srcChainId,
@@ -973,49 +970,5 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         }
 
         super.removeToken(_subnetSymbol, _srcChainId);
-    }
-
-    /**
-     * @notice  Overwrites the evm initialized fields to proper values after the March 2024 upgrade.
-     * @dev    We added sourceChainSymbol & isVirtual to the TokenDetails struct. We need to update
-     * reflect their proper values for consistency with newly added tokens in the future.
-     * This function can be removed after the upgrade CD
-     * All tokens except the native ALOT is virtual in the subnet
-     */
-    function updateTokenDetailsAfterUpgrade() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        for (uint256 i = 0; i < tokenList.length(); ++i) {
-            TokenDetails storage tokenDetails = tokenDetailsMap[tokenList.at(i)];
-            tokenDetails.sourceChainSymbol = tokenDetails.symbol;
-            if (tokenDetails.symbol != native) {
-                tokenDetails.isVirtual = true;
-            }
-        }
-    }
-
-    /**
-     * @notice  Moves the inventory of the trader from one symbol to the other symbol
-     * @dev     Only the user can call this function. The user have the option to withdraw their funds back
-     * to the C-Chain if they chose to. But if they want to stay in the subnet and continue trading, they need
-     * to convert to the new naming convention.
-     * After the March 2024 upgrade we need to rename 3 current subnet symbols BTC.b, WETH.e and USDt to
-     * BTC, ETH, USDT to support multichain trading.
-     * The current inventory is completely from Avalanche C Chain which is the default destination for
-     * the subnet. So there is no inventory comingling until we onboard a new chain. The conversions can
-     * be done after the second mainnet but better to do it before for simplicity
-     * Token to convert to is controlled by the PortfolioSubHelper
-     * @param   _fromSymbol  Token to be converted from.
-     */
-    function convertToken(bytes32 _fromSymbol) external whenNotPaused nonReentrant {
-        bytes32 toSymbol = portfolioSubHelper.getSymbolToConvert(_fromSymbol);
-        require(tokenList.contains(_fromSymbol) && tokenList.contains(toSymbol), "P-ETNS-01");
-        AssetEntry memory currentBalance = assets[msg.sender][_fromSymbol];
-        if (currentBalance.total > 0) {
-            require(currentBalance.total == currentBalance.available, "P-TFNE-01"); // no outstanding orders
-            require(currentBalance.total <= tokenTotals[_fromSymbol], "P-AMVL-01"); // not enough inventory to convert
-            assets[msg.sender][toSymbol] = currentBalance;
-            delete assets[msg.sender][_fromSymbol];
-            tokenTotals[toSymbol] = tokenTotals[toSymbol] + currentBalance.total;
-            tokenTotals[_fromSymbol] = tokenTotals[_fromSymbol] - currentBalance.total;
-        }
     }
 }

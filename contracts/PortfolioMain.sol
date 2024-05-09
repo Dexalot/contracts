@@ -25,7 +25,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.2");
+    bytes32 public constant VERSION = bytes32("2.5.6");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -40,6 +40,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     // banned accounts contract address set externally with setBannedAccounts as part of deployment
     IBannedAccounts internal bannedAccounts;
     uint8 public minDepositMultiplier;
+    bool public nativeDepositsRestricted;
 
     /**
      * @notice  Initializes the PortfolioMain contract
@@ -61,7 +62,6 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             native,
             false
         );
-
         addTokenInternal(details, 0, 1 * 10 ** 16);
     }
 
@@ -89,22 +89,22 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         uint256 _gasSwapRatio,
         bool _isVirtual
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        // Can't add Native Token because it has already been added in the Portfolio initialization
-        if (_symbol != native) {
-            TokenDetails memory details = TokenDetails(
-                _decimals,
-                _tokenAddress,
-                // Auction Mode is ignored as it is irrelevant in the Mainnet
-                ITradePairs.AuctionMode.OFF,
-                //always add with the chain id of the Portfolio unless virtual
-                _isVirtual ? _srcChainId : chainId, // srcChainId.
-                _symbol, //symbol
-                bytes32(0), //symbolId
-                _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
-                _isVirtual
-            );
+        TokenDetails memory details = TokenDetails(
+            _decimals,
+            _tokenAddress,
+            // Auction Mode is ignored as it is irrelevant in the Mainnet
+            ITradePairs.AuctionMode.OFF,
+            //always add with the chain id of the Portfolio unless virtual
+            _isVirtual ? _srcChainId : chainId, // srcChainId.
+            _symbol, //symbol
+            bytes32(0), //symbolId
+            _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
+            _isVirtual
+        );
 
-            addTokenInternal(details, _fee, _gasSwapRatio);
+        addTokenInternal(details, _fee, _gasSwapRatio);
+        if (_symbol == native) {
+            nativeDepositsRestricted = false;
         }
     }
 
@@ -139,34 +139,28 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     }
 
     /**
-     * @notice  Removes the given token from the portfolio
+     * @notice  Removes the given token from the portfolio. Native token removal is allowed if only the wrapped
+     * version of the token needs to be supported.
      * @dev     Only callable by admin and portfolio should be paused. Makes sure there are no
      * in-flight deposit/withdraw messages
      * @param   _symbol  Symbol of the token
      */
     function removeToken(bytes32 _symbol, uint32) public virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
         TokenDetails memory tokenDetails = tokenDetailsMap[_symbol];
-        if (tokenDetails.symbol != bytes32(0) && _symbol != native && !tokenDetails.isVirtual) {
-            // Native doesn't exist in tokenMap as it is not an ERC20
-            require(tokenMap[_symbol].balanceOf(address(this)) == 0, "P-NZBL-01");
-            delete (tokenMap[_symbol]);
+        if (tokenDetails.symbol != bytes32(0) && !tokenDetails.isVirtual) {
+            require(
+                _symbol == native ? address(this).balance == 0 : tokenMap[_symbol].balanceOf(address(this)) == 0,
+                "P-NZBL-01"
+            );
+            // If native is removed, native deposits gets restricted by default
+            if (_symbol == native) {
+                nativeDepositsRestricted = true;
+            } else {
+                // Native doesn't exist in tokenMap as it is not an ERC20
+                delete (tokenMap[_symbol]);
+            }
         }
         super.removeToken(_symbol, chainId); // Can only remove the local chain's tokens in the mainnet
-    }
-
-    /**
-     * @notice  Overwrites the evm initialized fields to proper values after the March 2024 upgrade.
-     * @dev    We added sourceChainSymbol & isVirtual to the TokenDetails struct. We need to update
-     * reflect their proper values for consistency with newly added tokens in the future.
-     * This function can be removed after the upgrade CD
-     * All the current tokens in the mainnet are real tokens (non-Virtual)
-     */
-    function updateTokenDetailsAfterUpgrade() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        for (uint256 i = 0; i < tokenList.length(); ++i) {
-            TokenDetails storage tokenDetails = tokenDetailsMap[tokenList.at(i)];
-            tokenDetails.sourceChainSymbol = tokenDetails.symbol;
-            // tokenDetails.isVirtual = false ; // evm_initialized
-        }
     }
 
     /**
@@ -187,7 +181,12 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         IPortfolioBridge.BridgeProvider _bridge
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
-        deposit(_from, native, msg.value, _bridge);
+        if (nativeDepositsRestricted) {
+            revert("P-NDNS-01");
+            //TODO Wrap native to its Wrapped equivalent in the future
+        } else {
+            deposit(_from, native, msg.value, _bridge);
+        }
     }
 
     /**
