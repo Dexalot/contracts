@@ -14,7 +14,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2022 Dexalot.
 
-contract MockToken is ERC20, AccessControlEnumerable {
+contract MockWrappedToken is ERC20, AccessControlEnumerable {
     using SafeERC20 for IERC20;
 
     // version
@@ -24,21 +24,18 @@ contract MockToken is ERC20, AccessControlEnumerable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
     uint8 private __decimals;
-    string private __symbol;
+
+    event Deposit(address indexed dst, uint wad);
+    event Withdrawal(address indexed src, uint wad);
 
     constructor(string memory _name, string memory _symbol, uint8 _decimals) ERC20(_name, _symbol) {
         __decimals = _decimals;
-        __symbol = _symbol;
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _setupRole(MINTER_ROLE, msg.sender);
     }
 
     function decimals() public view override returns (uint8) {
         return __decimals;
-    }
-
-    function symbol() public view virtual override returns (string memory) {
-        return __symbol;
     }
 
     function addAdmin(address _address) public {
@@ -73,7 +70,16 @@ contract MockToken is ERC20, AccessControlEnumerable {
         super._mint(_owner, _quantity);
     }
 
-    function renameSymbol(string memory symbol_) public onlyRole(DEFAULT_ADMIN_ROLE) {
-        __symbol = symbol_;
+    function deposit() public payable {
+        super._mint(msg.sender, msg.value);
+        emit Deposit(msg.sender, msg.value);
+    }
+
+    function withdraw(uint wad) public {
+        require(super.balanceOf(msg.sender) >= wad, "Insufficient balance");
+        super._burn(msg.sender, wad);
+        (bool success, ) = payable(msg.sender).call{value: wad}("");
+        require(success, "Insufficient contract balance");
+        emit Withdrawal(msg.sender, wad);
     }
 }

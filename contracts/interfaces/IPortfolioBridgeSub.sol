@@ -32,7 +32,7 @@ interface IPortfolioBridgeSub {
 
     function getTokenDetails(bytes32 _symbolId) external view returns (IPortfolio.TokenDetails memory);
 
-    function executeDelayedTransfer(uint16 _dstChainId, bytes32 _id) external;
+    function executeDelayedTransfer(bytes32 _id) external;
 
     function getAllBridgeFees(
         bytes32 _symbol,

@@ -1,7 +1,7 @@
 --------------------------------------|----------|----------|----------|----------|----------------|
 File                                  |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 --------------------------------------|----------|----------|----------|----------|----------------|
- contracts\                           |      100 |    96.67 |      100 |      100 |                |
+ contracts\                           |      100 |    96.77 |      100 |      100 |                |
   BannedAccounts.sol                  |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol                |      100 |      100 |      100 |      100 |                |
   Exchange.sol                        |      100 |      100 |      100 |      100 |                |
@@ -11,12 +11,12 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   InventoryManager.sol                |      100 |      100 |      100 |      100 |                |
   MainnetRFQ.sol                      |      100 |      100 |      100 |      100 |                |
   OrderBooks.sol                      |      100 |      100 |      100 |      100 |                |
-  Portfolio.sol                       |      100 |    95.83 |      100 |      100 |                |
+  Portfolio.sol                       |      100 |    95.65 |      100 |      100 |                |
   PortfolioBridgeMain.sol             |      100 |    95.69 |      100 |      100 |                |
-  PortfolioBridgeSub.sol              |      100 |    93.55 |      100 |      100 |                |
-  PortfolioMain.sol                   |      100 |    92.71 |      100 |      100 |                |
+  PortfolioBridgeSub.sol              |      100 |     93.1 |      100 |      100 |                |
+  PortfolioMain.sol                   |      100 |    93.52 |      100 |      100 |                |
   PortfolioMinter.sol                 |      100 |      100 |      100 |      100 |                |
-  PortfolioSub.sol                    |      100 |    92.55 |      100 |      100 |                |
+  PortfolioSub.sol                    |      100 |    92.53 |      100 |      100 |                |
   PortfolioSubHelper.sol              |      100 |      100 |      100 |      100 |                |
   TradePairs.sol                      |      100 |    96.82 |      100 |      100 |                |
  contracts\bridgeApps\                |      100 |      100 |      100 |      100 |                |
@@ -48,14 +48,15 @@ File                                  |  % Stmts | % Branch |  % Funcs |  % Line
   UtilsLibrary.sol                    |      100 |      100 |      100 |      100 |                |
  contracts\others\                    |      100 |      100 |      100 |      100 |                |
   Multicall2.sol                      |      100 |      100 |      100 |      100 |                |
- contracts\token\                     |      100 |    95.98 |      100 |      100 |                |
+ contracts\token\                     |      100 |    95.97 |      100 |      100 |                |
   Airdrop.sol                         |      100 |      100 |      100 |      100 |                |
   DexalotToken.sol                    |      100 |      100 |      100 |      100 |                |
   IncentiveDistributor.sol            |      100 |      100 |      100 |      100 |                |
   MockToken.sol                       |      100 |      100 |      100 |      100 |                |
+  MockWrappedToken.sol                |      100 |    95.45 |      100 |      100 |                |
   Staking.sol                         |      100 |    88.71 |      100 |      100 |                |
   TokenVestingCloneFactory.sol        |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol           |      100 |    96.67 |      100 |      100 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|
-All files                             |    99.87 |    96.82 |      100 |     99.9 |                |
+All files                             |    99.87 |    96.88 |      100 |     99.9 |                |
 --------------------------------------|----------|----------|----------|----------|----------------|

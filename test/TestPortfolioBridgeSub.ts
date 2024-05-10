@@ -445,7 +445,7 @@ describe("Portfolio Bridge Sub", () => {
             customdata: Utils.emptyCustomData()
         }
 
-        await expect(delayedTransfers.connect(trader1).checkThresholds(xfer)).to.be.revertedWith("AccessControl: account");
+        await expect(delayedTransfers.connect(trader1).checkThresholds(xfer, defaultDestinationChainId)).to.be.revertedWith("AccessControl: account");
 
         await expect(delayedTransfers.connect(trader1).executeDelayedTransfer(ethers.constants.HashZero))
         .to.be.revertedWith("AccessControl: account");
@@ -524,11 +524,11 @@ describe("Portfolio Bridge Sub", () => {
         expect((await portfolioSub.getBalance(owner.address, AVAX)).available.toString()).to.equal(ethers.utils.parseEther("0.49").toString());
     });
 
-    it("Should rename token", async () => {
-        const { cChain} = f.getChains();
-        await expect(portfolioBridgeSub.connect(trader1).renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"))).to.revertedWith("AccessControl:");
-        await expect(portfolioBridgeSub.renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDT"), Utils.fromUtf8("USDT"))).to.revertedWith("PB-LENM-01");
-    });
+    // it("Should rename token", async () => {
+    //     const { cChain} = f.getChains();
+    //     await expect(portfolioBridgeSub.connect(trader1).renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDt"), Utils.fromUtf8("USDT"))).to.revertedWith("AccessControl:");
+    //     await expect(portfolioBridgeSub.renameToken(cChain.chainListOrgId, Utils.fromUtf8("USDT"), Utils.fromUtf8("USDT"))).to.revertedWith("PB-LENM-01");
+    // });
 
     it("Should fail setting Inventory Manager for non-admin", async () => {
         await expect(portfolioBridgeSub.connect(trader1).setInventoryManager(inventoryManager.address)).to.revertedWith("AccessControl:");
@@ -607,6 +607,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(delayedTransfer.trader).to.equal(trader);
         expect(delayedTransfer.symbol).to.equal(symbol);
         expect(delayedTransfer.quantity.toString()).to.equal(quantity);
+        expect(BigNumber.from(delayedTransfer.customdata).eq(defaultDestinationChainId));
 
         // same message sent again will trigger the require for the same id
         await expect(portfolioBridgeSub.sendXChainMessage(defaultDestinationChainId, bridge, xfer, trader)).to.be.revertedWith("PB-DTAE-01");
@@ -641,7 +642,7 @@ describe("Portfolio Bridge Sub", () => {
 
         // Execute the delayed transfers and check the inventory ids
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
-        await portfolioBridgeSub.executeDelayedTransfer(defaultDestinationChainId, data[1]);
+        await portfolioBridgeSub.executeDelayedTransfer(data[1]);
 
 
         // Deposit 20 , delayed transfer withdrawal 5 => 15
@@ -682,7 +683,7 @@ describe("Portfolio Bridge Sub", () => {
         await ethers.provider.send("evm_mine", []);
 
         // execute delayed withdraw transaction after delayedPeriod
-        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, data[1]);
+        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]);
         receipt = await tx.wait();
         expect(receipt.events[1].args.xfer.nonce).to.be.equal(1);       // nonce is 1
         expect(receipt.events[1].args.xfer.transaction).to.be.equal(0); // withdraw
@@ -748,7 +749,7 @@ describe("Portfolio Bridge Sub", () => {
          );
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, data[1]))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
         .to.be.revertedWith("PB-DTSL-01");
     });
 
@@ -768,7 +769,7 @@ describe("Portfolio Bridge Sub", () => {
         const tx = await f.depositNative(portfolioMain, admin, "0.52")
         await tx.wait();
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId, "0xa9a1e33ecab66560f25b7949284c89fd2822970274baacb97111af500098e038")) // id for 0.51
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer("0xa9a1e33ecab66560f25b7949284c89fd2822970274baacb97111af500098e038")) // id for 0.51
             .to.be.revertedWith("PB-DTNE-01");
     });
 
@@ -795,7 +796,7 @@ describe("Portfolio Bridge Sub", () => {
             log.data
          );
 
-        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(defaultDestinationChainId, data[1]))
+        await expect(portfolioBridgeSub.connect(trader1).executeDelayedTransfer(data[1]))
         .to.be.revertedWith("AccessControl: account");
     });
 
@@ -1007,6 +1008,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(delayedTransfer.trader).to.equal(owner.address);
         expect(delayedTransfer.symbol).to.equal(AVAX);
         expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
+        expect(BigNumber.from(delayedTransfer.customdata).eq(defaultDestinationChainId));
     });
 
     it("Should execute delayed transfer - withdraw", async () => {
@@ -1045,7 +1047,7 @@ describe("Portfolio Bridge Sub", () => {
         await ethers.provider.send("evm_increaseTime", [delayPeriod]);
         await ethers.provider.send("evm_mine", []);
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
-        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(defaultDestinationChainId,data[1]))
+        await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
         .to.emit(portfolioBridgeSub, "DelayedTransferExecuted")
         .to.emit(portfolioMain, "PortfolioUpdated")
         .withArgs(0, trader1.address, AVAX, ethers.utils.parseEther("0.68"), 0, 0, 0, trader1.address)

@@ -26,7 +26,7 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
     mapping(bytes32 => uint256) public epochVolumeCaps; // key is token
     mapping(bytes32 => uint256) public lastOpTimestamps; // key is token
 
-    bytes32 public constant VERSION = bytes32("3.0.0");
+    bytes32 public constant VERSION = bytes32("3.0.1");
 
     event DelayedTransfer(string action, bytes32 id, IPortfolio.XFER xfer);
     event DelayPeriodUpdated(uint256 period);
@@ -52,17 +52,26 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      * Not bridge specific! Delayed messages will be processed by the defaultBridge
      * symbolId has already been mapped to symbol for the portfolio to properly process it
      * @param   _xfer  XFER message
+     * @param   _dstChainListOrgChainId  Destination chain ID
      * @return  bool  True if the transfer can be executed immediately, false if it is delayed
      */
     function checkThresholds(
-        IPortfolio.XFER calldata _xfer
+        IPortfolio.XFER calldata _xfer,
+        uint32 _dstChainListOrgChainId
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         uint256 delayThreshold = delayThresholds[_xfer.symbol];
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW && delayThreshold > 0 && _xfer.quantity > delayThreshold) {
             bytes32 id = keccak256(
-                abi.encodePacked(_xfer.nonce, _xfer.transaction, _xfer.trader, _xfer.symbol, _xfer.quantity)
+                abi.encodePacked(
+                    _xfer.nonce,
+                    _xfer.transaction,
+                    _xfer.trader,
+                    _xfer.symbol,
+                    _xfer.quantity,
+                    _dstChainListOrgChainId
+                )
             );
-            addDelayedTransfer(id, _xfer);
+            addDelayedTransfer(id, _xfer, _dstChainListOrgChainId);
             return false;
         } else {
             return true;
@@ -100,9 +109,11 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      * @notice  Adds transfer to delayed queue
      * @param   _id  Transfer ID
      * @param   _xfer  XFER message
+     * @param   _dstChainListOrgChainId  Destination chain ID
      */
-    function addDelayedTransfer(bytes32 _id, IPortfolio.XFER memory _xfer) private {
+    function addDelayedTransfer(bytes32 _id, IPortfolio.XFER memory _xfer, uint32 _dstChainListOrgChainId) private {
         require(delayedTransfers[_id].timestamp == 0, "PB-DTAE-01");
+        _xfer.customdata = bytes28(uint224(_dstChainListOrgChainId));
         delayedTransfers[_id] = _xfer;
         emit DelayedTransfer("ADDED", _id, _xfer);
     }
@@ -114,8 +125,15 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      */
     function executeDelayedTransfer(
         bytes32 _id
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (IPortfolio.XFER memory xfer) {
+    )
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        returns (IPortfolio.XFER memory xfer, uint32 dstChainListOrgChainId)
+    {
         xfer = delayedTransfers[_id];
+        dstChainListOrgChainId = uint32(uint224(xfer.customdata));
+        xfer.customdata = bytes28(0);
         require(xfer.timestamp > 0, "PB-DTNE-01");
         require(block.timestamp > xfer.timestamp + delayPeriod, "PB-DTSL-01");
         emit DelayedTransfer("EXECUTED", _id, xfer);

@@ -47,8 +47,9 @@ abstract contract Portfolio is
     IPortfolio
 {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
-    // denominator for rate calculations
-    uint256 public constant TENK = 10000;
+    // denominator for rate calculations. Changed it to 100K from 10K on May 2024 Release to support volume rebates
+    // only used in PortfolioSub
+    uint256 public constant TENK = 100000;
     // boolean to control deposit functionality
     bool public allowDeposit;
 
@@ -271,14 +272,12 @@ abstract contract Portfolio is
         bytes32 _symbol,
         uint32 _srcChainId
     ) public virtual override whenPaused onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_symbol != native) {
-            tokenList.remove(_symbol);
-            delete (tokenDetailsMap[_symbol]);
-            bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
-            delete (tokenDetailsMapById[symbolId]);
-            delete (bridgeParams[_symbol]);
-            emit ParameterUpdated(_symbol, "P-REMOVETOKEN", 0, 0);
-        }
+        tokenList.remove(_symbol);
+        delete (tokenDetailsMap[_symbol]);
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _srcChainId);
+        delete (tokenDetailsMapById[symbolId]);
+        delete (bridgeParams[_symbol]);
+        emit ParameterUpdated(_symbol, "P-REMOVETOKEN", 0, 0);
     }
 
     /**

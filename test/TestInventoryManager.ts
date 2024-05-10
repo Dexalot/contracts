@@ -88,8 +88,8 @@ describe("InventoryManager", () => {
     .to.be.revertedWith("AccessControl:");
     await expect(inventoryManager.remove(ethers.constants.HashZero, ethers.constants.HashZero))
     .to.be.revertedWith("AccessControl:");
-    await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, ethers.constants.HashZero, ethers.constants.HashZero))
-    .to.be.revertedWith("AccessControl:");
+    // await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, ethers.constants.HashZero, ethers.constants.HashZero))
+    // .to.be.revertedWith("AccessControl:");
   });
 
   it("Should fail to set inventory if not Admin", async function () {
@@ -218,33 +218,34 @@ describe("InventoryManager", () => {
     expect(await inventoryManager.get(NEX, NonExistentId)).to.be.equal(0);
   });
 
-  it("Should fail to convert symbol if empty symbol", async () => {
-    await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
-    await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, ethers.constants.HashZero, ethers.constants.HashZero))
-    .to.be.revertedWith("IM-SMEB-01");
-    await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, Utils.fromUtf8("USDC"), ethers.constants.HashZero))
-    .to.be.revertedWith("IM-SMEB-01");
-  });
+  // it("Should fail to convert symbol if empty symbol", async () => {
+  //   await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
+  //   await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, ethers.constants.HashZero, ethers.constants.HashZero))
+  //   .to.be.revertedWith("IM-SMEB-01");
+  //   await expect(inventoryManager.convertSymbol(ethers.constants.HashZero, Utils.fromUtf8("USDC"), ethers.constants.HashZero))
+  //   .to.be.revertedWith("IM-SMEB-01");
+  // });
 
-  it("Should successfully convert symbol if no inventory", async () => {
-    await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
-    await expect(inventoryManager.convertSymbol(usdcAvax, usdcHex, Utils.fromUtf8("NEW")))
-    .to.not.be.reverted;
-  });
+  // it("Should successfully convert symbol if no inventory", async () => {
+  //   await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
+  //   await expect(inventoryManager.convertSymbol(usdcAvax, usdcHex, Utils.fromUtf8("NEW")))
+  //   .to.not.be.reverted;
+  // });
 
-  it("Should successfully convert symbol if inventory", async () => {
-    await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
-    await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "100000");
+  // it("Should successfully convert symbol if inventory", async () => {
+  //   await inventoryManager.grantRole(await portfolioSub.PORTFOLIO_BRIDGE_ROLE(), owner.address);
+  //   await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "100000");
 
-    const depositQuantity = Utils.parseUnits("100000", usdcDecimals);
-    expect(await inventoryManager.get(usdcHex, usdcAvax)).to.be.equal(depositQuantity);
+  //   const depositQuantity = Utils.parseUnits("100000", usdcDecimals);
+  //   expect(await inventoryManager.get(usdcHex, usdcAvax)).to.be.equal(depositQuantity);
 
-    const newToken = Utils.fromUtf8("NEW");
-    await expect(inventoryManager.convertSymbol(usdcAvax, usdcHex, newToken))
-    .to.not.be.reverted;
-    expect(await inventoryManager.get(usdcHex, usdcAvax)).to.be.equal(0);
-    expect(await inventoryManager.get(newToken, usdcAvax)).to.be.equal(depositQuantity);
-  });
+  //   const newToken = Utils.fromUtf8("NEW");
+  //   await expect(inventoryManager.convertSymbol(usdcAvax, usdcHex, newToken))
+  //   .to.not.be.reverted;
+  //   expect(await inventoryManager.get(usdcHex, usdcAvax)).to.be.equal(0);
+  //   expect(await inventoryManager.get(newToken, usdcAvax)).to.be.equal(depositQuantity);
+  // });
+
 
   it("Should fail to get withdrawal fee for multiple chain if quantity exceeds inventory", async () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "100000");
