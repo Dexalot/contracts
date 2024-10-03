@@ -92,7 +92,7 @@ interface IOrder {
 
 const orders = new Map<string, any>()
 
-const lfgBalances: Array<BigNumber> = [];
+
 
 describe("Auction", () => {
 
@@ -122,7 +122,7 @@ before(async () => {
   console.log("Auction Admin Account:", auctionAdminAccount)
 
   const portfolioContracts = await f.deployCompletePortfolio(true);
-  portfolioMain = portfolioContracts.portfolioAvax;
+  portfolioMain = portfolioContracts.portfolioMainnet;
   portfolio = portfolioContracts.portfolioSub;
 
   orderBooks = await f.deployOrderBooks();
@@ -458,35 +458,20 @@ it("More sells than buys ", async () => {
 
 }).timeout(240000);
 
-function findOrder(owner: string, side: number, price: string, quantity: string, orders: Map<string, any>)  {
-  for (const order of orders.values()){
-    //this.logger.debug (`Order: ${order.side}  ${order.quantity.toString()}  ${order.price.toString()}`);
-    if (order.traderaddress === owner
-        && order.side === side
-          && order.quantity.eq(BN(quantity))
-            && order.price.eq(BN(price))) {
-      return order;
-    }
-  }
-}
-
-async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: number, symbolByte32: string , decimals: number) {
-  const tx =await f.withdrawToken(portfolio, wallet, symbolByte32, decimals, withdrawal_amount.toString())
-  await tx.wait();
-  return true;
-}
 
 async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, orders: Map<string, any>) {
   let orderLog: any = {};
-
-  const tx = await tradePairs.connect(wallet).addOrder(wallet.address,
-                                                       order.id,
-                                                       order.tp,
-                                                       Utils.parseUnits(order.price, pair.quoteDecimals),
-                                                       Utils.parseUnits(order.quantity, pair.baseDecimals),
-                                                       order.side,
-                                                       order.type1,
-                                                       order.type2);
+  const  newOrder = {
+    traderaddress: wallet.address
+    , clientOrderId : order.id
+    , tradePairId :order.tp
+    , price: Utils. parseUnits(order.price, pair.quoteDecimals)
+    , quantity:  Utils.parseUnits(order.quantity, pair.baseDecimals)
+    , side :  order.side
+    , type1 : order.type1   // market orders not enabled
+    , type2 : order.type2   // GTC
+}
+  const tx = await tradePairs.connect(wallet).addNewOrder(newOrder);
 
   orderLog = await tx.wait();
   if (orderLog){
@@ -562,74 +547,7 @@ async function processOrders(traderaddress: string, pair: string, id: string, pr
   }
 }
 
-async function cancelOrder(wallet: SignerWithAddress, order: IOrder, pair: any, orders: Map<string, any>) {
-  let orderLog: any = {};
 
-  const tx = await tradePairs.connect(wallet).cancelOrder(order.id);
-  orderLog = await tx.wait();
-
-  if (orderLog){
-    for (const _log of orderLog.events) {
-      if (_log.event) {
-        if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
-                                           _log.args.quantity,_log.args.side, _log.args.type1, _log.args.type2, _log.args.status,
-                                           _log.args.quantityfilled, _log.args.totalfee, _log, pair.baseDecimals, pair.quoteDecimals);
-          if (rOrder) orders.set(rOrder.id, rOrder);
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
-async function cancelOrderList(wallet: SignerWithAddress, orderIds: string[], pair: any, orders: Map<string, any>) {
-  let orderLog: any = {};
-
-  const tx = await tradePairs.connect(wallet).cancelOrderList(orderIds);
-  orderLog = await tx.wait();
-
-  if (orderLog){
-    for (const _log of orderLog.events) {
-      if (_log.event) {
-        if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
-                                           _log.args.quantity,_log.args.side, _log.args.type1, _log.args.type2, _log.args.status,
-                                           _log.args.quantityfilled, _log.args.totalfee, _log, pair.baseDecimals, pair.quoteDecimals);
-          if (rOrder) orders.set(rOrder.id, rOrder);
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
-async function CancelReplaceOrder(wallet: SignerWithAddress, order: any, clientOrderId: string, newpx: string, newqty: string, pair: any, orders: Map<string, any>) {
-  let orderLog: any = {};
-
-  const tx = await tradePairs.connect(wallet).cancelReplaceOrder(order.id,
-                                                                 clientOrderId,
-                                                                 Utils.parseUnits(newpx, pair.quoteDecimals),
-                                                                 Utils.parseUnits(newqty, pair.baseDecimals));
-
-  orderLog = await tx.wait();
-  if (orderLog){
-    for (const _log of orderLog.events) {
-      if (_log.event) {
-        if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
-                                           _log.args.quantity,_log.args.side, _log.args.type1, _log.args.type2, _log.args.status,
-                                           _log.args.quantityfilled, _log.args.totalfee, _log, pair.baseDecimals, pair.quoteDecimals);
-          if (rOrder) orders.set(rOrder.id, rOrder);
-        }
-      }
-    }
-  }
-
-  return true;
-}
 
 async function getBookwithLoop(tradePair: string, side: string) {
   const map1 = new Map();

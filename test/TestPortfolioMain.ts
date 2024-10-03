@@ -7,7 +7,6 @@ import Utils from './utils';
 
 import {
     PortfolioBridgeMain,
-    PortfolioBridgeSub,
     PortfolioMain,
     PortfolioSub,
     TokenVestingCloneFactory,
@@ -26,7 +25,6 @@ describe("Portfolio Main", () => {
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
-    let portfolioBridgeSub: PortfolioBridgeSub;
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
     let auctionAdmin: SignerWithAddress;
@@ -59,17 +57,16 @@ describe("Portfolio Main", () => {
         console.log("Trader1", trader1.address);
         console.log("Trader2", trader2.address);
         const portfolioContracts = await f.deployCompletePortfolio();
-        await f.printTokens([portfolioContracts.portfolioAvax], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
+        await f.printTokens([portfolioContracts.portfolioMainnet], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
     })
 
     beforeEach(async function () {
 
-        const portfolioContracts = await f.deployCompletePortfolio(true, true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolioSub = portfolioContracts.portfolioSub;
-        portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
-        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
+        portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
 
         const { cChain } = f.getChains();
         srcChainListOrgId = cChain.chainListOrgId;

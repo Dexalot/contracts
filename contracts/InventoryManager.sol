@@ -24,7 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.1.0");
+    bytes32 public constant VERSION = bytes32("3.1.1");
     uint256 private constant STARTING_A = 50;
     uint256 private constant MIN_A = 10;
     uint256 private constant MAX_A = 10 ** 8;
@@ -131,14 +131,38 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     }
 
     /**
-     * @notice  Updates the scaling factor for a token
+     * @notice  Updates the scaling factor for a number of tokens
      * @dev     Only admin can call this function
-     * @param   _symbolId  SymbolId of the token
-     * @param   _scalingFactor  New scaling factor
+     * @param   _symbolIds  SymbolIds of the token
+     * @param   _scalingFactors  New scaling factors to set
      */
-    function setScalingFactor(bytes32 _symbolId, uint8 _scalingFactor) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        scalingFactor[_symbolId] = _scalingFactor;
-        emit ScalingFactorUpdated(_symbolId, _scalingFactor, block.timestamp);
+    function setScalingFactors(
+        bytes32[] memory _symbolIds,
+        uint8[] memory _scalingFactors
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for (uint256 i = 0; i < _symbolIds.length; ++i) {
+            bytes32 symbolId = _symbolIds[i];
+            uint8 sf = _scalingFactors[i];
+            IPortfolio.TokenDetails memory td = portfolioBridgeSub.getTokenDetails(symbolId);
+            require(td.symbolId == symbolId, "IM-NVSI-01");
+            scalingFactor[symbolId] = sf;
+            emit ScalingFactorUpdated(symbolId, sf, block.timestamp);
+        }
+    }
+
+    /**
+     * @notice  Removes multiple scaling factors for non-existent tokens
+     * @dev     Only admin can call this function
+     * @param   _symbolIds  SymbolIds of the tokens to remove
+     */
+    function removeScalingFactors(bytes32[] memory _symbolIds) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        for (uint256 i = 0; i < _symbolIds.length; ++i) {
+            bytes32 symbolId = _symbolIds[i];
+            IPortfolio.TokenDetails memory td = portfolioBridgeSub.getTokenDetails(symbolId);
+            require(td.symbolId == bytes32(0), "IM-NVSI-02");
+            delete scalingFactor[symbolId];
+            emit ScalingFactorUpdated(symbolId, 0, block.timestamp);
+        }
     }
 
     /**
@@ -163,28 +187,6 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         require(futureATime > 0 && block.timestamp >= futureATime, "IM-BTNE-01");
         A = futureA;
         emit AUpdated(A, block.timestamp);
-    }
-
-    /**
-     * @notice  Sets host chains inventories for each token
-     * @dev     Only admin can call this function. After the March 2024 we need to equal
-     * inventoryBySymbolId portfolioSub.tokenTotals as the C-Chain will still be the only
-     * destination from the subnet right after the upgrade. This function can be removed
-     * after the upgrade
-     * @param   _tokens  Array of tokens in the from of SYMBOL + srcChainId
-     * @param   _quantities  Array of quantities
-     */
-    function setInventoryBySymbolId(
-        bytes32[] calldata _tokens,
-        uint256[] calldata _quantities
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_tokens.length == _quantities.length, "IM-LENM-01");
-        for (uint256 i = 0; i < _tokens.length; ++i) {
-            IPortfolio.TokenDetails memory tokenDetails = portfolioBridgeSub.getTokenDetails(_tokens[i]);
-            if (tokenDetails.symbolId != bytes32(0)) {
-                set(tokenDetails.symbol, _tokens[i], _quantities[i]);
-            }
-        }
     }
 
     /**
@@ -229,15 +231,16 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
             }
             j++;
         }
-        fee = InvariantMathLibrary.calcWithdrawOneChain(
-            _quantity,
-            index,
-            inventories,
-            totalInventory,
-            scaleFactor,
-            A,
-            j
-        );
+        fee =
+            InvariantMathLibrary.calcWithdrawOneChain(
+                _quantity / scaleFactor,
+                index,
+                inventories,
+                totalInventory,
+                A,
+                j
+            ) *
+            scaleFactor;
     }
 
     /**
@@ -248,20 +251,6 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
      */
     function get(bytes32 _symbol, bytes32 _symbolId) public view returns (uint256 inventory) {
         (, inventory) = inventoryBySubnetSymbol[_symbol].tryGet(_symbolId);
-    }
-
-    /**
-     * @notice  Sets a new inventory for a token
-     * @dev     Only used once for the initial setup of the inventory
-     * @param   _symbol  Subnet symbol of the token
-     * @param   _symbolId  SymbolId of the token
-     * @param   _quantity  Quantity of the token
-     */
-    function set(bytes32 _symbol, bytes32 _symbolId, uint256 _quantity) private {
-        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
-        require(!map.contains(_symbolId), "IM-SIAE-01");
-        map.set(_symbolId, _quantity);
-        emit InventorySet(_symbol, _symbolId, _quantity, block.timestamp);
     }
 
     /**

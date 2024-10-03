@@ -120,7 +120,7 @@ before(async () => {
   console.log("Auction Admin Account:", auctionAdminAccount)
 
   const portfolioContracts = await f.deployCompletePortfolio(true);
-  portfolioMain = portfolioContracts.portfolioAvax;
+  portfolioMain = portfolioContracts.portfolioMainnet;
   portfolioSub = portfolioContracts.portfolioSub;
 
 
@@ -439,7 +439,7 @@ it("Should not allow any order operation when mode = 5 (MATCHING)", async () => 
 
   const orderids: Array<string> = []
   orderids[0]= fOrder1.id;
-  await expect(cancelOrderList(wallets[3], orderids, pair, orders)).to.be.revertedWith("T-PPAU-03");
+  await expect(cancelOrderList(wallets[3], orderids, pair, orders)).to.be.revertedWith("T-PPAU-02");
 });
 
 it("Should not allow anyone to withdraw auction token when mode = 5 (MATCHING)", async () => {
@@ -792,22 +792,25 @@ async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: numbe
 
 async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, orders: Map<string, any>) {
   let orderLog: any = {};
-
-  const tx = await tradePairs.connect(wallet).addOrder(wallet.address,
-                                                       order.id,
-                                                       order.tp,
-                                                       Utils.parseUnits(order.price, pair.quoteDecimals),
-                                                       Utils.parseUnits(order.quantity, pair.baseDecimals),
-                                                       order.side,
-                                                       order.type1,
-                                                       order.type2);
+  const  newOrder = {
+    traderaddress: wallet.address
+    , clientOrderId : order.id
+    , tradePairId :order.tp
+    , price: Utils. parseUnits(order.price, pair.quoteDecimals)
+    , quantity:  Utils.parseUnits(order.quantity, pair.baseDecimals)
+    , side :  order.side
+    , type1 : order.type1   // market orders not enabled
+    , type2 : order.type2   // GTC
+}
+  //console.log(newOrder);
+  const tx = await tradePairs.connect(wallet).addNewOrder(newOrder);
 
   orderLog = await tx.wait();
   if (orderLog){
     for (const _log of orderLog.events) {
       if (_log.event) {
         if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
+          const rOrder = processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
                                            _log.args.quantity,_log.args.side, _log.args.type1, _log.args.type2, _log.args.status,
                                            _log.args.quantityfilled, _log.args.totalfee, _log, pair.baseDecimals, pair.quoteDecimals);
           if (rOrder) {
@@ -822,7 +825,7 @@ async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, ord
   }
 }
 
-async function makeOrder(traderaddress: string, pair: string, id: string, price: BigNumber, totalamount: BigNumber, quantity: BigNumber, side: string,
+function makeOrder(traderaddress: string, pair: string, id: string, price: BigNumber, totalamount: BigNumber, quantity: BigNumber, side: string,
                          type1: string, type2: string, status: string, quantityfilled: BigNumber, totalfee: BigNumber, tx: string, blocknbr: number,
                          gasUsed: string, gasPrice: string, cumulativeGasUsed: string, baseDecimals: number, quoteDecimals: number) {
 
@@ -845,11 +848,11 @@ async function makeOrder(traderaddress: string, pair: string, id: string, price:
           cumulativeGasUsed};
   }
 
-async function processOrders(traderaddress: string, pair: string, id: string, price: BigNumber, totalamount: BigNumber, quantity: BigNumber, side: string,
+function processOrders(traderaddress: string, pair: string, id: string, price: BigNumber, totalamount: BigNumber, quantity: BigNumber, side: string,
                              type1: string, type2: string, status: string, quantityfilled: BigNumber, totalfee: BigNumber, event: Event, baseDecimals: number,
                              quoteDecimals: number) {
   try {
-      const order = await makeOrder(traderaddress,
+      const order = makeOrder(traderaddress,
                                   pair,
                                   id,
                                   price,

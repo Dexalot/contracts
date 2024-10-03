@@ -14,15 +14,16 @@ contract InvariantMathLibraryMock {
     ) external pure returns (uint256[] memory) {
         uint256[] memory fees = new uint256[](inventories.length);
         for (uint256 i; i < inventories.length; i++) {
-            fees[i] = InvariantMathLibrary.calcWithdrawOneChain(
-                quantity,
-                i,
-                inventories,
-                total,
-                scaleFactors[i],
-                A,
-                inventories.length
-            );
+            fees[i] =
+                InvariantMathLibrary.calcWithdrawOneChain(
+                    quantity / scaleFactors[i],
+                    i,
+                    inventories,
+                    total,
+                    A,
+                    inventories.length
+                ) *
+                scaleFactors[i];
         }
         return fees;
     }

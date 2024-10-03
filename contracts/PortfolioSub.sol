@@ -70,7 +70,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.4");
+    bytes32 public constant VERSION = bytes32("2.5.8");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -428,6 +428,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             // User has enough ALOT in his portfolio, no need to swap ALOT with the token sent
             // Just withdraw ALOT from his portfolio to his wallet
             if (gasAmount <= assets[_trader][native].available) {
+                // Withdraw from portfolio up to 10 * gasAmount = 1 ALOT.
+                // ALOT is already available in the user's portfolio hence we withdraw his own ALOT up 10 times
+                // the usual gasTank amount to give plenty of reserves
+                gasAmount = UtilsLibrary.min(assets[_trader][native].available, gasAmount * 10);
                 withdrawNativePrivate(_trader, gasAmount);
                 tankFull = true;
             } else if (address(gasStation).balance >= gasAmount) {
@@ -710,7 +714,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     /**
      * @notice  Transfers token from the `msg.sender`'s portfolio to `_to`'s portfolio
-     * @dev     This is not a ERC20 transfer, this is a balance transfer between portfolios
+     * @dev     This is not a ERC20 transfer, this is a balance transfer between 2 address within the portfolio
      * @param   _to  Address of the receiver
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
@@ -884,16 +888,18 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     /**
      * @notice  Returns the bridge fees for all the host chain tokens of a given subnet token
      * @dev     Calls the PortfolioBridgeSub contract to get the bridge fees
+     * @param   _bridge  bridge provider
      * @param   _symbol  subnet symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
      */
     function getAllBridgeFees(
+        IPortfolioBridge.BridgeProvider _bridge,
         bytes32 _symbol,
         uint256 _quantity
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
-        return IPortfolioBridgeSub(address(portfolioBridge)).getAllBridgeFees(_symbol, _quantity);
+        return IPortfolioBridgeSub(address(portfolioBridge)).getAllBridgeFees(_bridge, _symbol, _quantity);
     }
 
     /**

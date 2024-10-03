@@ -12,7 +12,6 @@ import {
     MockToken,
     DelayedTransfers,
     InventoryManager,
-    LZEndpointMock
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -21,7 +20,6 @@ import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber } from 'ethers';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { MockContract } from '@defi-wonderland/smock';
 
 describe("Portfolio Bridge Sub", () => {
     let portfolioSub: PortfolioSub;
@@ -32,7 +30,6 @@ describe("Portfolio Bridge Sub", () => {
     let portfolioBridgeMain: PortfolioBridgeMain;
     let delayedTransfers: DelayedTransfers;
     let inventoryManager: InventoryManager;
-    let lzEndpointMain: MockContract<LZEndpointMock>;
 
     let delayPeriod: number;
     let epochLength: number;
@@ -56,7 +53,7 @@ describe("Portfolio Bridge Sub", () => {
         console.log("Trader1", trader1.address);
         mock = await f.deployMockToken("MOCK", 18);
         const portfolioContracts = await f.deployCompletePortfolio();
-        await f.printTokens([portfolioContracts.portfolioAvax], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
+        await f.printTokens([portfolioContracts.portfolioMainnet], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
 
     });
 
@@ -64,14 +61,12 @@ describe("Portfolio Bridge Sub", () => {
     beforeEach(async function () {
 
         const portfolioContracts = await f.deployCompletePortfolio();
-        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolioSub = portfolioContracts.portfolioSub;
-        portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
+        portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
         delayedTransfers= portfolioContracts.delayedTransfers;
         inventoryManager = portfolioContracts.inventoryManager;
-        lzEndpointMain = portfolioContracts.lzEndpointAvax as MockContract<LZEndpointMock>;
-
 
         delayPeriod = 10000
         epochLength = 100000
@@ -345,26 +340,6 @@ describe("Portfolio Bridge Sub", () => {
         await portfolioBridgeSub.setDelayedTransfer(delayedTransfers.address);
     });
 
-    it("Should set gasForDestinationLzReceive correctly", async () => {
-        const { owner} = await f.getAccounts();
-        const { cChain} = f.getChains();
-        const gasForDestinationLzReceive = BigNumber.from(500000);
-        const gasForDestinationLzReceiveLow = BigNumber.from(40000);
-
-        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
-
-        const defaultBridge =0
-        // Too low
-        await expect(portfolioBridgeSub.setGasForDestination(defaultBridge, cChain.lzChainId, gasForDestinationLzReceiveLow)).to.be.revertedWith("PB-MING-01");
-
-
-        await expect(portfolioBridgeSub.setGasForDestination(defaultBridge, cChain.lzChainId, gasForDestinationLzReceive))
-        .to.emit(portfolioBridgeSub, "GasForDestinationLzReceiveUpdated")
-        .withArgs(defaultBridge, cChain.lzChainId, gasForDestinationLzReceive);
-
-        expect((await portfolioBridgeSub.remoteParams(cChain.lzChainId)).gasForDestination).to.be.equal(gasForDestinationLzReceive);
-    });
-
     it("Should set epochLength correctly", async () => {
         await expect(delayedTransfers.setEpochLength(epochLength))
         .to.emit(delayedTransfers, "EpochLengthUpdated")
@@ -463,7 +438,6 @@ describe("Portfolio Bridge Sub", () => {
 
 
     it("Should not be able to withdraw virtual tokens from host Chains", async () => {
-
         // Add virtual GUN to avalanche with gunzilla Network id
         const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
         const { dexalotSubnet, gunzillaSubnet } = f.getChains();
@@ -473,11 +447,10 @@ describe("Portfolio Bridge Sub", () => {
         const transaction = 0;   //  transaction:   0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
         //const direction = 1   // sent -0 , received -1
         const withDrawGunPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, gunDetails.symbolbytes32, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
-
-        await portfolioBridgeMain.setLzEndPoint(owner.address);
-        const trustedRemote = await portfolioBridgeMain.lzTrustedRemoteLookup(dexalotSubnet.lzChainId);
-        await expect(portfolioBridgeMain.lzReceive(dexalotSubnet.lzChainId, trustedRemote, 1, withDrawGunPayload)).to.be.revertedWith("PB-VTNS-02");
-
+        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address)
+        await portfolioBridgeMain.pause()
+        await portfolioBridgeMain.enableBridgeProvider(0, owner.address)
+        await expect(portfolioBridgeMain.processPayload(0, dexalotSubnet.chainListOrgId, withDrawGunPayload)).to.be.revertedWith("PB-VTNS-02");
     })
 
 
@@ -503,7 +476,31 @@ describe("Portfolio Bridge Sub", () => {
         // need to deposit for inventory to be initialised and withdrawal fee to be set
         await f.depositNative(portfolioMain, trader1, "0.5");
         expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0)).to.be.equal(fee2);
+    });
 
+    it("Should set BridgeFees correctly with bridge multipler", async () => {
+        const { cChain } = f.getChains();
+
+        const tokens = [ALOT, AVAX];
+        const fee1 = Utils.toWei('1');
+        const fee2 = Utils.toWei('0.1');
+        const fees  = [fee1, fee2];
+
+        await expect(portfolioBridgeSub.connect(trader1).setBridgeFees(cChain.chainListOrgId, tokens,fees))
+            .to.revertedWith("AccessControl:");
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), owner.address);
+
+        await expect(portfolioBridgeSub.setBridgeFees(cChain.chainListOrgId, tokens,[fee1]))
+            .to.revertedWith("PB-LENM-01");
+        // success for owner
+        await portfolioBridgeSub.setBridgeFees(cChain.chainListOrgId, tokens, fees)
+
+        await portfolioBridgeSub.setBridgeFeeMultipler(0, 5000);
+
+        // need to deposit for inventory to be initialised and withdrawal fee to be set
+        await f.depositNative(portfolioMain, trader1, "0.5");
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0)).to.be.equal(fee2.div(2));
     });
 
     // TESTING DEPOSIT
@@ -532,8 +529,16 @@ describe("Portfolio Bridge Sub", () => {
 
     it("Should fail setting Inventory Manager for non-admin", async () => {
         await expect(portfolioBridgeSub.connect(trader1).setInventoryManager(inventoryManager.address)).to.revertedWith("AccessControl:");
-
     });
+
+    it("Should fail setting bridge fee multipler for non-admin", async () => {
+        await expect(portfolioBridgeSub.connect(trader1).setBridgeFeeMultipler(0, 100)).to.revertedWith("AccessControl:");
+    });
+
+    it("Should fail setting bridge fee multipler for multiplier > TENK", async () => {
+        await expect(portfolioBridgeSub.setBridgeFeeMultipler(0, 10001)).to.revertedWith("PB-MPGT-01");
+    });
+
 
     it("Should use addDelayedTransfer correctly", async () => {
         const { owner, trader1 } = await f.getAccounts();
@@ -1048,7 +1053,7 @@ describe("Portfolio Bridge Sub", () => {
         await ethers.provider.send("evm_mine", []);
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
         await expect(portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]))
-        .to.emit(portfolioBridgeSub, "DelayedTransferExecuted")
+        .to.emit(delayedTransfers, "DelayedTransfer")
         .to.emit(portfolioMain, "PortfolioUpdated")
         .withArgs(0, trader1.address, AVAX, ethers.utils.parseEther("0.68"), 0, 0, 0, trader1.address)
 

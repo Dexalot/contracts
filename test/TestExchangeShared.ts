@@ -41,8 +41,8 @@ describe("Exchange Shared", function () {
         [owner, admin, auctionAdmin, trader1, trader2, treasurySafe] = await ethers.getSigners();
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolio = portfolioContracts.portfolioAvax;
-        mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
+        portfolio = portfolioContracts.portfolioMainnet;
+        mainnetRFQAvax = portfolioContracts.mainnetRFQ;
         exchangeMain = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
 
     });

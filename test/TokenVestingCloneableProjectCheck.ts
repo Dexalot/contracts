@@ -62,7 +62,7 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
 
         testToken = await f.deployDexalotToken();
 
-        const { portfolioAvax: portfolioM } = await f.deployCompletePortfolio();
+        const { portfolioMainnet: portfolioM } = await f.deployCompletePortfolio();
 
         portfolio = portfolioM;
 

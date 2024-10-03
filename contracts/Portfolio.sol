@@ -111,14 +111,19 @@ abstract contract Portfolio is
      * @notice  Enables or disables a bridge provider
      * @dev     Only callable by admin
      * @param   _bridge  Enum value of the bridge provider
-     * @param   _enable  True to enable, false to disable
+     * @param   _bridgeContract  Address of bridge contract to enable, zero address to disable
      */
     function enableBridgeProvider(
         IPortfolioBridge.BridgeProvider _bridge,
-        bool _enable
+        address _bridgeContract
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        portfolioBridge.enableBridgeProvider(_bridge, _enable);
-        emit ParameterUpdated(bytes32("Portfolio"), "P-BRIDGE-ENABLE", _enable ? 0 : 1, uint256(_bridge));
+        portfolioBridge.enableBridgeProvider(_bridge, _bridgeContract);
+        emit ParameterUpdated(
+            bytes32("Portfolio"),
+            "P-BRIDGE-ENABLE",
+            _bridgeContract == address(0) ? 0 : 1,
+            uint256(_bridge)
+        );
     }
 
     /**

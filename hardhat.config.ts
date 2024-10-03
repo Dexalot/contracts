@@ -6,30 +6,50 @@ import '@openzeppelin/hardhat-upgrades'
 import '@typechain/hardhat'
 import 'hardhat-contract-sizer'
 import 'solidity-coverage'
-import { HardhatUserConfig } from "hardhat/types";
+import '@layerzerolabs/toolbox-hardhat'
+import '@nomicfoundation/hardhat-foundry'
 import "./tasks/print_accounts";
 
 /**
  * @type import('hardhat/config').HardhatUserConfig
  */
 
-const config: HardhatUserConfig = {
+const config = {
   solidity: {
-    version: "0.8.17",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 200
-      },
+    compilers: [{
+      version: "0.8.17",
+      settings: {
+        optimizer: {
+          enabled: true,
+          runs: 200
+        },
 
-      outputSelection: {
-        "*": {
-          "*": [
-            "storageLayout"
-          ]
+        outputSelection: {
+          "*": {
+            "*": [
+              "storageLayout"
+            ]
+          }
+        }
+      }},
+      {
+        version: "0.8.25",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200
+          },
+  
+          outputSelection: {
+            "*": {
+              "*": [
+                "storageLayout"
+              ]
+            }
+          }
         }
       }
-    }
+    ]
   },
 
   contractSizer: {

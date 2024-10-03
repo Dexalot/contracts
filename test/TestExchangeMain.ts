@@ -59,8 +59,8 @@ describe("Exchange Main", function () {
 
     beforeEach(async function () {
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolio = portfolioContracts.portfolioAvax;
-        mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
+        portfolio = portfolioContracts.portfolioMainnet;
+        mainnetRFQAvax = portfolioContracts.mainnetRFQ;
 
         exchange = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
         mockToken = await f.deployMockToken("MOCK", 18);

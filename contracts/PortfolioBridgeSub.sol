@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.17;
+pragma solidity 0.8.25;
 
 import "./interfaces/IPortfolioBridgeSub.sol";
 import "./interfaces/IDelayedTransfers.sol";
 import "./PortfolioBridgeMain.sol";
 import "./interfaces/IInventoryManager.sol";
+import "./library/UtilsLibrary.sol";
 
 /**
  * @title PortfolioBridgeSub: Bridge aggregator and message relayer for subnet using multiple different bridges
@@ -36,6 +37,7 @@ import "./interfaces/IInventoryManager.sol";
 
 contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
+    uint256 public constant TENK = 10000;
 
     // key is symbolId (symbol + srcChainId)
     mapping(bytes32 => IPortfolio.TokenDetails) private tokenDetailsMapById;
@@ -45,6 +47,9 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     // symbol => chainId => { symbolId, bridgeFee }
     mapping(bytes32 => mapping(uint32 => TokenDestinationInfo)) private tokenInfoMapBySymbolChainId;
 
+    // bridgeProvider => multipler, used to discount the bridge fee for certain bridges
+    mapping(BridgeProvider => uint256) private bridgeFeeMultipler;
+
     // Add by symbolId rather than symbol
     EnumerableSetUpgradeable.Bytes32Set private tokenListById;
     IDelayedTransfers public delayedTransfers;
@@ -52,7 +57,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("3.2.3");
+        return bytes32("4.0.0");
     }
 
     /**
@@ -189,13 +194,15 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Returns the bridge fees for all the host chain tokens of a given subnet token
+     * @notice  Returns the valid bridge fees for all the host chain tokens of a given subnet token
+     * @param   _bridge  Bridge provider to use
      * @param   _symbol  subnet symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
      */
     function getAllBridgeFees(
+        BridgeProvider _bridge,
         bytes32 _symbol,
         uint256 _quantity
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
@@ -208,13 +215,12 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             if (tokenDetails.symbol != _symbol || tokenDetails.srcChainId == block.chainid) {
                 continue;
             }
-            chainIds[i] = tokenDetails.srcChainId;
-            bridgeFees[i] = getBridgeFee(
-                defaultBridgeProvider,
-                tokenDetails.srcChainId,
-                tokenDetails.symbol,
-                _quantity
-            );
+            try inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity) returns (uint256 invFee) {
+                chainIds[i] = tokenDetails.srcChainId;
+                bridgeFees[i] = _calcBridgeFee(_bridge, tokenDetails.srcChainId, _symbol) + invFee;
+            } catch {
+                continue;
+            }
         }
     }
 
@@ -339,7 +345,9 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     function updateInventoryBySource(bytes32 _subnetSymbol, IPortfolio.XFER memory _xfer) private {
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
             inventoryManager.decrement(_subnetSymbol, _xfer.symbol, _xfer.quantity);
-        } else if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
+            return;
+        }
+        if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
             inventoryManager.increment(_subnetSymbol, _xfer.symbol, _xfer.quantity);
         }
     }
@@ -357,7 +365,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         BridgeProvider _bridge,
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
-    ) internal override {
+    ) external override {
         IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         bytes32 subnetSymbol;
         // overwrite the xfer.symbol with the sourceSymbol + chainId
@@ -390,8 +398,24 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         sendXChainMessageInternal(dstChainListOrgChainId, defaultBridgeProvider, xfer, address(0));
     }
 
+    /**
+     * @notice  Set InventoryManager address
+     * @dev     Only admin can set InventoryManager address.
+     * @param   _inventoryManager  InventoryManager address
+     */
     function setInventoryManager(address _inventoryManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
         inventoryManager = IInventoryManager(_inventoryManager);
+    }
+
+    /**
+     * @notice  Set the bridge fee multipler for a given bridge
+     * @dev     Only admin can set the bridge fee multipler
+     * @param   _bridge  Bridge provider to use
+     * @param   _multipler  Multipler to set
+     */
+    function setBridgeFeeMultipler(BridgeProvider _bridge, uint256 _multipler) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_multipler <= TENK, "PB-MPGT-01");
+        bridgeFeeMultipler[_bridge] = _multipler;
     }
 
     /**
@@ -414,10 +438,30 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         bytes32 _symbol,
         uint256 _quantity
     ) public view override returns (uint256 bridgeFee) {
-        if (_bridge == BridgeProvider.LZ) {
-            bridgeFee = tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].bridgeFee;
-        }
+        bridgeFee = _calcBridgeFee(_bridge, _dstChainListOrgChainId, _symbol);
         (, bytes32 symbolId) = getDestChainSymbol(_dstChainListOrgChainId, _symbol);
         bridgeFee += inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity);
+    }
+
+    /**
+     * @notice  Calculate the bridge fee for a given bridge
+     * @param   _bridge  Bridge provider to use
+     * @param   _dstChainListOrgChainId  destination chain id
+     * @param   _symbol  subnet symbol of the token
+     * @return  bridgeFee  bridge fee for the destination
+     */
+    function _calcBridgeFee(
+        BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes32 _symbol
+    ) internal view returns (uint256) {
+        if (_bridge != BridgeProvider.LZ && _bridge != BridgeProvider.ICM) {
+            return 0;
+        }
+        uint256 multipler = bridgeFeeMultipler[_bridge];
+        if (multipler == 0) {
+            multipler = TENK;
+        }
+        return (tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].bridgeFee * multipler) / TENK;
     }
 }

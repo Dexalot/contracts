@@ -1,392 +1,394 @@
-/**
- * The test runner for LzApp via LzAppMock
- */
+// /**
+//  * The test runner for LzApp via LzAppMock
+//  */
 
-import Utils from './utils';
+// import Utils from './utils';
 
-import {
-    LzAppMock,
-    LzAppMock__factory,
-    LZEndpointMock,
-    LZEndpointMock__factory
-} from '../typechain-types'
+// import {
+//     LzAppMock,
+//     LzAppMock__factory,
+//     LZEndpointMock,
+//     LZEndpointMock__factory
+// } from '../typechain-types'
 
-import * as f from "./MakeTestSuite";
+// import * as f from "./MakeTestSuite";
 
-import { expect } from "chai";
-import { ethers } from "hardhat";
-import { MockContract, smock } from '@defi-wonderland/smock';
+// import { expect } from "chai";
+// import { ethers } from "hardhat";
+// import { MockContract, smock } from '@defi-wonderland/smock';
 
 
-describe("LzApp via LzAppMock", () => {
-    let lzAppMock: MockContract<LzAppMock>;
-    let lzEndpointMock: MockContract<LZEndpointMock>;
-    let lzEndpoint: LZEndpointMock;
-    const lzBridge = 0;
+// describe("LzApp via LzAppMock", () => {
+//     let lzAppMock: MockContract<LzAppMock>;
+//     let lzEndpointMock: MockContract<LZEndpointMock>;
+//     let lzEndpoint: LZEndpointMock;
+//     const lzBridge = 0;
 
-    const AVAX: string = Utils.fromUtf8("AVAX");
+//     const AVAX: string = Utils.fromUtf8("AVAX");
 
-    let depositAvaxPayload: string;
+//     let depositAvaxPayload: string;
 
-    beforeEach(async function () {
-        const { trader1 } = await f.getAccounts();
-        //const { cChain } = f.getChains();
+//     beforeEach(async function () {
+//         const { trader1 } = await f.getAccounts();
+//         //const { cChain } = f.getChains();
 
-        const MockLayerZeroEndpoint = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
-        lzEndpointMock = await MockLayerZeroEndpoint.deploy(1);
+//         const MockLayerZeroEndpoint = await smock.mock<LZEndpointMock__factory>("LZEndpointMock");
+//         //const MockLayerZeroEndpoint = await smock.fake("LZEndpointMock");
+//         lzEndpointMock = await MockLayerZeroEndpoint.deploy(1);
 
-        // deploy  LzAppMock with smock to freely manipulate state and test
-        const LzAppMock = await smock.mock<LzAppMock__factory>("LzAppMock");
-        lzAppMock = await LzAppMock.deploy();
+//         // deploy  LzAppMock with smock to freely manipulate state and test
+//         const LzAppMock = await smock.mock<LzAppMock__factory>("LzAppMock");
+//         //const LzAppMock = await smock.fake("LzAppMock");
+//         lzAppMock = await LzAppMock.deploy();
 
-        // deploy an LzEndPoint for testing
-        lzEndpoint = await f.deployLZEndpoint(1);    // using same endpoint for testing
+//         // deploy an LzEndPoint for testing
+//         lzEndpoint = await f.deployLZEndpoint(1);    // using same endpoint for testing
 
-        const nonce = 0;
-        const tx = 1;                // TX = 1 = DEPOSIT [main --> sub]
-        const xChainMessageType = 0; // XChainMsgType = 0 = XFER
+//         const nonce = 0;
+//         const tx = 1;                // TX = 1 = DEPOSIT [main --> sub]
+//         const xChainMessageType = 0; // XChainMsgType = 0 = XFER
 
-        depositAvaxPayload = Utils.generatePayload(xChainMessageType, nonce, tx, trader1.address, AVAX, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
-    });
+//         depositAvaxPayload = Utils.generatePayload(xChainMessageType, nonce, tx, trader1.address, AVAX, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
+//     });
 
-    it("Should get the initial lzEndPoint as zero address", async () => {
-        const lzEndPoint = await lzAppMock.getLzEndPoint();
-        expect(lzEndPoint).to.be.equal(ethers.constants.AddressZero);
-    });
+//     it("Should get the initial lzEndPoint as zero address", async () => {
+//         const lzEndPoint = await lzAppMock.getLzEndPoint();
+//         expect(lzEndPoint).to.be.equal(ethers.constants.AddressZero);
+//     });
 
-    it("Should use setLzEndPoint and getLzEndPoint correctly", async () => {
-        const {other1} = await f.getAccounts();
+//     it("Should use setLzEndPoint and getLzEndPoint correctly", async () => {
+//         const {other1} = await f.getAccounts();
 
-        // fail for accounts not in default admin role
-        await expect(lzAppMock.connect(other1).setLzEndPoint(lzEndpoint.address))
-            .to.be.revertedWith("AccessControl:");
+//         // fail for accounts not in default admin role
+//         await expect(lzAppMock.connect(other1).setLzEndPoint(lzEndpoint.address))
+//             .to.be.revertedWith("AccessControl:");
 
-        // fail for zero address
-        await expect(lzAppMock.setLzEndPoint(ethers.constants.AddressZero))
-            .to.be.revertedWith("LA-LIZA-01");
+//         // fail for zero address
+//         await expect(lzAppMock.setLzEndPoint(ethers.constants.AddressZero))
+//             .to.be.revertedWith("LA-LIZA-01");
 
-        // succeed for owner in default admin role
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         // succeed for owner in default admin role
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        const lzEp = await lzAppMock.getLzEndPoint();
-        expect(lzEp).to.be.equal(lzEndpoint.address);  // new endpoint
-    });
+//         const lzEp = await lzAppMock.getLzEndPoint();
+//         expect(lzEp).to.be.equal(lzEndpoint.address);  // new endpoint
+//     });
 
-    it("Should use setSendVersion and getSendVersion correctly", async () => {
-        const { other1 } = await f.getAccounts();
+//     it("Should use setSendVersion and getSendVersion correctly", async () => {
+//         const { other1 } = await f.getAccounts();
 
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        const sendVersionMain = await lzEndpoint.getSendVersion(lzEndpoint.address);
-        expect(sendVersionMain).to.be.equal(1);  // initial send version is 1
+//         const sendVersionMain = await lzEndpoint.getSendVersion(lzEndpoint.address);
+//         expect(sendVersionMain).to.be.equal(1);  // initial send version is 1
 
-        // fail for non owner
-        await expect(lzAppMock.connect(other1).setSendVersion(2)).to.be.revertedWith("AccessControl:");
+//         // fail for non owner
+//         await expect(lzAppMock.connect(other1).setSendVersion(2)).to.be.revertedWith("AccessControl:");
 
-        // succeed for owner
-        await lzAppMock.setSendVersion(3);
+//         // succeed for owner
+//         await lzAppMock.setSendVersion(3);
 
-        const sendVersionMainNew = await lzEndpoint.getSendVersion(lzEndpoint.address);
-        expect(sendVersionMainNew).to.be.equal(1);  // new send version is still 1 because LZEndPointMock.sol has no user application configuration
-    });
+//         const sendVersionMainNew = await lzEndpoint.getSendVersion(lzEndpoint.address);
+//         expect(sendVersionMainNew).to.be.equal(1);  // new send version is still 1 because LZEndPointMock.sol has no user application configuration
+//     });
 
-    it("Should use setReceiveVersion and getReceiveVersion correctly", async () => {
-        const { other1 } = await f.getAccounts();
+//     it("Should use setReceiveVersion and getReceiveVersion correctly", async () => {
+//         const { other1 } = await f.getAccounts();
 
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        const receiveVersionMain = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
-        expect(receiveVersionMain).to.be.equal(1);  // initial receive version is 1
+//         const receiveVersionMain = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
+//         expect(receiveVersionMain).to.be.equal(1);  // initial receive version is 1
 
-        // fail for non owner
-        await expect(lzAppMock.connect(other1).setReceiveVersion(2)).to.be.revertedWith("AccessControl:");
+//         // fail for non owner
+//         await expect(lzAppMock.connect(other1).setReceiveVersion(2)).to.be.revertedWith("AccessControl:");
 
-        // succeed for owner
-        await lzAppMock.setReceiveVersion(2);
+//         // succeed for owner
+//         await lzAppMock.setReceiveVersion(2);
 
-        const receiveVersionMainNew = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
-        expect(receiveVersionMainNew).to.be.equal(1);  // new receive version is still 1 because LZEndPointMock.sol has no user application configuration
-    });
+//         const receiveVersionMainNew = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
+//         expect(receiveVersionMainNew).to.be.equal(1);  // new receive version is still 1 because LZEndPointMock.sol has no user application configuration
+//     });
 
-    it("Should use getConfig correctly", async () => {
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//     it("Should use getConfig correctly", async () => {
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        const receiveVersion = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
-        const sendVersion = await lzEndpoint.getSendVersion(lzEndpoint.address);
+//         const receiveVersion = await lzEndpoint.getReceiveVersion(lzEndpoint.address);
+//         const sendVersion = await lzEndpoint.getSendVersion(lzEndpoint.address);
 
-        expect(receiveVersion).to.be.equal(1);  // initial receive version is 1
-        expect(sendVersion).to.be.equal(1);     // initial send version is 1
+//         expect(receiveVersion).to.be.equal(1);  // initial receive version is 1
+//         expect(sendVersion).to.be.equal(1);     // initial send version is 1
 
-        const chainIdMain = await lzEndpoint.getChainId();
-        expect(chainIdMain).to.be.equal(1);         // chain id for test is set to 1
+//         const chainIdMain = await lzEndpoint.getChainId();
+//         expect(chainIdMain).to.be.equal(1);         // chain id for test is set to 1
 
-        const EMMPTY_CONFIG = 0;  // no config types are defined at the beginning
-        //LZEndPointMock.sol has no user application configuration
-        expect(await lzAppMock.getConfig(receiveVersion, chainIdMain, lzAppMock.address, EMMPTY_CONFIG))
-            .to.be.equal("0x");  // no user app configs are defined, yet for receiveVersion
-        expect(await lzAppMock.getConfig(sendVersion, chainIdMain, lzAppMock.address, EMMPTY_CONFIG))
-            .to.be.equal("0x");  // no user app configs are defined, yet for sendVersion
-    });
+//         const EMMPTY_CONFIG = 0;  // no config types are defined at the beginning
+//         //LZEndPointMock.sol has no user application configuration
+//         expect(await lzAppMock.getConfig(receiveVersion, chainIdMain, lzAppMock.address, EMMPTY_CONFIG))
+//             .to.be.equal("0x");  // no user app configs are defined, yet for receiveVersion
+//         expect(await lzAppMock.getConfig(sendVersion, chainIdMain, lzAppMock.address, EMMPTY_CONFIG))
+//             .to.be.equal("0x");  // no user app configs are defined, yet for sendVersion
+//     });
 
-    it("Should use setConfig correctly", async () => {
-        const { other1 } = await f.getAccounts();
+//     it("Should use setConfig correctly", async () => {
+//         const { other1 } = await f.getAccounts();
 
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        // reference config types from LayerZero documentation
-        // const CONFIG_TYPE_INBOUND_PROOF_LIBRARY_VERSION = 1
-        // const CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS = 2
-        // const CONFIG_TYPE_RELAYER = 3
-        // const CONFIG_TYPE_OUTBOUND_PROOF_TYPE = 4
-        // const CONFIG_TYPE_OUTBOUND_BLOCK_CONFIRMATIONS = 5
-        // const CONFIG_TYPE_ORACLE = 6
+//         // reference config types from LayerZero documentation
+//         // const CONFIG_TYPE_INBOUND_PROOF_LIBRARY_VERSION = 1
+//         // const CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS = 2
+//         // const CONFIG_TYPE_RELAYER = 3
+//         // const CONFIG_TYPE_OUTBOUND_PROOF_TYPE = 4
+//         // const CONFIG_TYPE_OUTBOUND_BLOCK_CONFIRMATIONS = 5
+//         // const CONFIG_TYPE_ORACLE = 6
 
-        // create a config type to change block confirmations for inbound messages
-        const CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS = 2
+//         // create a config type to change block confirmations for inbound messages
+//         const CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS = 2
 
-        const receiveVersionMain = await lzEndpoint.getReceiveVersion(lzAppMock.address);
+//         const receiveVersionMain = await lzEndpoint.getReceiveVersion(lzAppMock.address);
 
-        const chainIdMain = await lzEndpoint.getChainId();
+//         const chainIdMain = await lzEndpoint.getChainId();
 
-        // call data in bytes for changing block confirmations for inbound messages to 8
-        const config = ethers.utils.defaultAbiCoder.encode(["uint16"], [8])
+//         // call data in bytes for changing block confirmations for inbound messages to 8
+//         const config = ethers.utils.defaultAbiCoder.encode(["uint16"], [8])
 
-        // fail for non owner
-        await expect(lzAppMock.connect(other1).setConfig(receiveVersionMain, chainIdMain, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS, config))
-            .to.be.revertedWith("AccessControl:");
+//         // fail for non owner
+//         await expect(lzAppMock.connect(other1).setConfig(receiveVersionMain, chainIdMain, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS, config))
+//             .to.be.revertedWith("AccessControl:");
 
-        // succeed for owner
-        await lzAppMock.setConfig(receiveVersionMain, chainIdMain, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS, config);
+//         // succeed for owner
+//         await lzAppMock.setConfig(receiveVersionMain, chainIdMain, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS, config);
 
-        // get the config set in the previous call
-        const contractConfig = await lzAppMock.getConfig(receiveVersionMain, chainIdMain, lzAppMock.address, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS);
-        //LZEndPointMock.sol has no user application configuration
-        expect(contractConfig).to.be.equal("0x");
-        //expect(ethers.utils.defaultAbiCoder.decode(["uint16"], contractConfig)[0]).to.be.equal(8);
-    });
+//         // get the config set in the previous call
+//         const contractConfig = await lzAppMock.getConfig(receiveVersionMain, chainIdMain, lzAppMock.address, CONFIG_TYPE_INBOUND_BLOCK_CONFIRMATIONS);
+//         //LZEndPointMock.sol has no user application configuration
+//         expect(contractConfig).to.be.equal("0x");
+//         //expect(ethers.utils.defaultAbiCoder.decode(["uint16"], contractConfig)[0]).to.be.equal(8);
+//     });
 
-    it("Should use getInboundNonce correctly", async () => {
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
-        const nonce = await lzAppMock.getInboundNonceMock(1);
-        expect(nonce).to.be.equal(0);   // no transactions are received
-    });
+//     it("Should use getInboundNonce correctly", async () => {
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         const nonce = await lzAppMock.getInboundNonceMock(1);
+//         expect(nonce).to.be.equal(0);   // no transactions are received
+//     });
 
-    it("Should use getOutboundNonce correctly", async () => {
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//     it("Should use getOutboundNonce correctly", async () => {
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        const nonce = await lzAppMock.getInboundNonceMock(1);
-        expect(nonce).to.be.equal(0);   // no transactions are sent
+//         const nonce = await lzAppMock.getInboundNonceMock(1);
+//         expect(nonce).to.be.equal(0);   // no transactions are sent
 
-    });
+//     });
 
-    it("Should set setDefaultDestinationChain correctly", async () => {
-        const {other1} = await f.getAccounts();
+//     it("Should set setDefaultDestinationChain correctly", async () => {
+//         const {other1} = await f.getAccounts();
 
-        expect(lzAppMock.getTrustedRemoteAddress(1)).to.be.revertedWith("LA-DCNT-01");
+//         expect(lzAppMock.getTrustedRemoteAddress(1)).to.be.revertedWith("LA-DCNT-01");
 
-        // fail for non owner
-        await expect(lzAppMock.connect(other1).setDefaultDestinationChain(lzBridge, 1)).to.be.revertedWith("AccessControl:");
+//         // fail for non owner
+//         await expect(lzAppMock.connect(other1).setDefaultDestinationChain(lzBridge, 1)).to.be.revertedWith("AccessControl:");
 
-        // fail default destination hasn't been setup
-        await expect(lzAppMock.setDefaultDestinationChain(lzBridge, 1)).to.be.revertedWith("PB-DDCS-01");
+//         // fail default destination hasn't been setup
+//         await expect(lzAppMock.setDefaultDestinationChain(lzBridge, 1)).to.be.revertedWith("PB-DDCS-01");
 
-        // succeed for owner
-        await expect(lzAppMock.setTrustedRemoteAddress(lzBridge, 1, lzAppMock.address, 1111, 500000, false)).to.emit(lzAppMock, "DefaultChainIdUpdated").withArgs(lzBridge, 1);
+//         // succeed for owner
+//         await expect(lzAppMock.setTrustedRemoteAddress(lzBridge, 1, lzAppMock.address, 1111, 500000, false)).to.emit(lzAppMock, "DefaultChainIdUpdated").withArgs(lzBridge, 1);
 
-        await expect(lzAppMock.setTrustedRemoteAddress(lzBridge, 2, lzAppMock.address, 2111, 400000, false)).to.emit(lzAppMock, "LzSetTrustedRemoteAddress")
-            .withArgs(2, lzAppMock.address.toLowerCase(), 2111, 400000, false);
+//         await expect(lzAppMock.setTrustedRemoteAddress(lzBridge, 2, lzAppMock.address, 2111, 400000, false)).to.emit(lzAppMock, "LzSetTrustedRemoteAddress")
+//             .withArgs(2, lzAppMock.address.toLowerCase(), 2111, 400000, false);
 
-        const add = ethers.utils.getAddress(ethers.utils.hexlify(await lzAppMock.getTrustedRemoteAddress(1)));
-        expect(add).to.be.equal(lzAppMock.address);
+//         const add = ethers.utils.getAddress(ethers.utils.hexlify(await lzAppMock.getTrustedRemoteAddress(1)));
+//         expect(add).to.be.equal(lzAppMock.address);
 
-        const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
-        expect(await lzAppMock.isLZTrustedRemote(1, trustedRemote)).to.be.equal(true);
+//         const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
+//         expect(await lzAppMock.isLZTrustedRemote(1, trustedRemote)).to.be.equal(true);
 
-        const destination1 = await lzAppMock.remoteParams(1);
-        expect(destination1.lzRemoteChainId).to.be.equal(1);
-        expect(destination1.chainListOrgChainId).to.be.equal(1111);
-        expect(destination1.gasForDestination).to.be.equal(500000);
-        expect(destination1.userPaysFee).to.be.equal(false);
+//         const destination1 = await lzAppMock.remoteParams(1);
+//         expect(destination1.lzRemoteChainId).to.be.equal(1);
+//         expect(destination1.chainListOrgChainId).to.be.equal(1111);
+//         expect(destination1.gasForDestination).to.be.equal(500000);
+//         expect(destination1.userPaysFee).to.be.equal(false);
 
-        const destination2 = await lzAppMock.remoteParams(2);
-        expect(destination2.lzRemoteChainId).to.be.equal(2);
-        expect(destination2.chainListOrgChainId).to.be.equal(2111);
-        expect(destination2.gasForDestination).to.be.equal(400000);
-        expect(destination2.userPaysFee).to.be.equal(false);
-    });
-
-    it("Should use hasStoredPayload correctly", async () => {
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpointMock.address);
+//         const destination2 = await lzAppMock.remoteParams(2);
+//         expect(destination2.lzRemoteChainId).to.be.equal(2);
+//         expect(destination2.chainListOrgChainId).to.be.equal(2111);
+//         expect(destination2.gasForDestination).to.be.equal(400000);
+//         expect(destination2.userPaysFee).to.be.equal(false);
+//     });
 
-        const srcChainId = 1;
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
+//     it("Should use hasStoredPayload correctly", async () => {
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpointMock.address);
 
-        await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
+//         const srcChainId = 1;
+//         const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
 
-        const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
-        // fail for invalid caller
-        const sp1Part1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
-            dstAddress: "0x0100000000000000000000000000000000000000",
-            payloadHash: ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const sp1Part2: any = {};
-        sp1Part2[trustedRemote] = sp1Part1;
-        const sp1: any = {};
-        sp1[srcChainId] = sp1Part2;
+//         await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
 
-        expect(await lzAppMock["hasStoredPayload(uint16,bytes)"](srcChainId, trustedRemote)).to.be.false; // initial state witho no stored payload
+//         const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
+//         // fail for invalid caller
+//         const sp1Part1 = {
+//             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
+//             dstAddress: "0x0100000000000000000000000000000000000000",
+//             payloadHash: ethers.utils.keccak256(depositAvaxPayload)
+//         }
+//         const sp1Part2: any = {};
+//         sp1Part2[trustedRemote] = sp1Part1;
+//         const sp1: any = {};
+//         sp1[srcChainId] = sp1Part2;
 
-        await lzEndpointMock.setVariable("storedPayload", sp1);
+//         expect(await lzAppMock["hasStoredPayload(uint16,bytes)"](srcChainId, trustedRemote)).to.be.false; // initial state witho no stored payload
 
-        expect(await lzAppMock["hasStoredPayload(uint16,bytes)"](srcChainId, trustedRemote)).to.be.true; // final state should have a stored payload
-    });
+//         await lzEndpointMock.setVariable("storedPayload", sp1);
 
-    it("Should use lzSend correctly", async () => {
-        // set the LzEndpoint for LzApp
-        await lzAppMock.setLzEndPoint(lzEndpoint.address);
+//         expect(await lzAppMock["hasStoredPayload(uint16,bytes)"](srcChainId, trustedRemote)).to.be.true; // final state should have a stored payload
+//     });
 
-        // set the destination for the lzEndpoint
-        await lzEndpoint.setDestLzEndpoint(lzAppMock.address, lzEndpoint.address);
+//     it("Should use lzSend correctly", async () => {
+//         // set the LzEndpoint for LzApp
+//         await lzAppMock.setLzEndPoint(lzEndpoint.address);
 
-        // fail if remote is not trusted
-        await expect(lzAppMock.lzSendMock(1, depositAvaxPayload)).to.be.revertedWith("LA-DCNT-01");
+//         // set the destination for the lzEndpoint
+//         await lzEndpoint.setDestLzEndpoint(lzAppMock.address, lzEndpoint.address);
 
-        // set the lzAppMock as a trusted remote. Setting it to itself. Both sender and receiver
-        await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, lzAppMock.address, 1111, 500000, false);
-        // This is failing with gas to low. Technically sending it to itself. Not a good test.
-        // const tx = await lzAppMock.lzSendMock(depositAvaxPayload);
-        // const rcpt = await tx.wait();
-        // expect(rcpt.transactionHash.length).to.be.equal(66)
-    });
-
-    it("Should use forceResumeReceive correctly", async () => {
-        const {admin,trader1} = await f.getAccounts();
-
-        // change endpoint to the smock one
-        await lzAppMock.setLzEndPoint(lzEndpointMock.address);
-
-        const srcChainId = 1;
+//         // fail if remote is not trusted
+//         await expect(lzAppMock.lzSendMock(1, depositAvaxPayload)).to.be.revertedWith("LA-DCNT-01");
 
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
-
-        lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
-        const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
-
-        // fail for invalid caller
-        const sp1Part1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
-            dstAddress: "0x0100000000000000000000000000000000000000",
-            payloadHash: ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const sp1Part2: any = {};
-        sp1Part2[trustedRemote] = sp1Part1;
-        const sp1: any = {};
-        sp1[srcChainId] = sp1Part2;
-
-        await lzEndpointMock.setVariable("storedPayload", sp1);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
-
-        // fail for non-admin
-        await expect(lzAppMock.connect(trader1).forceResumeReceive(1, trustedRemote)).to.be.revertedWith("AccessControl: account");
-
-        // fail for invalid caller
-        await lzAppMock.grantRole(await lzAppMock.DEFAULT_ADMIN_ROLE(), admin.address);
-        await expect(lzAppMock.connect(admin).forceResumeReceive(1, trustedRemote)).to.be.revertedWith("LayerZeroMock: invalid caller");
-
-        // success with a correct payload
-        const sp2Part1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
-            dstAddress: lzAppMock.address,
-            payloadHash: ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const sp2Part2: any = {};
-        sp2Part2[trustedRemote] = sp2Part1;
-        const sp2: any = {};
-        sp2[srcChainId] = sp2Part2;
-
-        await lzEndpointMock.setVariable("storedPayload", sp2);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
-        await lzAppMock.connect(admin).forceResumeReceive(srcChainId, trustedRemote);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
-    });
-
-    it("Should use retryPayload correctly", async () => {
-        const {admin,trader1} = await f.getAccounts();
-
-        // change endpoint to the smock one
-        await lzAppMock.setLzEndPoint(lzEndpointMock.address);
-
-        const srcChainId = 1;
-
-        const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
-        await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
-        const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
-
-        const srcAddressWL = "0x6d6f636000000000000000000000000000000000000000000000000000000000"; // address in bytes for failed test due to wrong payload length
-        const srcAddressIH = "0x6d6f630000000000000000000000000000000000000000000000000000000000"; // address in bytes for failed test due to invalid payload hash
-
-
-        // fail for non-admin
-        await expect(lzAppMock.connect(trader1).retryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
-
-        // fail for a payload that doesn't exist
-        await lzAppMock.grantRole(await lzAppMock.DEFAULT_ADMIN_ROLE(), admin.address);
-        await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressWL, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: no stored payload");
-
-        // fail for invalid payload due to length not matching
-        const spWLPart1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-2),
-            dstAddress: lzAppMock.address,
-            payloadHash:depositAvaxPayload //ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const spWLPart2: any = {};
-        spWLPart2[srcAddressWL] = spWLPart1;
-        const spWL: any = {};
-        spWL[srcChainId] = spWLPart2;
-
-        await lzEndpointMock.setVariable("storedPayload", spWL);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddressWL)).to.be.true;
-
-        await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressWL, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: invalid payload");
-
-        // fail for invalid payload due to invalid hash
-        const spIHPart1 = {
-            payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-2),
-            dstAddress: lzAppMock.address,
-            payloadHash: "0x0100000000000000000000000000000000000000000000000000000000000000"
-        }
-        const spIHPart2: any = {};
-        spIHPart2[srcAddressIH] = spIHPart1;
-        const spIH: any = {};
-        spIH[srcChainId] = spIHPart2;
-
-        await lzEndpointMock.setVariable("storedPayload", spIH);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddressIH)).to.be.true;
-
-        await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressIH, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: invalid payload");
-
-        // // succeed for the correctly formed payload
-        const spPart1 = {
-            payloadLength: 128,  // no. bytes
-            dstAddress: lzAppMock.address,
-            payloadHash: depositAvaxPayload //ethers.utils.keccak256(depositAvaxPayload)
-        }
-        const spPart2: any = {};
-        spPart2[trustedRemote] = spPart1;
-        const sp: any = {};
-        sp[srcChainId] = spPart2;
-
-        await lzEndpointMock.setVariable("storedPayload", sp);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
-        await lzAppMock.connect(admin).retryPayload(srcChainId, trustedRemote, depositAvaxPayload);
-        expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
-    });
-});
+//         // set the lzAppMock as a trusted remote. Setting it to itself. Both sender and receiver
+//         await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, lzAppMock.address, 1111, 500000, false);
+//         // This is failing with gas to low. Technically sending it to itself. Not a good test.
+//         // const tx = await lzAppMock.lzSendMock(depositAvaxPayload);
+//         // const rcpt = await tx.wait();
+//         // expect(rcpt.transactionHash.length).to.be.equal(66)
+//     });
+
+//     it("Should use forceResumeReceive correctly", async () => {
+//         const {admin,trader1} = await f.getAccounts();
+
+//         // change endpoint to the smock one
+//         await lzAppMock.setLzEndPoint(lzEndpointMock.address);
+
+//         const srcChainId = 1;
+
+//         const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
+
+//         lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
+//         const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
+
+//         // fail for invalid caller
+//         const sp1Part1 = {
+//             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
+//             dstAddress: "0x0100000000000000000000000000000000000000",
+//             payloadHash: ethers.utils.keccak256(depositAvaxPayload)
+//         }
+//         const sp1Part2: any = {};
+//         sp1Part2[trustedRemote] = sp1Part1;
+//         const sp1: any = {};
+//         sp1[srcChainId] = sp1Part2;
+
+//         await lzEndpointMock.setVariable("storedPayload", sp1);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
+
+//         // fail for non-admin
+//         await expect(lzAppMock.connect(trader1).forceResumeReceive(1, trustedRemote)).to.be.revertedWith("AccessControl: account");
+
+//         // fail for invalid caller
+//         await lzAppMock.grantRole(await lzAppMock.DEFAULT_ADMIN_ROLE(), admin.address);
+//         await expect(lzAppMock.connect(admin).forceResumeReceive(1, trustedRemote)).to.be.revertedWith("LayerZeroMock: invalid caller");
+
+//         // success with a correct payload
+//         const sp2Part1 = {
+//             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-1),  // the string's byte representation in ts and in evm are different
+//             dstAddress: lzAppMock.address,
+//             payloadHash: ethers.utils.keccak256(depositAvaxPayload)
+//         }
+//         const sp2Part2: any = {};
+//         sp2Part2[trustedRemote] = sp2Part1;
+//         const sp2: any = {};
+//         sp2[srcChainId] = sp2Part2;
+
+//         await lzEndpointMock.setVariable("storedPayload", sp2);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
+//         await lzAppMock.connect(admin).forceResumeReceive(srcChainId, trustedRemote);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
+//     });
+
+//     it("Should use retryPayload correctly", async () => {
+//         const {admin,trader1} = await f.getAccounts();
+
+//         // change endpoint to the smock one
+//         await lzAppMock.setLzEndPoint(lzEndpointMock.address);
+
+//         const srcChainId = 1;
+
+//         const srcAddress = "0x6d6f636b00000000000000000000000000000000";   // address in bytes for successful test
+//         await lzAppMock.setTrustedRemoteAddress(lzBridge, 1, srcAddress, 1111, 500000, false);
+//         const trustedRemote = await lzAppMock.lzTrustedRemoteLookup(1);
+
+//         const srcAddressWL = "0x6d6f636000000000000000000000000000000000000000000000000000000000"; // address in bytes for failed test due to wrong payload length
+//         const srcAddressIH = "0x6d6f630000000000000000000000000000000000000000000000000000000000"; // address in bytes for failed test due to invalid payload hash
+
+
+//         // fail for non-admin
+//         await expect(lzAppMock.connect(trader1).retryPayload(srcChainId, trustedRemote, depositAvaxPayload)).to.be.revertedWith("AccessControl: account");
+
+//         // fail for a payload that doesn't exist
+//         await lzAppMock.grantRole(await lzAppMock.DEFAULT_ADMIN_ROLE(), admin.address);
+//         await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressWL, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: no stored payload");
+
+//         // fail for invalid payload due to length not matching
+//         const spWLPart1 = {
+//             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-2),
+//             dstAddress: lzAppMock.address,
+//             payloadHash:depositAvaxPayload //ethers.utils.keccak256(depositAvaxPayload)
+//         }
+//         const spWLPart2: any = {};
+//         spWLPart2[srcAddressWL] = spWLPart1;
+//         const spWL: any = {};
+//         spWL[srcChainId] = spWLPart2;
+
+//         await lzEndpointMock.setVariable("storedPayload", spWL);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddressWL)).to.be.true;
+
+//         await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressWL, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: invalid payload");
+
+//         // fail for invalid payload due to invalid hash
+//         const spIHPart1 = {
+//             payloadLength: ethers.BigNumber.from(depositAvaxPayload.length/2-2),
+//             dstAddress: lzAppMock.address,
+//             payloadHash: "0x0100000000000000000000000000000000000000000000000000000000000000"
+//         }
+//         const spIHPart2: any = {};
+//         spIHPart2[srcAddressIH] = spIHPart1;
+//         const spIH: any = {};
+//         spIH[srcChainId] = spIHPart2;
+
+//         await lzEndpointMock.setVariable("storedPayload", spIH);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, srcAddressIH)).to.be.true;
+
+//         await expect(lzAppMock.connect(admin).retryPayload(srcChainId, srcAddressIH, depositAvaxPayload)).to.be.revertedWith("LayerZeroMock: invalid payload");
+
+//         // // succeed for the correctly formed payload
+//         const spPart1 = {
+//             payloadLength: 128,  // no. bytes
+//             dstAddress: lzAppMock.address,
+//             payloadHash: depositAvaxPayload //ethers.utils.keccak256(depositAvaxPayload)
+//         }
+//         const spPart2: any = {};
+//         spPart2[trustedRemote] = spPart1;
+//         const sp: any = {};
+//         sp[srcChainId] = spPart2;
+
+//         await lzEndpointMock.setVariable("storedPayload", sp);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.true;
+//         await lzAppMock.connect(admin).retryPayload(srcChainId, trustedRemote, depositAvaxPayload);
+//         expect(await lzEndpointMock.hasStoredPayload(srcChainId, trustedRemote)).to.be.false;
+//     });
+// });

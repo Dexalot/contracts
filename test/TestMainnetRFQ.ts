@@ -140,6 +140,16 @@ describe("Mainnet RFQ Multichain", () => {
     // Add virtual AVAX to gunzilla with avalanche Network id
     await f.addVirtualToken(portfolioContracts.portfolioGun, "AVAX", 18, cChain.chainListOrgId);
 
+
+    await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
+    await portfolioBridgeGun.grantRole(await portfolioBridgeGun.BRIDGE_USER_ROLE(), owner.address);
+    //Enable GUN for CCTRADE at Cchain for destination gun
+    await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, true);
+    //Enable USDC for CCTRADE at gunzilla for destination avax
+    await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("USDC"), cChain.chainListOrgId, true);
+    //Enable AVAX for CCTRADE at Gunzilla for destination avax
+    await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("AVAX"), cChain.chainListOrgId, true);
+
     await f.addToken(portfolioContracts.portfolioAvax, portfolioContracts.portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
 
     // mint tokens
@@ -317,7 +327,7 @@ describe("Mainnet RFQ Multichain", () => {
           signature,
           {value: xChainSwap.takerAmount},
       )
-    ).to.be.revertedWith("LA-IUMF-01");
+    ).to.be.revertedWith("PB-IUMF-01");
   });
 
   it("Should trade two tokens Native -> Native w/ user gas fee", async () => {
@@ -774,7 +784,7 @@ describe("Mainnet RFQ", () => {
     const portfolioContracts = await f.deployCompletePortfolio(true);
 
     // deploy upgradeable contract
-    mainnetRFQ = portfolioContracts.mainnetRFQAvax;
+    mainnetRFQ = portfolioContracts.mainnetRFQ;
 
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);

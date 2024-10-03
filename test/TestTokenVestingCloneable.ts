@@ -66,7 +66,7 @@ describe("TokenVestingCloneable", function () {
         testToken = await f.deployMockToken("DEG", token_decimals);
         testTokenBytes32 = Utils.fromUtf8("DEG")
         await testToken.mint(owner.address, Utils.toWei('100000000'));
-        const { portfolioAvax: portfolioM, portfolioSub: portfolioS } = await f.deployCompletePortfolio();
+        const { portfolioMainnet: portfolioM, portfolioSub: portfolioS } = await f.deployCompletePortfolio();
 
         portfolio = portfolioM;
         portfolioSub = portfolioS;

@@ -102,7 +102,7 @@ describe("Dexalot", () => {
         console.log("deploymentAccount =", deploymentAccount);
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolio = portfolioContracts.portfolioSub;
         const alotMain =  portfolioContracts.alot;
 
@@ -355,8 +355,8 @@ describe("Dexalot", () => {
                 // add order
                 const _side = order["side"] === "BUY" ? 0 : 1;
 
-                let _type1;
-                let _type2;
+                let _type1 =1; //LIMIT
+                let _type2 =0; //GTC
 
                 if (order["type1"] === "MARKET") {
                     _type1 =0
@@ -379,16 +379,18 @@ describe("Dexalot", () => {
                     _type2 =3
                 }
 
-                const tx = await tradePair.connect(acc).addOrder(
-                    acc.address,
-                    Utils.fromUtf8(order["clientOrderId"]),
-                    tradePairId,
-                    Utils.parseUnits(order["price"].toString(), quoteDecimals),
-                    Utils.parseUnits(order["quantity"].toString(), baseDecimals),
-                    _side,
-                    ethers.BigNumber.from(_type1),
-                    ethers.BigNumber.from(_type2),
-                );
+                const  newOrder = {
+                    traderaddress: acc.address
+                    , clientOrderId : Utils.fromUtf8(order["clientOrderId"])
+                    , tradePairId
+                    , price: Utils.parseUnits(order["price"].toString(), quoteDecimals)
+                    , quantity:  Utils.parseUnits(order["quantity"].toString(), baseDecimals)
+                    , side :  _side
+                    , type1 : _type1   // market orders not enabled
+                    , type2 : _type2   // GTC
+                }
+
+                const tx = await tradePair.connect(acc).addNewOrder(newOrder);
                 orderLog = await tx.wait();
 
                 // add orders affected by this addition to the orderMap

@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.17;
+pragma solidity 0.8.25;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioBridge.sol";
+import "./interfaces/IBridgeProvider.sol";
 import "./interfaces/IMainnetRFQ.sol";
-import "./bridgeApps/LzApp.sol";
 
 /**
  * @title PortfolioBridgeMain. Bridge aggregator and message relayer for mainnet using multiple different bridges
@@ -57,56 +58,53 @@ contract PortfolioBridgeMain is
     Initializable,
     PausableUpgradeable,
     ReentrancyGuardUpgradeable,
-    IPortfolioBridge,
-    LzApp
+    AccessControlEnumerableUpgradeable,
+    IPortfolioBridge
 {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
 
     IPortfolio internal portfolio;
     IMainnetRFQ internal mainnetRfq;
-    mapping(BridgeProvider => bool) public bridgeEnabled;
-    mapping(uint32 => uint16) internal lzDestinationMap; // chainListOrgChainId ==> lzChainId
+    // Maps supported bridge providers to their contract implementations
+    mapping(BridgeProvider => IBridgeProvider) public enabledBridges;
+    // chainListOrgChainId => bridge type => bool mapping to control user pays fee for each destination and bridge
+    mapping(uint32 => mapping(BridgeProvider => bool)) public userPaysFee;
 
     BridgeProvider internal defaultBridgeProvider; //Layer0
+    uint32 internal defaultChainId; // c-chain for Dexalot L1, Dexalot L1 for other chains
+
     uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 2;
 
     // Controls actions that can be executed on the contract. PortfolioM or MainnetRFQ are the current users.
     bytes32 public constant BRIDGE_USER_ROLE = keccak256("BRIDGE_USER_ROLE");
     // Controls all bridge implementations access. Currently only LZ
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
-    // 128 bytes payload used for XFER Messages
-    bytes private constant DEFAULT_PAYLOAD =
-        "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098c";
+    // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
+    mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
+
     // storage gap for upgradeability
     uint256[50] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
-    event DefaultChainIdUpdated(BridgeProvider bridge, uint32 destinationLzChainId);
-    event GasForDestinationLzReceiveUpdated(
-        BridgeProvider bridge,
-        uint32 destinationChainId,
-        uint256 gasForDestination
-    );
+    event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("3.2.0");
+        return bytes32("4.0.0");
     }
 
     /**
      * @notice  Initializer for upgradeable contract.
-     * @dev     Grant admin, pauser and msg_sender role to the sender. Set gas for lz. Set endpoint and enable bridge
-     * @param   _endpoint  Endpoint of the LZ bridge
+     * @dev     Grant admin, pauser and msg_sender role to the sender. Enable lz bridge contract as default.
      */
-    function initialize(address _endpoint) external initializer {
+    function initialize(address _lzBridgeProvider, address _owner) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
-        _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
+        _setupRole(DEFAULT_ADMIN_ROLE, _owner);
 
-        lzEndpoint = ILayerZeroEndpoint(_endpoint);
         defaultBridgeProvider = BridgeProvider.LZ;
-        bridgeEnabled[BridgeProvider.LZ] = true;
+        enabledBridges[BridgeProvider.LZ] = IBridgeProvider(_lzBridgeProvider);
     }
 
     /**
@@ -129,11 +127,11 @@ contract PortfolioBridgeMain is
      * @notice  Enables/disables given bridge. Default bridge's state can't be modified
      * @dev     Only admin can enable/disable bridge
      * @param   _bridge  Bridge to enable/disable
-     * @param   _enable  True to enable, false to disable
+     * @param   _bridgeProvider  Address of bridge provider contract, 0 address if not exists
      */
-    function enableBridgeProvider(BridgeProvider _bridge, bool _enable) external override onlyRole(BRIDGE_USER_ROLE) {
-        require(_bridge != defaultBridgeProvider, "PB-DBCD-01");
-        bridgeEnabled[_bridge] = _enable;
+    function enableBridgeProvider(BridgeProvider _bridge, address _bridgeProvider) external onlyRole(BRIDGE_USER_ROLE) {
+        require(_bridge != defaultBridgeProvider || paused(), "PB-DBCD-01");
+        enabledBridges[_bridge] = IBridgeProvider(_bridgeProvider);
     }
 
     /**
@@ -141,7 +139,7 @@ contract PortfolioBridgeMain is
      * @return  bool  True if bridge is enabled, false otherwise
      */
     function isBridgeProviderEnabled(BridgeProvider _bridge) external view override returns (bool) {
-        return bridgeEnabled[_bridge];
+        return address(enabledBridges[_bridge]) != address(0);
     }
 
     /**
@@ -154,7 +152,7 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice Sets the default bridge Provider
-     * @param   _bridge  Bridge
+     * @param   _bridge  Bridge Provider type
      */
     function setDefaultBridgeProvider(BridgeProvider _bridge) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_bridge != defaultBridgeProvider, "PB-DBCD-01");
@@ -166,107 +164,73 @@ contract PortfolioBridgeMain is
      * @return chainListOrgChainId Default Destination Chainlist.org Chain Id
      */
     function getDefaultDestinationChain() external view returns (uint32 chainListOrgChainId) {
-        if (defaultBridgeProvider == BridgeProvider.LZ) {
-            chainListOrgChainId = remoteParams[defaultLzRemoteChainId].chainListOrgChainId;
-        }
+        chainListOrgChainId = defaultChainId;
     }
 
     /**
-     * @notice  Sets trusted remote address for the cross-chain communication. It also sets the defaultLzDestination
-     * if it is not setup yet.
+     * @notice  Enables/disables a symbol for a given destination for cross chain swaps
+     * @dev     Only admin can enable/disable
+     * @param   _symbol  Symbol of the token
+     * @param   _chainListOrgChainId  Remote Chainlist.org chainid
+     * @param   _enable  True to enable, false to disable
+     */
+    function enableXChainSwapDestination(
+        bytes32 _symbol,
+        uint32 _chainListOrgChainId,
+        bool _enable
+    ) external onlyRole(BRIDGE_USER_ROLE) {
+        xChainAllowedDestinations[_symbol][_chainListOrgChainId] = _enable;
+    }
+
+    /**
+     * @notice  Sets trusted remote address for the cross-chain communication. I
      * @dev     Allow DEFAULT_ADMIN to set it multiple times.
      * @param   _bridge  Bridge
-     * @param   _dstChainIdBridgeAssigned  Remote chain id
-     * @param   _remoteAddress  Remote contract address
      * @param   _chainListOrgChainId  Remote Chainlist.org chainid
-     * @param   _gasForDestination  max gas that can be used at the destination chain after message delivery
+     * @param   _dstChainIdBridgeAssigned  Bytes32 chain id assigned by the bridge provider
+     * @param   _remoteAddress  Remote contract address on the destination chain
+     * @param   _userPaysFee  True if user must pay the bridge fee, false otherwise
      */
     function setTrustedRemoteAddress(
         BridgeProvider _bridge,
-        uint32 _dstChainIdBridgeAssigned,
-        bytes calldata _remoteAddress,
         uint32 _chainListOrgChainId,
-        uint256 _gasForDestination,
+        bytes32 _dstChainIdBridgeAssigned,
+        bytes32 _remoteAddress,
         bool _userPaysFee
     ) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_bridge == BridgeProvider.LZ) {
-            uint16 _dstChainId = uint16(_dstChainIdBridgeAssigned);
-            lzTrustedRemoteLookup[_dstChainId] = abi.encodePacked(_remoteAddress, address(this));
-            lzDestinationMap[_chainListOrgChainId] = _dstChainId;
-            Destination storage destination = remoteParams[_dstChainId];
-            destination.lzRemoteChainId = _dstChainId;
-            destination.chainListOrgChainId = _chainListOrgChainId;
-            destination.gasForDestination = _gasForDestination;
-            destination.userPaysFee = _userPaysFee;
-            if (defaultLzRemoteChainId == 0) {
-                defaultLzRemoteChainId = _dstChainId;
-                emit DefaultChainIdUpdated(BridgeProvider.LZ, _dstChainId);
-            }
-            emit LzSetTrustedRemoteAddress(
-                _dstChainId,
-                _remoteAddress,
-                _chainListOrgChainId,
-                _gasForDestination,
-                _userPaysFee
-            );
-        }
+        IBridgeProvider bridgeContract = enabledBridges[_bridge];
+        require(address(bridgeContract) != address(0), "PB-BCNE-01");
+        userPaysFee[_chainListOrgChainId][_bridge] = _userPaysFee;
+        bridgeContract.setRemoteChain(_chainListOrgChainId, _dstChainIdBridgeAssigned, _remoteAddress);
     }
 
     /**
-     * @notice  Sets default destination (remote) address for the cross-chain communication
+     * @notice  Sets default destination chain id for the cross-chain communication
      * @dev     Allow DEFAULT_ADMIN to set it multiple times. For PortfolioBridgeSub it is avalanche C-Chain
      * For other blockchains it is Dexalot Subnet
-     * @param   _bridge  Bridge
-     * @param   _dstChainIdBridgeAssigned Remote chain id assigned by the Bridge (lz)
+     * @param   _chainListOrgChainId Default Destination Chainlist.org chainid
      */
 
-    function setDefaultDestinationChain(
-        BridgeProvider _bridge,
-        uint32 _dstChainIdBridgeAssigned
-    ) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_bridge == BridgeProvider.LZ) {
-            uint16 _dstChainId = uint16(_dstChainIdBridgeAssigned);
-            require(remoteParams[_dstChainId].lzRemoteChainId > 0, "PB-DDCS-01");
-            defaultLzRemoteChainId = _dstChainId;
-            emit DefaultChainIdUpdated(BridgeProvider.LZ, _dstChainIdBridgeAssigned);
-        }
-    }
-
-    /**
-     * @notice  Set max gas that can be used at the destination chain after message delivery
-     * @dev     Only admin can set gas for destination chain
-     * @param   _bridge  Bridge
-     * @param   _dstChainIdBridgeAssigned Remote chain id assigned by the Bridge (lz)
-     * @param   _gas  Gas for destination chain
-     */
-    function setGasForDestination(
-        BridgeProvider _bridge,
-        uint32 _dstChainIdBridgeAssigned,
-        uint256 _gas
-    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_gas >= 50000, "PB-MING-01");
-        if (_bridge == BridgeProvider.LZ) {
-            remoteParams[uint16(_dstChainIdBridgeAssigned)].gasForDestination = _gas;
-            emit GasForDestinationLzReceiveUpdated(BridgeProvider.LZ, _dstChainIdBridgeAssigned, _gas);
-        }
+    function setDefaultDestinationChain(uint32 _chainListOrgChainId) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_chainListOrgChainId > 0, "PB-DDNZ-01");
+        defaultChainId = _chainListOrgChainId;
+        emit DefaultChainIdUpdated(_chainListOrgChainId);
     }
 
     /**
      * @notice  Set whether a user must pay the bridge fee for message delivery at the destination chain
      * @dev     Only admin can set user pays fee for destination chain
      * @param   _bridge  Bridge
-     * @param   _dstChainIdBridgeAssigned Remote chain id assigned by the Bridge (lz)
+     * @param   _chainListOrgChainId Destination Chainlist.org chainid
      * @param   _userPaysFee  True if user must pay the bridge fee, false otherwise
      */
     function setUserPaysFeeForDestination(
         BridgeProvider _bridge,
-        uint32 _dstChainIdBridgeAssigned,
+        uint32 _chainListOrgChainId,
         bool _userPaysFee
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        if (_bridge == BridgeProvider.LZ) {
-            remoteParams[uint16(_dstChainIdBridgeAssigned)].userPaysFee = _userPaysFee;
-            emit UserPaysFeeForDestinationUpdated(BridgeProvider.LZ, _dstChainIdBridgeAssigned, _userPaysFee);
-        }
+        userPaysFee[_chainListOrgChainId][_bridge] = _userPaysFee;
+        emit UserPaysFeeForDestinationUpdated(_bridge, _chainListOrgChainId, _userPaysFee);
     }
 
     /**
@@ -353,19 +317,15 @@ contract PortfolioBridgeMain is
     /**
      * @notice  Increments bridge nonce
      * @dev     Only portfolio can call
-     * @param   _bridge  Bridge to increment nonce for. Placeholder for multiple bridge implementation
-     * @param   _dstChainIdBridgeAssigned the destination chain identifier
+     * @param   _bridgeProvider  Bridge to increment nonce for
+     * @param   _dstChainListOrgChainId Destination Chainlist.org chainid
      * @return  nonce  New nonce
      */
     function incrementOutNonce(
-        BridgeProvider _bridge,
-        uint32 _dstChainIdBridgeAssigned
+        IBridgeProvider _bridgeProvider,
+        uint32 _dstChainListOrgChainId
     ) private view returns (uint64 nonce) {
-        // Not possible to send any messages from a bridge other than LZ
-        // because no other is implemented. Add other bridge nonce functions here.
-        if (_bridge == BridgeProvider.LZ) {
-            nonce = getOutboundNonce(uint16(_dstChainIdBridgeAssigned)) + 1; // LZ generated nonce
-        }
+        return _bridgeProvider.getOutboundNonce(_dstChainListOrgChainId) + 1;
     }
 
     /**
@@ -380,8 +340,7 @@ contract PortfolioBridgeMain is
      * @notice  Validates the symbol from portfolio and transaction type
      * @dev     This function is called both when sending & receiving a message.
      * Deposit/ Withdraw Tx can only be done with non-virtual tokens.
-     * You can only send Virtual Tokens to a destination chain using CCTRADE.
-     * But at the destination, received token has to be non-virtual token.
+     * When using CCTRADE received token has to be a non-virtual token at the destination,.
      * @param   _symbol  symbol of the token
      * @param   _transaction transaction type
      * @param   _direction direction of the message (SENT-0 || RECEIVED-1)
@@ -392,10 +351,8 @@ contract PortfolioBridgeMain is
         IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(_symbol);
         require(details.symbol != bytes32(0), "PB-ETNS-02");
         //Validate symbol & transaction type;
-        if (_transaction == IPortfolio.Tx.CCTRADE) {
-            _direction == Direction.SENT
-                ? require(details.isVirtual, "PB-CCTR-02")
-                : require(!details.isVirtual, "PB-CCTR-03");
+        if (_transaction == IPortfolio.Tx.CCTRADE && _direction == Direction.RECEIVED) {
+            require(!details.isVirtual, "PB-CCTR-03"); // Virtual tokens can't be released to user
         } else if (_transaction == IPortfolio.Tx.WITHDRAW) {
             //Withdraw check only. Deposit check in Portfolio.depositToken
             require(!details.isVirtual, "PB-VTNS-02"); // Virtual tokens can't be withdrawn
@@ -419,37 +376,9 @@ contract PortfolioBridgeMain is
         bytes32,
         uint256
     ) external view virtual override returns (uint256 bridgeFee) {
-        if (_bridge == BridgeProvider.LZ) {
-            uint16 dstChainId = lzDestinationMap[_dstChainListOrgChainId];
-            (bridgeFee, ) = lzEstimateFees(dstChainId, DEFAULT_PAYLOAD);
-        }
-    }
-
-    /**
-     * @notice  Send message to destination chain via LayerZero
-     * @dev     Only called by sendXChainMessageInternal that can be called by Portfolio
-     * @param   _dstLzChainId Lz destination chain identifier
-     * @param   _payload  Payload to send
-     * @param   _userFeePayer  Address of the user who pays the bridge fee, zero address for PortfolioBridge
-     * @return  uint256  Message Fee
-     */
-    function _lzSend(uint16 _dstLzChainId, bytes memory _payload, address _userFeePayer) private returns (uint256) {
-        require(address(this).balance > 0, "PB-CBIZ-01");
-        address payable _refundAddress = payable(this);
-        if (remoteParams[_dstLzChainId].userPaysFee) {
-            require(_userFeePayer != address(0), "PB-UFPE-01");
-            _refundAddress = payable(_userFeePayer);
-        } else if (_userFeePayer != address(0)) {
-            // if user fee payer is set but no fee is required then refund the user
-            (bool success, ) = _userFeePayer.call{value: msg.value}("");
-            require(success, "PB-UFPR-01");
-        }
-        return
-            lzSend(
-                _dstLzChainId,
-                _payload, // bytes payload
-                _refundAddress
-            );
+        IBridgeProvider bridgeProvider = enabledBridges[_bridge];
+        require(address(bridgeProvider) != address(0), "PB-RBNE-03");
+        bridgeFee = bridgeProvider.getBridgeFee(_dstChainListOrgChainId);
     }
 
     /**
@@ -512,12 +441,16 @@ contract PortfolioBridgeMain is
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
     ) external payable virtual override nonReentrant whenNotPaused onlyRole(BRIDGE_USER_ROLE) {
+        if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
+            require(xChainAllowedDestinations[_xfer.symbol][_dstChainListOrgChainId], "PB-CCTR-02");
+        }
         validateSymbol(_xfer.symbol, _xfer.transaction, Direction.SENT);
         sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
     }
 
     /**
      * @notice  Actual internal function that implements the message sending.
+     * @dev     Handles the fee payment and message sending to the bridge contract implementation
      * @param   _dstChainListOrgChainId the destination chain identifier
      * @param   _bridge  Bridge to send message to
      * @param   _xfer XFER message to send
@@ -529,63 +462,26 @@ contract PortfolioBridgeMain is
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
     ) internal virtual {
-        require(bridgeEnabled[_bridge], "PB-RBNE-01");
-        uint16 dstChainId = lzDestinationMap[_dstChainListOrgChainId];
-        require(dstChainId != 0, "PB-DDNS-02");
+        IBridgeProvider bridgeContract = enabledBridges[_bridge];
+        require(address(bridgeContract) != address(0), "PB-RBNE-01");
         if (_xfer.nonce == 0) {
-            _xfer.nonce = incrementOutNonce(_bridge, dstChainId);
+            _xfer.nonce = incrementOutNonce(bridgeContract, _dstChainListOrgChainId);
         }
         bytes memory _payload = packXferMessage(_xfer);
-        if (_bridge == BridgeProvider.LZ) {
-            uint256 messageFee = _lzSend(dstChainId, _payload, _userFeePayer);
-            emit XChainXFerMessage(
-                XCHAIN_XFER_MESSAGE_VERSION,
-                _bridge,
-                Direction.SENT,
-                _dstChainListOrgChainId,
-                messageFee,
-                _xfer
-            );
-        } else {
-            // Just in case a bridge other than LZ is enabled accidentally
-            revert("PB-RBNE-02");
+        bool isUserFeePayer = userPaysFee[_dstChainListOrgChainId][_bridge];
+        IBridgeProvider.CrossChainMessageType msgType = getCrossChainMessageType(_xfer.transaction);
+        uint256 fee = bridgeContract.getBridgeFee(_dstChainListOrgChainId, msgType);
+        if (isUserFeePayer) {
+            require(_userFeePayer != address(0), "PB-UFPE-01");
+            require(msg.value >= fee, "PB-IUMF-01");
+        } else if (_userFeePayer != address(0)) {
+            (bool success, ) = _userFeePayer.call{value: msg.value}("");
+            require(success, "PB-UFPR-01");
+            require(address(this).balance > fee, "PB-CBIZ-01");
+            // TODO: check if user fee payer logic is correct
+            _userFeePayer = address(this);
         }
-    }
-
-    /**
-     * @notice  Retries the stuck message in the bridge, if any
-     * @dev     Only BRIDGE_ADMIN_ROLE can call this function
-     * Reverts if there is no storedPayload in the bridge or the supplied payload doesn't match the storedPayload
-     * @param   _srcChainId  Source chain id
-     * @param   _payload  Payload to retry
-     */
-    function lzRetryPayload(uint16 _srcChainId, bytes calldata _payload) external onlyRole(BRIDGE_ADMIN_ROLE) {
-        lzEndpoint.retryPayload(_srcChainId, lzTrustedRemoteLookup[_srcChainId], _payload);
-    }
-
-    /**
-     * @notice  This is a destructive, secondary option. Always try lzRetryPayload first.
-     * if this function still fails call LzApp.forceResumeReceive directly with DEFAULT_ADMIN_ROLE as the last resort
-     * Destroys the message that is blocking the bridge and calls processPayload
-     * Effectively completing the message trajectory from originating chain to the target chain.
-     * if successful, the funds are processed at the target chain. If not, no funds are recovered and
-     * the bridge is still in blocked status and additional messages are queued behind.
-     * @dev     Only recover/process message if forceResumeReceive() successfully completes.
-     * Only the BRIDGE_ADMIN_ROLE can call this function.
-     * If there is no storedpayload (stuck message), this function will revert, _payload parameter will be ignored and
-     * will not be processed. If this function keeps failing due to an error condition after the forceResumeReceive call
-     * then forceResumeReceive(uint16 _srcChainId, bytes calldata _srcAddress) has to be called directly with
-     * DEFAULT_ADMIN_ROLE and the funds will have to be recovered manually
-     * @param   _srcChainId  Source chain id
-     * @param   _payload  Payload of the message
-     */
-    function lzDestroyAndRecoverFunds(
-        uint16 _srcChainId,
-        bytes calldata _payload
-    ) external nonReentrant onlyRole(BRIDGE_ADMIN_ROLE) {
-        // Destroys the message. This will revert if no message is blocking the bridge
-        lzEndpoint.forceResumeReceive(_srcChainId, lzTrustedRemoteLookup[_srcChainId]);
-        processPayload(BridgeProvider.LZ, remoteParams[_srcChainId].chainListOrgChainId, _payload);
+        bridgeContract.sendMessage{value: fee}(_dstChainListOrgChainId, _payload, msgType, _userFeePayer);
     }
 
     /**
@@ -600,6 +496,7 @@ contract PortfolioBridgeMain is
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
     ) internal returns (IPortfolio.XFER memory xfer) {
+        require(address(enabledBridges[_bridge]) == msg.sender, "PB-RBNE-02");
         xfer = this.unpackXFerMessage(_payload);
         xfer.timestamp = block.timestamp; // log receival/process timestamp
         emit XChainXFerMessage(
@@ -612,10 +509,25 @@ contract PortfolioBridgeMain is
         );
     }
 
+    function getCrossChainMessageType(
+        IPortfolio.Tx _transaction
+    ) private pure returns (IBridgeProvider.CrossChainMessageType) {
+        if (_transaction == IPortfolio.Tx.CCTRADE) {
+            return IBridgeProvider.CrossChainMessageType.CCTRADE;
+        }
+        if (_transaction == IPortfolio.Tx.DEPOSIT) {
+            return IBridgeProvider.CrossChainMessageType.DEPOSIT;
+        }
+        if (_transaction == IPortfolio.Tx.WITHDRAW) {
+            return IBridgeProvider.CrossChainMessageType.WITHDRAW;
+        }
+        revert("PB-GCMT-01");
+    }
+
     /**
      * @notice  Processes message received from source chain via bridge in the host chain.
-     * @dev     if bridge is disabled or PAUSED and there are messages in flight, we still need to
-                process them when received at the destination.
+     * @dev     If bridge is disabled or PAUSED and there are messages in flight, we still need to
+                process them when received at the destination. Only callable by the bridge implementation contracts.
                 Overrides in the subnet
      * @param   _bridge  Bridge to receive message from
      * @param   _srcChainListOrgChainId  Source chain ID
@@ -625,32 +537,13 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
-    ) internal virtual {
+    ) external virtual {
         IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         // check the validity of the symbol
         validateSymbol(xfer.symbol, xfer.transaction, Direction.RECEIVED);
         xfer.transaction == IPortfolio.Tx.CCTRADE
             ? mainnetRfq.processXFerPayload(xfer)
             : portfolio.processXFerPayload(xfer);
-    }
-
-    /**
-     * @notice  Receive message from source chain via LayerZero
-     * @dev     Only trusted LZ endpoint can call
-     * @param   _srcChainId  Source chain ID
-     * @param   _srcAddress  Source address
-     * @param   _payload  Payload received
-     */
-    function lzReceive(
-        uint16 _srcChainId,
-        bytes calldata _srcAddress,
-        uint64,
-        bytes calldata _payload
-    ) external virtual override nonReentrant {
-        bytes memory trustedRemote = lzTrustedRemoteLookup[_srcChainId];
-        require(_msgSender() == address(lzEndpoint), "PB-IVEC-01");
-        require(trustedRemote.length != 0 && keccak256(_srcAddress) == keccak256(trustedRemote), "PB-SINA-01");
-        processPayload(BridgeProvider.LZ, remoteParams[_srcChainId].chainListOrgChainId, _payload);
     }
 
     /**

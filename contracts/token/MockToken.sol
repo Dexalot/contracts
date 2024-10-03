@@ -33,6 +33,10 @@ contract MockToken is ERC20, AccessControlEnumerable {
         _setupRole(MINTER_ROLE, msg.sender);
     }
 
+    function name() public view virtual override returns (string memory) {
+        return super.name();
+    }
+
     function decimals() public view override returns (uint8) {
         return __decimals;
     }

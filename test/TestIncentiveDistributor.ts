@@ -44,14 +44,14 @@ describe("IncentiveDistributor", () => {
   let firstRun = true;
 
   const TOKEN_ALLOC = Utils.parseUnits("100000", 18);
-  const GAS_COST = Utils.parseUnits("0.1", 18);
+  const GAS_COST = Utils.parseUnits("1", 18);
   const ANY_TS = () => true;
 
   async function deployRewards() {
     const completePortfolio = await f.deployCompletePortfolio(true);
 
     portfolioSub = completePortfolio.portfolioSub;
-    portfolioMain = completePortfolio.portfolioAvax;
+    portfolioMain = completePortfolio.portfolioMainnet;
 
     alot = completePortfolio.alot;
     lost = await f.deployMockToken("LOST", 18);

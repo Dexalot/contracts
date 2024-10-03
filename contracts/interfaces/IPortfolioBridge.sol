@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.17;
+pragma solidity ^0.8.17;
 
 import "./IPortfolio.sol";
 import "./ITradePairs.sol";
@@ -28,7 +28,7 @@ interface IPortfolioBridge {
 
     function unpackXFerMessage(bytes calldata _data) external view returns (IPortfolio.XFER memory xfer);
 
-    function enableBridgeProvider(BridgeProvider _bridge, bool _enable) external;
+    function enableBridgeProvider(BridgeProvider _bridge, address _bridgeContract) external;
 
     function isBridgeProviderEnabled(BridgeProvider _bridge) external view returns (bool);
 
@@ -72,6 +72,7 @@ interface IPortfolioBridge {
     // CELER Not used but keeping it to run tests for enabling/disabling bridge providers
     enum BridgeProvider {
         LZ,
-        CELER
+        CELER,
+        ICM
     }
 }

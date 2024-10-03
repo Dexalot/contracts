@@ -23,7 +23,7 @@ describe("TokenVestingCloneFactory", () => {
 
     before(async () => {
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable")
-        const { portfolioAvax: portfolioM } = await f.deployCompletePortfolio();
+        const { portfolioMainnet: portfolioM } = await f.deployCompletePortfolio();
         portfolio = portfolioM;
     });
 

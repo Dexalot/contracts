@@ -98,7 +98,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
 
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolio = portfolioContracts.portfolioSub;
 
         orderBooks = await f.deployOrderBooks();
@@ -366,17 +366,19 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                 // localNonce[ownerIndex] = localNonce[ownerIndex] + 1;
                 // console.log( localNonce[ownerIndex])
 
+                const  newOrder = {
+                    traderaddress: acc.address
+                    , clientOrderId : Utils.fromUtf8(order["clientOrderId"])
+                    , tradePairId
+                    , price: Utils.parseUnits(order["price"].toString(), quoteDecimals)
+                    , quantity:  Utils.parseUnits(order["quantity"].toString(), baseDecimals)
+                    , side :  _side
+                    , type1 : _type1   // market orders not enabled
+                    , type2 : _type2   // GTC
+                }
 
-                const tx = await tradePair.connect(acc).addOrder(
-                    acc.address,
-                    Utils.fromUtf8(order["clientOrderId"]),
-                    tradePairId,
-                    Utils.parseUnits(order["price"].toString(), quoteDecimals),
-                    Utils.parseUnits(order["quantity"].toString(), baseDecimals),
-                    _side,
-                    BigNumber.from(_type1),
-                    BigNumber.from(_type2),
-                );
+                const tx = await tradePair.connect(acc).addNewOrder(newOrder);
+
                 orderLog = await tx.wait();
 
                 // add orders affected by this addition to the orderMap

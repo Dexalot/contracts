@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.17;
+pragma solidity ^0.8.17;
 
 /**
  * @title Interface of TradePairs
@@ -51,6 +51,28 @@ interface ITradePairs {
         Status status;
     }
 
+    /**
+     * @notice  Data structure to send a new order to Dexalot.
+     * @dev     Use this struct to send ListOrders
+     * @param   clientOrderId  client order id given by the sender of the order as a reference
+     * @param   tradePairId  client order id given by the sender of the order as a reference
+     * @param   price  price of the order entered by the trader. (0 if market order)
+     * @param   quantity  order quantity
+     * @param   traderaddress`  traders’s wallet
+     * @param   side  Order side  See #Side
+     * @param   type1  Order Type1  See #Type1
+     * @param   type2  Order Type2  See #Type2
+     */
+    struct NewOrder {
+        bytes32 clientOrderId;
+        bytes32 tradePairId;
+        uint256 price;
+        uint256 quantity;
+        address traderaddress;
+        Side side;
+        Type1 type1;
+        Type2 type2;
+    }
     /**
      * @notice  TradePair is the data structure defining a trading pair on Dexalot.
      * @param   baseSymbol  symbol of the base asset
@@ -156,6 +178,21 @@ interface ITradePairs {
         Side _side,
         Type1 _type1,
         Type2 _type2
+    ) external;
+
+    function addNewOrder(NewOrder calldata _order) external;
+
+    function addOrderList(NewOrder[] calldata _orders) external;
+
+    function cancelAddList(bytes32[] calldata _orderIdsToCancel, NewOrder[] calldata _orders) external;
+
+    function addLimitOrderList(
+        bytes32 _tradePairId,
+        bytes32[] calldata _clientOrderIds,
+        uint256[] calldata _prices,
+        uint256[] calldata _quantities,
+        Side[] calldata _sides,
+        Type2[] calldata _type2s
     ) external;
 
     function cancelOrder(bytes32 _orderId) external;
