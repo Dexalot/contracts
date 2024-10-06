@@ -16,11 +16,9 @@ interface IPortfolioMain {
     function addToken(
         bytes32 _symbol,
         address _tokenaddress,
-        uint32 _srcChainId,
         uint8 _decimals,
         uint256 _fee,
-        uint256 _gasSwapRatio,
-        bool _isVirtual
+        uint256 _gasSwapRatio
     ) external;
 
     function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external;

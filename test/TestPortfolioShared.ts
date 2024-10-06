@@ -9,8 +9,6 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     ExchangeSub,
-    LZEndpointMock,
-    // MockToken,
     OrderBooks,
     PortfolioMain, PortfolioSub,
     PortfolioBridgeMain,
@@ -335,7 +333,6 @@ describe("Portfolio Shared", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
         await f.addToken(portfolio, portfolioSub, usdt, 0.5, auctionMode);
-        // await f.addToken(portfolioSub, usdt, 0.5, auctionMode);
 
         await usdt.mint(owner.address, Utils.parseUnits('1000', token_decimals));
         // fail from non admin accounts
@@ -369,7 +366,7 @@ describe("Portfolio Shared", () => {
         // fail for quantity more than balance for depositTokenFromContract()
         await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.parseUnits('1001', token_decimals))).to.revertedWith("P-NETD-01");
         // succeed for native
-        await owner.sendTransaction({to: portfolio.address, value: Utils.toWei('1000'), gasLimit: 1000000});
+       await f.depositNative(portfolio, owner, '1000');
         const bal = await portfolioSub.getBalance(owner.address, AVAX);
         expect(bal.total).to.be.equal(Utils.toWei('1000'));
         expect(bal.available).to.be.equal(Utils.toWei('1000'));

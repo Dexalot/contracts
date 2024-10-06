@@ -11,7 +11,7 @@ import "./interfaces/IBannedAccounts.sol";
  * @title   Banned accounts storage contract
  * @notice  This contract is used to manage a list of banned accounts. A banned account
  * is not allowed to deposit into Dexalot portfolio to engage in any activity on
- * Dexalot subnet.
+ * Dexalot L1.
  */
 
 // The code in this file is part of Dexalot project.

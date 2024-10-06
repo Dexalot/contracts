@@ -149,14 +149,13 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             const _nativeBytes32 = Utils.fromUtf8(native);
             console.log(`${native}`)
             let _bal = await portfolio.getBalance(account, _nativeBytes32);
-            Utils.printBalances(account, _bal, 18);
+            Utils.printBalances(account, _bal, native, 18);
             if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
                 const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
-                await wallet.sendTransaction({to: portfolioMain.address,
-                                              value: Utils.toWei(_deposit_amount.toString())});
+                await f.depositNative( portfolioMain, wallet, _deposit_amount.toString());
                 //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
                 _bal = await portfolio.getBalance(account, _nativeBytes32);
-                Utils.printBalances(account, _bal, 18);
+                Utils.printBalances(account, _bal, native,18);
             }
             console.log();
 
@@ -169,7 +168,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                 _token = MockToken.attach(_tokenAddr) as MockToken;
                 _tokenDecimals = await _token.decimals();
                 _bal = await portfolio.getBalance(account, _tokenBytes32);
-                Utils.printBalances(account, _bal, _tokenDecimals);
+                Utils.printBalances(account, _bal, _tokenStr, _tokenDecimals);
                 if ((parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) + parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals))) < initial_portfolio_deposits[_tokenStr]) {
                     const _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
                     const _deposit_amount_bn = Utils.parseUnits(_deposit_amount.toString(), _tokenDecimals);
@@ -178,7 +177,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                     await portfolioMain.connect(wallet).depositToken(account, _tokenBytes32, _deposit_amount_bn, 0, options);
                     //console.log("Deposit:", account, _deposit_amount, _tokenStr, "to portfolio.");
                     _bal = await portfolio.getBalance(account, _tokenBytes32);
-                    Utils.printBalances(account, _bal, _tokenDecimals);
+                    Utils.printBalances(account, _bal, _tokenStr, _tokenDecimals);
                 }
                 console.log();
             }
@@ -241,7 +240,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
             for (let j=0; j<tokens.length; j++) {
                 const token = tokens[j];
                 const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
-                Utils.printBalances(account, res, decimalsMap[token]);
+                Utils.printBalances(account, res, token, decimalsMap[token]);
             }
         }
         orders = [];

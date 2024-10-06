@@ -37,6 +37,11 @@ describe("LzV2App", () => {
     lzEndpointSub = portfolioContracts.lzEndpointSub;
   });
 
+  it("Should get the correct version", async () => {
+    const version = Utils.toUtf8(await lzAppMain.VERSION());
+    expect(version.split(".")[0]).to.equal("1");
+  });
+
   it("Should fail to set portfolio bridge address if not owner", async () => {
     await expect(lzAppMain.connect(trader1).setPortfolioBridge(portfolioBridgeMain.address)).to.be.revertedWith('Ownable:');
   })
@@ -105,7 +110,7 @@ describe("LzV2App", () => {
 
     const blockchainID = Utils.numberToBytes32(dexalotSubnet.lzChainId);
     const remoteAddress = Utils.addressToBytes32(lzAppSub.address);
-    await expect(defaultBridgeAppMock.recieveMessage(blockchainID, remoteAddress, ethers.constants.HashZero)).to.be.revertedWith('DB-RCNS-02');
+    await expect(defaultBridgeAppMock.receiveMessage(blockchainID, remoteAddress, ethers.constants.HashZero)).to.be.revertedWith('DB-RCNS-02');
   })
 
   it("Should fail to receive message if remote contract does not match", async () => {
@@ -115,7 +120,7 @@ describe("LzV2App", () => {
     const remoteAddress = Utils.addressToBytes32(lzAppSub.address);
     await defaultBridgeAppMock.setPortfolioBridge(owner.address);
     await defaultBridgeAppMock.setRemoteChain(dexalotSubnet.chainListOrgId, blockchainID, remoteAddress);
-    await expect(defaultBridgeAppMock.recieveMessage(blockchainID, ethers.constants.HashZero, ethers.constants.HashZero)).to.be.revertedWith('DB-RCNM-01');
+    await expect(defaultBridgeAppMock.receiveMessage(blockchainID, ethers.constants.HashZero, ethers.constants.HashZero)).to.be.revertedWith('DB-RCNM-01');
   })
 
   it("Should get default bridge fee of 0", async () => {

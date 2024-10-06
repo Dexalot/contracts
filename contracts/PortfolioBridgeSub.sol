@@ -9,24 +9,25 @@ import "./interfaces/IInventoryManager.sol";
 import "./library/UtilsLibrary.sol";
 
 /**
- * @title PortfolioBridgeSub: Bridge aggregator and message relayer for subnet using multiple different bridges
+ * @title PortfolioBridgeSub: Bridge aggregator and message relayer for Dexalot L1(subnet) using multiple
+ * different bridges
  * @notice This contracts checks volume and threshold limits for withdrawals if they are enabled in the
  * DelayedTransfers Contract that implements delayedTransfers as well as volume caps per epoch per token
  * @dev Unlike PortfolioBridgeMain, PortfolioBridgeSub has its own internal list of tokenDetailsMapById and
  * tokenInfoMapBySymbolChainId because it has to keep track of the tokenDetails from each chain independently.
  * As a result the PortfolioSub tokenDetails are quite different than the PortfolioBridgeSub tokenDetails.
- * PortfolioBridgeSub always maps the symbol that it receives into a subnet symbol and also attaches the source
- * chainId to the source Symbol to construct a symbolId to facilitate inventory management on receipt.
- * PortfolioSub expects the subnet symbol. i.e USDt is mapped to (USDT43113, USDT) as symbolId and subnet symbol
- * respectively. Similarly USDTx from another chain can also be mapped to USDC. This way liquidity can
- * be combined and traded together in a multichain implementation.
+ * PortfolioBridgeSub always maps the symbol that it receives into a Dexalot L1(subnet) symbol and also attaches
+ * the source chainId to the source Symbol to construct a symbolId to facilitate inventory management on receipt.
+ * PortfolioSub expects the Dexalot L1(subnet) symbol. i.e USDt is mapped to (USDT43113, USDT) as symbolId and
+ * Dexalot L1(subnet) symbol respectively. Similarly USDTx from another chain can also be mapped to USDC. This way
+ * liquidity can be combined and traded together in a multichain implementation.
  * Similarly it keeps track of the token positions from each chain independently and it will have a different bridge
  * fee depending on the available inventory at the target chain (where the token will be withdrawn).
- * When sending back to the target chain, it maps the subnet symbol back to the expected symbol by the target chain,
+ * When sending back to the host chain, it maps the Dexalot L1(subnet) symbol back to the expected symbol by the host chain,
  * i.e ETH to ETH if sent back to Ethereum, ETH to WETH.e if sent to Avalanche. \
  * Symbol mapping happens in sendXChainMessageInternal on the way out. sendXChainMessageInternal uses getDestChainSymbol.
  * On the receival, the symbol mapping will happen in processPayload. getSymbolMappings is used where
- * xfer.symbol is overridden with symbolId (sourceSymbol + sourceChainId) and also the subnet symbol is returned. \
+ * xfer.symbol is overridden with symbolId (sourceSymbol + sourceChainId) and also the Dexalot L1(subnet) symbol is returned. \
  * The XChainXFerMessage always contains the host chain's ERC20 Symbol in xfer.symbol & source Chain id in
  * remoteChainId on the way in and out.
  */
@@ -42,7 +43,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     // key is symbolId (symbol + srcChainId)
     mapping(bytes32 => IPortfolio.TokenDetails) private tokenDetailsMapById;
 
-    // key is subnet subnet symbol then chainlistOrgid of the mainnet the token is added from.
+    // key is Dexalot L1(subnet) symbol then chainlistOrgid of the mainnet the token is added from.
     // the symbolId and bridgeFee of each destination is different
     // symbol => chainId => { symbolId, bridgeFee }
     mapping(bytes32 => mapping(uint32 => TokenDestinationInfo)) private tokenInfoMapBySymbolChainId;
@@ -57,18 +58,18 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.0.0");
+        return bytes32("4.0.3");
     }
 
     /**
      * @notice  Adds the given token to the PortfolioBridgeSub. PortfolioBridgeSub the list will be bigger as they could
      * be from different mainnet chains
-     * @dev     `addToken` is only callable by admin or from Portfolio when a new subnet symbol is added for the
-     * first time. The same subnet symbol but a different symbolId is required when adding a token to
+     * @dev     `addToken` is only callable by admin or from Portfolio when a new Dexalot L1(subnet) symbol is added for the
+     * first time. The same Dexalot L1(subnet) symbol but a different symbolId is required when adding a token to
      * PortfolioBridgeSub. \
      * Sample Token List in PortfolioBridgeSub: (BTC & ALOT Listed twice with 2 different chain ids) \
      * Native symbol is also added as a token with 0 address \
-     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId, 43114: Avalanche C-ChainId) \
+     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot L1 ChainId, 43114: Avalanche C-ChainId) \
      * ALOT ALOT432204 18 0x0000000000000000000000000000000000000000 0 (Native ALOT) \
      * ALOT ALOT43114 18 0x5FbDB2315678afecb367f032d93F642f64180aa3 0 (Avalanche ALOT) \
      * AVAX AVAX43114 18 0x0000000000000000000000000000000000000000 0 (Avalanche Native AVAX) \
@@ -91,7 +92,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  Decimals of the token
      * param   ITradePairs.AuctionMode  irrelevant for PBridge
-     * @param   _subnetSymbol  Subnet Symbol of the token (Shared Symbol of the same token from different chains)
+     * @param   _subnetSymbol  Dexalot L1(subnet) Symbol of the token (Shared Symbol of the same token from different chains)
      * @param   _bridgeFee  Bridge Fee
      */
     function addToken(
@@ -111,7 +112,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         );
 
         IPortfolio.TokenDetails memory subnetToken = portfolio.getTokenDetails(_subnetSymbol);
-        //subnetToken.symbol from PortfolioSub is the subnet symbol in all mappings in the PortfolioBridgeSub
+        //subnetToken.symbol from PortfolioSub is the Dexalot L1(subnet) symbol in all mappings in the PortfolioBridgeSub
         require(subnetToken.symbol == _subnetSymbol, "PB-SDMP-01");
         bytes32 symbolId = UtilsLibrary.getIdForToken(_srcChainSymbol, _srcChainId);
 
@@ -126,7 +127,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             tokenDetails.symbol = _subnetSymbol;
             tokenDetails.symbolId = symbolId;
             tokenDetails.sourceChainSymbol = _srcChainSymbol;
-            // All subnet tokens in the portfolioBridgeSub are not virtual
+            // All Dexalot L1(subnet) tokens in the portfolioBridgeSub are not virtual
             tokenDetails.isVirtual = _subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId()
                 ? false
                 : true;
@@ -151,7 +152,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         if (
             // We can't remove the native that was added from current chainId,
             // but the native symbol added from a mainnet can be removed.
-            // ALOT added from Avalanche ALOT43114 can be removed not ALOT added from the subnet
+            // ALOT added from Avalanche ALOT43114 can be removed not ALOT added from the Dexalot L1(subnet)
             tokenListById.contains(symbolId) &&
             !(_subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId())
         ) {
@@ -175,11 +176,11 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     /**
      * @notice  Returns the target symbol & symbolId given the destination chainId
      * @dev     PortfolioBridgeSub uses its internal token list & the defaultTargetChain to resolve the mapping
-     * When sending from Mainnet to Subnet we send out the symbol of the sourceChain. BTC.b => BTC.b
+     * When sending from Mainnet to Dexalot L1(subnet) we send out the symbol of the sourceChain. BTC.b => BTC.b
      * When sending messages back to mainnet we use this function to resolve the symbol.
      * BTC could be resolved to BTC.b for avalanche and WBTC for Arbitrum
      * @param   _dstChainListOrgChainId destination chain id
-     * @param   _subnetSymbol  subnet symbol of the token
+     * @param   _subnetSymbol  Dexalot L1(subnet) symbol of the token
      * @return  dstSymbol  symbol of the target chain
      * @return  dstSymbolId  symbolId of the target chain used for inventory management
      */
@@ -194,9 +195,9 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Returns the valid bridge fees for all the host chain tokens of a given subnet token
+     * @notice  Returns the valid bridge fees for all the host chain tokens of a given Dexalot L1(subnet) token
      * @param   _bridge  Bridge provider to use
-     * @param   _symbol  subnet symbol of the token
+     * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
@@ -228,7 +229,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @notice  Sets the bridge fee for each token calculated offChain for the targetChainId
      * @dev     Only admin can call this function
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _tokens  Array of Subnet Symbol
+     * @param   _tokens  Array of Dexalot L1(subnet) Symbol
      * @param   _bridgeFees  Array of  bridge fees
      */
     function setBridgeFees(
@@ -243,11 +244,11 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Returns the subnet symbol & symbolId given the chainListOrgChainId & source chain symbol
+     * @notice  Returns the Dexalot L1(subnet) symbol & symbolId given the chainListOrgChainId & source chain symbol
      * @dev     Mainnet receives the messages in the same format that it sent out, by its ERC20 symbol
-     * Subnet has its own standardized list of symbols i.e. BTC.b in the mainnet may be mapped to BTC
-     * in the subnet. \
-     * The subnet knows which chain the message is coming from and will tag the chainId to the sourceSymbol
+     * Dexalot L1(subnet) has its own standardized list of symbols i.e. BTC.b in the mainnet may be mapped to BTC
+     * in the Dexalot L1(subnet). \
+     * The Dexalot L1(subnet) knows which chain the message is coming from and will tag the chainId to the sourceSymbol
      * to keep track of the inventory coming from different mainnets.
      * @param   _chainListOrgChainId source/Destination chain id
      * @param   _symbol source symbol
@@ -266,7 +267,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     /**
      * @notice  Returns the token details.
      * @dev     Will always return here as actionMode.OFF as auctionMode is controlled in PortfolioSub.
-     * Subnet does not have any ERC20s, hence the tokenAddress is token's mainnet address.
+     * Dexalot L1(subnet) does not have any ERC20s, hence the tokenAddress is token's mainnet address.
      * See the TokenDetails struct in IPortfolio for the full type information of the return variable.
      * @param   _symbolId  SymbolId of the token.
      * @return  TokenDetails decimals (Identical to mainnet), tokenAddress (Token address at the mainnet)
@@ -300,10 +301,10 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
     ) external payable virtual override nonReentrant whenNotPaused onlyRole(BRIDGE_USER_ROLE) {
-        // Cross chain transfers are not supported in the subnet currently
+        // Cross chain transfers are not supported in the Dexalot L1(subnet) currently
         require(_xfer.transaction != IPortfolio.Tx.CCTRADE, "PB-CCTR-01");
         // Volume threshold check for multiple small transfers within a given amount of time
-        // Used only for withdrawals from the subnet.
+        // Used only for withdrawals from the Dexalot L1(subnet).
         // Reverts if breached. Does not add to delayTranfer.
         delayedTransfers.updateVolume(_xfer.symbol, _xfer.quantity);
 
@@ -337,9 +338,9 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Update the inventory by each chain only in the Subnet.
+     * @notice  Update the inventory by each chain only in the Dexalot L1(subnet).
      * @dev     Inventory available per host chain. i.e. USDC may exist in both Avalanche and Arbitrum
-     * @param  _subnetSymbol subnet Symbol
+     * @param  _subnetSymbol Dexalot L1(subnet) Symbol
      * @param  _xfer  Transfer Message
      */
     function updateInventoryBySource(bytes32 _subnetSymbol, IPortfolio.XFER memory _xfer) private {
@@ -353,7 +354,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Processes message received from source chain via bridge in the subnet.
+     * @notice  Processes message received from source chain via bridge in the Dexalot L1(subnet).
      * @dev     if bridge is disabled or PAUSED and there are messages in flight, we still need to
                 process them when received at the destination.
                 Resolves the subnetSymbol and updates the inventory
@@ -374,7 +375,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         // Add xfer.quantity to the totals by SymbolId. It will be used to see how much the user
         // can withdraw from the target chain.
         updateInventoryBySource(subnetSymbol, xfer);
-        //After the inventory is updated, process the XFer with the subnet symbol that Portfolio needs
+        //After the inventory is updated, process the XFer with the Dexalot L1(subnet) symbol that Portfolio needs
         xfer.symbol = subnetSymbol;
         portfolio.processXFerPayload(xfer);
     }
@@ -427,7 +428,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * quantity of the token to be withdrawn, current inventory in the receiving chain and other chains.
      * @param   _bridge  Bridge provider to use
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _symbol  subnet symbol of the token
+     * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @return  bridgeFee  bridge fee for the destination
      */
@@ -447,7 +448,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @notice  Calculate the bridge fee for a given bridge
      * @param   _bridge  Bridge provider to use
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _symbol  subnet symbol of the token
+     * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @return  bridgeFee  bridge fee for the destination
      */
     function _calcBridgeFee(

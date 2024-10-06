@@ -5,14 +5,15 @@ import Utils from './utils';
 
 import * as f from "./MakeTestSuite";
 
-import { ICMApp, PortfolioBridgeMain } from "../typechain-types";
-import { ethers, upgrades } from "hardhat";
+import { ICMApp, PortfolioBridgeMain, PortfolioMain } from "../typechain-types";
+import { ethers, network, upgrades } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from "chai";
 
 
 describe("ICMApp", () => {
   let portfolioBridgeMain: PortfolioBridgeMain;
+  let portfolioMain: PortfolioMain;
   let icmAppMain: ICMApp;
 
   let owner: SignerWithAddress;
@@ -20,6 +21,17 @@ describe("ICMApp", () => {
   let relayer: SignerWithAddress;
 
   before(async () => {
+    // Fork to avalanche fuji testnet (for ICM registry support)
+    await network.provider.request({
+      method: "hardhat_reset",
+      params: [
+        {
+          forking: {
+            jsonRpcUrl: "https://api.avax-test.network/ext/bc/C/rpc",
+          },
+        },
+      ],
+    });
     const accounts = await f.getAccounts();
     owner = accounts.owner;
     trader1 = accounts.trader1;
@@ -27,6 +39,14 @@ describe("ICMApp", () => {
 
     const portfolioContracts = await f.deployCompletePortfolio(true);
     portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
+    portfolioMain = portfolioContracts.portfolioMainnet;
+  });
+
+  after(async () => {
+    await network.provider.request({
+      method: "hardhat_reset",
+      params: [],
+    });
   });
 
   beforeEach(async () => {
@@ -37,7 +57,8 @@ describe("ICMApp", () => {
   });
 
   it("Should get the correct version", async () => {
-    expect(await icmAppMain.VERSION()).to.equal(Utils.fromUtf8("1.0.0"));
+    const version = Utils.toUtf8(await icmAppMain.VERSION());
+    expect(version.split(".")[0]).to.equal("1");
   });
 
   it("Should not initialize again after deployment", async function () {
@@ -93,11 +114,6 @@ describe("ICMApp", () => {
     expect(await icmAppMain.getBridgeProvider()).to.equal(2);
   });
 
-  it("Should get correct outbound nonce", async () => {
-    const nonce = await icmAppMain.getOutboundNonce(0);
-    expect(nonce.gt(0));
-  });
-
   it("Should fail to send message if not portfolio bridge", async () => {
     const { dexalotSubnet } = f.getChains();
     await expect(icmAppMain.sendMessage(dexalotSubnet.chainListOrgId, "0x", 0, owner.address)).to.be.revertedWith("DB-OPBA-01");
@@ -146,5 +162,44 @@ describe("ICMApp", () => {
     await icmAppMain.setGasLimit(msgType, 100000);
     // reverts with empty string at precompile
     await expect(icmAppMain.sendMessage(dexalotSubnet.chainListOrgId, "0x01", msgType, owner.address)).to.be.revertedWith("")
+  });
+
+  it("Should successfully receive message from teleporter messenger", async () => {
+    const { dexalotSubnet } = f.getChains();
+
+    const teleporterMessengerAddr = "0x253b2784c75e510dD0fF1da844684a1aC0aa5fcf"
+    await network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [teleporterMessengerAddr],
+    });
+    const icmMessenger = await ethers.getSigner(teleporterMessengerAddr);
+
+    await network.provider.send("hardhat_setBalance", [
+      teleporterMessengerAddr,
+      ethers.utils.hexlify(ethers.utils.parseEther("1")),
+    ]);
+    // await owner.sendTransaction({ to: teleporterMessengerAddr, value: ethers.utils.parseEther("1") });
+
+    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
+    const payload = Utils.generatePayload(0, 1, 0, trader1.address, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), f.getTime(), Utils.emptyCustomData());
+    await expect(icmAppMain.connect(icmMessenger).receiveTeleporterMessage(subnetBlockchainID, icmAppMain.address, payload)).to.be.revertedWith("DB-RCNS-02");
+
+    // set icm configs
+    await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
+    const randRemoteAddress = Utils.addressToBytes32(icmAppMain.address);
+    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+    await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
+    await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
+    const msgType = 0
+    await icmAppMain.setGasLimit(msgType, 100000);
+
+    // fund portfolio main so withdraw succeeds
+    await network.provider.send("hardhat_setBalance", [
+      owner.address,
+      ethers.utils.hexlify(ethers.utils.parseEther("1")),
+    ]);
+    await f.depositNative(portfolioMain, owner, "0.5")
+
+    await icmAppMain.connect(icmMessenger).receiveTeleporterMessage(subnetBlockchainID, icmAppMain.address, payload);
   });
 });

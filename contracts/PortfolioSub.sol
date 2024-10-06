@@ -11,21 +11,24 @@ import "./interfaces/ITradePairs.sol";
 import "./interfaces/IPortfolioSubHelper.sol";
 
 /**
- * @title  Subnet Portfolio
- * @notice Receives messages from mainnet for deposits and sends withdraw requests to mainnet.  It also
-   transfers tokens between traders as their orders gets matched.
- * @dev    Allows only the native token to be withdrawn and deposited from/to the subnet wallet. Any other
- * token has to be deposited via PortfolioMain deposit functions that sends a message via the bridge.
+ * @title  Dexalot L1(previously subnet) Portfolio
+ * @notice Receives deposits messages from the mainnets and sends withdraw requests backk to any mainnet.
+ * It also transfers tokens between traders as their orders gets matched.
+ * @dev    Allows only the native token to be withdrawn and deposited from/to the L1 wallet. Any other
+ * token deposit has to be done via PortfolioMain's deposit functions that sends a message via the bridge.
  * When the bridge's message receive event emitted PortfolioBridgeSub invokes processXFerPayload \
  * All tokens including ALOT (native) can be withdrawn to mainnet using withdrawToken that will
- * send the holdings back to the user's wallet in the mainnet. \
+ * send the funds back to the user's wallet in the mainnet. \
  * TradePairs needs to have EXECUTOR_ROLE on PortfolioSub contract. \
- * If a trader deposits a token and has 0 ALOT in his subnet wallet, this contract will make a call
- * to GasStation to deposit a small amount of ALOT to the user's wallet to be used for gas.
- * In return, It will deduct a tiny amount of the token transferred. This feature is called AutoFill
- * and it aims shield the clients from gas Token management in the subnet.
+ * *******Gas Abstraction*********
+ * If a trader deposits an XX token and has 0 ALOT in his Dexalot L1(subnet) wallet(Gas Tank), this contract
+ * will make a call to GasStation to deposit a small amount of ALOT to the user's Gas Tank to be used for gas.
+ * In return, It will deduct a tiny amount of the XX token transferred. This feature is called AutoFill
+ * and it aims shield the clients from gas Token management in the Dexalot L1(subnet).
  * It is suffice to set usedForGasSwap=false for all tokens to disable autofill using tokens. ALOT can and
  * will always be used for this purpose.
+ * Similarly autofill will kick-in if the user's balance falls below the set threshold, during the normal
+ * trading activity and will continue to deposit small amounts to the user's Gas Tank. See autoFillPrivate
  */
 
 // The code in this file is part of Dexalot project.
@@ -43,15 +46,15 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // account address to assets map
     mapping(address => mapping(bytes32 => AssetEntry)) public assets;
     // bytes32 symbols to uint256(total) token map
-    // Used for sanity checks that periodically compares subnet balances to the Mainnet balances.
+    // Used for sanity checks that periodically compares Dexalot L1 balances to the Mainnet balances.
     // Incremented only with Tx.DEPOSIT
     // Decremented only with Tx.WITHDRAW.
     // It assumes all funds originate from the mainnet without any exceptions. As a result, amounts
-    // transferred from/to wallet in the subnet are ignored (add/remove gas)
-    // as well as autofill and account to account subnet transfers and Executions(token swaps)
+    // transferred from/to wallet in the Dexalot L1 are ignored (add/remove gas)
+    // as well as autofill and account to account Dexalot L1 transfers and Executions(token swaps)
     // 100 ALOT transferred from the mainnet
     // 100 ALOT is logged in tokenTotals. Any autofill that this may trigger(0.1) or any add/remove gas
-    // using some of this ALOT(10 AddGas) or tx.IXFERSENT (toAddress: 20) does not change the fact that subnet has
+    // using some of this ALOT(10 AddGas) or tx.IXFERSENT (toAddress: 20) does not change the fact that Dexalot L1 has
     // 69.99(PortfolioSub) + 0.01(wallet) + 10(again same wallet) + 20(toAddress) = 100 ALOT in total.
     // tokenTotals does not keep track of ALOT being burned as gas. It assumes they are readily available in the
     // users wallet to be redoposited back to PortfolioSub.
@@ -108,7 +111,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _mode  Starting auction mode of the token
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     * @param   _subnetSymbol  Subnet Symbol of the token
+     * @param   _subnetSymbol  Dexalot L1(subnet) Symbol of the token
      */
     function addToken(
         bytes32 _srcChainSymbol,
@@ -130,7 +133,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _subnetSymbol, //symbol
                 bytes32(0), //symbolId
                 _srcChainSymbol, //sourceChainSymbol
-                true // All tokens in the subnet are virtual except native ALOT
+                true // All tokens in the Dexalot L1(subnet) are virtual except native ALOT
             );
 
             addTokenInternal(details, _fee, _gasSwapRatio);
@@ -138,7 +141,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Adds the given token to the portfolioSub with 0 address in the subnet.
+     * @notice  Adds the given token to the portfolioSub with 0 address in the Dexalot L1(subnet).
      * @dev     This function is only callable by admin. \
      * We don't allow tokens with same symbols. \
      * Native symbol is also added as a token with 0 address. \
@@ -147,7 +150,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * It also adds the token to the PortfolioBridgeSub with the proper sourceChainid
      * Tokens in PortfolioSub has ZeroAddress but PortfolioBridgeMain has the proper address from each chain
      * Sample Token List in PortfolioSub: \
-     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot Subnet ChainId) \
+     * Symbol, SymbolId, Decimals, address, auction mode (432204: Dexalot L1 ChainId) \
      * ALOT ALOT432204 18 0x0000000000000000000000000000000000000000 0 \
      * AVAX AVAX432204 18 0x0000000000000000000000000000000000000000 0 \
      * BTC.b BTC.b432204 8 0x0000000000000000000000000000000000000000 0 \
@@ -166,9 +169,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         address mainnetAddress = _details.tokenAddress;
         uint32 srcChainId = _details.srcChainId;
         if (!tokenList.contains(_details.symbol)) {
-            // All tokens from mainnet have 0 address including AVAX because subnet doesn't have ERC20
+            // All tokens from mainnet have 0 address including AVAX because Dexalot L1(subnet) doesn't have ERC20
             _details.tokenAddress = address(0);
-            // Subnet symbols are all virtual but need to be added with the subnet chainId
+            // Dexalot L1(subnet) symbols are all virtual but need to be added with the subnet chainId
             _details.srcChainId = chainId;
             super.addTokenInternal(_details, _fee, _gasSwapRatio);
             // Tokens are added with default usedForGasSwap=false. They need to be set to true if/when necessary
@@ -374,7 +377,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // Should not avoid revert if symbol not found. This will block the bridge
         require(tokenList.contains(_xfer.symbol), "P-ETNS-01");
         require(_xfer.quantity > 0, "P-ZETD-01");
-        // Only allow deposits in the subnet from PortfolioBridgeSub that has
+        // Only allow deposits in the Dexalot L1(subnet) from PortfolioBridgeSub that has
         // PORTFOLIO_BRIDGE_ROLE and not from the users
         if (_xfer.transaction == Tx.DEPOSIT) {
             // Deposit the entire amount to the portfolio first
@@ -389,7 +392,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     /**
      * @notice  Deposits small amount of gas Token (ALOT) to trader's wallet in exchange of the token
      * held in the trader's portfolio. (It can by any token including ALOT)
-     * @dev     Only called by TradePairs from doCancelOrder. Cancels makes tokens available.
+     * @dev     Only called by addOrderPrivate, doCancelOrder from TradePairs.
      * doCancelOrder is a good place to auto Fill Gas Tank with newly available funds.
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol to be used in exchange of Gas Token. ALOT or any other
@@ -411,7 +414,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * Hence it is not possible to have a portfolioSub holding without gas in the GasTank
      * In other words: if assets[_trader][_symbol].available > 0 then _trader.balance will be > 0 \
      * Same in the scenario when person A sends tokens to person B who has no gas in his gasTank
-     * using transferToken in the subnet because autoFillPrivate is also called
+     * using transferToken in the Dexalot L1(subnet) because autoFillPrivate is also called
      * if the recipient has ALOT in his portfolio, his ALOT inventory is used to deposit to wallet even when a
      * different token is sent, so swap doesn't happen in this case. \
      * Swap happens using the token sent only when there is not enough ALOT in the recipient portfolio and wallet
@@ -421,7 +424,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @return  tankFull  Trader's Gas Tank status
      */
     function autoFillPrivate(address _trader, bytes32 _symbol, Tx _transaction) private returns (bool tankFull) {
-        // Default amount of ALOT to be transferred into traders Subnet Wallet(Gas Tank)
+        // Default amount of ALOT to be transferred into traders Dexalot L1(subnet) Wallet(Gas Tank)
         uint256 gasAmount = gasStation.gasAmount();
         // Start refilling at 50%
         if (_trader.balance <= ((gasAmount * 5) / 10)) {
@@ -447,7 +450,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                         tankFull = true;
                     }
                     // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
-                    // We don't want the user to through the hassle of acquiring our subnet gas token ALOT first in
+                    // We don't want the user to through the hassle of acquiring our Dexalot L1(subnet) gas token ALOT first in
                     // order to initiate a transaction. This is equivalent of an airdrop
                     // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
                     // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
@@ -462,7 +465,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice   This function is only used to deposit native ALOT from the subnet wallet to
+     * @notice   This function is only used to deposit native ALOT from the Dexalot L1(subnet) wallet to
      * the portfolio. Also referred as RemoveGas
      * @param   _from  Address of the depositor
      */
@@ -485,7 +488,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     /**
      * @notice   This function is used to withdraw only native ALOT from the portfolio
-     * into the subnet wallet. Also referred as AddGas
+     * into the Dexalot L1(subnet) wallet. Also referred as AddGas
      * @dev      This function decreases ALOT balance of the user and calls the PortfolioMinter to mint the native ALOT
      * @param   _to  Address of the withdrawer
      * @param   _quantity  Amount of the native ALOT to withdraw
@@ -540,9 +543,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
         require(tokenList.contains(_symbol), "P-ETNS-01");
-        // bridgeFee = bridge Fees both in the Mainnet the subnet
+        // bridgeFee = bridge Fees both in the Mainnet the Dexalot L1(subnet)
         // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
-        // bridgeParams[_symbol].fee is redundant in the subnet and has been replaced
+        // bridgeParams[_symbol].fee is redundant in the Dexalot L1(subnet) and has been replaced
         // with portfolioBridge.getBridgeFee which uses
         // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
@@ -627,7 +630,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
             require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
-            // _feeCharged is still left in the subnet
+            // _feeCharged is still left in the Dexalot L1(subnet)
             tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged);
         }
         emitPortfolioEvent(_trader, _symbol, _amount, _feeCharged, _transaction, _traderOther);
@@ -886,10 +889,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Returns the bridge fees for all the host chain tokens of a given subnet token
+     * @notice  Returns the bridge fees for all the host chain tokens of a given Dexalot L1(subnet) token
      * @dev     Calls the PortfolioBridgeSub contract to get the bridge fees
      * @param   _bridge  bridge provider
-     * @param   _symbol  subnet symbol of the token
+     * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
@@ -935,12 +938,12 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @dev     tokenTotals for the symbol should be 0 before it can be removed
      * Make sure that there are no in-flight deposit messages.
      * Calling this function also removes the token from portfolioBridge. If multiple tokens in the
-     * portfolioBridgeSub shares the subnet symbol, the symbol is not deleted from the PortfolioSub
+     * portfolioBridgeSub shares the Dexalot L1(subnet) symbol, the symbol is not deleted from the PortfolioSub
      * @param   _srcChainSymbol  Source Chain Symbol of the token
      * @param   _srcChainId  Source Chain id of the token to be removed. Used by PortfolioBridgeSub.
-     * Don't use the subnet id here. Always use the chain id that the token is being removed. Otherwise
+     * Don't use the Dexalot L1(subnet) id here. Always use the chain id that the token is being removed. Otherwise
      * it will silently fail as it can't find the token to delete in PortfolioBridgeSub
-     * @param   _subnetSymbol  Subnet Symbol of the token
+     * @param   _subnetSymbol  Dexalot L1(subnet) Symbol of the token
      */
     function removeToken(
         bytes32 _srcChainSymbol,
@@ -969,7 +972,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 return;
             }
         }
-        // Can never remove subnet ALOT token from PortfolioSub nor from PortfolioBridgeSub
+        // Can never remove Dexalot L1(subnet) ALOT token from PortfolioSub nor from PortfolioBridgeSub
         //, or other ALOTs from any other chainId
         if (tokenList.contains(_subnetSymbol) && _subnetSymbol != native) {
             delete (tokenTotals[_subnetSymbol]);

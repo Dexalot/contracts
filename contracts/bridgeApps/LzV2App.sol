@@ -12,13 +12,16 @@ import "../interfaces/IPortfolioBridge.sol";
 
 /**
  * @title LzV2App
- * @notice This contract sends and recieves generic messages between different chains via LayerZero v2 Endpoints
+ * @notice This contract sends and receives generic messages between different chains via LayerZero v2 Endpoints
  * @dev It is designed to be used in conjunction with the PortfolioBridge contract.
  */
 contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
     // Default payload size for IPortfolio.XFER messages
     bytes private constant DEFAULT_PAYLOAD =
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098c";
+
+    // version
+    bytes32 public constant VERSION = bytes32("1.0.1");
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) {
         _transferOwnership(_owner);
@@ -64,7 +67,7 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
     }
 
     /**
-     * @notice Recieves a message from a remote chain via the LZEndpointV2
+     * @notice Receives a message from a remote chain via the LZEndpointV2
      * @param _origin Details of the origin chain and sender
      * @param _payload Bytes payload of the message
      */
@@ -75,7 +78,7 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
         address, // Executor address as specified by the OApp.
         bytes calldata // Any extra data or options to trigger on receipt.
     ) internal override {
-        _recieveMessage(bytes32(uint256(_origin.srcEid)), _origin.sender, _payload);
+        _receiveMessage(bytes32(uint256(_origin.srcEid)), _origin.sender, _payload);
     }
 
     /**
@@ -95,15 +98,5 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
         bytes memory options = enforcedOptions[dstEid][uint16(_msgType)];
         require(options.length > 0, "LZ-EONS-01");
         _lzSend(dstEid, _message, options, MessagingFee(msg.value, 0), _feeRefundAddress);
-    }
-
-    /**
-     * @notice Get the current outbound nonce for a given destination chain ID
-     * @param _chainID The chainlist chain ID to get a nonce for
-     */
-    function getOutboundNonce(uint32 _chainID) external view override returns (uint64) {
-        RemoteChain memory destination = remoteChainIDs[_chainID];
-        uint32 dstEid = uint32(uint256(destination.blockchainID));
-        return endpoint.outboundNonce(portfolioBridge, dstEid, destination.remoteContract);
     }
 }

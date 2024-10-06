@@ -17,8 +17,6 @@ interface IBridgeProvider {
 
     function getBridgeFee(uint32 dstChainID, CrossChainMessageType msgType) external view returns (uint256);
 
-    function getOutboundNonce(uint32 chainID) external view returns (uint64);
-
     struct RemoteChain {
         uint32 chainID;
         bytes32 blockchainID;

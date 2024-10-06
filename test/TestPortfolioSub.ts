@@ -110,16 +110,8 @@ describe("Portfolio Sub", () => {
 
         deposit_amount = '200';  // ether
         maxFeePerGas = ethers.utils.parseUnits("5", "gwei")
-        const balance = ethers.utils.parseEther('1000000');
-        const balanceHex = balance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            other1.address,
-            balanceHex,
-        ]);
-        // await ethers.provider.send("hardhat_setBalance", [
-        //     trader1.address,
-        //     balanceHex,
-        // ]);
+        const newBalance = ethers.utils.parseEther('1000000');
+        await f.setHardhatBalance(other1, newBalance);
 
     });
 
@@ -524,11 +516,7 @@ describe("Portfolio Sub", () => {
 
         //Refill the trader1 balance
         const newBalance = ethers.utils.parseEther('1000000');
-        const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-        newBalanceHex, // 1000000 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
 
     })
 
@@ -679,11 +667,7 @@ describe("Portfolio Sub", () => {
         //await portfolioMain.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
 
         let newBalance = ethers.utils.parseEther('0.75');
-        let newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-            newBalanceHex, // 0.75 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
 
         let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
         //console.log("gasStationBeforeBal", Utils.fromWei(gasStationBeforeBal) )
@@ -723,11 +707,7 @@ describe("Portfolio Sub", () => {
         // expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(gasDeposited)
 
         newBalance = ethers.utils.parseEther('0.25');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            newBalanceHex, // 0.25 ALOT
-        ]);
+        await f.setHardhatBalance(other2, newBalance);
 
         // fail due to paused portfolio
         await portfolioSub.pause()
@@ -762,12 +742,7 @@ describe("Portfolio Sub", () => {
 
         // Set the wallet balance to 1
         newBalance = ethers.utils.parseEther('1');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            newBalanceHex, // 1 ALOT
-        ]);
-
+        await f.setHardhatBalance(other2, newBalance);
         gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
         tx = await portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas });
         receipt = await tx.wait();
@@ -810,11 +785,7 @@ describe("Portfolio Sub", () => {
         await portfolioMain.setBridgeParam(ALOT, Utils.parseUnits('1', alot_decimals), Utils.parseUnits('1', alot_decimals), true)
 
         let newBalance = ethers.utils.parseEther('0.50');
-        let newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-        newBalanceHex, // 0.25 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
 
         let gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
         await f.depositToken(portfolioMain, trader1, alot, alot_decimals, ALOT, deposit_amount, 0);
@@ -845,11 +816,7 @@ describe("Portfolio Sub", () => {
         expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0);
 
         newBalance = ethers.utils.parseEther('0.35');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-        other2.address,
-        newBalanceHex, // 0.25 ALOT
-        ]);
+        await f.setHardhatBalance(other2, newBalance);
 
         const alotSwappedAmnt = (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
 
@@ -876,11 +843,7 @@ describe("Portfolio Sub", () => {
         expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0)
 
         newBalance = ethers.utils.parseEther('1');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-        other2.address,
-        newBalanceHex, // 1 ALOT
-        ]);
+        await f.setHardhatBalance(other2, newBalance);
 
         gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
         tx = await portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas});
@@ -905,11 +868,7 @@ describe("Portfolio Sub", () => {
         //console.log ((await portfolioSub.getBalance(trader1.address, ALOT)).total.toString())
 
         newBalance = ethers.utils.parseEther('10');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-        newBalanceHex, // 1 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
 
         const addRemGasAmnt= Utils.parseUnits('1', alot_decimals)
         //Add Gas Sanity Check
@@ -955,11 +914,7 @@ describe("Portfolio Sub", () => {
         await portfolioMain.setBridgeParam(USDT, Utils.parseUnits('1', token_decimals), Utils.parseUnits('0.1', token_decimals), true)
         await portfolioMain.setBridgeParam(ALOT, Utils.parseUnits('2', alot_decimals), Utils.parseUnits('0.1', alot_decimals), true)
         let newBalance = ethers.utils.parseEther('0.35');
-        let newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-        newBalanceHex, // 0.35 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
         const gasDeposited = await gasStation.gasAmount();
         const totalGasDeposited = gasDeposited.mul(alotWithdrawnToGasTankMultiplier);
         const gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
@@ -968,10 +923,7 @@ describe("Portfolio Sub", () => {
         const bridgeFeeCollected= await portfolioMain.bridgeFeeCollected(ALOT)
         // Trader1 got ALOT deposited to his wallet
         //expect((await portfolioSub.getBalance(trader1.address, ALOT)).total).to.equal(alotDepositAmount.sub(gasDeposited).sub(bridgeFeeCollected));
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-            newBalanceHex, // 0.35 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance); // 0.35 ALOT
 
         await f.depositToken(portfolioMain, trader1, usdt, token_decimals, USDT, deposit_amount, 0);
         // Trader1 got ALOT deposited AGAIN to his wallet, not USDT
@@ -1011,12 +963,7 @@ describe("Portfolio Sub", () => {
 
 
         newBalance = ethers.utils.parseEther('0.35');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-        other2.address,
-        newBalanceHex, // 0.35 ALOT
-        ]);
-
+        await f.setHardhatBalance(other2, newBalance);
 
         await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("P-OACC-03");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
@@ -1057,27 +1004,18 @@ describe("Portfolio Sub", () => {
         expect(await portfolioSub.tokenTotals(ALOT)).to.equal(mainnetALOTBal.sub(await portfolioMain.bridgeFeeCollected(ALOT)).div(2).add(Utils.parseUnits('2', alot_decimals)));
         //Give enough gas to trader1 for the remaining tests
         newBalance = ethers.utils.parseEther('1000000');
-        newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-        newBalanceHex, // 1 ALOT
-        ]);
+        await f.setHardhatBalance(trader1, newBalance);
     })
 
     it("Should get gas Token when sending erc20 using transferToken ", async () => {
         const { other2 } = await f.getAccounts();
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            "0x0"
-          ]);
-
+        await f.setHardhatBalance(other2, BigNumber.from(0));
         const gasSwapRatioUsdt = 5;
         const usdtDepositAmount = Utils.parseUnits(deposit_amount, token_decimals)
 
         await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
 
         await f.addToken(portfolioMain, portfolioSub, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
-        // await f.addToken(portfolioSub, usdt, gasSwapRatioUsdt, 0, true); //gasSwapRatio 5
 
         // Start with 0 wallet balance
         expect((await ethers.provider.getBalance(other2.address))).to.equal(ethers.BigNumber.from(0));
@@ -1117,10 +1055,7 @@ describe("Portfolio Sub", () => {
 
         //Set the other2's wallet to half of gasStationGas(default 0.025)
         const WalBaltoReset =gasDeposited.div(2);
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            WalBaltoReset.toHexString(),
-          ]);
+        await f.setHardhatBalance(other2, WalBaltoReset);
 
        await portfolioSub.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);
        // Only 0.025 should be added
@@ -1137,13 +1072,8 @@ describe("Portfolio Sub", () => {
     it("Should get gas Token sending ALOT using transferToken", async () => {
         const { other2 } = await f.getAccounts();
         //Reset wallet balance to 0
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            "0x0", // 0 ALOT
-        ]);
+        await f.setHardhatBalance(other2, BigNumber.from(0));
         const alotDepositAmount = Utils.parseUnits(deposit_amount, alot_decimals)
-
-        //await f.addToken(portfolioMain, portfolioSub, alot, gasSwapRatioAlot); //gasSwapRatio 1
         await alot.mint(trader1.address, (BigNumber.from(2)).mul(alotDepositAmount));
 
         // Start with 0 wallet balance
@@ -1176,10 +1106,7 @@ describe("Portfolio Sub", () => {
         expect(gasStationBeforeBal.sub(await ethers.provider.getBalance(gasStation.address))).to.equal(0)
 
         const WalBaltoReset = gasDeposited.div(2);
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            WalBaltoReset.toHexString(), // 0.05 ALOT
-        ]);
+        await f.setHardhatBalance(other2, WalBaltoReset);
 
 
         await portfolioSub.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
@@ -1195,11 +1122,7 @@ describe("Portfolio Sub", () => {
 
     it("Should get gas Token from portfolio ALOT when sending erc20 using transferToken if portfolio(ALOT) > gasSwapRatio", async () => {
         const { other2 } = await f.getAccounts();
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            "0x0",
-          ]);
-
+        await f.setHardhatBalance(other2, BigNumber.from(0));
         //const gasSwapRatioAlot = 1;
         const gasSwapRatioUsdt = 5;
 
@@ -1244,11 +1167,8 @@ describe("Portfolio Sub", () => {
         // Now transfer Native Token ALOT for other2 to have ALOT i his portfolioSub- No gas swap expected
         await portfolioSub.connect(trader1).transferToken(other2.address, ALOT, alotTransferAmnt);
 
-        //Reset wallet balance
-        await ethers.provider.send("hardhat_setBalance", [
-            other2.address,
-            "0x0", // 0 ALOT
-            ]);
+        //Reset wallet balance to 0
+        await f.setHardhatBalance(other2, BigNumber.from(0));
 
         // Now transferring USDT but other2 already has ALOT in his portfolioSub. So we only use his ALOT and we don't swap
         await portfolioSub.connect(trader1).transferToken(other2.address, USDT, usdtTransferAmnt);

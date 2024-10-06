@@ -9,11 +9,10 @@ import "./DefaultBridgeApp.sol";
 import "../interfaces/IPortfolioBridge.sol";
 import "../interfaces/IBridgeAggregator.sol";
 import "../interfaces/IBridgeProvider.sol";
-import "../interfaces/ITeleporterMessengerNonce.sol";
 
 /**
  * @title ICMApp
- * @notice This contract sends and recieves generic messages between different chains via Avalanche's Inter-Chain Messaging (ICM)
+ * @notice This contract sends and receives generic messages between different chains via Avalanche's Inter-Chain Messaging (ICM)
  * @dev It is designed to be used in conjunction with the PortfolioBridge contract.
  */
 contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
@@ -30,7 +29,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual returns (bytes32) {
-        return bytes32("1.0.0");
+        return bytes32("1.0.3");
     }
 
     function initialize(
@@ -87,7 +86,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     }
 
     /**
-     * @notice Recieves a message from a remote chain via the ICMMessenger
+     * @notice Receives a message from a remote chain via the ICMMessenger
      * @param _sourceBlockchainID Blockchain ID of the source chain
      * @param _originSenderAddress Address of the sender contract
      * @param _message Bytes payload of the message
@@ -97,7 +96,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
         address _originSenderAddress,
         bytes memory _message
     ) internal virtual override {
-        _recieveMessage(_sourceBlockchainID, bytes32(bytes20(_originSenderAddress)), _message);
+        _receiveMessage(_sourceBlockchainID, bytes32(uint256(uint160(_originSenderAddress))), _message);
     }
 
     /**
@@ -118,22 +117,12 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
         _sendTeleporterMessage(
             TeleporterMessageInput({
                 destinationBlockchainID: _destination.blockchainID,
-                destinationAddress: address(bytes20(_destination.remoteContract)),
+                destinationAddress: address(uint160(uint256(_destination.remoteContract))),
                 feeInfo: TeleporterFeeInfo({feeTokenAddress: address(0), amount: 0}),
                 requiredGasLimit: gasLimit,
                 allowedRelayerAddresses: allowedRelayers,
                 message: _message
             })
         );
-    }
-
-    /**
-     * @notice Get the current outbound nonce
-     * @dev Nonce is same for all messages in the source chain i.e. independent of the destination chainID
-     */
-    function getOutboundNonce(uint32) external view override returns (uint64) {
-        uint256 nonce = ITeleporterMessengerNonce(address(_getTeleporterMessenger())).messageNonce();
-        require(nonce <= type(uint64).max, "IC-TNTH-01");
-        return uint64(nonce);
     }
 }

@@ -19,7 +19,7 @@ import "./interfaces/IMainnetRFQ.sol";
 
 contract ExchangeMain is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.3");
+    bytes32 public constant VERSION = bytes32("2.2.4");
 
     // price feed contract address from Chainlink Oracle set externally with setPriceFeed as part of deployment
     AggregatorV3Interface internal priceFeed;
@@ -92,31 +92,18 @@ contract ExchangeMain is Exchange {
      * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
      * @param   _symbol  symbol of the token
      * @param   _tokenaddress  address of the token
-     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by
-     * the current chainid
      * @param   _decimals  decimals of the token
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     * @param   _isVirtual  Token to facilitate for Cross Chain Trades
      */
     function addToken(
         bytes32 _symbol,
         address _tokenaddress,
-        uint32 _srcChainId,
         uint8 _decimals,
         uint256 _fee,
-        uint256 _gasSwapRatio,
-        bool _isVirtual
+        uint256 _gasSwapRatio
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
-        IPortfolioMain(address(portfolio)).addToken(
-            _symbol,
-            _tokenaddress,
-            _srcChainId,
-            _decimals,
-            _fee,
-            _gasSwapRatio,
-            _isVirtual
-        );
+        IPortfolioMain(address(portfolio)).addToken(_symbol, _tokenaddress, _decimals, _fee, _gasSwapRatio);
     }
 
     /**

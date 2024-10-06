@@ -104,7 +104,7 @@ abstract contract DefaultBridgeApp is IBridgeProvider {
      * @param _sourceContract The address of the source contract
      * @param _payload The message payload
      */
-    function _recieveMessage(bytes32 _blockchainID, bytes32 _sourceContract, bytes memory _payload) internal {
+    function _receiveMessage(bytes32 _blockchainID, bytes32 _sourceContract, bytes memory _payload) internal {
         RemoteChain memory source = remoteBlockchains[_blockchainID];
         require(source.chainID != 0, "DB-RCNS-02");
         require(source.remoteContract == _sourceContract, "DB-RCNM-01");

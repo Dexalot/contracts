@@ -16,7 +16,6 @@ import {
     TokenVestingCloneFactory,
     TokenVestingCloneable__factory,
     PortfolioBridgeSub,
-    LzV2App,
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -32,8 +31,6 @@ describe("Portfolio Interactions", () => {
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
     let portfolioBridgeSub: PortfolioBridgeSub;
-    let lzAppMain: LzV2App;
-    let lzAppSub: LzV2App;
     let lzEndpointMain: Contract | MockContract<Contract>;
     let lzEndpointSub: Contract | MockContract<Contract>;
 
@@ -91,8 +88,6 @@ describe("Portfolio Interactions", () => {
         portfolioSub = portfolioContracts.portfolioSub;
         portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
         portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
-        lzAppMain = portfolioContracts.lzAppMainnet;
-        lzAppSub = portfolioContracts.lzAppSub;
         lzEndpointMain = portfolioContracts.lzEndpointMainnet;
         lzEndpointSub = portfolioContracts.lzEndpointSub;
         gasStation= portfolioContracts.gasStation;
@@ -134,7 +129,7 @@ describe("Portfolio Interactions", () => {
 
     // AVAX
     it("Should deposit native tokens to portfolio", async () => {
-        await expect(owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei(deposit_amount), gasLimit: 1000000})).to.emit(portfolioMain, "PortfolioUpdated");
+        await expect(f.depositNative( portfolioMain, owner, deposit_amount.toString())).to.emit(portfolioMain, "PortfolioUpdated");
         const res = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
         expect(res.total).to.equal(Utils.toWei(deposit_amount_less_fee));
         expect(res.available).to.equal(Utils.toWei(deposit_amount_less_fee));
@@ -227,7 +222,7 @@ describe("Portfolio Interactions", () => {
 
         const initial_amount = await owner.getBalance();
 
-        const tx: any = await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei(deposit_amount), gasLimit: 1000000});
+        const tx: any = await f.depositNative(portfolioMain, owner, deposit_amount.toString());
         const txRes: any = await tx.wait()
 
         const withdrawal_amount = '100';
@@ -438,38 +433,43 @@ describe("Portfolio Interactions", () => {
 
     it("Should not deposit or withdraw if the bridge is not enabled", async () => {
         const { cChain, dexalotSubnet } = f.getChains()
+        const bridge = 1 // Celer
         const celerMockMain = await f.deployLZV2App(lzEndpointMain, true)
         await celerMockMain.setPortfolioBridge(portfolioBridgeMain.address)
         const celerMockSub = await f.deployLZV2App(lzEndpointSub, true)
         await celerMockSub.setPortfolioBridge(portfolioBridgeSub.address)
-        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet);
+
+        // set up bridge links for celer then disable bridge provider
+        await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
+        await portfolioSub.enableBridgeProvider(bridge, celerMockSub.address)
+        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, 400000, bridge);
+        await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
 
         // no need to add ALOT to subnet as it is added while deploying portfolioSub
         await alot.mint(trader1.address, ethers.utils.parseEther("100"))
-        console.log(await portfolioSub.getBalance(trader1.address, ALOT))
-        await f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "50")
-        console.log(await portfolioSub.getBalance(trader1.address, ALOT))
-        const bridge =1 // Celer
+        await f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "50");
 
-        // bridge not enabled in main
+        // // bridge not enabled in mains
         await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
-        //await expect(f.depositNativeWithContractCall(portfolioMain, trader1, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
         await expect(f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
 
         // bridge-enabled in main but not in sub
         await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
         await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
-        await expect(f.depositNativeWithContractCall(portfolioMain, trader1, "5", bridge)).to.be.revertedWith("NoPeer");// Deposit can't go through
+        await f.depositNativeWithContractCall(portfolioMain, trader1, "5", bridge) // silent fails w/ "NoPeer" in bridge
+        await expect(portfolioBridgeSub.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
 
-        // // bridge-not enabled in sub
-        // await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
-        // await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
-        // await expect(f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
+        // bridge-not enabled in sub
+        await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
+        await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await expect(f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
 
         // withdraw-enabled in sub but not in main
         await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await portfolioSub.enableBridgeProvider(bridge, celerMockSub.address)
-        await expect(f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge)).to.be.revertedWith("NoPeer"); // Withdraw can't go through
+        await f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge) // silent fails w/ "NoPeer" in bridge
+        await expect(portfolioBridgeMain.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
     })
 
     it("Should pause and unpause Portfolio deposit from the admin account", async function () {
@@ -504,10 +504,10 @@ describe("Portfolio Interactions", () => {
         // fail for quantity more than balance for depositTokenFromContract()
         await expect(portfolioMain.depositTokenFromContract(owner.address, USDT, Utils.toWei('1001'))).to.revertedWith("P-NETD-01");
         // succeed for native
-        await owner.sendTransaction({to: portfolioMain.address, value: Utils.toWei('1000'), gasLimit: 1000000});
+        await f.depositNative(portfolioMain, owner, deposit_amount.toString());
         const bal = await portfolioSub.getBalance(owner.address, Utils.fromUtf8("AVAX"));
-        expect(bal.total).to.be.equal(Utils.toWei('1000'));
-        expect(bal.available).to.be.equal(Utils.toWei('1000'));
+        expect(bal.total).to.be.equal(Utils.toWei(deposit_amount));
+        expect(bal.available).to.be.equal(Utils.toWei(deposit_amount));
     });
 
     it("Should add a trusted contract to Portfolio from the admin account", async function () {

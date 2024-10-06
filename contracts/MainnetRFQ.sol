@@ -17,7 +17,7 @@ import "./interfaces/IMainnetRFQ.sol";
 
 /**
  * @title   Request For Quote smart contract
- * @notice  This contract takes advantage of prices from the Dexalot subnet to provide
+ * @notice  This contract takes advantage of prices from the Dexalot L1 to provide
  * token swaps on EVM compatible chains. Users must request a quote via our RFQ API.
  * Using this quote they can execute a swap on the current chain using simpleSwap() or partialSwap().
  * The contract also supports cross chain swaps using xChainSwap() which locks funds in the current
@@ -25,9 +25,23 @@ import "./interfaces/IMainnetRFQ.sol";
  * @dev After getting a firm quote from our off chain RFQ API, call the simpleSwap() function with
  * the quote. This will execute a swap, exchanging the taker asset (asset you provide) with
  * the maker asset (asset we provide). In times of high volatility, the API may adjust the expiry of your quote.
- * may also be adjusted during times of high volatility. Monitor the SwapExpired event to verify if a swap has been
- * adjusted. Adjusting the quote is rare, and only resorted to in periods of high volatility for quotes that do
- * not properly represent the liquidity of the Dexalot subnet.
+ * The Api may also add slippage to all orders for a particular tradepair during times of high volatility.
+ * Monitor the SwapExpired event to verify if a swap has been adjusted. Adjusting the quote is rare, and
+ * only resorted to in periods of high volatility for quotes that do not properly represent the liquidity
+ * of the Dexalot L1.
+ * IThis contract also supports a new cross chain swap flow(originally referred to as GUN Flow) where
+ * any user can buy GUN token from any network with a single click. This is particularly
+ * beneficial for Avalanche L1s that have certain token restrictions. For example Gunzilla prohibits ERC20s just
+ * like Dexalat L1 and they don't allow their gas token in any network but in Gunzilla.
+ * When Buying GUN from Avalanche(or Arb,...) with counter token USDC, USDC is kept in MainnetRFQ(Avax)
+ * and GUN is deposited to the buyer's wallet via MainnetRFQ(Gun). The flow is : \
+ * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => ICM => PortfolioBridgeMain(Gun) => MainnetRFQ(Gun) \
+ * When Selling GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited
+ * to the buyer's wallet via MainnetRFQ(Avax) The flow is : \
+ * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => ICM => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
+ * Similarly a Cross Chain Swaps Betwen Avalanche & Arb would work as follows exchanging AVAX & ETH
+ * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => LayerZero => PortfolioBridgeMain(Arb) => MainnetRFQ(Arb) \
+ * MainnetRFQ(Arb) => PortfolioBridgeMain(Arb) => LayerZero => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
  */
 
 // The code in this file is part of Dexalot project.
@@ -46,12 +60,14 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.3");
+    bytes32 public constant VERSION = bytes32("1.1.4");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
     // portfolio bridge role
     bytes32 public constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
+    // volatility admin role
+    bytes32 public constant VOLATILITY_ADMIN_ROLE = keccak256("VOLATILITY_ADMIN_ROLE");
     // typehash for same chain swaps
     bytes32 private constant ORDER_TYPEHASH =
         keccak256(
@@ -113,7 +129,7 @@ contract MainnetRFQ is
     // address used to sign and verify swap orders
     address public swapSigner;
 
-    // no longer in use, kept for upgradeability)
+    // used to slip orders in case of high volatility
     uint256 public slippageTolerance;
 
     // (no longer in use, kept for upgradeability)
@@ -135,8 +151,10 @@ contract MainnetRFQ is
     IPortfolioBridge public portfolioBridge;
     // portfolio main contract, used to get token addresses on destination chain
     address public portfolioMain;
+    // bitmap, used to slip quote for a given pair if high volatility
+    uint256 public volatilePairs;
     // storage gap for upgradeability
-    uint256[44] __gap;
+    uint256[43] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -196,7 +214,7 @@ contract MainnetRFQ is
      * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
      * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
-     * prices from the Dexalot subnet.
+     * prices from the Dexalot L1.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
@@ -210,7 +228,7 @@ contract MainnetRFQ is
      * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
      * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
-     * prices from the Dexalot subnet. This function is used for multi hop swaps and will partially fill
+     * prices from the Dexalot L1. This function is used for multi hop swaps and will partially fill
      * at the original quoted price.
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
@@ -235,7 +253,7 @@ contract MainnetRFQ is
      * @notice Swaps two assets cross chain, based on a predetermined swap price
      * @dev This function can only be called after generating a firm quote from the RFQ API.
      * All parameters are generated from the RFQ API. Prices are determined based off of trade
-     * prices from the Dexalot subnet. This function is called on the source chain where is locks
+     * prices from the Dexalot L1. This function is called on the source chain where is locks
      * funds and sends a cross chain message to release funds on the destination chain.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
@@ -392,6 +410,26 @@ contract MainnetRFQ is
     }
 
     /**
+     * @notice  Sets slippage tolerance for the contract
+     * @dev     Slippage tolerance is represented in BIPs. i.e. slippage must be less than 1%.
+     * @param   _slippageTolerance  slippage tolerance in BIPs
+     */
+    function setSlippageTolerance(uint256 _slippageTolerance) external onlyRole(VOLATILITY_ADMIN_ROLE) {
+        require(_slippageTolerance <= 10000 && _slippageTolerance >= 9900, "RF-STTA-01");
+        slippageTolerance = _slippageTolerance;
+    }
+
+    /**
+     * @notice  Sets volatile pairs to slip for the contract
+     * @dev     Volatile pairs is a bitmap. If a pair is set to slip, the contract will
+     * slip the quote for that pair during high volatility.
+     * @param   _volatilePairs  volatile pairs to slip bitmap
+     */
+    function setVolatilePairs(uint256 _volatilePairs) external onlyRole(VOLATILITY_ADMIN_ROLE) {
+        volatilePairs = _volatilePairs;
+    }
+
+    /**
      * @notice  Adds Rebalancer Admin role to the address
      * @param   _address  address to add role to
      */
@@ -429,6 +467,26 @@ contract MainnetRFQ is
         require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1, "RF-ALOA-01");
         emit RoleUpdated("RFQ", "REMOVE-ROLE", DEFAULT_ADMIN_ROLE, _address);
         revokeRole(DEFAULT_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Adds Volatility Admin role to the address
+     * @param   _address  address to add role to
+     */
+    function addVolatilityAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_address != address(0), "RF-SAZ-01");
+        emit RoleUpdated("RFQ", "ADD-ROLE", VOLATILITY_ADMIN_ROLE, _address);
+        grantRole(VOLATILITY_ADMIN_ROLE, _address);
+    }
+
+    /**
+     * @notice  Removes Volatility Admin role from the address
+     * @param   _address  address to remove role from
+     */
+    function removeVolatilityAdmin(address _address) external virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(getRoleMemberCount(VOLATILITY_ADMIN_ROLE) > 1, "RF-ALOA-01");
+        emit RoleUpdated("RFQ", "REMOVE-ROLE", VOLATILITY_ADMIN_ROLE, _address);
+        revokeRole(VOLATILITY_ADMIN_ROLE, _address);
     }
 
     /**
@@ -539,7 +597,7 @@ contract MainnetRFQ is
         );
         _verifySwapInternal(
             _order.nonceAndMeta,
-            _order.expiry,
+            uint32(_order.expiry),
             _order.taker,
             destTrader == msg.sender,
             hashedStruct,
@@ -562,6 +620,10 @@ contract MainnetRFQ is
         uint256 _takerAmount,
         address _destTrader
     ) private {
+        uint8 pair = uint8(_order.nonceAndMeta >> 88);
+        if (pair != 0 && (volatilePairs >> pair) & 1 == 1) {
+            _makerAmount = (_makerAmount * slippageTolerance) / 10000;
+        }
         SwapData memory swapData = SwapData({
             nonceAndMeta: _order.nonceAndMeta,
             taker: _order.taker,

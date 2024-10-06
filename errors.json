@@ -28,7 +28,6 @@
     "P-GSRO-01": "Portfolio: gasSwapRatio needs to be > 0",
     "P-ETNS-01": "Portfolio: token is not supported in the subnet",
     "P-ETNS-02": "Portfolio: token is not supported in the host chain",
-    "P-VTNS-01": "Portfolio: virtual token can not be deposited",
     "P-DOTS-01": "Portfolio: origin and destination adressess should be different",
     "P-NETD-01": "Portfolio: not enough ERC20 token balance to deposit",
     "P-OOWT-01": "Portfolio: only owner can withdraw ERC20 tokens",
@@ -168,6 +167,7 @@
     "RF-ZETD-01": "MainnetRFQ: zero erc20 token quantity",
     "RF-INVT-01": "MainnetRFQ: target chain does not have enough inventory to remove the xChainSwap from the queue",
     "RF-DTNF-01": "MainnetRFQ: destination token not found",
+    "RF-STTA-01": "MainnetRFQ: slippage tolerance too aggressive",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",

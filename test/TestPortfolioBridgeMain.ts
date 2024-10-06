@@ -316,7 +316,7 @@ describe("Portfolio Bridge Main", () => {
 
         const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
         //Fail to enable Enable AVAX for CCTRADE at Mainnet for destination gun (defaultDestinationChainId)
-        await expect(portfolioBridgeMain.enableXChainSwapDestination(symbol, defaultDestinationChainId, true)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).enableXChainSwapDestination(symbol, defaultDestinationChainId, true)).to.be.revertedWith("AccessControl:");
 
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         // fail paused contract

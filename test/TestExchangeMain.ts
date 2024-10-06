@@ -82,20 +82,17 @@ describe("Exchange Main", function () {
 
         it("Should use addToken correctly by auction admin", async function () {
             const token_decimals = 18;
-            const { cChain } = f.getChains();
-
-            const srcChainListOrgId= cChain.chainListOrgId;
 
             // fail for non-admin & Admin
-            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
-            await expect(exchange.addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address,  token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
 
             await exchange.removeAdmin(auctionAdmin.address);
-            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
 
             // succeed for auctionAdmin
             await exchange.addAuctionAdmin(auctionAdmin.address);
-            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, srcChainListOrgId, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false);
+            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals));
         });
 
 

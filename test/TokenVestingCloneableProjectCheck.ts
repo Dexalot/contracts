@@ -129,8 +129,7 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
             //await f.addTokenToPortfolioMain(portfolio, testToken as MockToken, 0.5, false, 0);
             await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), 0,
             Utils.parseUnits('0.5', await testToken.decimals()), false);
-            // await portfolio.addToken(dt, testToken.address, srcChainListOrgId,await testToken.decimals(),  '0', ethers.utils.parseUnits('0.5', await testToken.decimals()),false);
-            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
+             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  BEFORE START OF EPOCH 1:
             // fast forward to portfolioDepositsStartDate

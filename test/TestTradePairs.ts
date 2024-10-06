@@ -136,11 +136,9 @@ describe("TradePairs", function () {
         await f.addToken(portfolioMain, portfolio, quoteToken, 0.1, mode);
 
         const newBalance = ethers.utils.parseEther('1000000');
-        const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-        await ethers.provider.send("hardhat_setBalance", [
-            trader1.address,
-            newBalanceHex,
-        ]);
+
+        await f.setHardhatBalance(trader1, newBalance);
+
         buyOrder = {
             traderaddress: trader1.address
             , clientOrderId : await Utils.getClientOrderId(ethers.provider, trader1.address)
@@ -416,7 +414,7 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
             expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -600,11 +598,7 @@ describe("TradePairs", function () {
             const gasDeposited = await gasStation.gasAmount();
             const qtSwappedAmnt = (await portfolio.bridgeParams(QT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
             const WalBaltoReset =gasDeposited.div(2);
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-            ]);
-
+            await f.setHardhatBalance(trader1, WalBaltoReset);
             let clientOrderIds=[];
             let prices=[];
             let quantities= [];
@@ -642,11 +636,7 @@ describe("TradePairs", function () {
 
             // Reset trader1 balances for later tests
             const newBalance = ethers.utils.parseEther('1000000');
-            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                newBalanceHex,
-              ]);
+            await f.setHardhatBalance(trader1, newBalance);
 
             let buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             let sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -795,10 +785,7 @@ describe("TradePairs", function () {
 
             // Autofill does not kick in for addLimitOrderList
             const WalBaltoReset =gasDeposited.div(2);
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-              ]);
+            await f.setHardhatBalance(trader1, WalBaltoReset);
 
             const newOrders = []
 
@@ -838,11 +825,7 @@ describe("TradePairs", function () {
 
             //Reset trader1 balances for later tests
             const newBalance = ethers.utils.parseEther('1000000');
-            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                newBalanceHex,
-              ]);
+            await f.setHardhatBalance(trader1, newBalance);
 
             let buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             let sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
@@ -1489,13 +1472,13 @@ describe("TradePairs", function () {
             const gasDeposited = await gasStation.gasAmount();
             const qtSwappedAmnt = (await portfolio.bridgeParams(QT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
             // Test out addOrder autoFill using QT
-            const WalBaltoReset =gasDeposited.div(2);
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-              ]);
+            const WalBaltoReset = gasDeposited.div(2);
+            await f.setHardhatBalance(trader1, WalBaltoReset);
+
             // add a buy order because it is AVAX/QT and when cancelled We make QT available to get gas for
-            const tx1 = await tradePairs.connect(trader1).addNewOrder(buyOrder);
+            const tx1 = await tradePairs.connect(trader1).addNewOrder(buyOrder, {
+                gasLimit: 10000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei")
+            });
 
             const res1: any = await tx1.wait();
             // get if of the order
@@ -1511,11 +1494,8 @@ describe("TradePairs", function () {
 
             // console.log ("gasStationBeforeBal", gasStationBeforeBal.toString(), "avaxswaped", qtSwappedAmnt.toString())
             // console.log ("wallet bal before", (await ethers.provider.getBalance(trader1.address)).toString())
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-              ]);
 
+            await f.setHardhatBalance(trader1, WalBaltoReset);
             //console.log ("wallet bal after",(await ethers.provider.getBalance(trader1.address)).toString())
             // cancel the order
             const tx2 = await tradePairs.connect(trader1).cancelOrder(id ,{gasLimit: 500000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
@@ -1536,11 +1516,7 @@ describe("TradePairs", function () {
 
             //Reset trader1 balances for later tests
             const newBalance = ethers.utils.parseEther('1000000');
-            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                newBalanceHex,
-              ]);
+            await f.setHardhatBalance(trader1, newBalance);
         });
 
         it("Should autofill kick-in using ALOT when adding/canceling an order if ALOT is available", async function () {
@@ -1580,12 +1556,12 @@ describe("TradePairs", function () {
             const totalGasDeposited = gasDeposited.mul(alotWithdrawnToGasTankMultiplier);
             // console.log (await gasStation.gasAmount(), Utils.parseUnits('1', alot_decimals))
             const WalBaltoReset =gasDeposited.div(2);
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-              ]);
+            await f.setHardhatBalance(trader1, WalBaltoReset);
             // Test out addOrder autoFill using a sell order AVAX/QT
-            const tx1 =  await tradePairs.connect(trader1).addNewOrder(sellOrder)
+            const tx1 =  await tradePairs.connect(trader1).addNewOrder(sellOrder, {
+                gasLimit: 10000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei")
+            });
+
 
             const res1: any = await tx1.wait();
             // get id of the order
@@ -1612,11 +1588,7 @@ describe("TradePairs", function () {
             // console.log ("gasStationBeforeBal", gasStationBeforeBal.toString(), "avaxswaped", qtSwappedAmnt.toString())
             // console.log ("wallet bal before", (await ethers.provider.getBalance(trader1.address)).toString())
             gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                WalBaltoReset.toHexString(),
-              ]);
-
+            await f.setHardhatBalance(trader1, WalBaltoReset);
             //console.log ("wallet bal after",(await ethers.provider.getBalance(trader1.address)).toString())
             // cancel the order
             const tx2 = await tradePairs.connect(trader1).cancelOrder(id ,{gasLimit: 500000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
@@ -1641,11 +1613,7 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, ALOT)).total).to.equal(Utils.parseUnits(deposit_amount, alot_decimals).sub(totalGasDeposited.mul(2)));
             //Reset trader1 balances for later tests
             const newBalance = ethers.utils.parseEther('1000000');
-            const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
-            await ethers.provider.send("hardhat_setBalance", [
-                trader1.address,
-                newBalanceHex,
-              ]);
+            await f.setHardhatBalance(trader1, newBalance);
         });
 
         it("Should be able to add an multiple orders and cancel them from the same trader account", async function () {
@@ -1741,7 +1709,7 @@ describe("TradePairs", function () {
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
-            await trader2.sendTransaction({to: portfolioMain.address, value: Utils.toWei('3000')});
+            await f.depositNative(portfolioMain, trader2, '3000');
 
             // deposit some tokens to portfolio for trader1
             await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
@@ -1913,7 +1881,7 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals,  '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals,  '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
             expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
 
             // deposit some native to portfolio for trader1
@@ -1962,9 +1930,8 @@ describe("TradePairs", function () {
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
-            await trader2.sendTransaction({to: portfolioMain.address, value: Utils.toWei('3000')});
-
-            // deposit some tokens to portfolio for trader1
+            await f.depositNative(portfolioMain, trader2, '3000');
+           // deposit some tokens to portfolio for trader1
             await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
             await quoteToken.connect(trader2).approve(portfolioMain.address, Utils.parseUnits('2000', quoteDecimals));
             await portfolioMain.connect(trader2).depositToken(trader2.address, quoteSymbol, Utils.parseUnits('2000', quoteDecimals), 0);
@@ -2243,7 +2210,7 @@ describe("TradePairs", function () {
             await quoteToken.mint(trader2.address, Utils.parseUnits('20000', quoteDecimals));
 
             // deposit some native to portfolio for trader2
-            await trader2.sendTransaction({to: portfolioMain.address, value: Utils.toWei('3000')});
+            await f.depositNative(portfolioMain, trader2, '3000');
             expect((await portfolio.getBalance(trader2.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
             expect((await portfolio.getBalance(trader2.address, baseSymbol))[1]).to.equal(Utils.parseUnits('3000', baseDecimals));
 

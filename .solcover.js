@@ -7,7 +7,7 @@ module.exports = {
     "MainnetRFQAssembly",
     "others/Multicall3",
     "PortfolioMainBnb",
-    "bridgeApps/teleporter",
+    "others/UpgradableDeployer",
   ],
   mocha: {
     grep: "@skip-on-coverage", // Find everything with this tag

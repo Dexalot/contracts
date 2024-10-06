@@ -141,6 +141,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(tdet2.symbol).to.equal(ALOT);
         expect(tdet2.symbolId).to.equal(Utils.fromUtf8("ALOT" + srcChainId2));
 
+        await portfolioBridgeSub.getAllBridgeFees(0, ALOT, 0);
     });
 
     it("Should use addToken correctly for ERC20 tokens", async () => {
@@ -437,21 +438,22 @@ describe("Portfolio Bridge Sub", () => {
       });
 
 
-    it("Should not be able to withdraw virtual tokens from host Chains", async () => {
-        // Add virtual GUN to avalanche with gunzilla Network id
-        const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
-        const { dexalotSubnet, gunzillaSubnet } = f.getChains();
-        await f.addVirtualToken(portfolioMain, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
+    // it.only("Should not be able to withdraw virtual tokens from host Chains-should be deprecated", async () => {
+    //     // Virtual tokens are not used, use xChainAllowedDestinations
+    //     // Add virtual GUN to avalanche with gunzilla Network id
+    //     const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
+    //     const { dexalotSubnet, gunzillaSubnet } = f.getChains();
+    //     await f.addVirtualToken(portfolioMain, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
 
-        const nonce = 0;
-        const transaction = 0;   //  transaction:   0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
-        //const direction = 1   // sent -0 , received -1
-        const withDrawGunPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, gunDetails.symbolbytes32, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
-        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address)
-        await portfolioBridgeMain.pause()
-        await portfolioBridgeMain.enableBridgeProvider(0, owner.address)
-        await expect(portfolioBridgeMain.processPayload(0, dexalotSubnet.chainListOrgId, withDrawGunPayload)).to.be.revertedWith("PB-VTNS-02");
-    })
+    //     const nonce = 0;
+    //     const transaction = 0;   //  transaction:   0 = WITHDRAW,  1 = DEPOSIT [main --> sub]
+    //     //const direction = 1   // sent -0 , received -1
+    //     const withDrawGunPayload = Utils.generatePayload(0, nonce, transaction, trader1.address, gunDetails.symbolbytes32, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
+    //     await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address)
+    //     await portfolioBridgeMain.pause()
+    //     await portfolioBridgeMain.enableBridgeProvider(0, owner.address)
+    //     await expect(portfolioBridgeMain.processPayload(0, dexalotSubnet.chainListOrgId, withDrawGunPayload)).to.be.revertedWith("PB-VTNS-02");
+    // })
 
 
 
@@ -1072,4 +1074,22 @@ describe("Portfolio Bridge Sub", () => {
         await expect(owner.sendTransaction({to: portfolioBridgeSub.address, data: calldata}))
             .to.be.revertedWith("")
     })
+
+    it("Should fail to get bridge fee to token that does not exist", async function () {
+       await expect(portfolioBridgeSub.getBridgeFee(0, 0, ALOT, 0)).to.be.revertedWith("PB-ETNS-01");
+    })
+
+    it("Should fail to process payload for token that does not exist", async function () {
+        const {cChain} = f.getChains();
+
+        const invalidSymbol = Utils.fromUtf8("AVAXCC");
+        const payload = Utils.generatePayload(0, 1, 0, trader1.address, invalidSymbol, Utils.toWei("0.5"), await f.latestTime(), Utils.emptyCustomData());
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeSub.pause();
+        await portfolioBridgeSub.enableBridgeProvider(0, owner.address);
+        await portfolioBridgeSub.unpause();
+
+        await expect(portfolioBridgeSub.processPayload(0, cChain.chainListOrgId, payload)).to.be.revertedWith("PB-ETNS-01");
+     })
 });

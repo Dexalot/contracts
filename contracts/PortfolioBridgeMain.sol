@@ -15,15 +15,17 @@ import "./interfaces/IBridgeProvider.sol";
 import "./interfaces/IMainnetRFQ.sol";
 
 /**
- * @title PortfolioBridgeMain. Bridge aggregator and message relayer for mainnet using multiple different bridges
- * @notice The default bridge provider is LayerZero and it can't be disabled. Additional bridge providers
- * will be added as needed. This contract encapsulates all bridge provider implementations that Portfolio
- * doesn't need to know about. \
+ * @title PortfolioBridgeMain. Bridge aggregator and message relayer for mainnet using multiple different bridges.
+ * Dexalot is bridge agnostic and currently supports ICM and LayerZero. Additional bridge providers will be added
+ * as needed.
+ * @notice The default bridge provider is ICM (Avalanche's Interchain Messaging) within Avalanche echosystem &
+ * LayerZero for any other chains. The default bridge can't be disabled.
+ * You can deposit with Avalanche's ICM and withdraw with LayerZero.
  * This contract does not hold any users funds. it is responsible for paying the bridge fees in form of
  * the chain’s gas token to 3rd party bridge providers whenever a new cross chain message is sent out by
  * the user. Hence the project deposit gas tokens to this contract. And the project can withdraw
  * the gas tokens from this contract whenever it finds it necessary.
- * @dev PortfolioBridgeSub & PortfolioSub are Dexalot Subnet contracts and they can't be deployed anywhere else.
+ * @dev PortfolioBridgeSub & PortfolioSub are Dexalot L1 contracts and they can't be deployed anywhere else.
  * Contracts with *Main* in their name can be deployed to any evm compatible blockchain.
  * Here are the potential flows:
  * DEPOSITS: \
@@ -34,20 +36,21 @@ import "./interfaces/IMainnetRFQ.sol";
  * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain(Avax) => PortfolioMain(Avax) \
  * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain(Arb) => PortfolioMain(Arb) \
  * PortfolioSub => PortfolioBridgeSub => BridgeProviderA/B/n => PortfolioBridgeMain(Gun) => PortfolioMain(Gun) \
- *
- * In addition, to be able to support cross chain trades for subnets like Gunzilla that only has their gas token
- * and no ERC20 available, we introduced a new flow where you provide the counter token in an L1 and receive your GUN
- * in Gunzilla network. Similarly you can sell your GUN in Gunzilla network and receive your counter token in any L1.
- * When Buying GUN from Avalanche with counter token USDC, USDC is kept in MainnetRFQ(Avax) and GUN is deposited
- * to the buyer's wallet via MainnetRFQ(Gun). The flow is : \
- * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => BridgeProviderA/B/n => PortfolioBridgeMain(Gun) => MainnetRFQ(Gun) \
+ * In addition, we introduced a new cross chain swap flow(originally referred to as GUN Flow) where
+ * any user can buy GUN token from any network with a single click. This is particularly
+ * beneficial for Avalanche L1s that have certain token restrictions. For example Gunzilla prohibits ERC20s just
+ * like Dexalat L1 and they don't allow their gas token in any network but in Gunzilla.
+ * When Buying GUN from Avalanche(or Arb,...) with counter token USDC, USDC is kept in MainnetRFQ(Avax)
+ * and GUN is deposited to the buyer's wallet via MainnetRFQ(Gun). The flow is : \
+ * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => ICM => PortfolioBridgeMain(Gun) => MainnetRFQ(Gun) \
  * When Selling GUN from Gunzilla with counter token USDC. GUN is kept in MainnetRFQ(Gun) and USDC is deposited
  * to the buyer's wallet via MainnetRFQ(Avax) The flow is : \
- * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => BridgeProviderA/B/n => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
- * The same flow can be replicated with any other L1 like Arb as well. \
+ * MainnetRFQ(Gun) => PortfolioBridgeMain(Gun) => ICM => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
+ * Similarly a Cross Chain Swaps Betwen Avalanche & Arb would work as follows exchanging AVAX & ETH
+ * MainnetRFQ(Avax) => PortfolioBridgeMain(Avax) => LayerZero => PortfolioBridgeMain(Arb) => MainnetRFQ(Arb) \
+ * MainnetRFQ(Arb) => PortfolioBridgeMain(Arb) => LayerZero => PortfolioBridgeMain(Avax) => MainnetRFQ(Avax) \
  * PortfolioBridgeMain always sends the ERC20 Symbol from its own network and expects the same back
  * i.e USDt sent & received in Avalanche Mainnet whereas USDT is sent & received in Arbitrum.
- * Use multiple inheritance to add additional bridge implementations in the future. Currently LzApp only.
  */
 
 // The code in this file is part of Dexalot project.
@@ -81,16 +84,17 @@ contract PortfolioBridgeMain is
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
+    uint64 public outNonce;
 
     // storage gap for upgradeability
-    uint256[50] __gap;
+    uint256[49] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.0.0");
+        return bytes32("4.0.3");
     }
 
     /**
@@ -178,7 +182,7 @@ contract PortfolioBridgeMain is
         bytes32 _symbol,
         uint32 _chainListOrgChainId,
         bool _enable
-    ) external onlyRole(BRIDGE_USER_ROLE) {
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         xChainAllowedDestinations[_symbol][_chainListOrgChainId] = _enable;
     }
 
@@ -207,7 +211,7 @@ contract PortfolioBridgeMain is
     /**
      * @notice  Sets default destination chain id for the cross-chain communication
      * @dev     Allow DEFAULT_ADMIN to set it multiple times. For PortfolioBridgeSub it is avalanche C-Chain
-     * For other blockchains it is Dexalot Subnet
+     * For other blockchains it is Dexalot L1
      * @param   _chainListOrgChainId Default Destination Chainlist.org chainid
      */
 
@@ -315,48 +319,11 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Increments bridge nonce
-     * @dev     Only portfolio can call
-     * @param   _bridgeProvider  Bridge to increment nonce for
-     * @param   _dstChainListOrgChainId Destination Chainlist.org chainid
-     * @return  nonce  New nonce
-     */
-    function incrementOutNonce(
-        IBridgeProvider _bridgeProvider,
-        uint32 _dstChainListOrgChainId
-    ) private view returns (uint64 nonce) {
-        return _bridgeProvider.getOutboundNonce(_dstChainListOrgChainId) + 1;
-    }
-
-    /**
      * @notice   List of the tokens in the PortfolioBridgeMain
      * @return  bytes32[]  Array of symbols of the tokens
      */
     function getTokenList() external view virtual override returns (bytes32[] memory) {
         return portfolio.getTokenList();
-    }
-
-    /**
-     * @notice  Validates the symbol from portfolio and transaction type
-     * @dev     This function is called both when sending & receiving a message.
-     * Deposit/ Withdraw Tx can only be done with non-virtual tokens.
-     * When using CCTRADE received token has to be a non-virtual token at the destination,.
-     * @param   _symbol  symbol of the token
-     * @param   _transaction transaction type
-     * @param   _direction direction of the message (SENT-0 || RECEIVED-1)
-     */
-
-    function validateSymbol(bytes32 _symbol, IPortfolio.Tx _transaction, Direction _direction) private view {
-        //Validate the symbol
-        IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(_symbol);
-        require(details.symbol != bytes32(0), "PB-ETNS-02");
-        //Validate symbol & transaction type;
-        if (_transaction == IPortfolio.Tx.CCTRADE && _direction == Direction.RECEIVED) {
-            require(!details.isVirtual, "PB-CCTR-03"); // Virtual tokens can't be released to user
-        } else if (_transaction == IPortfolio.Tx.WITHDRAW) {
-            //Withdraw check only. Deposit check in Portfolio.depositToken
-            require(!details.isVirtual, "PB-VTNS-02"); // Virtual tokens can't be withdrawn
-        }
     }
 
     /**
@@ -441,10 +408,12 @@ contract PortfolioBridgeMain is
         IPortfolio.XFER memory _xfer,
         address _userFeePayer
     ) external payable virtual override nonReentrant whenNotPaused onlyRole(BRIDGE_USER_ROLE) {
+        // Validate for Cross Chain Trade
         if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
+            // Symbol allowed at destination
             require(xChainAllowedDestinations[_xfer.symbol][_dstChainListOrgChainId], "PB-CCTR-02");
         }
-        validateSymbol(_xfer.symbol, _xfer.transaction, Direction.SENT);
+        // No need to validate the symbol for DEPOSIT/ WITHDRAWALS again as it is being sent by the Portfolio
         sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
     }
 
@@ -465,7 +434,8 @@ contract PortfolioBridgeMain is
         IBridgeProvider bridgeContract = enabledBridges[_bridge];
         require(address(bridgeContract) != address(0), "PB-RBNE-01");
         if (_xfer.nonce == 0) {
-            _xfer.nonce = incrementOutNonce(bridgeContract, _dstChainListOrgChainId);
+            outNonce += 1;
+            _xfer.nonce = outNonce;
         }
         bytes memory _payload = packXferMessage(_xfer);
         bool isUserFeePayer = userPaysFee[_dstChainListOrgChainId][_bridge];
@@ -478,10 +448,17 @@ contract PortfolioBridgeMain is
             (bool success, ) = _userFeePayer.call{value: msg.value}("");
             require(success, "PB-UFPR-01");
             require(address(this).balance > fee, "PB-CBIZ-01");
-            // TODO: check if user fee payer logic is correct
             _userFeePayer = address(this);
         }
         bridgeContract.sendMessage{value: fee}(_dstChainListOrgChainId, _payload, msgType, _userFeePayer);
+        emit XChainXFerMessage(
+            XCHAIN_XFER_MESSAGE_VERSION,
+            _bridge,
+            Direction.SENT,
+            _dstChainListOrgChainId,
+            fee,
+            _xfer
+        );
     }
 
     /**
@@ -540,7 +517,8 @@ contract PortfolioBridgeMain is
     ) external virtual {
         IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         // check the validity of the symbol
-        validateSymbol(xfer.symbol, xfer.transaction, Direction.RECEIVED);
+        IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(xfer.symbol);
+        require(details.symbol != bytes32(0), "PB-ETNS-02");
         xfer.transaction == IPortfolio.Tx.CCTRADE
             ? mainnetRfq.processXFerPayload(xfer)
             : portfolio.processXFerPayload(xfer);

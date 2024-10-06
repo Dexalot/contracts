@@ -61,10 +61,11 @@ export default class utils {
         "[P Avail / P Tot]");
     }
 
-    static printBalances(_account: string, _res: any, decimals: number) {
+    static printBalances(_account: string, _res: any, token: string, decimals: number) {
         const assetTypeInt = parseInt(_res.assetType.toString());
         console.log("Account: ", _account, " ::: ",
-        assetMap[assetTypeInt], " :: ",
+          assetMap[assetTypeInt], " :: -",
+          token, " ",
         ethers.utils.formatUnits(_res.available, decimals), "/",
         ethers.utils.formatUnits(_res.total, decimals), "/",
         "[P Avail / P Tot]");

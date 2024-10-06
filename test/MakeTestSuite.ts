@@ -264,8 +264,8 @@ export const addToken = async (portfolioMain: PortfolioMain , portfolioSub: Port
     subnetSymbol = subnetSymbol === "" ? symbol : subnetSymbol;
 
 
-    await portfolioMain.addToken(tokenSymbol, token.address, 0, tokenDecimals
-        , Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), false);
+    await portfolioMain.addToken(tokenSymbol, token.address,  tokenDecimals
+        , Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals));
 
     await portfolioMain.setBridgeParam(tokenSymbol, Utils.parseUnits(bridgeFee.toString(), tokenDecimals),
         Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), usedForGasSwap);
@@ -292,8 +292,8 @@ export const addTokenToPortfolioSub = async (portfolioSub: PortfolioSub, tokenSy
 export const addTokenToPortfolioMain = async (portfolio: PortfolioMain , token: MockToken, gasSwapRatio: number, usedForGasSwap=false, bridgeFee=0): Promise<void> => {
     const tokenDecimals = await token.decimals();
 
-    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, 0, tokenDecimals,
-        Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals), false);
+    await portfolio.addToken(Utils.fromUtf8(await token.symbol()), token.address, tokenDecimals,
+        Utils.parseUnits(bridgeFee.toString(), tokenDecimals), Utils.parseUnits(gasSwapRatio.toFixed(tokenDecimals), tokenDecimals));
 
     if(usedForGasSwap || bridgeFee >0 ) {
         await portfolio.setBridgeParam(Utils.fromUtf8(await token.symbol()), Utils.parseUnits(bridgeFee.toString(),tokenDecimals),
@@ -301,11 +301,6 @@ export const addTokenToPortfolioMain = async (portfolio: PortfolioMain , token: 
     }
 }
 
-export const addVirtualToken = async (portfolio: PortfolioMain, symbol: string, tokenDecimals:number, srcChainId: number): Promise<void> => {
-
-    await portfolio.addToken(Utils.fromUtf8(symbol), ethers.constants.AddressZero, srcChainId, tokenDecimals,
-        0,  Utils.parseUnits("100", tokenDecimals), true);
-}
 
 export const deployLZV2App = async (remoteLZEndpoint: Contract | MockContract<Contract>, isMockApp = false): Promise<LzV2App> => {
     const {owner} = await getAccounts();
@@ -357,7 +352,9 @@ export const setRemoteBridges = async (
     destLzApp: LzV2App,
     sourceChain:any,
     remoteChain: any,
-    maxDestinationGas = maxGas.PortfolioMain ) => {
+    maxDestinationGas = maxGas.PortfolioMain,
+    bridge = 0
+ ) => {
 
     const options = Options.newOptions().addExecutorLzReceiveOption(maxDestinationGas, 0).toHex();
     const enforcedOptionsRemote = [0, 1, 2].map((i) => {return {
@@ -372,7 +369,7 @@ export const setRemoteBridges = async (
     }})
     const bytes32SourceAddr = ethers.utils.zeroPad(sourceLzApp.address, 32);
     const bytes32DestAddr = ethers.utils.zeroPad(destLzApp.address, 32);
-    await sourcePortfolioBridge.setTrustedRemoteAddress(lzBridge, remoteChain.chainListOrgId, ethers.utils.hexZeroPad(ethers.utils.hexlify(remoteChain.lzChainId), 32), bytes32DestAddr, false);
+    await sourcePortfolioBridge.setTrustedRemoteAddress(bridge, remoteChain.chainListOrgId, ethers.utils.hexZeroPad(ethers.utils.hexlify(remoteChain.lzChainId), 32), bytes32DestAddr, false);
     // console.log("Setting portfolioBridgeSub dest id" , cChain.lzChainId, "Remote addr",portfolioBridgeMain.address)
     // const results = await portfolioBridgeSub.remoteParams(cChain.lzChainId);
     // console.log(results.lzRemoteChainId, results.chainListOrgChainId, results.gasForDestination);
@@ -383,7 +380,7 @@ export const setRemoteBridges = async (
     )
     await sourceLzApp.setPeer(remoteChain.lzChainId, bytes32DestAddr);
     await sourceLzApp.setEnforcedOptions(enforcedOptionsRemote);
-    await destinationPorfolioBridge.setTrustedRemoteAddress(lzBridge, sourceChain.chainListOrgId, ethers.utils.hexZeroPad(ethers.utils.hexlify(sourceChain.lzChainId), 32), bytes32SourceAddr, false);
+    await destinationPorfolioBridge.setTrustedRemoteAddress(bridge, sourceChain.chainListOrgId, ethers.utils.hexZeroPad(ethers.utils.hexlify(sourceChain.lzChainId), 32), bytes32SourceAddr, false);
     // console.log("Setting portfolioBridgeMain dest id", dexalotSubnet.lzChainId, "Remote addr",portfolioBridgeSub.address)
     await destLzEndPoint.setDestLzEndpoint(
         sourceLzApp.address,
@@ -561,7 +558,7 @@ export const deployCompletePortfolio = async (addMainnetAlot= false, mockLzEndPo
 
     if (addMainnetAlot) {
         //ALOT needs to be added to PortfolioMain with the proper address which will also set its gasSwapRatio to 1
-        await portfolioMainnet.addToken(ALOT, alot.address, chain.chainListOrgId, alot_token_decimals, '0', ethers.utils.parseUnits('1', alot_token_decimals), false);
+        await portfolioMainnet.addToken(ALOT, alot.address,  alot_token_decimals, '0', ethers.utils.parseUnits('1', alot_token_decimals));
         // ALOT is automatically added and its swap ratio set to 1 in the Portfoliosub contract initialization
         // BUT ALOT needs to be added to PortfolioBridge independently with the Mainnet Address
         // PortfolioSub.addToken will ignore the call because it already has ALOT in its tokenList
@@ -623,14 +620,19 @@ export const deployCompleteMultiChainPortfolio = async (addAvaxChainAlot= false,
     const lzV2AppGun = await deployLZV2App(lzEndpointGun);
     const portfolioBridgeGun = await deployPortfolioBridge(lzV2AppGun, portfolioGun) as PortfolioBridgeMain;
 
+    // Mainnets to Subnet
     await setRemoteBridges(portfolioBridgeArb, portfolioContracts.portfolioBridgeSub, lzEndpointArb, portfolioContracts.lzEndpointSub, lzV2AppArb, portfolioContracts.lzAppSub, arbitrumChain, dexalotSubnet);
     await setRemoteBridges(portfolioBridgeGun, portfolioContracts.portfolioBridgeSub, lzEndpointGun, portfolioContracts.lzEndpointSub, lzV2AppGun, portfolioContracts.lzAppSub, gunzillaSubnet, dexalotSubnet);
+    await setRemoteBridges(portfolioBridgeBase, portfolioContracts.portfolioBridgeSub, lzEndpointBase, portfolioContracts.lzEndpointSub, lzV2AppBase, portfolioContracts.lzAppSub, baseChain, dexalotSubnet);
+
+    // Mainnets to Gun
     await setRemoteBridges(portfolioContracts.portfolioBridgeMainnet, portfolioBridgeGun, portfolioContracts.lzEndpointMainnet, lzEndpointGun, portfolioContracts.lzAppMainnet, lzV2AppGun, cChain, gunzillaSubnet);
     await setRemoteBridges(portfolioBridgeArb, portfolioBridgeGun, lzEndpointArb, lzEndpointGun, lzV2AppArb, lzV2AppGun, arbitrumChain, gunzillaSubnet);
+    await setRemoteBridges(portfolioBridgeBase, portfolioBridgeGun, lzEndpointBase, lzEndpointGun, lzV2AppBase, lzV2AppGun, arbitrumChain, baseChain);
 
-    await setRemoteBridges(portfolioBridgeBase, portfolioContracts.portfolioBridgeSub, lzEndpointBase, portfolioContracts.lzEndpointSub, lzV2AppBase, portfolioContracts.lzAppSub, baseChain, dexalotSubnet);
-    // await setRemoteBridges(portfolioBridgeBase, portfolioBridgeGun, lzEndpointBase, lzEndpointGun, baseChain, gunzillaSubnet);
-    // await setRemoteBridges(portfolioBridgeBase, portfolioContracts.portfolioBridgeAvax, lzEndpointBase, portfolioContracts.lzEndpointAvax, baseChain, cChain);
+    //Arb to Avax Link
+    await setRemoteBridges(portfolioBridgeArb, portfolioContracts.portfolioBridgeMainnet, lzEndpointArb, portfolioContracts.lzEndpointMainnet, lzV2AppArb, portfolioContracts.lzAppMainnet, arbitrumChain, cChain);
+
 
     await portfolioBridgeGun.setUserPaysFeeForDestination(lzBridge, cChain.chainListOrgId, true);
     await portfolioBridgeGun.setUserPaysFeeForDestination(lzBridge, arbitrumChain.chainListOrgId, true);
@@ -709,7 +711,7 @@ export const addBaseAndQuoteTokens = async (portfolioMain: PortfolioMain, portfo
     }
     if (quoteSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding quote to Main" , quoteSymbol);
-        await portfolioMain.addToken(quoteSymbol, quoteAddr, 0,quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals), false);
+        await portfolioMain.addToken(quoteSymbol, quoteAddr,quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals));
     }
 
 }
@@ -782,6 +784,14 @@ export const addOrderOld = async (tradepair: TradePairs, trader: SignerWithAddre
                     gasLimit: 10000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
 
    });
+}
+
+export const setHardhatBalance = async (trader: SignerWithAddress, newBalance: BigNumber) => {
+    const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
+    await ethers.provider.send("hardhat_setBalance", [
+        trader.address,
+        newBalanceHex,
+    ]);
 }
 
 export const setBridgeSubSettings = async (delayedTransfers: DelayedTransfers, settings: any) => {

@@ -71,8 +71,6 @@ describe("TokenVestingCloneable", function () {
         portfolio = portfolioM;
         portfolioSub = portfolioS;
 
-        //f.addToken(portfolio, portfolioSub, testToken, 0.0001, 2)
-
         factory = await f.deployTokenVestingCloneFactory();
 
         currentTime = await f.latestTime();
@@ -232,9 +230,7 @@ describe("TokenVestingCloneable", function () {
             expect(vestingBalance).to.equal(amount);
 
             await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false, 0);
-            //await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false);
-            // await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(),  '0', ethers.utils.parseUnits('0.5',token_decimals), false);
-            await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
+           await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
             now = await f.latestTime()
@@ -405,10 +401,8 @@ describe("TokenVestingCloneable", function () {
             await expect(testToken.transfer(tokenVesting.address, amount))
                 .to.emit(testToken, "Transfer")
                 .withArgs(owner.address, tokenVesting.address, amount);
-            // await portfolio.addToken(testTokenBytes32, testToken.address, srcChainListOrgId, token_decimals
-            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
-                await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
-            //await f.addToken(portfolio, portfolioSub, testToken, 0.01, 0, false);
+
+            await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // some time before auction
@@ -845,9 +839,6 @@ describe("TokenVestingCloneable", function () {
 
             await testToken.transfer(tokenVesting.address, 1000);
             await f.addToken(portfolio, portfolioSub, testToken, 0.00000000000000001, 0, false, 0);
-            // await portfolio.addToken(testTokenBytes32, testToken.address, 0, token_decimals
-            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
-            //await f.addToken(portfolio, portfolioSub, testToken, 0.001, 0);
 
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
@@ -942,11 +933,8 @@ describe("TokenVestingCloneable", function () {
                 .withArgs(owner.address, tokenVesting.address, amount);
             const vestingBalance = await testToken.balanceOf(tokenVesting.address);
             expect(vestingBalance).to.equal(amount);
-            //await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false);
-            // await portfolio.addToken(testTokenBytes32, testToken.address, 0, token_decimals
-            //     , 0, Utils.parseUnits('0.00000000000000001', token_decimals), false);
+
             await f.addToken(portfolio, portfolioSub, testToken, 0.5, 0, false, 0);
-            //await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals), false);
             await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
             // R:0, VA:0, VP:0 |  EPOCH 1: BEFORE ANYBODY CAN INTERACT WITH VESTING CONTRACT
