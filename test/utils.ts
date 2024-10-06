@@ -12,6 +12,14 @@ import { BigNumber, BigNumberish, ethers } from "ethers";
 const assetMap: any = {"0": "NATIVE", "1": "ERC20 ", "2": "NONE"}
 
 export default class utils {
+    static numberToBytes32(num: number) {
+      return ethers.utils.hexZeroPad(ethers.utils.hexlify(num), 32);
+    }
+
+    static addressToBytes32(address: string) {
+      return ethers.utils.hexZeroPad(address, 32);
+    }
+
     static fromUtf8(txt: string) {
         return ethers.utils.formatBytes32String(txt)
     }
@@ -53,10 +61,11 @@ export default class utils {
         "[P Avail / P Tot]");
     }
 
-    static printBalances(_account: string, _res: any, decimals: number) {
+    static printBalances(_account: string, _res: any, token: string, decimals: number) {
         const assetTypeInt = parseInt(_res.assetType.toString());
         console.log("Account: ", _account, " ::: ",
-        assetMap[assetTypeInt], " :: ",
+          assetMap[assetTypeInt], " :: -",
+          token, " ",
         ethers.utils.formatUnits(_res.available, decimals), "/",
         ethers.utils.formatUnits(_res.total, decimals), "/",
         "[P Avail / P Tot]");

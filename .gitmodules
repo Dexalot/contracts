@@ -1,0 +1,3 @@
+[submodule "lib/teleporter"]
+	path = lib/teleporter
+	url = https://github.com/ava-labs/teleporter

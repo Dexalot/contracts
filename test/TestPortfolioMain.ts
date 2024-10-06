@@ -7,7 +7,6 @@ import Utils from './utils';
 
 import {
     PortfolioBridgeMain,
-    PortfolioBridgeSub,
     PortfolioMain,
     PortfolioSub,
     TokenVestingCloneFactory,
@@ -26,7 +25,6 @@ describe("Portfolio Main", () => {
     let portfolioSub: PortfolioSub;
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
-    let portfolioBridgeSub: PortfolioBridgeSub;
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
     let auctionAdmin: SignerWithAddress;
@@ -59,17 +57,16 @@ describe("Portfolio Main", () => {
         console.log("Trader1", trader1.address);
         console.log("Trader2", trader2.address);
         const portfolioContracts = await f.deployCompletePortfolio();
-        await f.printTokens([portfolioContracts.portfolioAvax], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
+        await f.printTokens([portfolioContracts.portfolioMainnet], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
     })
 
     beforeEach(async function () {
 
-        const portfolioContracts = await f.deployCompletePortfolio(true, true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        const portfolioContracts = await f.deployCompletePortfolio(true);
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolioSub = portfolioContracts.portfolioSub;
-        portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
-        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
+        portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
 
         const { cChain } = f.getChains();
         srcChainListOrgId = cChain.chainListOrgId;
@@ -81,7 +78,7 @@ describe("Portfolio Main", () => {
     });
 
     it("Should not add native token again after deployment", async function () {
-        await expect(portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5',18),false)).to.be.revertedWith("P-TAEX-01");
+        await expect(portfolioMain.addToken(AVAX, ethers.constants.AddressZero,  18, '0', ethers.utils.parseUnits('0.5',18))).to.be.revertedWith("P-TAEX-01");
     });
 
     it("Can only remove mainnet native token if no balances", async function () {
@@ -117,7 +114,7 @@ describe("Portfolio Main", () => {
             .withArgs(AVAX, "P-REMOVETOKEN", 0, 0);
         expect(await portfolioMain.nativeDepositsRestricted()).to.be.true;
         await portfolioMain.unpause();
-        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, srcChainListOrgId, 18, '0', ethers.utils.parseUnits('0.5', 18), false);
+        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, 18, '0', ethers.utils.parseUnits('0.5', 18));
 
         expect(await portfolioMain.nativeDepositsRestricted()).to.be.false;
         await f.depositNative(portfolioMain, trader1, '50');
@@ -191,9 +188,9 @@ describe("Portfolio Main", () => {
         const USDT = Utils.fromUtf8(await usdt.symbol());
 
         // fail for non-admin
-        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
         // succeed for admin
-        await portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         const tokens = await portfolioMain.getTokenList();
         expect(tokens.find((token: string)=> token === USDT)).to.equal(USDT);
 
@@ -216,10 +213,10 @@ describe("Portfolio Main", () => {
         const USDT = Utils.fromUtf8(await usdt.symbol());
 
 
-        await expect(portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId,  0,  '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("P-CNAT-01");
-        await expect(portfolioMain.addToken(USDT, ethers.constants.AddressZero, srcChainListOrgId,  tokenDecimals, '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("P-ZADDR-01");
-        await expect(portfolioMain.addToken(Utils.fromUtf8("MOCK"), usdt.address, srcChainListOrgId,  tokenDecimals,  '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("P-TSDM-01");
-        await expect(portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId, 2,  '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("P-TDDM-01");
+        await expect(portfolioMain.addToken(USDT, usdt.address,  0,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-CNAT-01");
+        await expect(portfolioMain.addToken(USDT, ethers.constants.AddressZero,   tokenDecimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-ZADDR-01");
+        await expect(portfolioMain.addToken(Utils.fromUtf8("MOCK"), usdt.address,   tokenDecimals,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TSDM-01");
+        await expect(portfolioMain.addToken(USDT, usdt.address, 2,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TDDM-01");
     });
 
     it("Should not remove erc20 if it has deposits", async () => {
@@ -271,46 +268,44 @@ describe("Portfolio Main", () => {
     });
 
 
-    it("Should add/remove virtual tokens properly", async () => {
-        const {trader1} = await f.getAccounts();
-        const token_symbol = "USDT";
-        const token_decimals = 18;
-        const erc20_token_decimals = 6;
-        const usdt = await f.deployMockToken(token_symbol, erc20_token_decimals);
-        const USDT = Utils.fromUtf8(token_symbol);
-        await usdt.mint(trader1.address, ethers.utils.parseEther("100"))
+    // it("Should add/remove virtual tokens properly- Should be deprecated", async () => {
+    //     // Virtual tokens are not used, use xChainAllowedDestinations
+    //     const { trader1 } = await f.getAccounts();
+    //     const token_symbol = "USDT";
+    //     const token_decimals = 18;
+    //     const erc20_token_decimals = 6;
+    //     const usdt = await f.deployMockToken(token_symbol, erc20_token_decimals);
+    //     const USDT = Utils.fromUtf8(token_symbol);
+    //     await usdt.mint(trader1.address, ethers.utils.parseEther("100"))
 
 
-        const remoteChainIdofToken = 99;
-        await f.addVirtualToken(portfolioMain, token_symbol, token_decimals, remoteChainIdofToken);
-        // await expect(f.addVirtualToken(portfolioMain, token_symbol, token_decimals, remoteChainIdofToken)).to.emit(portfolioMain, "ParameterUpdated")
-        // .withArgs(USDT, "P-ADDTOKEN", BigNumber.from(token_decimals), 0);
+    //     const remoteChainIdofToken = 99;
+    //     await f.addVirtualToken(portfolioMain, token_symbol, token_decimals, remoteChainIdofToken);
+    //     let tokenDetails = await portfolioMain.getTokenDetails(USDT);
+    //     expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);
+    //     expect(tokenDetails.auctionMode).to.equal(0);
+    //     expect(tokenDetails.decimals).to.equal(token_decimals);
+    //     expect(tokenDetails.srcChainId).to.equal(remoteChainIdofToken);
+    //     expect(tokenDetails.isVirtual).to.equal(true);
 
-        let tokenDetails = await portfolioMain.getTokenDetails(USDT);
-        expect(tokenDetails.tokenAddress).to.equal(ethers.constants.AddressZero);
-        expect(tokenDetails.auctionMode).to.equal(0);
-        expect(tokenDetails.decimals).to.equal(token_decimals);
-        expect(tokenDetails.srcChainId).to.equal(remoteChainIdofToken);
-        expect(tokenDetails.isVirtual).to.equal(true);
+    //     await expect(portfolioMain.connect(trader1).depositToken(trader1.address, USDT, Utils.parseUnits('1', tokenDecimals), 0)).to.be.revertedWith("P-VTNS-01");
 
-        await expect(portfolioMain.connect(trader1).depositToken(trader1.address, USDT, Utils.parseUnits('1', tokenDecimals), 0)).to.be.revertedWith("P-VTNS-01");
+    //     // Cannot add an ERC20 with the same symbol as the virtual..
+    //     await expect(f.addToken(portfolioMain, portfolioSub, usdt, 1)).to.be.revertedWith("P-TAEX-01");
 
-        // Cannot add an ERC20 with the same symbol as the virtual..
-        await expect(f.addToken(portfolioMain, portfolioSub, usdt, 1)).to.be.revertedWith("P-TAEX-01");
+    //     await portfolioMain.pause();
+    //     await expect(portfolioMain.removeToken(USDT, remoteChainIdofToken)).to.emit(portfolioMain, "ParameterUpdated")
+    //     .withArgs(USDT, "P-REMOVETOKEN", 0, 0);
 
-        await portfolioMain.pause();
-        await expect(portfolioMain.removeToken(USDT, remoteChainIdofToken)).to.emit(portfolioMain, "ParameterUpdated")
-        .withArgs(USDT, "P-REMOVETOKEN", 0, 0);
-
-        // Now we can add the ERC20
-        await f.addTokenToPortfolioMain(portfolioMain, usdt, 1);
-        tokenDetails = await portfolioMain.getTokenDetails(USDT);
-        expect(tokenDetails.tokenAddress).to.equal(usdt.address);
-        expect(tokenDetails.auctionMode).to.equal(0);
-        expect(tokenDetails.decimals).to.equal(erc20_token_decimals);
-        expect(tokenDetails.srcChainId).to.equal(srcChainListOrgId);
-        expect(tokenDetails.isVirtual).to.equal(false);
-    });
+    //     // Now we can add the ERC20
+    //     await f.addTokenToPortfolioMain(portfolioMain, usdt, 1);
+    //     tokenDetails = await portfolioMain.getTokenDetails(USDT);
+    //     expect(tokenDetails.tokenAddress).to.equal(usdt.address);
+    //     expect(tokenDetails.auctionMode).to.equal(0);
+    //     expect(tokenDetails.decimals).to.equal(erc20_token_decimals);
+    //     expect(tokenDetails.srcChainId).to.equal(srcChainListOrgId);
+    //     expect(tokenDetails.isVirtual).to.equal(false);
+    // });
 
 
     it("Should set Minimum Deposit Multiplier", async () => {
@@ -446,14 +441,14 @@ describe("Portfolio Main", () => {
 
         // fail from non-privileged account
         // trader1
-        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
         await expect(portfolioSub.connect(trader1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
         // auctionAdmin when removed
         await portfolioMain.grantRole(await portfolioMain.DEFAULT_ADMIN_ROLE(), trader2.address);        // adding trader2 so I can remove auctionAdmin
         await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), trader2.address);  // adding trader2 so I can remove auctionAdmin
         await portfolioMain.revokeRole(await portfolioMain.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
         await portfolioSub.revokeRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
-        await expect(portfolioMain.connect(auctionAdmin).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(auctionAdmin).addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
         await expect(portfolioSub.connect(auctionAdmin).addToken(USDT, usdt.address, auctionMode, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
         // wrong srcChainId
         // const wrongSrcChainId = 8;
@@ -463,7 +458,7 @@ describe("Portfolio Main", () => {
         // auctionAdmin when added
         // await portfolioMain.grantRole(portfolioMain.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
         // await portfolioSub.grantRole(portfolioSub.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
-        await portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
@@ -508,7 +503,7 @@ describe("Portfolio Main", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         await usdt.deployed();
         const USDT = Utils.fromUtf8(await usdt.symbol());
-        await portfolioMain.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals),false); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
 
         await usdt.mint(owner.address, Utils.toWei('10000'));

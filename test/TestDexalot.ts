@@ -102,7 +102,7 @@ describe("Dexalot", () => {
         console.log("deploymentAccount =", deploymentAccount);
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolio = portfolioContracts.portfolioSub;
         const alotMain =  portfolioContracts.alot;
 
@@ -165,14 +165,13 @@ describe("Dexalot", () => {
             console.log(native);
             const _nativeBytes32 = Utils.fromUtf8(native);
             let _bal = await portfolio.getBalance(account, _nativeBytes32);
-            Utils.printBalances(account, _bal, 18);
+            Utils.printBalances(account, _bal, native, 18);
             if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
                 const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
-                await wallet.sendTransaction({to: portfolioMain.address,
-                                              value: Utils.toWei(_deposit_amount.toString())});
+                await f.depositNative( portfolioMain, wallet, _deposit_amount.toString());
                 //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
                 _bal = await portfolio.getBalance(account, _nativeBytes32);
-                Utils.printBalances(account, _bal, 18);
+                Utils.printBalances(account, _bal, native, 18);
             }
             console.log();
 
@@ -185,7 +184,7 @@ describe("Dexalot", () => {
                 _token = MockToken.attach(_tokenAddr);
                 _tokenDecimals = await _token.decimals();
                 _bal = await portfolio.getBalance(account, _tokenBytes32);
-                Utils.printBalances(account, _bal, _tokenDecimals);
+                Utils.printBalances(account, _bal, _tokenStr, _tokenDecimals);
                 if ((parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) + parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals))) < initial_portfolio_deposits[_tokenStr]) {
                     const _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
                     const _deposit_amount_bn = Utils.parseUnits(_deposit_amount.toString(), _tokenDecimals);
@@ -194,7 +193,7 @@ describe("Dexalot", () => {
                     await portfolioMain.connect(wallet).depositToken(account, _tokenBytes32, _deposit_amount_bn, 0, options);
                     //console.log("Deposit:", account, _deposit_amount, _tokenStr, "to portfolio.");
                     _bal = await portfolio.getBalance(account, _tokenBytes32);
-                    Utils.printBalances(account, _bal, _tokenDecimals);
+                    Utils.printBalances(account, _bal, _tokenStr, _tokenDecimals);
                 }
                 console.log();
             }
@@ -257,7 +256,7 @@ describe("Dexalot", () => {
             for (const element of tokens) {
                 const token = element;
                 const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
-                Utils.printBalances(account, res, decimalsMap[token]);
+                Utils.printBalances(account, res, token, decimalsMap[token]);
             }
         }
     });
@@ -355,8 +354,8 @@ describe("Dexalot", () => {
                 // add order
                 const _side = order["side"] === "BUY" ? 0 : 1;
 
-                let _type1;
-                let _type2;
+                let _type1 =1; //LIMIT
+                let _type2 =0; //GTC
 
                 if (order["type1"] === "MARKET") {
                     _type1 =0
@@ -379,16 +378,18 @@ describe("Dexalot", () => {
                     _type2 =3
                 }
 
-                const tx = await tradePair.connect(acc).addOrder(
-                    acc.address,
-                    Utils.fromUtf8(order["clientOrderId"]),
-                    tradePairId,
-                    Utils.parseUnits(order["price"].toString(), quoteDecimals),
-                    Utils.parseUnits(order["quantity"].toString(), baseDecimals),
-                    _side,
-                    ethers.BigNumber.from(_type1),
-                    ethers.BigNumber.from(_type2),
-                );
+                const  newOrder = {
+                    traderaddress: acc.address
+                    , clientOrderId : Utils.fromUtf8(order["clientOrderId"])
+                    , tradePairId
+                    , price: Utils.parseUnits(order["price"].toString(), quoteDecimals)
+                    , quantity:  Utils.parseUnits(order["quantity"].toString(), baseDecimals)
+                    , side :  _side
+                    , type1 : _type1   // market orders not enabled
+                    , type2 : _type2   // GTC
+                }
+
+                const tx = await tradePair.connect(acc).addNewOrder(newOrder);
                 orderLog = await tx.wait();
 
                 // add orders affected by this addition to the orderMap

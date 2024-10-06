@@ -41,8 +41,8 @@ describe("Exchange Shared", function () {
         [owner, admin, auctionAdmin, trader1, trader2, treasurySafe] = await ethers.getSigners();
 
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolio = portfolioContracts.portfolioAvax;
-        mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
+        portfolio = portfolioContracts.portfolioMainnet;
+        mainnetRFQAvax = portfolioContracts.mainnetRFQ;
         exchangeMain = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
 
     });
@@ -103,18 +103,16 @@ describe("Exchange Shared", function () {
             const quoteSymbolStr = "QT"
             const quoteDecimals = 6;
             const quoteSymbol = Utils.fromUtf8(quoteSymbolStr);
-            const { cChain } = f.getChains();
 
-            const srcChainListOrgId= cChain.chainListOrgId;
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals) as MockToken;
 
             // fail from non admin accounts
-            await expect(exchangeMain.connect(trader1).addToken(quoteSymbol, quoteToken.address,srcChainListOrgId, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.revertedWith("AccessControl:");
-            await expect(exchangeMain.addToken(quoteSymbol, quoteToken.address,srcChainListOrgId, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals),false)).to.revertedWith("AccessControl:");
+            await expect(exchangeMain.connect(trader1).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
+            await expect(exchangeMain.addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
             //Add an auction admin to Exchange
             await exchangeMain.addAuctionAdmin(auctionAdmin.address)
             // succeed from admin accounts
-            await exchangeMain.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address,srcChainListOrgId, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals),false);
+            await exchangeMain.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals));
             const tokenList = await portfolio.getTokenList();
 
             expect(tokenList.length).to.be.equal(3);

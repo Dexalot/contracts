@@ -5,7 +5,9 @@ module.exports = {
     "interfaces/celer",
     "library/celer",
     "MainnetRFQAssembly",
-    "others/Multicall3"
+    "others/Multicall3",
+    "PortfolioMainBnb",
+    "others/UpgradableDeployer",
   ],
   mocha: {
     grep: "@skip-on-coverage", // Find everything with this tag

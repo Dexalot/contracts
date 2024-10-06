@@ -8,13 +8,13 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     PortfolioBridgeMain,
-    PortfolioBridgeSub,
     PortfolioMain,
     LZEndpointMock,
     MainnetRFQ,
     PortfolioSub,
     MockToken,
     InventoryManager,
+    LzV2App,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -26,6 +26,7 @@ import { ethers } from "hardhat";
 describe("MultiChain Deployments & Interactions", () => {
     let portfolioAvax: PortfolioMain;
     let portfolioArb: PortfolioMain;
+    let portfolioBase: PortfolioMain;
     let portfolioGun: PortfolioMain;
     let portfolioSub: PortfolioSub;
     let inventoryManager: InventoryManager;
@@ -33,14 +34,22 @@ describe("MultiChain Deployments & Interactions", () => {
     let lzEndpointMain: LZEndpointMock;
     let lzEndpointGun: LZEndpointMock;
     let lzEndpointArb: LZEndpointMock;
+    let lzEndpointBase: LZEndpointMock;
+
+    let lzAppAvax: LzV2App;
+    let lzAppArb: LzV2App;
+    let lzAppBase: LzV2App;
+    let lzAppGun: LzV2App;
+
     let portfolioBridgeMain: PortfolioBridgeMain;
     let portfolioBridgeArb: PortfolioBridgeMain;
+    let portfolioBridgeBase: PortfolioBridgeMain;
     let portfolioBridgeGun: PortfolioBridgeMain;
 
-    let portfolioBridgeSub: PortfolioBridgeSub;
     let mainnetRFQAvax: MainnetRFQ;
     let mainnetRFQGun: MainnetRFQ;
     let mainnetRFQArb: MainnetRFQ;
+    let mainnetRFQBase: MainnetRFQ;
 
     let owner: SignerWithAddress;
     let admin: SignerWithAddress;
@@ -48,19 +57,14 @@ describe("MultiChain Deployments & Interactions", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
 
-    const AVAX: string = Utils.fromUtf8("AVAX");
-    const ALOT: string = Utils.fromUtf8("ALOT");
-
-
     const token_decimals = 6;
     let USDTArb: MockToken;
     let USDtAvax: MockToken;
-    let USDt: string;
-    let USDT: string;
 
     const portfolios: PortfolioMain[] = [];
     const portfolioBridges: PortfolioBridgeMain[] = [];
     const lzEndpoints: LZEndpointMock[] = [];
+    const lzApps: LzV2App[] = [];
     const mainnetRFQs: MainnetRFQ[] = [];
     // const auctionMode: any = 0;
 
@@ -85,6 +89,7 @@ describe("MultiChain Deployments & Interactions", () => {
         const portfolioContracts = await f.deployCompleteMultiChainPortfolio(true);
         portfolioAvax = portfolioContracts.portfolioAvax;
         portfolioArb = portfolioContracts.portfolioArb;
+        portfolioBase = portfolioContracts.portfolioBase;
         portfolioGun = portfolioContracts.portfolioGun;
         portfolioSub = portfolioContracts.portfolioSub;
 
@@ -92,42 +97,46 @@ describe("MultiChain Deployments & Interactions", () => {
 
         portfolioBridgeMain = portfolioContracts.portfolioBridgeAvax;
         portfolioBridgeArb = portfolioContracts.portfolioBridgeArb;
+        portfolioBridgeBase = portfolioContracts.portfolioBridgeBase;
         portfolioBridgeGun = portfolioContracts.portfolioBridgeGun;
-        portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
 
         lzEndpointMain = portfolioContracts.lzEndpointAvax as LZEndpointMock;
         lzEndpointGun = portfolioContracts.lzEndpointGun as LZEndpointMock;
         lzEndpointArb = portfolioContracts.lzEndpointArb as LZEndpointMock;
+        lzEndpointBase = portfolioContracts.lzEndpointBase as LZEndpointMock;
+
+        lzAppAvax = portfolioContracts.lzAppAvax;
+        lzAppArb = portfolioContracts.lzAppArb;
+        lzAppBase = portfolioContracts.lzAppBase;
+        lzAppGun = portfolioContracts.lzAppGun;
 
         mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
         mainnetRFQGun = portfolioContracts.mainnetRFQGun;
         mainnetRFQArb = portfolioContracts.mainnetRFQArb;
-
+        mainnetRFQBase = portfolioContracts.mainnetRFQBase;
         //Clear the arrays
         portfolios.length = 0;
         portfolioBridges.length = 0;
         lzEndpoints.length = 0;
         mainnetRFQs.length =0;
         //Arrays should have the environment objects in the same order
-        portfolios.push(portfolioAvax, portfolioArb, portfolioGun);
-        portfolioBridges.push(portfolioBridgeMain, portfolioBridgeArb, portfolioBridgeGun);
-        lzEndpoints.push(lzEndpointMain, lzEndpointArb, lzEndpointGun);
-        mainnetRFQs.push(mainnetRFQAvax, mainnetRFQArb, mainnetRFQGun);
+        portfolios.push(portfolioAvax, portfolioArb, portfolioBase, portfolioGun);
+        portfolioBridges.push(portfolioBridgeMain, portfolioBridgeArb, portfolioBridgeBase, portfolioBridgeGun);
+        lzEndpoints.push(lzEndpointMain, lzEndpointArb, lzEndpointBase, lzEndpointGun);
+        lzApps.push(lzAppAvax, lzAppArb, lzAppBase, lzAppGun);
+        mainnetRFQs.push(mainnetRFQAvax, mainnetRFQArb, mainnetRFQBase, mainnetRFQGun);
 
         // Deploy 2 USDT to be traded as one. 1 for Avax 1 or Arb chains
         USDTArb = await f.deployMockToken("USDT", token_decimals)
-        USDT = Utils.fromUtf8(await USDTArb.symbol());
 
         USDtAvax = await f.deployMockToken("USDt", token_decimals)
-        USDt = Utils.fromUtf8(await USDtAvax.symbol());
-
     });
 
 
     it("Should not initialize again after deployment", async function () {
         let counter = 0;
         for (const pb of portfolioBridges) {
-            await expect(pb.initialize(lzEndpoints[counter].address))
+            await expect(pb.initialize(lzApps[counter].address, owner.address))
                 .to.be.revertedWith("Initializable: contract is already initialized");
             counter++;
         }
@@ -223,7 +232,6 @@ describe("MultiChain Deployments & Interactions", () => {
         const { chainsArray } = f.getChains();
 
         let deposit_amount = 10;  // ether
-        const initial_amount = await trader1.getBalance();
         let counter = 0;
 
         //await alot.mint(other1.address, (BigNumber.from(2)).mul(Utils.parseUnits(deposit_amount, 18)));
@@ -245,8 +253,8 @@ describe("MultiChain Deployments & Interactions", () => {
                 continue;
             }
             const symbolId = Utils.fromUtf8(c.native + c.chainListOrgId);
-            expect(await inventoryManager.get(c.nativeBytes32, symbolId)).to.be.equal(Utils.toWei(deposit_amount.toString()));
             console.log("inventory", c.native + c.chainListOrgId, Utils.fromWei(await inventoryManager.get(c.nativeBytes32, symbolId)));
+            expect(await inventoryManager.get(c.nativeBytes32, symbolId)).to.be.equal(Utils.toWei(deposit_amount.toString()));
             deposit_amount += 10;
         }
 
@@ -284,8 +292,6 @@ describe("MultiChain Deployments & Interactions", () => {
     });
 
     it("Should add USDT from two different mainnets to be traded as one", async () => {
-        const { cChain, arbitrumChain } = f.getChains();
-        const deposit_amount = 10;
         await USDtAvax.connect(trader1).approve(portfolioAvax.address, ethers.constants.MaxUint256);
 
 
@@ -347,7 +353,7 @@ describe("MultiChain Deployments & Interactions", () => {
         console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
 
         const withdraw_amount = (Number(deposit_amount) / 2).toString();
-        let cChainfee = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
+        const cChainfee = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
         console.log("Fee", Utils.formatUnits(cChainfee, token_decimals));
 
         await f.withdrawTokenToDst(portfolioSub, trader1, symbol, token_decimals, withdraw_amount, cChain.chainListOrgId)

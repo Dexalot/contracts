@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BUSL-1.1
 
-pragma solidity 0.8.17;
+pragma solidity ^0.8.17;
 
 import "./ITradePairs.sol";
 import "./IPortfolio.sol";
+import "./IPortfolioBridge.sol";
 
 /**
  * @title Interface of PortfolioBridgeSub
@@ -35,6 +36,7 @@ interface IPortfolioBridgeSub {
     function executeDelayedTransfer(bytes32 _id) external;
 
     function getAllBridgeFees(
+        IPortfolioBridge.BridgeProvider _bridge,
         bytes32 _symbol,
         uint256 _quantity
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds);

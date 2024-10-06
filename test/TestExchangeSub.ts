@@ -122,7 +122,7 @@ describe("Exchange Sub", function () {
 
     beforeEach(async function () {
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolioMain = portfolioContracts.portfolioAvax;
+        portfolioMain = portfolioContracts.portfolioMainnet;
         portfolioSub = portfolioContracts.portfolioSub;
 
         orderBooks = await f.deployOrderBooks()

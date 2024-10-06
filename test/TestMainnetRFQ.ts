@@ -42,12 +42,16 @@ describe("Mainnet RFQ Multichain", () => {
   let mainnetRFQGun: MainnetRFQ;
   let mainnetRFQArb: MainnetRFQ;
   let mockUSDC: MockToken;
+  let mockUSDT: MockToken;
   let portfolioBridgeAvax: PortfolioBridgeMain;
   let portfolioBridgeGun: PortfolioBridgeMain;
+  let portfolioBridgeArb: PortfolioBridgeMain;
 
   const initialUSDCBalance: string = Utils.parseUnits("10000", 6).toString();
+  const initialUSDTBalance: string = Utils.parseUnits("10000", 6).toString();
   const initialRFQGunNativeBalance: string = Utils.parseUnits("100", 18).toString();
   const swapAmountUSDC: string = Utils.parseUnits("100", 6).toString();
+  const swapAmountUSDT: string = Utils.parseUnits("101", 6).toString();
   const nativeSwapAmount: string = Utils.parseUnits("10", 18).toString();
 
   const tokenDetails: {[key: string]: {symbol: string, symbolbytes32: string, amount: string, address: string, chainid: number, srcMainnetRfq: MainnetRFQ}} = {}
@@ -59,6 +63,10 @@ describe("Mainnet RFQ Multichain", () => {
   let trader2: SignerWithAddress;
 
   let chainId: number;
+  const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
+  const usdtDetails = { symbol: "USDT", symbolbytes32: Utils.fromUtf8("USDT"), decimals: 6 };
+  const usdcDetails = { symbol: "USDC", symbolbytes32: Utils.fromUtf8("USDC"), decimals: 6 };
+  let portfolioContracts: any
 
   const generateXChainOrder = async (srcSymbol: string, destSymbol: string, isTransfer?: boolean) => {
     const srcInfo = tokenDetails[srcSymbol];
@@ -119,7 +127,7 @@ describe("Mainnet RFQ Multichain", () => {
     const network = await ethers.provider.getNetwork()
     chainId = network.chainId;
 
-    const portfolioContracts = await f.deployCompleteMultiChainPortfolio(true);
+    portfolioContracts = await f.deployCompleteMultiChainPortfolio(true);
 
     // deploy upgradeable contract
     mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
@@ -127,18 +135,20 @@ describe("Mainnet RFQ Multichain", () => {
     mainnetRFQArb = portfolioContracts.mainnetRFQArb;
     portfolioBridgeAvax = portfolioContracts.portfolioBridgeAvax;
     portfolioBridgeGun = portfolioContracts.portfolioBridgeGun;
+    portfolioBridgeArb = portfolioContracts.portfolioBridgeArb;
 
-    const gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
-    const { cChain, gunzillaSubnet } = f.getChains();
+    const { cChain, gunzillaSubnet, arbitrumChain } = f.getChains();
 
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);
-    // add virtual GUN to cchain with gunzilla Network id
-    await f.addVirtualToken(portfolioContracts.portfolioAvax, gunDetails.symbol, gunDetails.decimals, gunzillaSubnet.chainListOrgId);
-    // Add virtual USDC to gunzilla with avalanche Network id
-    await f.addVirtualToken(portfolioContracts.portfolioGun, "USDC", 6, cChain.chainListOrgId);
-    // Add virtual AVAX to gunzilla with avalanche Network id
-    await f.addVirtualToken(portfolioContracts.portfolioGun, "AVAX", 18, cChain.chainListOrgId);
+    mockUSDT = await f.deployMockToken("USDT", 6);
+
+    //Enable GUN for CCTRADE at Cchain for destination gun
+    await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, true);
+    //Enable USDC for CCTRADE at gunzilla for destination avax
+    await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, true);
+    //Enable AVAX for CCTRADE at Gunzilla for destination avax
+    await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("AVAX"), cChain.chainListOrgId, true);
 
     await f.addToken(portfolioContracts.portfolioAvax, portfolioContracts.portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
 
@@ -159,6 +169,10 @@ describe("Mainnet RFQ Multichain", () => {
     await mockUSDC.connect(trader1).approve(mainnetRFQArb.address, ethers.constants.MaxUint256);
 
     // swapAmounts[mockUSDC.address] = swapAmountUSDC;
+
+    // USDT is the target in Arb for USDC traded from Avax
+    tokenDetails["USDT"] = {symbol: "USDT", symbolbytes32: Utils.fromUtf8("USDT"), amount: swapAmountUSDT,  address: mockUSDT.address, srcMainnetRfq: mainnetRFQArb, chainid: arbitrumChain.chainListOrgId};
+    //USDC is the origin for GUN in gunzilla or USDT in arb
     tokenDetails["USDC"] = {symbol: "USDC", symbolbytes32: Utils.fromUtf8("USDC"), amount: swapAmountUSDC,  address: mockUSDC.address, srcMainnetRfq: mainnetRFQAvax, chainid: cChain.chainListOrgId};
     tokenDetails["GUN"] = {symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), amount: nativeSwapAmount,  address: ethers.constants.AddressZero, srcMainnetRfq: mainnetRFQGun, chainid: gunzillaSubnet.chainListOrgId};
     tokenDetails["AVAX"] = {symbol: "AVAX", symbolbytes32: Utils.fromUtf8("AVAX"), amount: nativeSwapAmount, address: ethers.constants.AddressZero, srcMainnetRfq: mainnetRFQAvax, chainid: cChain.chainListOrgId};
@@ -207,6 +221,68 @@ describe("Mainnet RFQ Multichain", () => {
 
     expect(await mainnetRFQAvax.paused()).to.equal(false);
   });
+
+  it("Should XChain trade two tokens ERC20 -> ERC20 no user gas fee (sell USDC in avax and buy USDT in arb", async () => {
+    const { cChain, arbitrumChain } = f.getChains();
+
+    // mint to trader
+    await mockUSDT.mint(trader1.address, initialUSDTBalance);
+    await mockUSDT.mint(mainnetRFQArb.address, initialUSDTBalance);
+    // approve tokens
+    await mockUSDT.connect(trader1).approve(mainnetRFQArb.address, ethers.constants.MaxUint256);
+
+    //*********Enable Cross Chain Trade between USDC(sell in avax) and USDT(buy in arb) **********/
+    //Enable USDT for CCTRADE at Cchain for destination arb
+    await portfolioBridgeAvax.enableXChainSwapDestination(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId, true);
+    //Enable USDC for CCTRADE at arb for destination avax
+    await portfolioBridgeArb.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, true);
+
+    expect(await portfolioBridgeAvax.xChainAllowedDestinations(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(true);
+    expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(false);
+    expect(await portfolioBridgeArb.xChainAllowedDestinations(usdcDetails.symbolbytes32, cChain.chainListOrgId)).to.be.equal(true);
+
+    const {xChainSwap, signature} = await generateXChainOrder("USDC", "USDT");
+    // Fail if token dosn't exist in the portfolio at the target chain
+    // await expect(mainnetRFQAvax.connect(trader1).xChainSwap(
+    //   xChainSwap,
+    //   signature,
+    // )).to.be.revertedWith("PB-ETNS-02");
+
+    // USDT should be in the target network
+    await f.addToken(portfolioContracts.portfolioArb, portfolioContracts.portfolioSub, mockUSDT, 0.5, 0, true, 0); //gasSwapRatio 10
+
+    await expect(
+        mainnetRFQAvax.connect(trader1).xChainSwap(
+          xChainSwap,
+          signature,
+        )
+    ).to.emit(mainnetRFQAvax, "SwapExecuted")
+      .withArgs(
+        xChainSwap.nonceAndMeta,
+        trader1.address,
+        trader1.address,
+        xChainSwap.destChainId,
+        mockUSDC.address,
+        mockUSDT.address,
+        swapAmountUSDC,
+        swapAmountUSDT,
+      );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockUSDT.balanceOf(mainnetRFQArb.address)).to.equal(
+      ethers.BigNumber.from(initialUSDTBalance).sub(swapAmountUSDT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQAvax.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+  });
+
 
   it("Should trade two tokens ERC20 -> Native no user gas fee", async () => {
     const {xChainSwap, signature} = await generateXChainOrder("USDC", "GUN");
@@ -317,7 +393,7 @@ describe("Mainnet RFQ Multichain", () => {
           signature,
           {value: xChainSwap.takerAmount},
       )
-    ).to.be.revertedWith("LA-IUMF-01");
+    ).to.be.revertedWith("PB-IUMF-01");
   });
 
   it("Should trade two tokens Native -> Native w/ user gas fee", async () => {
@@ -707,10 +783,11 @@ describe("Mainnet RFQ", () => {
   let signer: SignerWithAddress;
   let aggregator: SignerWithAddress;
   let trader1: SignerWithAddress;
+  let volatiltyAdmin: SignerWithAddress;
 
   let chainId: number;
 
-  const getOrder = async (makerAsset: string, takerAsset: string, isAggregator?: boolean, isTransfer?: boolean) => {
+  const getOrder = async (makerAsset: string, takerAsset: string, isAggregator?: boolean, isTransfer?: boolean): Promise<Order> => {
     const time = await f.getLatestBlockTimestamp();
 
     const taker = trader1.address;
@@ -767,6 +844,7 @@ describe("Mainnet RFQ", () => {
     rebalancer = signer;
     trader1 = accounts.trader1;
     aggregator = accounts.trader2;
+    volatiltyAdmin = accounts.other2;
 
     const network = await ethers.provider.getNetwork()
     chainId = network.chainId;
@@ -774,7 +852,7 @@ describe("Mainnet RFQ", () => {
     const portfolioContracts = await f.deployCompletePortfolio(true);
 
     // deploy upgradeable contract
-    mainnetRFQ = portfolioContracts.mainnetRFQAvax;
+    mainnetRFQ = portfolioContracts.mainnetRFQ;
 
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);
@@ -872,7 +950,13 @@ describe("Mainnet RFQ", () => {
     await expect(mainnetRFQ.connect(signer).removeAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).addRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).removeRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).addVolatilityAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).removeVolatilityAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).setSlippageTolerance(0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
+    await expect(mainnetRFQ.connect(signer).setVolatilePairs(0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
     await expect(mainnetRFQ.connect(owner).removeAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
+    await expect(mainnetRFQ.connect(owner).removeVolatilityAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
+
 
     await mainnetRFQ.connect(owner).setSwapSigner(dummyAddress);
     await mainnetRFQ.connect(owner).addAdmin(dummyAddress);
@@ -886,11 +970,18 @@ describe("Mainnet RFQ", () => {
     await mainnetRFQ.connect(owner).removeRebalancer(signer.address);
     expect(await mainnetRFQ.connect(owner).isRebalancer(signer.address)).to.equal(false);
 
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    await expect(mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(0)).to.be.revertedWith("RF-STTA-01");
+    await expect(mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(10001)).to.be.revertedWith("RF-STTA-01");
+    await expect(mainnetRFQ.connect(owner).removeVolatilityAdmin(volatiltyAdmin.address)).to.be.revertedWith("RF-ALOA-01");
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(dummyAddress);
+    await mainnetRFQ.connect(owner).removeVolatilityAdmin(volatiltyAdmin.address);
 
     // should not set to 0x0
     await expect(mainnetRFQ.connect(owner).setSwapSigner(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
     await expect(mainnetRFQ.connect(owner).addAdmin(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
     await expect(mainnetRFQ.connect(owner).addRebalancer(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
+    await expect(mainnetRFQ.connect(owner).addVolatilityAdmin(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
   });
 
   it("Should trade two tokens", async () => {
@@ -933,7 +1024,6 @@ describe("Mainnet RFQ", () => {
     expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
       ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
     );
-
   });
 
   it("Should trade AVAX as maker asset", async () => {
@@ -2125,6 +2215,150 @@ describe("Mainnet RFQ", () => {
 
     expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
       ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+  });
+
+  it("Should trade two tokens normally with slippage set but volatile pairs not", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"2".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
+
+    const signature = await toSignature(order, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      trader1.address,
+      chainId,
+      mockALOT.address,
+      mockUSDC.address,
+      swapAmountALOT,
+      swapAmountUSDC,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should trade two tokens normally with slippage and volatile pairs set but no pair sent", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
+    await mainnetRFQ.connect(volatiltyAdmin).setVolatilePairs(2);
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      trader1.address,
+      chainId,
+      mockALOT.address,
+      mockUSDC.address,
+      swapAmountALOT,
+      swapAmountUSDC,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should slip tokens when slippage set and volatile pairs not", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
+    await mainnetRFQ.connect(volatiltyAdmin).setVolatilePairs(4);
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+
+    // 20 bytes | 1 bytes | 11 bytes
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"2".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
+
+    const signature = await toSignature(order, signer);
+    const finalUSDCAmount = ethers.BigNumber.from(swapAmountUSDC).mul(9900).div(10000);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      trader1.address,
+      chainId,
+      mockALOT.address,
+      mockUSDC.address,
+      swapAmountALOT,
+      finalUSDCAmount,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
     );
   });
 });

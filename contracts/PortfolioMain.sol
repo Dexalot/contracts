@@ -12,7 +12,9 @@ import "./interfaces/IBannedAccounts.sol";
 
 /**
  * @title Mainnet Portfolio
- * @dev This contract prevalidates the PortfolioSub checks and allows deposits to be sent to the subnet.
+ * @dev This contract is the gateway for deposits to the Dexalot L1(subnet).
+ * It also processes withdrawal messages received from Dexalot L1 and releases the funds
+ * to the requester's wallet
  * ExchangeMain needs to have DEFAULT_ADMIN_ROLE on PortfolioMain.
  */
 
@@ -25,7 +27,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.6");
+    bytes32 public constant VERSION = bytes32("2.5.8");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -72,34 +74,29 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * Native symbol is also added by default with 0 address.
      * @param   _symbol  Symbol of the token
      * @param   _tokenAddress  Address of the token
-     * @param   _srcChainId  Source Chain Symbol of the virtual token only. Otherwise it is overridden by the
-     * current chainid
      * @param   _decimals  Decimals of the token
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     * @param   _isVirtual  Not an ERC20 or native. It is only used to facilitate Cross Chain Trades where the
-     * token doesn't exist
+
      */
     function addToken(
         bytes32 _symbol,
         address _tokenAddress,
-        uint32 _srcChainId,
         uint8 _decimals,
         uint256 _fee,
-        uint256 _gasSwapRatio,
-        bool _isVirtual
+        uint256 _gasSwapRatio
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         TokenDetails memory details = TokenDetails(
             _decimals,
             _tokenAddress,
             // Auction Mode is ignored as it is irrelevant in the Mainnet
             ITradePairs.AuctionMode.OFF,
-            //always add with the chain id of the Portfolio unless virtual
-            _isVirtual ? _srcChainId : chainId, // srcChainId.
+            //always add with the chain id of the Portfolio
+            chainId,
             _symbol, //symbol
             bytes32(0), //symbolId
             _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
-            _isVirtual
+            false //  Virtual tokens are deprecated for mainnet. Only valid for Dexalot L1(subnet)
         );
 
         addTokenInternal(details, _fee, _gasSwapRatio);
@@ -110,7 +107,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
 
     /**
      * @notice  Internal function that implements the token addition
-     * @dev     Unlike in the subnet it doesn't add the token to the PortfolioBridgeMain as it is redundant
+     * @dev     The token tis not added o the PortfolioBridgeMain unlike in the Dexalot L1(subnet)
      * Sample Token List in PortfolioMain: \
      * Symbol, SymbolId, Decimals, address, auction mode (43114: Avalanche C-ChainId) \
      * ALOT ALOT43114 18 0x5FbDB2315678afecb367f032d93F642f64180aa3 0 (Avalanche ALOT) \
@@ -208,7 +205,6 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             "P-OODT-01"
         );
         require(tokenList.contains(_symbol), "P-ETNS-01");
-        require(tokenDetailsMap[_symbol].isVirtual == false, "P-VTNS-01"); // Virtual tokens can't be deposited
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
 
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
@@ -246,7 +242,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @param   _fee  Fee to be set
      * @param   _gasSwapRatio  Amount of token to swap per ALOT. Used to control min deposit amount in the mainnet
      * Because we want users to deposit more than whats going to be swapped out for them to end up a portion of their
-     * token in their subnet portfolio after the swap. gasSwapRatio will be updated daily with an offchain app with
+     * token in their Dexalot L1(subnet) portfolio after the swap. gasSwapRatio will be updated daily with an offchain app with
      * the current market pricesexcept for ALOT which is always 1 to 1. Daily update is sufficient as it is multiplied
      * by 1.9 to calculate the min deposit Amount.
      * _usedForGasSwap  not used in the mainnet
@@ -378,7 +374,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
                 require(success, "P-WNFA-01");
             } else {
                 //Withdraw Token
-                //We don't check the AuctionMode of the token in the mainnet. If Subnet allows the message to be sent
+                //We don't check the AuctionMode of the token in the mainnet. If Dexalot L1(subnet) allows the message to be sent
                 //Then the token is no longer is auction
                 tokenMap[_xfer.symbol].safeTransfer(_xfer.trader, _xfer.quantity);
             }

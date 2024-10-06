@@ -1,0 +1,12 @@
+[profile.default]
+src = 'contracts'
+out = 'out'
+libs = ['node_modules', 'lib']
+test = 'test'
+cache_path  = 'cache_forge'
+remappings = [
+    "@teleporter/=lib/teleporter/contracts/teleporter/",
+]
+[profile.dependencies]
+# For version locking, you can specify the GitHub repository and commit hash
+teleporter = { git = "https://github.com/ava-labs/teleporter", tag = "v1.0.7" }

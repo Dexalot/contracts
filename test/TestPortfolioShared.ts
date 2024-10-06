@@ -9,12 +9,11 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 import {
     ExchangeSub,
-    LZEndpointMock,
-    // MockToken,
     OrderBooks,
     PortfolioMain, PortfolioSub,
     PortfolioBridgeMain,
     PortfolioBridgeMain__factory,
+    LzV2App,
 
 } from "../typechain-types";
 
@@ -36,7 +35,7 @@ describe("Portfolio Shared", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
 
-    let lzEndpoint: LZEndpointMock;
+    let lzAppMain: LzV2App;
     // let alot: MockToken;
 
     const AVAX: string = Utils.fromUtf8("AVAX");
@@ -60,15 +59,15 @@ describe("Portfolio Shared", () => {
         console.log("Trader1", trader1.address);
         console.log("Trader2", trader2.address);
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        await f.printTokens([portfolioContracts.portfolioAvax], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
+        await f.printTokens([portfolioContracts.portfolioMainnet], portfolioContracts.portfolioSub, portfolioContracts.portfolioBridgeSub);
 
     })
 
     beforeEach(async function () {
         const portfolioContracts = await f.deployCompletePortfolio(true);
-        portfolio = portfolioContracts.portfolioAvax;
+        portfolio = portfolioContracts.portfolioMainnet;
         portfolioSub = portfolioContracts.portfolioSub;
-        lzEndpoint = portfolioContracts.lzEndpointAvax as LZEndpointMock;
+        lzAppMain = portfolioContracts.lzAppMainnet;
         // alot = portfolioContracts.alot;
         bridgeFee = ethers.utils.parseEther("0.01").toString();
     });
@@ -220,7 +219,7 @@ describe("Portfolio Shared", () => {
         expect(await portfolio.getChainId()).to.be.equal(cChain.chainListOrgId)
         const PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeMain") as PortfolioBridgeMain__factory;
         const portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [lzEndpoint.address]) as PortfolioBridgeMain;
+            PortfolioBridge, [lzAppMain.address, owner.address]) as PortfolioBridgeMain;
         await portfolioBridge.deployed();
 
         await portfolioBridge.setPortfolio(portfolio.address);
@@ -238,12 +237,12 @@ describe("Portfolio Shared", () => {
 
     it("Should enable bridge correctly", async () => {
         // fail for non-admin
-        await expect(portfolio.connect(trader1).enableBridgeProvider(1, true)).to.be.revertedWith("AccessControl:");
+        await expect(portfolio.connect(trader1).enableBridgeProvider(1, lzAppMain.address)).to.be.revertedWith("AccessControl:");
 
         // succeed
-        await expect(portfolio.enableBridgeProvider(1, true))
+        await expect(portfolio.enableBridgeProvider(1, lzAppMain.address))
         .to.emit(portfolio, "ParameterUpdated")
-        .withArgs(Utils.fromUtf8("Portfolio"), "P-BRIDGE-ENABLE", 0, 1);
+        .withArgs(Utils.fromUtf8("Portfolio"), "P-BRIDGE-ENABLE", 1, 1);
     })
 
     it("Should set and get bridgeFee", async () => {
@@ -334,7 +333,6 @@ describe("Portfolio Shared", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
         await f.addToken(portfolio, portfolioSub, usdt, 0.5, auctionMode);
-        // await f.addToken(portfolioSub, usdt, 0.5, auctionMode);
 
         await usdt.mint(owner.address, Utils.parseUnits('1000', token_decimals));
         // fail from non admin accounts
@@ -344,7 +342,7 @@ describe("Portfolio Shared", () => {
         await portfolio.grantRole(await portfolio.DEFAULT_ADMIN_ROLE(), admin.address);
         await portfolio.connect(admin).pauseDeposit(true);
         // fail when paused for native
-        await expect(owner.sendTransaction({to: portfolio.address, value: Utils.parseUnits('10', 18)})).to.revertedWith("P-NTDP-01");
+        await expect(owner.sendTransaction({to: portfolio.address, value: Utils.parseUnits('10', 18), gasLimit: 1000000})).to.revertedWith("P-NTDP-01");
 
         // fail depositToken() when paused
         await expect(f.depositToken(portfolio, owner, usdt, token_decimals, USDT,  '10')).to.revertedWith("P-NTDP-01");
@@ -368,7 +366,7 @@ describe("Portfolio Shared", () => {
         // fail for quantity more than balance for depositTokenFromContract()
         await expect(portfolio.depositTokenFromContract(owner.address, USDT, Utils.parseUnits('1001', token_decimals))).to.revertedWith("P-NETD-01");
         // succeed for native
-        await owner.sendTransaction({to: portfolio.address, value: Utils.toWei('1000')});
+       await f.depositNative(portfolio, owner, '1000');
         const bal = await portfolioSub.getBalance(owner.address, AVAX);
         expect(bal.total).to.be.equal(Utils.toWei('1000'));
         expect(bal.available).to.be.equal(Utils.toWei('1000'));
