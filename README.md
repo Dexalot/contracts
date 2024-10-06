@@ -15,8 +15,16 @@ git clone https://github.com/Dexalot/contracts.git
 
 ## Project setup
 
+Install hardhat packages
+
 ```sh
 yarn install
+```
+
+Install foundry packages, if foundry not installed please view installation steps [here](https://book.getfoundry.sh/getting-started/installation)
+
+```sh
+forge install
 ```
 
 ## Hardhat Environment Tests
