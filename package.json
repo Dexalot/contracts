@@ -2,7 +2,7 @@
   "name": "dexalot-contracts",
   "version": "4.0.0",
   "license": "BUSL-1.1",
-  "description": "Smart contracts in Solidity programming language for Dexalot",
+  "description": "Smart contracts in Solidity for Dexalot Exchange",
   "private": true,
   "engines": {
     "node": "18.16.0"
@@ -11,8 +11,7 @@
     "clean-networkfiles": "rimraf .openzeppelin/unknown-*.json",
     "hh-coverage": "yarn clean-networkfiles && npx hardhat clean && npx hardhat coverage",
     "hh-start-clean": "yarn clean-networkfiles && npx hardhat clean && npx hardhat node",
-    "compile": "yarn hardhat compile",
-    "size": "yarn hardhat size-contracts"
+    "compile": "yarn hardhat compile"
   },
   "dependencies": {
     "@chainlink/contracts": "0.5.1",
