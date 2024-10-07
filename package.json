@@ -1,8 +1,8 @@
 {
   "name": "dexalot-contracts",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "license": "BUSL-1.1",
-  "description": "Smart contracts in Solidity programming language for Dexalot",
+  "description": "Smart contracts in Solidity for Dexalot Exchange",
   "private": true,
   "engines": {
     "node": "18.16.0"
@@ -11,8 +11,7 @@
     "clean-networkfiles": "rimraf .openzeppelin/unknown-*.json",
     "hh-coverage": "yarn clean-networkfiles && npx hardhat clean && npx hardhat coverage",
     "hh-start-clean": "yarn clean-networkfiles && npx hardhat clean && npx hardhat node",
-    "compile": "yarn hardhat compile",
-    "size": "yarn hardhat size-contracts"
+    "compile": "yarn hardhat compile"
   },
   "dependencies": {
     "@chainlink/contracts": "0.5.1",
@@ -24,7 +23,6 @@
     "@layerzerolabs/toolbox-hardhat": "0.3.7",
     "@nomicfoundation/hardhat-foundry": "1.1.2",
     "@nomiclabs/hardhat-ethers": "2.2.3",
-    "@nomiclabs/hardhat-etherscan": "3.1.8",
     "@nomiclabs/hardhat-waffle": "2.0.6",
     "@openzeppelin/contracts": "4.8.0",
     "@openzeppelin/contracts-upgradeable": "4.8.0",
@@ -39,14 +37,13 @@
     "dotenv": "16.4.1",
     "ethereum-waffle": "3.4.4",
     "ethers": "5.7.2",
-    "hardhat": "2.19.5",
-    "hardhat-contract-sizer": "2.10.0",
+    "hardhat": "2.22.12",
     "hardhat-deploy": "0.12.4",
     "keccak256": "1.0.6",
     "merkletreejs": "0.3.11",
     "neat-csv": "6.0.1",
     "rimraf": "3.0.2",
-    "solidity-coverage": "0.8.6",
+    "solidity-coverage": "0.8.13",
     "solmate": "6.2.0",
     "ts-node": "10.9.2",
     "typechain": "8.3.2",

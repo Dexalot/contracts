@@ -237,15 +237,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         };
         await portfolioBridgeAvax.enableXChainSwapDestination(xfer1.symbol, gunzillaSubnet.chainListOrgId, true);
 
-        // This transaction reverts with PB-ETNS-02 but it silent fails in LZEndpointV2
+        // This transaction reverts with PB-ETNS-02 but it silent fails in LZEndpointV2 ??
         await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
-        // const lzNonce = await lzEndpointGun.inboundNonce(lzV2AppGun.address, cChain.lzChainId, Utils.addressToBytes32(lzV2AppAvax.address));
-        // const guid = "0xb17ee6431a7380319f2168524512413d1937908fe30e90642b9bb5ed7f1a357c";
-        // const message = Utils.generatePayload(0, (await portfolioBridgeAvax.outNonce()).toNumber(), xfer1.transaction, xfer1.trader, xfer1.symbol, xfer1.quantity, xfer1.timestamp, xfer1.customdata);
-        // const payload = ethers.utils.solidityPack(["bytes32", "bytes"], [guid, message])
-        // const payloadHash = ethers.utils.keccak256(payload);
-        // const storedPayload = await lzEndpointGun.inboundPayloadHash(lzV2AppGun.address, cChain.lzChainId, Utils.addressToBytes32(lzV2AppAvax.address), lzNonce.add(1));
-        // expect(payloadHash).to.be.equal(storedPayload);
 
         xfer1.symbol = symbol;
         const tx = await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
@@ -535,7 +528,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                 expect(log.args.remoteChainId).to.be.equal(cChain.chainListOrgId);
                 expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
                 expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
-            } else if (log.address == portfolioBridgeGun.address) { //Subnet event
+            } else if (log.address == portfolioBridgeAvax.address) { //Avax event
                 expect(log.args.remoteChainId).to.be.equal(arbitrumChain.chainListOrgId); //message from mainnet
                 expect(log.args.msgDirection).to.be.equal(1); // 0 SENT 1 RECEIVED
                 // timestamp is overwritten at receival block.timestamp
@@ -604,7 +597,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                 expect(log.args.remoteChainId).to.be.equal(arbitrumChain.chainListOrgId);
                 expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
                 expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
-            } else if (log.address == portfolioBridgeArb.address) { //Subnet event
+            } else if (log.address == portfolioBridgeArb.address) { //Arb event
                 expect(log.args.remoteChainId).to.be.equal(cChain.chainListOrgId); //message from mainnet
                 expect(log.args.msgDirection).to.be.equal(1); // 0 SENT 1 RECEIVED
                 // timestamp is overwritten at receival block.timestamp
