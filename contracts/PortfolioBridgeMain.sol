@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableMapUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 import "./interfaces/IPortfolio.sol";
@@ -64,7 +64,7 @@ contract PortfolioBridgeMain is
     AccessControlEnumerableUpgradeable,
     IPortfolioBridge
 {
-    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
+    using EnumerableMapUpgradeable for EnumerableMapUpgradeable.UintToUintMap;
 
     IPortfolio internal portfolio;
     IMainnetRFQ internal mainnetRfq;
@@ -85,16 +85,18 @@ contract PortfolioBridgeMain is
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
     uint64 public outNonce;
+    // chainId => bridgeProviders bitmap
+    EnumerableMapUpgradeable.UintToUintMap internal supportedChains;
 
     // storage gap for upgradeability
-    uint256[49] __gap;
+    uint256[48] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.0.3");
+        return bytes32("4.0.4");
     }
 
     /**
@@ -205,6 +207,11 @@ contract PortfolioBridgeMain is
         IBridgeProvider bridgeContract = enabledBridges[_bridge];
         require(address(bridgeContract) != address(0), "PB-BCNE-01");
         userPaysFee[_chainListOrgChainId][_bridge] = _userPaysFee;
+        (, uint256 currentBridges) = supportedChains.tryGet(_chainListOrgChainId);
+        uint256 newBridges = currentBridges | (1 << uint8(_bridge));
+        if (currentBridges != newBridges) {
+            supportedChains.set(_chainListOrgChainId, newBridges);
+        }
         bridgeContract.setRemoteChain(_chainListOrgChainId, _dstChainIdBridgeAssigned, _remoteAddress);
     }
 
@@ -346,6 +353,21 @@ contract PortfolioBridgeMain is
         IBridgeProvider bridgeProvider = enabledBridges[_bridge];
         require(address(bridgeProvider) != address(0), "PB-RBNE-03");
         bridgeFee = bridgeProvider.getBridgeFee(_dstChainListOrgChainId);
+    }
+
+    /**
+     * @notice Returns an array of chainIds that are supported by the selected bridge
+     * @param _bridge Bridge provider
+     * @return chainIds Array of chainIds
+     */
+    function getSupportedChainIds(BridgeProvider _bridge) external view returns (uint32[] memory chainIds) {
+        chainIds = new uint32[](supportedChains.length());
+        for (uint256 i = 0; i < supportedChains.length(); i++) {
+            (uint256 chainId256, uint256 supportedBridges) = supportedChains.at(i);
+            if ((supportedBridges & (1 << uint8(_bridge))) > 0) {
+                chainIds[i] = uint32(chainId256);
+            }
+        }
     }
 
     /**

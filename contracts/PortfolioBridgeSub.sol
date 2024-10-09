@@ -38,6 +38,8 @@ import "./library/UtilsLibrary.sol";
 
 contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.Bytes32Set;
+    using EnumerableMapUpgradeable for EnumerableMapUpgradeable.UintToUintMap;
+
     uint256 public constant TENK = 10000;
 
     // key is symbolId (symbol + srcChainId)
@@ -58,7 +60,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.0.3");
+        return bytes32("4.0.4");
     }
 
     /**
@@ -207,18 +209,20 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         bytes32 _symbol,
         uint256 _quantity
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
-        uint256 numTokens = tokenListById.length();
-        bridgeFees = new uint256[](numTokens);
-        chainIds = new uint32[](numTokens);
-        for (uint256 i = 0; i < numTokens; ++i) {
-            bytes32 symbolId = tokenListById.at(i);
-            IPortfolio.TokenDetails memory tokenDetails = tokenDetailsMapById[symbolId];
-            if (tokenDetails.symbol != _symbol || tokenDetails.srcChainId == block.chainid) {
+        uint256 numChains = supportedChains.length();
+        bridgeFees = new uint256[](numChains);
+        chainIds = new uint32[](numChains);
+        for (uint256 i = 0; i < numChains; ++i) {
+            (uint256 chainId256, uint256 supportedBridges) = supportedChains.at(i);
+            uint32 chainId = uint32(chainId256);
+            bytes32 symbolId = tokenInfoMapBySymbolChainId[_symbol][chainId].symbolId;
+
+            if (symbolId == bytes32(0) || (supportedBridges & (1 << uint8(_bridge))) == 0) {
                 continue;
             }
             try inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity) returns (uint256 invFee) {
-                chainIds[i] = tokenDetails.srcChainId;
-                bridgeFees[i] = _calcBridgeFee(_bridge, tokenDetails.srcChainId, _symbol) + invFee;
+                chainIds[i] = chainId;
+                bridgeFees[i] = _calcBridgeFee(_bridge, chainId, _symbol) + invFee;
             } catch {
                 continue;
             }

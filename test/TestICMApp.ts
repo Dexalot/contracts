@@ -5,7 +5,7 @@ import Utils from './utils';
 
 import * as f from "./MakeTestSuite";
 
-import { ICMApp, PortfolioBridgeMain, PortfolioMain } from "../typechain-types";
+import { ICMApp, PortfolioBridgeMain, PortfolioBridgeSub, PortfolioMain } from "../typechain-types";
 import { ethers, network, upgrades } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from "chai";
@@ -13,8 +13,10 @@ import { expect } from "chai";
 
 describe("ICMApp", () => {
   let portfolioBridgeMain: PortfolioBridgeMain;
+  let portfolioBridgeSub: PortfolioBridgeSub;
   let portfolioMain: PortfolioMain;
   let icmAppMain: ICMApp;
+  let icmAppSub: ICMApp;
 
   let owner: SignerWithAddress;
   let trader1: SignerWithAddress;
@@ -40,6 +42,7 @@ describe("ICMApp", () => {
     const portfolioContracts = await f.deployCompletePortfolio(true);
     portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
     portfolioMain = portfolioContracts.portfolioMainnet;
+    portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
   });
 
   after(async () => {
@@ -54,6 +57,7 @@ describe("ICMApp", () => {
     icmAppMain = await upgrades.deployProxy(
       // 0xF86Cb19Ad8405AEFa7d09C778215D2Cb6eBfB228 = teleporter registry on fuji testnet
       ICMApp, ["0xF86Cb19Ad8405AEFa7d09C778215D2Cb6eBfB228", 1, owner.address]) as ICMApp;
+    icmAppSub = icmAppMain;
   });
 
   it("Should get the correct version", async () => {
@@ -201,5 +205,24 @@ describe("ICMApp", () => {
     await f.depositNative(portfolioMain, owner, "0.5")
 
     await icmAppMain.connect(icmMessenger).receiveTeleporterMessage(subnetBlockchainID, icmAppMain.address, payload);
+  });
+
+  it("Should successfully getAllBridgeFees", async () => {
+    const { cChain } = f.getChains();
+
+    await icmAppSub.setPortfolioBridge(portfolioBridgeSub.address);
+    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
+    const randRemoteAddress = Utils.addressToBytes32(trader1.address);
+    await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+    let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"));
+    expect(icmBridgeFees.chainIds.length).to.equal(1);
+    expect(icmBridgeFees.chainIds[0]).to.equal(0);
+
+    await portfolioBridgeSub.enableBridgeProvider(2, icmAppMain.address);
+    await portfolioBridgeSub.setTrustedRemoteAddress(2, cChain.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
+
+    icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"));
+    expect(icmBridgeFees.chainIds.length).to.equal(1);
+    expect(icmBridgeFees.chainIds[0]).to.equal(cChain.chainListOrgId);
   });
 });
