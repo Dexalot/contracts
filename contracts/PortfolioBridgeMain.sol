@@ -85,18 +85,18 @@ contract PortfolioBridgeMain is
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
     uint64 public outNonce;
-    // chainId => bridgeProviders bitmap
+    // chainId => bridgeProviders bitmap (3 storage slots)
     EnumerableMapUpgradeable.UintToUintMap internal supportedChains;
 
     // storage gap for upgradeability
-    uint256[48] __gap;
+    uint256[46] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.0.4");
+        return bytes32("4.0.5");
     }
 
     /**
