@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.6.0");
+    bytes32 public constant VERSION = bytes32("2.6.1");
 
     // denominator for rate calculations obsolete as of Feb 9 2024 CD
     uint256 public constant TENK = 10000;
@@ -1222,7 +1222,7 @@ contract TradePairs is
         bytes32 bookId = _isBuyBook ? tradePair.buyBookId : tradePair.sellBookId;
         (uint256 price, bytes32 orderId) = orderBooks.getBottomOfTheBook(bookId);
         while (orderId != "" && _maxCount > 0) {
-            doOrderCancel(orderId);
+            doOrderCancel(orderId, false); //Admin Function, no autofill needed
             (price, orderId) = orderBooks.getBottomOfTheBook(bookId);
             _maxCount--;
         }
@@ -1259,7 +1259,7 @@ contract TradePairs is
         newOrder.side = order.side;
         newOrder.type1 = order.type1;
         newOrder.type2 = order.type2;
-        doOrderCancel(order.id);
+        doOrderCancel(order.id, false); // let autofill run in addOrderPrivate in the next line
         addOrderPrivate(msg.sender, newOrder, true, true);
     }
 
@@ -1275,7 +1275,7 @@ contract TradePairs is
      * @param   _orderId  order id to cancel
      */
     function cancelOrder(bytes32 _orderId) external override nonReentrant {
-        cancelOrderPrivate(msg.sender, _orderId);
+        cancelOrderPrivate(msg.sender, _orderId, true); // Single Cancel, default autofill to true
     }
 
     /**
@@ -1283,8 +1283,10 @@ contract TradePairs is
      * @dev     See cancelOrder
      * @param   _msgSender  address of the msg.Sender
      * @param   _orderId  order id to cancel
+     * @param   _autofill  controls the autofill logic. Autofill is applied
+     * if it is a single cancel or the very last cancel in a cancel list.
      */
-    function cancelOrderPrivate(address _msgSender, bytes32 _orderId) private whenNotPaused {
+    function cancelOrderPrivate(address _msgSender, bytes32 _orderId, bool _autofill) private whenNotPaused {
         Order storage order = orderMap[_orderId];
         bytes32 rejectReason;
         if (order.id == bytes32(0)) {
@@ -1298,7 +1300,7 @@ contract TradePairs is
         if (rejectReason == bytes32(0)) {
             TradePair storage tradePair = tradePairMap[order.tradePairId];
             require(!tradePair.pairPaused, "T-PPAU-02");
-            doOrderCancel(order.id);
+            doOrderCancel(order.id, _autofill);
         } else {
             emit OrderStatusChanged(
                 ORDER_STATUS_CHANGED_VERSION,
@@ -1365,9 +1367,12 @@ contract TradePairs is
      * orders.push(order);
      * await tradePairs.cancelAddList(orderIdsToCancel, orders);
      */
-    function cancelAddList(bytes32[] calldata _orderIdsToCancel, NewOrder[] calldata _orders) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIdsToCancel);
-        addOrderListPrivate(msg.sender, _orders);
+    function cancelAddList(
+        bytes32[] calldata _orderIdsToCancel,
+        NewOrder[] calldata _orders
+    ) external override nonReentrant {
+        cancelOrderListPrivate(msg.sender, _orderIdsToCancel, false); // Don't autofill while processing the cancels list
+        addOrderListPrivate(msg.sender, _orders); // will autofill when processing the last order in the add list
     }
 
     /**
@@ -1384,7 +1389,7 @@ contract TradePairs is
      * @param   _orderIds  array of order ids
      */
     function cancelOrderList(bytes32[] calldata _orderIds) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIds);
+        cancelOrderListPrivate(msg.sender, _orderIds, true); // will autofill with the last cancel in the cancel list
     }
 
     /**
@@ -1392,19 +1397,21 @@ contract TradePairs is
      * @dev     See cancelOrderList
      * @param   _msgSender  array of order ids to be canceled
      * @param   _orderIds   array of order ids
+     * @param   _autofill  controls the autofill logic. Autofill only when processing the last
+     * cancel in the cancel list & if also the _autofill flag is true
      */
-    function cancelOrderListPrivate(address _msgSender, bytes32[] calldata _orderIds) private {
+    function cancelOrderListPrivate(address _msgSender, bytes32[] calldata _orderIds, bool _autofill) private {
         for (uint256 i = 0; i < _orderIds.length; ++i) {
-            cancelOrderPrivate(_msgSender, _orderIds[i]);
+            cancelOrderPrivate(_msgSender, _orderIds[i], i == _orderIds.length - 1 && _autofill);
         }
     }
 
     /**
      * @notice  Cancels an order and makes the locked amount available in the portfolio
      * @param   _orderId  order id to cancel
-     * true by default but false when called by cancelReplaceOrder function
+     * @param   _autofill when true autofills the user's gas tank if it is below the treshold
      */
-    function doOrderCancel(bytes32 _orderId) private {
+    function doOrderCancel(bytes32 _orderId, bool _autofill) private {
         //DO not add requires here for unsolicitedCancel to work
         Order storage order = orderMap[_orderId];
         TradePair storage tradePair = tradePairMap[order.tradePairId];
@@ -1424,8 +1431,12 @@ contract TradePairs is
         portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
 
         emitStatusUpdate(order.id);
-        // we just made some funds available for the adjSymbol
-        portfolio.autoFill(order.traderaddress, adjSymbol);
+
+        if (_autofill) {
+            // we just made some funds available for the adjSymbol, so we can autofill without worrying about
+            // funds availability
+            portfolio.autoFill(order.traderaddress, adjSymbol);
+        }
         removeClosedOrder(order.id);
     }
 

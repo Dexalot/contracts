@@ -140,8 +140,6 @@ describe("Portfolio Bridge Sub", () => {
         expect(tdet2.srcChainId).to.equal(srcChainId2);
         expect(tdet2.symbol).to.equal(ALOT);
         expect(tdet2.symbolId).to.equal(Utils.fromUtf8("ALOT" + srcChainId2));
-
-        await portfolioBridgeSub.getAllBridgeFees(0, ALOT, 0);
     });
 
     it("Should use addToken correctly for ERC20 tokens", async () => {

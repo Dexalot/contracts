@@ -15,6 +15,7 @@ describe("InventoryManager", () => {
   let portfolioAvax: PortfolioMain;
   let portfolioArb: PortfolioMain;
   let portfolioGun: PortfolioMain;
+  let portfolioBase: PortfolioMain;
   let portfolioBridgeSub: PortfolioBridgeSub;
   let portfolioSubHelper: PortfolioSubHelper;
 
@@ -51,6 +52,7 @@ describe("InventoryManager", () => {
     portfolioAvax = portfolioContracts.portfolioAvax;
     portfolioArb = portfolioContracts.portfolioArb;
     portfolioGun = portfolioContracts.portfolioGun;
+    portfolioBase = portfolioContracts.portfolioBase;
     portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
     portfolioSubHelper = portfolioContracts.portfolioSubHelper;
 
@@ -60,6 +62,7 @@ describe("InventoryManager", () => {
     await f.addToken(portfolioAvax, portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
     await f.addToken(portfolioArb, portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
     await f.addToken(portfolioGun, portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
+    await f.addToken(portfolioBase, portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
 
     // mint to trader
     await mockUSDC.mint(trader1.address, initialUSDCBalance);
@@ -68,6 +71,7 @@ describe("InventoryManager", () => {
     await mockUSDC.connect(trader1).approve(portfolioAvax.address, ethers.constants.MaxUint256);
     await mockUSDC.connect(trader1).approve(portfolioArb.address, ethers.constants.MaxUint256);
     await mockUSDC.connect(trader1).approve(portfolioGun.address, ethers.constants.MaxUint256);
+    await mockUSDC.connect(trader1).approve(portfolioBase.address, ethers.constants.MaxUint256);
   });
 
   it("Should not initialize again after deployment", async function () {
@@ -362,8 +366,8 @@ describe("InventoryManager", () => {
       fees.push(all.bridgeFees[i]);
     }
 
-    expect(chainIds.length).to.be.equal(3);
-    expect(fees.length).to.be.equal(3);
+    expect(chainIds.length).to.be.equal(4);
+    expect(fees.length).to.be.equal(4);
     expect(chainIds.includes(cChain.chainListOrgId));
     expect(chainIds.includes(gunzillaSubnet.chainListOrgId));
     expect(chainIds.includes(arbitrumChain.chainListOrgId));
@@ -379,7 +383,15 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1600000");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "60000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "1000000");
+    await f.depositToken(portfolioBase, trader1, mockUSDC, usdcDecimals, usdcHex, "60000");
     const quantity = Utils.parseUnits("700000", usdcDecimals);
+
+    // 0 bridge fee for unsupported icm
+    const allICM = await portfolioSub.getAllBridgeFees(2, usdcHex, quantity);
+    expect(allICM.chainIds[0]).to.be.equal(0);
+    expect(allICM.chainIds[1]).to.be.equal(0);
+    expect(allICM.chainIds[2]).to.be.equal(0);
+    expect(allICM.chainIds[3]).to.be.equal(0);
 
     const all = await portfolioSub.getAllBridgeFees(0, usdcHex, quantity);
     const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, quantity);

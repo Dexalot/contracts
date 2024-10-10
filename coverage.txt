@@ -1,7 +1,7 @@
 -------------------------------|----------|----------|----------|----------|----------------|
 File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 -------------------------------|----------|----------|----------|----------|----------------|
- contracts\                    |      100 |     96.7 |      100 |      100 |                |
+ contracts\                    |      100 |    96.72 |      100 |      100 |                |
   BannedAccounts.sol           |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol         |      100 |      100 |      100 |      100 |                |
   Exchange.sol                 |      100 |      100 |      100 |      100 |                |
@@ -12,13 +12,13 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   MainnetRFQ.sol               |      100 |      100 |      100 |      100 |                |
   OrderBooks.sol               |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                |      100 |    95.65 |      100 |      100 |                |
-  PortfolioBridgeMain.sol      |      100 |    96.81 |      100 |      100 |                |
+  PortfolioBridgeMain.sol      |      100 |    96.94 |      100 |      100 |                |
   PortfolioBridgeSub.sol       |      100 |    93.75 |      100 |      100 |                |
   PortfolioMain.sol            |      100 |    92.86 |      100 |      100 |                |
   PortfolioMinter.sol          |      100 |      100 |      100 |      100 |                |
   PortfolioSub.sol             |      100 |    92.53 |      100 |      100 |                |
   PortfolioSubHelper.sol       |      100 |      100 |      100 |      100 |                |
-  TradePairs.sol               |      100 |    95.67 |      100 |      100 |                |
+  TradePairs.sol               |      100 |    95.71 |      100 |      100 |                |
  contracts\bridgeApps\         |      100 |      100 |      100 |      100 |                |
   DefaultBridgeApp.sol         |      100 |      100 |      100 |      100 |                |
   ICMApp.sol                   |      100 |      100 |      100 |      100 |                |
@@ -61,5 +61,5 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   TokenVestingCloneFactory.sol |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol    |      100 |    96.67 |      100 |      100 |                |
 -------------------------------|----------|----------|----------|----------|----------------|
-All files                      |    99.87 |    96.86 |      100 |     99.9 |                |
+All files                      |    99.87 |    96.87 |      100 |    99.91 |                |
 -------------------------------|----------|----------|----------|----------|----------------|

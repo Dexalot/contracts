@@ -138,6 +138,18 @@ describe("Portfolio Bridge Main", () => {
         //await expect(portfolioBridgeMain.getDefaultDestinationChain().to.be.equal(0);
     });
 
+    it("Should get correct supported chain ids", async () => {
+        const { dexalotSubnet } = f.getChains();
+
+        let chainIds = await portfolioBridgeMain.getSupportedChainIds(0);
+        expect(chainIds.length).to.be.equal(1);
+        expect(chainIds[0]).to.be.equal(dexalotSubnet.chainListOrgId);
+
+        chainIds = await portfolioBridgeMain.getSupportedChainIds(2);
+        expect(chainIds.length).to.be.equal(1);
+        expect(chainIds[0]).to.be.equal(0);
+    });
+
 
     it("Should pause and unpause", async () => {
         // fail for non-owner
