@@ -34,6 +34,7 @@ interface ITradePairs {
      * @param   type1  Order Type1  See #Type1 (immutable)
      * @param   type2  Order Type2  See #Type2 (immutable)
      * @param   status  Order Status  See #Status
+     * @param   updateBlock  Block No the order was created or last changed
      */
     struct Order {
         bytes32 id;
@@ -44,11 +45,12 @@ interface ITradePairs {
         uint256 quantity;
         uint256 quantityFilled;
         uint256 totalFee;
-        address traderaddress;
-        Side side;
-        Type1 type1;
-        Type2 type2;
-        Status status;
+        address traderaddress; //20
+        Side side; //2
+        Type1 type1; //2
+        Type2 type2; //2
+        Status status; //2
+        uint32 updateBlock; //4
     }
 
     /**
@@ -185,15 +187,6 @@ interface ITradePairs {
     function addOrderList(NewOrder[] calldata _orders) external;
 
     function cancelAddList(bytes32[] calldata _orderIdsToCancel, NewOrder[] calldata _orders) external;
-
-    function addLimitOrderList(
-        bytes32 _tradePairId,
-        bytes32[] calldata _clientOrderIds,
-        uint256[] calldata _prices,
-        uint256[] calldata _quantities,
-        Side[] calldata _sides,
-        Type2[] calldata _type2s
-    ) external;
 
     function cancelOrder(bytes32 _orderId) external;
 
@@ -350,34 +343,16 @@ interface ITradePairs {
      * @param   version  event version
      * @param   traderaddress  traders’s wallet (immutable)
      * @param   pair  traded pair. ie. ALOT/AVAX in bytes32 (immutable)
-     * @param   orderId  unique order id assigned by the contract (immutable)
-     * @param   clientOrderId  client order id given by the sender of the order as a reference (immutable)
-     * @param   price  price of the order entered by the trader. (0 if market order) (immutable)
-     * @param   totalamount  cumulative amount in quote currency: `price * quantityfilled`
-     * @param   quantity  order quantity (immutable)
-     * @param   side  Order Side  See #Side (immutable)
-     * @param   type1  Order Type1  See #Type1 (immutable)
-     * @param   type2  Order Type2  See #Type2 (immutable)
-     * @param   status Order Status See #Status
-     * @param   quantityfilled  cumulative quantity filled
-     * @param   totalfee cumulative fee paid for the order
+     * @param   order  See ITradePairs.Order Struct (Order details)
+     * @param   previousUpdateBlock Previous Block No the order was last changed/created
      * @param   code reason when order has REJECT or CANCEL_REJECT status
      */
     event OrderStatusChanged(
         uint8 version,
         address indexed traderaddress,
         bytes32 indexed pair,
-        bytes32 orderId,
-        bytes32 clientOrderId,
-        uint256 price,
-        uint256 totalamount,
-        uint256 quantity,
-        Side side,
-        Type1 type1,
-        Type2 type2,
-        Status status,
-        uint256 quantityfilled,
-        uint256 totalfee,
+        Order order,
+        uint32 previousUpdateBlock,
         bytes32 code
     );
 
