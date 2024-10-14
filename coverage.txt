@@ -1,7 +1,7 @@
 -------------------------------|----------|----------|----------|----------|----------------|
 File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 -------------------------------|----------|----------|----------|----------|----------------|
- contracts\                    |      100 |    96.72 |      100 |      100 |                |
+ contracts\                    |      100 |     96.8 |      100 |      100 |                |
   BannedAccounts.sol           |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol         |      100 |      100 |      100 |      100 |                |
   Exchange.sol                 |      100 |      100 |      100 |      100 |                |
@@ -18,7 +18,7 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   PortfolioMinter.sol          |      100 |      100 |      100 |      100 |                |
   PortfolioSub.sol             |      100 |    92.53 |      100 |      100 |                |
   PortfolioSubHelper.sol       |      100 |      100 |      100 |      100 |                |
-  TradePairs.sol               |      100 |    95.71 |      100 |      100 |                |
+  TradePairs.sol               |      100 |    96.15 |      100 |      100 |                |
  contracts\bridgeApps\         |      100 |      100 |      100 |      100 |                |
   DefaultBridgeApp.sol         |      100 |      100 |      100 |      100 |                |
   ICMApp.sol                   |      100 |      100 |      100 |      100 |                |
@@ -61,5 +61,5 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   TokenVestingCloneFactory.sol |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol    |      100 |    96.67 |      100 |      100 |                |
 -------------------------------|----------|----------|----------|----------|----------------|
-All files                      |    99.87 |    96.87 |      100 |    99.91 |                |
+All files                      |    99.87 |    96.93 |      100 |     99.9 |                |
 -------------------------------|----------|----------|----------|----------|----------------|

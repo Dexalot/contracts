@@ -385,7 +385,7 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                     if (orderLog.events[j].event) {
                         const _log = orderLog.events[j];
                         if (_log.event === 'OrderStatusChanged') {
-                            const _id = _log.args.orderId;
+                            const _id = _log.args.order.id;
                             // const _orders = [...orderMap.values()];
                             // if (!_orders.includes(_id)) {
                             orderMap.set(order["clientOrderId"], {'id': _id, 'order': order});

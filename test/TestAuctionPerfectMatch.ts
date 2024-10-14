@@ -478,9 +478,9 @@ async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, ord
     for (const _log of orderLog.events) {
       if (_log.event) {
         if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.orderId, _log.args.price, _log.args.totalamount,
-                                           _log.args.quantity,_log.args.side, _log.args.type1, _log.args.type2, _log.args.status,
-                                           _log.args.quantityfilled, _log.args.totalfee, _log, pair.baseDecimals, pair.quoteDecimals);
+          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
+            _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
+            _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
           if (rOrder) {
             orders.set(rOrder.id, rOrder);
             return true;
