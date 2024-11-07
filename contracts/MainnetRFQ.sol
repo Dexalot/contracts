@@ -258,7 +258,10 @@ contract MainnetRFQ is
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      */
-    function xChainSwap(XChainSwap calldata _order, bytes calldata _signature) external payable whenNotPaused {
+    function xChainSwap(
+        XChainSwap calldata _order,
+        bytes calldata _signature
+    ) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyXSwap(_order, _signature);
 
         _executeXSwap(_order, destTrader);
