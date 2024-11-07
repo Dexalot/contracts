@@ -1,4 +1,3 @@
-
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity 0.8.25;
@@ -74,14 +73,14 @@ contract PortfolioBridgeMain is
     // chainListOrgChainId => bridge type => bool mapping to control user pays fee for each destination and bridge
     mapping(uint32 => mapping(BridgeProvider => bool)) public userPaysFee;
 
-    BridgeProvider internal defaultBridgeProvider; //Layer0
+    BridgeProvider internal defaultBridgeProvider; // ICM for avalanche eco, Layer0 for other chains
     uint32 internal defaultChainId; // c-chain for Dexalot L1, Dexalot L1 for other chains
 
     uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 2;
 
     // Controls actions that can be executed on the contract. PortfolioM or MainnetRFQ are the current users.
     bytes32 public constant BRIDGE_USER_ROLE = keccak256("BRIDGE_USER_ROLE");
-    // Controls all bridge implementations access. Currently only LZ
+    // Controls setting of bridge fees and executing delayed transfers.
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
