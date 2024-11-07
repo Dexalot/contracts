@@ -41,6 +41,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     using EnumerableMapUpgradeable for EnumerableMapUpgradeable.UintToUintMap;
 
     uint256 public constant TENK = 10000;
+    uint16 public constant DEFAULT_MAX_BRIDGE_FEE_CAP = 100;
 
     // key is symbolId (symbol + srcChainId)
     mapping(bytes32 => IPortfolio.TokenDetails) private tokenDetailsMapById;
@@ -133,7 +134,11 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             tokenDetails.isVirtual = _subnetSymbol == portfolio.getNative() && _srcChainId == portfolio.getChainId()
                 ? false
                 : true;
-            tokenInfoMapBySymbolChainId[_subnetSymbol][_srcChainId] = TokenDestinationInfo(symbolId, _bridgeFee);
+            tokenInfoMapBySymbolChainId[_subnetSymbol][_srcChainId] = TokenDestinationInfo(
+                symbolId,
+                uint240(_bridgeFee),
+                DEFAULT_MAX_BRIDGE_FEE_CAP
+            );
         }
     }
 
@@ -222,7 +227,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             }
             try inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity) returns (uint256 invFee) {
                 chainIds[i] = chainId;
-                bridgeFees[i] = _calcBridgeFee(_bridge, chainId, _symbol) + invFee;
+                bridgeFees[i] = _calcBridgeFee(_bridge, chainId, _symbol, _quantity, invFee);
             } catch {
                 continue;
             }
@@ -239,12 +244,13 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     function setBridgeFees(
         uint32 _dstChainListOrgChainId,
         bytes32[] calldata _tokens,
-        uint256[] calldata _bridgeFees
+        uint240[] calldata _bridgeFees
     ) external override onlyRole(BRIDGE_ADMIN_ROLE) {
         require(_tokens.length == _bridgeFees.length, "PB-LENM-01");
         for (uint256 i = 0; i < _tokens.length; ++i) {
             tokenInfoMapBySymbolChainId[_tokens[i]][_dstChainListOrgChainId].bridgeFee = _bridgeFees[i];
         }
+        emit BridgeFeeUpdated(_dstChainListOrgChainId, _tokens, _bridgeFees);
     }
 
     /**
@@ -424,6 +430,25 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
+     * @notice  Set the max bridge fee cap for a given token
+     * @dev     Only admin can set the max bridge fee cap
+     * @param   _dstChainListOrgChainId  destination chain id
+     * @param   _tokens  array of Dexalot L1(subnet) symbols
+     * @param   _maxBridgeFeeCaps  array of max bridge fee caps to set
+     */
+    function setMaxBridgeFeeCaps(
+        uint32 _dstChainListOrgChainId,
+        bytes32[] calldata _tokens,
+        uint16[] calldata _maxBridgeFeeCaps
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_tokens.length == _maxBridgeFeeCaps.length, "PB-LENM-01");
+        for (uint256 i = 0; i < _tokens.length; ++i) {
+            tokenInfoMapBySymbolChainId[_tokens[i]][_dstChainListOrgChainId].maxBridgeFeeCap = _maxBridgeFeeCaps[i];
+        }
+        emit MaxBridgeFeeCapUpdated(_dstChainListOrgChainId, _tokens, _maxBridgeFeeCaps);
+    }
+
+    /**
      * @notice  Returns the minimum bridgeFee calculated offChain for the targetChainId, in addition to the
      * inventoryManager calculated withdrawal fee
      * @dev     This is in terms of token transferred. LZ charges us using based on the payload size and gas px at
@@ -443,9 +468,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         bytes32 _symbol,
         uint256 _quantity
     ) public view override returns (uint256 bridgeFee) {
-        bridgeFee = _calcBridgeFee(_bridge, _dstChainListOrgChainId, _symbol);
-        (, bytes32 symbolId) = getDestChainSymbol(_dstChainListOrgChainId, _symbol);
-        bridgeFee += inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity);
+        bridgeFee = _calcBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, 0);
     }
 
     /**
@@ -458,7 +481,9 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     function _calcBridgeFee(
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
-        bytes32 _symbol
+        bytes32 _symbol,
+        uint256 _quantity,
+        uint256 _inventoryFee
     ) internal view returns (uint256) {
         if (_bridge != BridgeProvider.LZ && _bridge != BridgeProvider.ICM) {
             return 0;
@@ -467,6 +492,13 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         if (multipler == 0) {
             multipler = TENK;
         }
-        return (tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId].bridgeFee * multipler) / TENK;
+        TokenDestinationInfo memory tokenInfo = tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId];
+        require(tokenInfo.symbolId != bytes32(0), "PB-ETNS-01");
+        if (_inventoryFee == 0) {
+            _inventoryFee = inventoryManager.calculateWithdrawalFee(_symbol, tokenInfo.symbolId, _quantity);
+        }
+        uint256 bridgeFee = _inventoryFee + (tokenInfo.bridgeFee * multipler) / TENK;
+        uint256 maxBridgeFee = tokenInfo.bridgeFee * tokenInfo.maxBridgeFeeCap;
+        return bridgeFee >= maxBridgeFee ? maxBridgeFee : bridgeFee;
     }
 }

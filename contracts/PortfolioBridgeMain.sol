@@ -167,7 +167,7 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         address _bridgeProvider
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(address(enabledBridges[_bridge]) != _bridgeProvider, "");
+        require(address(enabledBridges[_bridge]) != _bridgeProvider, "PB-OBSA-01");
         revokeRole(BRIDGE_PROVIDER_ROLE, _bridgeProvider);
     }
 

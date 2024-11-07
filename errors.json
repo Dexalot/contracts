@@ -99,6 +99,7 @@
     "PB-IUMF-01": "PortfolioBridge: insufficient user message fee received",
     "PB-BCNE-01": "PortfolioBridge: bridge contract not enabled",
     "PB-MPGT-01": "PortfolioBridge: bridge fee multipler is greater than 100%",
+    "PB-OBSA-01": "PortfolioBridge: old bridge provider still active",
 
     "PM-ZADD-01": "PortfolioMinter: cannot initialize with 0 address",
     "PM-ZAMT-01": "PortfolioMinter: mint amount must be greater than 0",

@@ -44,11 +44,15 @@ interface IPortfolioBridgeSub {
     function setBridgeFees(
         uint32 _dstChainListOrgChainId,
         bytes32[] calldata _tokens,
-        uint256[] calldata _bridgeFees
+        uint240[] calldata _bridgeFees
     ) external;
 
     struct TokenDestinationInfo {
         bytes32 symbolId;
-        uint256 bridgeFee;
+        uint240 bridgeFee;
+        uint16 maxBridgeFeeCap;
     }
+
+    event BridgeFeeUpdated(uint32 dstChainId, bytes32[] tokens, uint240[] bridgeFees);
+    event MaxBridgeFeeCapUpdated(uint32 dstChainId, bytes32[] tokens, uint16[] maxBridgeFeeCaps);
 }
