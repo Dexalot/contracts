@@ -1,3 +1,4 @@
+
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity 0.8.25;
@@ -137,13 +138,13 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Enables/disables given bridge. Default bridge's state can't be modified
-     * @dev     Only admin can enable/disable bridge
+     * @notice  Enables/disables given bridge. Default bridge cannot be removed.
+     * @dev     Only admin can enable/disable bridge. Default bridge can only be updated to new contract when paused
      * @param   _bridge  Bridge to enable/disable
      * @param   _bridgeProvider  Address of bridge provider contract, 0 address if not exists
      */
     function enableBridgeProvider(BridgeProvider _bridge, address _bridgeProvider) external onlyRole(BRIDGE_USER_ROLE) {
-        require(_bridge != defaultBridgeProvider || paused(), "PB-DBCD-01");
+        require(_bridge != defaultBridgeProvider || (paused() && _bridgeProvider != address(0)), "PB-DBCD-01");
         enabledBridges[_bridge] = IBridgeProvider(_bridgeProvider);
     }
 
@@ -165,10 +166,11 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice Sets the default bridge Provider
-     * @param   _bridge  Bridge Provider type
+     * @dev Default bridge provider can only be changed to an enabled bridge provider
+     * @param  _bridge  Bridge Provider type
      */
     function setDefaultBridgeProvider(BridgeProvider _bridge) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_bridge != defaultBridgeProvider, "PB-DBCD-01");
+        require(_bridge != defaultBridgeProvider && address(enabledBridges[_bridge]) != address(0), "PB-DBCD-01");
         defaultBridgeProvider = _bridge;
     }
 
