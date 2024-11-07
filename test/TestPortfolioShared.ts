@@ -219,7 +219,7 @@ describe("Portfolio Shared", () => {
         expect(await portfolio.getChainId()).to.be.equal(cChain.chainListOrgId)
         const PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeMain") as PortfolioBridgeMain__factory;
         const portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [lzAppMain.address, owner.address]) as PortfolioBridgeMain;
+            PortfolioBridge, [0, lzAppMain.address, owner.address]) as PortfolioBridgeMain;
         await portfolioBridge.deployed();
 
         await portfolioBridge.setPortfolio(portfolio.address);

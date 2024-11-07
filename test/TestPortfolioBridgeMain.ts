@@ -77,7 +77,7 @@ describe("Portfolio Bridge Main", () => {
     });
 
     it("Should not initialize again after deployment", async function () {
-        await expect(portfolioBridgeMain.initialize(lzAppMain.address, owner.address))
+        await expect(portfolioBridgeMain.initialize(0, lzAppMain.address, owner.address))
             .to.be.revertedWith("Initializable: contract is already initialized");
     });
 

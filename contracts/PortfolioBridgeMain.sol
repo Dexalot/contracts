@@ -101,16 +101,23 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice  Initializer for upgradeable contract.
-     * @dev     Grant admin, pauser and msg_sender role to the sender. Enable lz bridge contract as default.
+     * @dev     Grant admin, pauser and msg_sender role to the sender. Enable _defaultBridgeProviderAddress as default.
+     * @param   _defaultBridgeProvider  Default bridge provider
+     * @param   _defaultBridgeProviderAddress  Address of the default bridge provider contract
+     * @param   _owner  Owner of the contract
      */
-    function initialize(address _lzBridgeProvider, address _owner) external initializer {
+    function initialize(
+        BridgeProvider _defaultBridgeProvider,
+        address _defaultBridgeProviderAddress,
+        address _owner
+    ) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
 
-        defaultBridgeProvider = BridgeProvider.LZ;
-        enabledBridges[BridgeProvider.LZ] = IBridgeProvider(_lzBridgeProvider);
+        defaultBridgeProvider = _defaultBridgeProvider;
+        enabledBridges[_defaultBridgeProvider] = IBridgeProvider(_defaultBridgeProviderAddress);
     }
 
     /**

@@ -321,12 +321,12 @@ export const deployPortfolioBridge = async (lzV2App: LzV2App, portfolio: Portfol
         //Subnet PortfolioBridge
         PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeSub") ;
         portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [lzV2App.address, owner.address]) as PortfolioBridgeSub;
+            PortfolioBridge, [lzBridge, lzV2App.address, owner.address]) as PortfolioBridgeSub;
         await portfolioBridge.setDefaultDestinationChain(cChain.chainListOrgId);
     } else {
         PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeMain") ;
         portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [lzV2App.address, owner.address]) as PortfolioBridgeMain;
+            PortfolioBridge, [lzBridge, lzV2App.address, owner.address]) as PortfolioBridgeMain;
         await portfolioBridge.setDefaultDestinationChain(dexalotSubnet.chainListOrgId);
     }
 
@@ -707,7 +707,7 @@ export const addBaseAndQuoteTokens = async (portfolioMain: PortfolioMain, portfo
     // add token to portfolio mainnet - don't add if it is the native AVAX on mainnet as they are already added
     if (baseSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding base to Main" , baseSymbol);
-        await portfolioMain.addToken(baseSymbol, baseAddr, 0,baseDecimals, '0', ethers.utils.parseUnits('0.5',baseDecimals), false);
+        await portfolioMain.addToken(baseSymbol, baseAddr, baseDecimals, '0', ethers.utils.parseUnits('0.5',baseDecimals));
     }
     if (quoteSymbol != Utils.fromUtf8("AVAX")) {
         //console.log ("Adding quote to Main" , quoteSymbol);
@@ -774,17 +774,6 @@ export const withdrawTokenToDst = async (portfolio: PortfolioSub, from:SignerWit
     return await (<any> portfolio).connect(from)["withdrawToken(address,bytes32,uint256,uint8,uint32)"]( from.address, tokenSymbol, Utils.parseUnits(amount, tokenDecimals), bridgeProvider, dstChainId);
 }
 
-export const addOrderOld = async (tradepair: TradePairs, trader: SignerWithAddress, clientOrderId: string, tradePairId: string
-    , price: BigNumber, quantity: BigNumber, side:number, type1:number, type2:number): Promise<any> => {
-    // return await (<any>tradepair).connect(trader)["addOrder(address,bytes32,bytes32,uint256,uint256,uint8,uint8,uint8)"](
-    //     trader.address, clientOrderId, tradePairId, price, quantity, side, type1, type2, {
-    //         gasLimit: 10000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
-    return await (<any>tradepair).connect(trader).addOrder(
-                trader.address, clientOrderId, tradePairId, price, quantity, side, type1, type2, {
-                    gasLimit: 10000000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei"),
-
-   });
-}
 
 export const setHardhatBalance = async (trader: SignerWithAddress, newBalance: BigNumber) => {
     const newBalanceHex = newBalance.toHexString().replace("0x0", "0x");
