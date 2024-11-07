@@ -283,5 +283,5 @@
 
     "IC-ARNZ-01": "ICMApp: add relayer address must be non-zero",
     "IC-GLNS-01": "ICMApp: gas limit not set for msgType",
-    "IC-TNTH-01": "ICMApp: teleporter nonce too high"
+    "IC-SRNZ-01": "ICMApp: set relayer addresses must be non-zero"
 }
