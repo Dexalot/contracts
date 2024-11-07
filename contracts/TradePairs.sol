@@ -37,10 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.0.0");
-
-    // denominator for rate calculations obsolete as of Feb 9 2024 CD
-    uint256 public constant TENK = 10000;
+    bytes32 public constant VERSION = bytes32("3.5.0");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
@@ -507,7 +504,7 @@ contract TradePairs is
     /**
      * @notice  Returns order details given the order id
      * @param   _orderId  order id assigned by the contract
-     * @return  Order  Order Struct
+     * @return  Order Struct
      */
     function getOrder(bytes32 _orderId) external view override returns (Order memory) {
         return orderMap[_orderId];
@@ -527,7 +524,7 @@ contract TradePairs is
      * @notice  Returns order details given the trader and the clientOrderId
      * @param   _trader  user's address
      * @param   _clientOrderId   client Order id assigned by the user
-     * @return  Order  Order Struct
+     * @return  Order Struct
      */
     function getOrderByClientOrderId(
         address _trader,
@@ -554,43 +551,36 @@ contract TradePairs is
 
     /**
      * @notice  Emits a given order's latest state
-     * @dev     The details of the emitted event is as follows: \
-     * *version*  event version \
-     * *traderaddress*  traders’s wallet (immutable) \
-     * *pair*  traded pair. ie. ALOT/AVAX in bytes32 (immutable) \
-     * *orderId*  unique order id assigned by the contract (immutable) \
-     * *clientOrderId*  client order id provided by the sender of the order as a reference (immutable) \
-     * *price * price of the order entered by the trader. (0 if market order) (immutable) \
-     * *totalamount*   cumulative amount in quote currency. ⇒ price* quantityfilled . If
-     * multiple partial fills , the new partial fill price*quantity is added to the
-     * current value in the field. Average execution price can be quickly
-     * calculated by totalamount/quantityfilled regardless of the number of
-     * partial fills at different prices \
-     * *quantity*  order quantity (immutable) \
-     * *side* Order side. See #addOrder (immutable) \
-     * *type1*  See #addOrder (immutable) \
-     * *type2*  See #addOrder (immutable) \
-     * ```solidity
-     * status  Order Status  {
-     *          NEW,
-     *          REJECTED,
-     *          PARTIAL,
-     *          FILLED,
-     *          CANCELED,
-     *          EXPIRED, -- For future use
-     *          KILLED -- For future use
-     *          CANCEL_REJECT – Cancel Request Rejected with reason code
-     *       }
-     * ```
-     * *quantityfilled*  cumulative quantity filled \
-     * *totalfee* cumulative fee paid for the order (total fee is always in terms of
-     * received(incoming) currency. ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell
-     * ALOT/AVAX , fee is paid in AVAX \
-     * *code*  reason when order has REJECT or CANCEL_REJECT status, empty otherwise \
-     * Note: Order price can be different than the execution price.
+     * @dev     The details of the emitted event: \
+     * `version`  event version \
+     * `traderaddress`  traders’s wallet (immutable) \
+     * `pair`  traded pair. ie. ALOT/AVAX in bytes32 (immutable) \
+     * *ITradePairs.Order*: \
+     * `id`  unique order id assigned by the contract (immutable) \
+     * `clientOrderId`  client order id provided by the sender of the order as a reference (immutable) \
+     * `tradePairId` duplicate. same as `pair` above (immutable) \
+     * `price ` price of the order entered by the trader. (0 if market order) (immutable) \
+     * `totalAmount`  cumulative amount in quote currency. If multiple partial fills exist,
+     *  the new partial fill amount(price * quantity) is added to the current value in the field. Average execution
+     *  price can be quickly calculated by totalAmount/quantityFilled regardless of the number of partial fills at
+     *  different prices (mutable)\
+     * `quantity`  order quantity (immutable) \
+     * `quantityFilled`  cumulative quantity filled (mutable)\
+     * `totalFee` cumulative fee paid for the order (total fee is always in terms of received(incoming) currency.
+     *  ie. if Buy ALOT/AVAX, fee is paid in ALOT, if Sell ALOT/AVAX , fee is paid in AVAX (mutable) \
+     * `traderaddress`  traders’s wallet (immutable) duplicate \
+     * `side`   ITradePairs.Side   See #addNewOrder (immutable) \
+     * `type1`  ITradePairs.Type1  See #addNewOrder (immutable) \
+     * `type2`  ITradePairs.Type2  See #addNewOrder (immutable) \
+     * `status` ITradePairs.Status See #addNewOrder (immutable) \
+     * `updateBlock` the block number the order was created or last changed (mutable)\
+     * `previousUpdateBlock` the previous block number the order was changed (mutable)\
+     * `code`  reason when the order's `status in REJECT, CANCEL_REJECT, CANCELED (due to STP)`, empty otherwise (mutable)\
+     * Note: The execution price will always be equal or better than the Taker Order price for LIMIT Orders.
      * @param   _orderId  order id
+     * @param   _code error code related to the order
      */
-    function emitStatusUpdate(bytes32 _orderId) private {
+    function emitStatusUpdate(bytes32 _orderId, bytes32 _code) private {
         Order storage order = orderMap[_orderId];
         uint32 previousUpdateBlock = order.updateBlock;
         order.updateBlock = uint32(block.number);
@@ -600,41 +590,38 @@ contract TradePairs is
             order.tradePairId,
             order,
             previousUpdateBlock,
-            bytes32(0) // no reject reason
+            _code // if any
         );
     }
 
-    /**
-     * @notice  Calculates the commission and updates the order state after an execution
-     * @dev     Updates the `totalAmount`, `quantityFilled`, `totalFee` and the status of the order.
-     * Commissions are rounded down based on evm and display decimals to avoid DUST
-     * @param   _orderId  order id to update
-     * @param   _quantity  execution quantity
-     * @param   _quoteAmount  quote amount
-     * @param   _fee  fee (commission) paid for the order
-
-     */
-    function updateOrder(bytes32 _orderId, uint256 _quantity, uint256 _quoteAmount, uint256 _fee) private {
-        Order storage order = orderMap[_orderId];
-        order.quantityFilled = order.quantityFilled + _quantity;
-        order.status = order.quantity == order.quantityFilled ? Status.FILLED : Status.PARTIAL;
-        order.totalAmount = order.totalAmount + _quoteAmount;
-        order.totalFee = order.totalFee + _fee;
+    function emitStatusUpdateMemory(Order memory _order, bytes32 _code) private {
+        emit OrderStatusChanged(
+            ORDER_STATUS_CHANGED_VERSION,
+            _order.traderaddress,
+            _order.tradePairId,
+            _order,
+            _order.updateBlock, // previous update block is the same as updateBlock
+            _code // if any
+        );
     }
 
     /**
      * @notice  Applies an execution to both maker and the taker orders and adjust holdings in portfolio
      * @dev     Emits Executed event showing the execution details. Note that an order's price
-     * can be different than a taker order price, but it should be identical to maker order's price.
+     * can be different than the execution price, but it should be identical to maker order's price.
      * @param   _makerOrderId  maker order id
-     * @param   _takerOrderId  maker order id
+     * @param   _takerOrder  taker order
      * @param   _price  execution price
      * @param   _quantity  execution quantity
      */
-    function addExecution(bytes32 _makerOrderId, bytes32 _takerOrderId, uint256 _price, uint256 _quantity) private {
+    function addExecution(
+        bytes32 _makerOrderId,
+        Order memory _takerOrder,
+        uint256 _price,
+        uint256 _quantity
+    ) private returns (Order memory) {
         Order storage makerOrder = orderMap[_makerOrderId];
         TradePair storage tradePair = tradePairMap[makerOrder.tradePairId];
-        Order storage takerOrder = orderMap[_takerOrderId];
 
         uint256 quoteAmount = UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, _price, _quantity);
         (uint256 mlastFee, uint256 tlastFee) = portfolio.addExecution(
@@ -642,26 +629,37 @@ contract TradePairs is
             tradePair,
             makerOrder.side,
             makerOrder.traderaddress,
-            takerOrder.traderaddress,
+            _takerOrder.traderaddress,
             _quantity,
             quoteAmount
         );
-        updateOrder(makerOrder.id, _quantity, quoteAmount, mlastFee);
-        updateOrder(takerOrder.id, _quantity, quoteAmount, tlastFee);
-        emitExecuted(_price, _quantity, makerOrder.id, takerOrder.id, mlastFee, tlastFee);
-        emitStatusUpdate(makerOrder.id); // EMIT maker order's status update
+
+        //Update maker Order
+        makerOrder.quantityFilled = makerOrder.quantityFilled + _quantity;
+        makerOrder.status = makerOrder.quantity == makerOrder.quantityFilled ? Status.FILLED : Status.PARTIAL;
+        makerOrder.totalAmount = makerOrder.totalAmount + quoteAmount;
+        makerOrder.totalFee = makerOrder.totalFee + mlastFee;
+        //update taker order
+        _takerOrder.quantityFilled = _takerOrder.quantityFilled + _quantity;
+        _takerOrder.status = _takerOrder.quantity == _takerOrder.quantityFilled ? Status.FILLED : Status.PARTIAL;
+        _takerOrder.totalAmount = _takerOrder.totalAmount + quoteAmount;
+        _takerOrder.totalFee = _takerOrder.totalFee + tlastFee;
+
+        emitExecuted(_price, _quantity, makerOrder.id, _takerOrder, mlastFee, tlastFee);
+        emitStatusUpdate(makerOrder.id, bytes32(0)); // EMIT maker order's status update
+        return _takerOrder;
     }
 
     /**
      * @notice  Emits the Executed Event showing \
      * `version`  event version \
-     * `tradePairId`  traded pair from makerOrder, i.e. ALOT/AVAX in bytes32 \
-     * `_price`  see below \
-     * `_quantity`  see below \
-     * `_makerOrderId`  see below \
-     * `_takerOrderId`  see below \
-     * `_mlastFee`  see below \
-     * `_tlastFee`  see below \
+     * `pair`  traded pair id from makerOrder, i.e. ALOT/AVAX in bytes32 \
+     * `price`  executed price \
+     * `quantity`  executed quantity \
+     * `makerOrder`  makerOrder id \
+     * `takerOrder`  takerOrder id \
+     * `feeMaker`  fee paid by maker \
+     * `feeTaker`  fee paid by taker \
      * `takerSide`  Side of the taker order. 0 - BUY, 1- SELL (Note: This can be used to identify
      * the fee UNITs. If takerSide = 1, then the fee is paid by the Maker in Base
      * Currency and the fee paid by the taker in Quote currency. If takerSide= 0
@@ -669,11 +667,11 @@ contract TradePairs is
      * the taker in Base currency \
      * `execId`  Unique trade id (execution id) assigned by the contract \
      * `addressMaker`  maker traderaddress \
-     * `addressTaker`  taker traderaddress
+     * `addressTaker`  taker traderaddress \
      * @param   _price      executed price
      * @param   _quantity   executed quantity
      * @param   _makerOrderId  Maker Order id
-     * @param   _takerOrderId  Taker Order id
+     * @param   _takerOrder  Taker Order
      * @param   _mlastFee   fee paid by maker
      * @param   _tlastFee   fee paid by taker
      */
@@ -681,25 +679,24 @@ contract TradePairs is
         uint256 _price,
         uint256 _quantity,
         bytes32 _makerOrderId,
-        bytes32 _takerOrderId,
+        Order memory _takerOrder,
         uint256 _mlastFee,
         uint256 _tlastFee
     ) private {
         Order storage makerOrder = orderMap[_makerOrderId];
-        Order storage takerOrder = orderMap[_takerOrderId];
         emit Executed(
             EXECUTED_VERSION,
             makerOrder.tradePairId,
             _price,
             _quantity,
             makerOrder.id,
-            takerOrder.id,
+            _takerOrder.id,
             _mlastFee,
             _tlastFee,
-            takerOrder.side,
+            _takerOrder.side,
             getNextId(),
             makerOrder.traderaddress,
-            takerOrder.traderaddress
+            _takerOrder.traderaddress
         );
     }
 
@@ -722,13 +719,12 @@ contract TradePairs is
      * if decimals, order types and clientOrderId are supplied properly \
      * @dev     clientorderid is sent by the owner of an order and it is returned in responses for
      * reference. It must be unique per traderaddress.
-     * @param   _msgSender  msg.Sender address
+     * @param   _msSender  msg.Sender address
      * @param   _order  order details
-
      */
-    function addOrderChecks(address _msgSender, NewOrder memory _order) private view returns (uint256, bytes32) {
+    function addOrderChecks(address _msSender, NewOrder memory _order) private view returns (uint256, bytes32) {
         // Order owner check. Will revert the order or the orderList entirely
-        require(_order.traderaddress == _msgSender, "T-OOCA-01");
+        require(_order.traderaddress == _msSender, "T-OOCA-01");
         TradePair storage tradePair = tradePairMap[_order.tradePairId];
         // Pair level checks. Will revert the order or the orderList entirely
         require(!tradePair.pairPaused, "T-PPAU-01");
@@ -785,25 +781,16 @@ contract TradePairs is
         } else if (tradeAmnt > tradePair.maxTradeAmount) {
             return (0, UtilsLibrary.stringToBytes32("T-MTMT-01"));
         }
-        return (_order.price, "");
+        return (_order.price, bytes32(0));
     }
 
     /**
-     * @notice  To send multiple Orders of any type in a single transaction designed specifically for Market Makers
-     * @dev     if a single order in the new list reverts due to insufficient funds or if the msg sender is different than
-     * the order.traderaddress, the entire transaction is reverted. No orders will go through.
-     * This function will only revert if it fails pair level checks, which are
-     * tradePair.pairPaused or tradePair.addOrderPaused \
-     * It can also potentially revert if type2= FOK is used. Safe to use with IOC, GTC & PO. \
-     * For the rest of the order level check failures, It will reject those orders by emitting
-     * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
-     * The event will have your clientOrderId, but no orderId will be assigned to the order as it will not be
-     * added to the blockchain. \
-     * Order rejects will only be raised if called from this function. Single orders entered using addOrder
-     * function will revert as before for backward compatibility. \
-     * See addOrderChecks function. Every line that starts with  return (0, rejectReason) will be rejected.
-     * @param   _orders  array of newOrder struct. See ITradePairs.NewOrder
-     * Sample typescript code
+     * @notice  To send multiple Orders of any type in a single transaction designed for Market Making operations
+     * @dev     if a single order in the new list REVERTS, the entire transaction is reverted.
+     * No orders nor cancels will go through.
+     * If any of the orders/cancels is rejected, it will continue to process the rest of the orders without any issues.
+     * See #addNewOrder for `REVERT` and `REJECT` conditions. \
+     * ```typescript:no-line-numbers
      * const orders = [];
      * const order = { traderaddress: Ox
      *               , clientOrderId: Oxid3
@@ -812,256 +799,283 @@ contract TradePairs is
      *               , quantity:
      *               , side: 0  // Buy
      *               , type1: 1 // Limit
-     *               , type2: 3 //PO
+     *               , type2: 3 // PO
+     *               , stp: 0   // STP
      *          };
      * orders.push(order);
-     * await tradePairs.addOrderList(orders);
+     * const tx = await tradePairs.addOrderList(orders);
+     * orderLog = await tx.wait();
+     * ```
+     * @param   _orders  array of newOrder struct. See ITradePairs.NewOrder
      */
     function addOrderList(NewOrder[] calldata _orders) external override nonReentrant {
         addOrderListPrivate(msg.sender, _orders);
     }
 
     /**
-     * @notice  To send multiple Orders of any type in a single transaction designed specifically for Market Makers
-     * @dev     See addOrderList
-     * @param   _msgSender  msg.Sender's address
+     * @notice  To send multiple Orders of any type in a single transaction designed for Market Making operations
+     * @dev     See #addOrderList
+     * @param   _msSender  msg.Sender's address
      * @param   _orders  array of newOrder struct. See ITradePairs.NewOrder
      */
 
-    function addOrderListPrivate(address _msgSender, NewOrder[] calldata _orders) private {
+    function addOrderListPrivate(address _msSender, NewOrder[] calldata _orders) private {
         for (uint256 i = 0; i < _orders.length; ++i) {
             addOrderPrivate(
-                _msgSender,
+                _msSender,
                 _orders[i],
-                i == _orders.length - 1, // Autofill using the last order
-                false // emit status=REJECTED for individual orders form the list instead of reverting the entire list
+                i == _orders.length - 1 // fillGasTank using the last order
             );
         }
     }
 
     /**
-     * @notice  DEPRECATED Frontend Entry function to call to add an order
-     * @dev DEPRECATED use addOrder(order) function instead. Will be removed in November 2024
-     * @param   _trader  address of the trader. If msg.sender is not the `_trader` the tx will revert.
-     * @param   _clientOrderId unique id provided by the owner of an order
-     * @param   _tradePairId  id of the trading pair
-     * @param   _price  price of the order
-     * @param   _quantity  quantity of the order
-     * @param   _side  enum ITradePairs.Side  Side of the order 0 BUY, 1 SELL
-     * @param   _type1  enum ITradePairs.Type1 Type of the order. 0 MARKET , 1 LIMIT (STOP and STOPLIMIT NOT Supported)
-     * @param   _type2  enum ITradePairs.Type2 SubType of the order
-     */
-    function addOrder(
-        address _trader,
-        bytes32 _clientOrderId,
-        bytes32 _tradePairId,
-        uint256 _price,
-        uint256 _quantity,
-        Side _side,
-        Type1 _type1,
-        Type2 _type2
-    ) external override nonReentrant {
-        NewOrder memory newOrder;
-        newOrder.traderaddress = _trader;
-        newOrder.clientOrderId = _clientOrderId;
-        newOrder.tradePairId = _tradePairId;
-        newOrder.price = _price;
-        newOrder.quantity = _quantity;
-        newOrder.side = _side;
-        newOrder.type1 = _type1;
-        newOrder.type2 = _type2;
-        addOrderPrivate(msg.sender, newOrder, true, true);
-    }
-
-    /**
-     * @notice  Frontend Entry function to call to add an order
-     * @dev     Adds an order with the given fields. As a general rule of thumb msg.sender should be the `_trader`
-     * otherwise the tx will revert. 'OrderStatusChanged' event will be emitted
-     * when an order is received and committed to the blockchain. You can get the contract
-     * generated orderid along with your clientorderid from this event. When the blockchain is extremely busy,
-     * the transactions are queued up in the mempool and prioritized based on their gas price.
-     * @dev     `_clientOrderId` is sent by the owner of an order and it is returned in responses for
-     * reference. It must be unique per traderaddress. \
-     * @dev     Price for market Orders are set to 0 internally (type1=0). Valid price decimals and evm decimals
-     * can be obtained by calling `getTradePair(..)` and accessing baseDisplayDecimals and baseDecimals respectively. \
-     * @dev     Valid quantity decimals (quoteDisplayDecimals) and evm decimals can be obtained by calling
-     * `getTradePair(..)` and accessing quoteDisplayDecimals and quoteDecimals respectively. \
-     * @dev     The default for type2 (Order SubType) is 0 equivalent to GTC. \
-     * Here are the other SubTypes: \
-     * 0 = GTC : Good Till Cancel \
-     * 1 = FOK : FIll or Kill (Will fill entirely or will revert with "T-FOKF-01") \
-     * 2 = IOC : Immediate or Cancel  (Will fill partially or fully, will get status=CANCELED if filled partially) \
-     * 3 = PO  : Post Only (Will either go in the orderbook or revert with "T-T2PO-01" if it has a potential match)
-     * @param   _order  newOrder struct to be sent out. See ITradePairs.NewOrder
-     * Sample typescript code
-     * const order = { traderaddress: Ox    //address of the trader. If msg.sender is not the `_trader` the tx will revert.
-     *               , clientOrderId: Oxid3 //unique id provided by the owner of an order
-     *               , tradePairId:         //id of the trading pair
-     *               , price:               //price of the order
-     *               , quantity:            //quantity of the order
+     * @notice  Function for adding a single order
+     * @dev     Adds an order with the given order struct. \
+     * `REVERT` vs `REJECT` \
+     * When a transaction is `REVERTED`, neither the order is accepted nor the transaction is committed
+     * to the blockchain. A record of the failure that can be seen with a blockchain explorer like
+     * snowtrace to get some additional information.
+     * A `REVERT` reverts the entire transaction. If multiple orders are submitted together,
+     * a single revert caused by any of the orders regardless of its position in the order list
+     * will cause them to revert all together.
+     * Orders from Reverted transactions will NOT show up in your order history. \
+     *
+     * When an order is REJECTED, the order is accepted for processing, an orderId is assigned to it but
+     * then gets REJECTED. The transaction is also successfully committed to the blockchain.
+     * An `OrderStatusChanged` event is raised to give the user additional information about the reject
+     * condition. The order will show up in your order history as `REJECTED`. The rejection has no impact
+     * on the additional orders submitted along with the rejected order. The remaining orders are processed
+     * without disruption.\
+     *
+     * `REVERT conditions:`
+     *
+     * - `P-AFNE-01` or `P-AFNE-02` available funds not enough
+     * - `T-OOCA-01` only msg.sender can add orders
+     * - `T-FOKF-01` if type2=FOK and the order can't be fully filled. (Use `type2=IOC` instead for smoother list orders)
+     * - `T-PPAU-01` tradePair.pairPaused (Exchange Level state set by the admins)
+     * - `T-AOPA-01` tradePair.addOrderPaused (Exchange Level state set by the admins)
+     *
+     * `REJECT conditions:`
+     *
+     * For all the order level check failures, the order will be REJECTED by emitting
+     * OrderStatusChanged event with `status = REJECTED` and `code = errorCode`.
+     * - `T-IVOT-01` : invalid order type / order type not enabled
+     * - `T-TMDQ-01` : too many decimals in the quantity
+     * - `T-TMDP-01` : too many decimals in the price
+     * - `T-CLOI-01` : client order id has to be unique per trader
+     * - `T-LTMT-01` : trade amount is less than minTradeAmount for the tradePair
+     * - `T-LTMT-01` : trade amount is more than maxTradeAmount for the tradePair
+     * - `T-T2PO-01` : Post Only order is not allowed to be a taker
+     * - `T-POOA-01` : Only PO(PostOnly) Orders allowed for this pair
+     * - `T-AUCT-04` : market orders not allowed in auction mode
+     *
+     * The `OrderStatusChanged` event always will return an `id` (orderId) assigned by the blockchain along
+     * with your `clientOrderId` when trying to enter a new order regardless of the status of the order.\
+     * `clientOrderId` is user generated and must be unique per traderaddress. \
+     * For MARKET orders, values sent by the user in the `price` and `type2` fields will be ignored and
+     * defaulted to `0` and `Type2.GTC` respectively. \
+     * Similarly for auction orders, values sent by the user in the `stp` and `type2` fields will be ignored
+     * and defaulted to `STP.NONE` and `Type2.GTC` respectively. \
+     * Valid quantity precision (baseDisplayDecimals) and base token evm decimals can be obtained by calling
+     * `getTradePair(..)` and accessing baseDisplayDecimals and baseDecimals respectively.
+     * Valid price precision and quote token evm decimals can also be obtained from the same function above and
+     * accessing quoteDisplayDecimals and quoteDecimals respectively. Any reference data is also available from
+     * the REST API. See Trading API \
+     *
+     * `Type2` : \
+     * `0 = GTC` : Good Till Cancel. Order is kept open until it’s either executed or manually canceled \
+     * `1 = FOK` : FIll or Kill. Will entirely fill the order or revert with code = `T-FOKF-01` \
+     * `2 = IOC` : Immediate or Cancel. Any part of the order that isn’t immediately filled will get `status=CANCELED` \
+     * `3 = PO`  : Post Only. Will either go in the orderbook without any fills or will get `status=REJECTED`
+     * with `T-T2PO-01` if it has a potential match
+     *
+     * `STP`   : Self Trade Prevention Mode when both maker and taker orders are from the same traderaddress. \
+     * `0 = CANCELTAKER`   – Cancel taker Order. Let the resting maker order remain in the orderbook. \
+     * `1 = CANCELMAKER`  – Cancel maker Order. Continue to execute the newer taking order.\
+     * `2 = CANCELBOTH`    – Cancel both maker & taker orders immediately.\
+     * `3 = NONE`          – Do nothing. Self Trade allowed
+     *
+     * When the blockchain is extremely busy, the transactions are queued up in the mempool and prioritized
+     * based on their gas price.
+     * ```typescript:no-line-numbers
+     * const order = { traderaddress: Ox    // address of the trader. If msg.sender != `traderaddress` the tx will revert with `T-OOCA-01`.
+     *               , clientOrderId: Oxid3 // unique id provided by the owner of an order in bytes32
+     *               , tradePairId:         // id of the trading pair in bytes32
+     *               , price:               // price of the order
+     *               , quantity:            // quantity of the order
      *               , side: 0              // enum ITradePairs.Side  Side of the order 0 BUY, 1 SELL
      *               , type1: 1             // enum ITradePairs.Type1 Type of the order. 0 MARKET, 1 LIMIT
      *               , type2: 3             // enum ITradePairs.Type2 SubType of the order
+     *               , stp: 0               // enum ITradePairs.STP self trade prevention mode
      *          };
+     * const tx = await tradePairs.addNewOrder(order);
+     * orderLog = await tx.wait();
+     * ```
+     * @param   _order  newOrder struct to be sent out. See ITradePairs.NewOrder
      */
     function addNewOrder(NewOrder calldata _order) external override nonReentrant {
-        addOrderPrivate(msg.sender, _order, true, true); // if false will get rejects instead of reverts
+        addOrderPrivate(msg.sender, _order, true);
     }
 
     /**
-     * @notice  See addOrder
-     * @param   _msgSender  address of the msg.Sender. If msg.sender is not the same as _order.traderaddress
-     * the tx will revert.
+     * @notice  See #addNewOrder
+     * @dev This function attempts to fill the Gas Tank if it is a single order or the very last order in a list. If we
+     * apply fillGasTank to any order before the last one in a list, the balances of the token may change and error out
+     * as subsequent orders for the same token may expect the balances before the tx has started. Total 20 Y
+     * available. 2 orders entered. Ord1 Sell 12 Y and Ord2 Sell another 8 Y. if we fillGasTank on Ord1, Ord2 will
+     * revert the entire tx with `P-AFNE`. In this case it will attempt to fillGasTank on Ord2 but it won't since
+     * there will be no inventory available. If Ord1 Sell 12 Y and Ord2 Sell another 7 Y , then there is 1 Y
+     * available that can be used for fillGasTank.
+     * @param   _msSender  address of the msg.Sender. If msg.sender is not the same as _order.traderaddress the tx will revert.
      * @param   _order  newOrder struct to be sent out. See ITradePairs.NewOrder
-     * @param   _autofill  controls the autofill logic. Autofill is applied
-     * if it is a single order or the very last order in a list. If we apply autofill to any order before
-     * the last one in a list, we may change the balances of a token and subsequent orders for the same token
-     * may expect the balances before the tx has started. Total 20 Y available. 2 orders entered.
-     * Ord1 Sell 12 Y and Ord2 Sell another 8 Y. if we autofill on Ord1, Ord2 will revert the entire tx with P-AFNE
-     * In this case it will attempt to autofill on Ord2 but it won't since there will be no inventory available.
-     * if Ord1 Sell 12 Y and Ord2 Sell another 7 Y , then there is 1 Y available that can be used for autofill.
-     * @param   _revertOrders  controls the revert logic
-     * if true, it is called from deprecated addOrder function, it will revert with the a rejectReason for backward
-     * compatibility.\
-     * if false, it is called from addOrderList or new addOrder function. it will reject the order by emitting
-     * OrderStatusChange with "status" = REJECTED and "code" = rejectReason instead of reverting.
-     * Should be removed when deprecated addOrder method is removed
+     * @param   _fillGasTank  fill GasTank if true and when the user's balance is below the treshold
      */
-    function addOrderPrivate(
-        address _msgSender,
-        NewOrder memory _order,
-        bool _autofill,
-        bool _revertOrders
-    ) private whenNotPaused {
-        // Returns applicable price for Type1=MARKET
-        // OR _price unchanged for Type1=LIMIT
-        // OR 0 price along with a rejectReason
-        (uint256 price, bytes32 rejectReason) = addOrderChecks(_msgSender, _order);
-        if (price == 0) {
-            // order can't be processed.
-            if (_revertOrders) {
-                revert(UtilsLibrary.bytes32ToString(rejectReason)); // revert to keep single order logic backward compatible
-            } else {
-                // Coming from new functions: Raise Event instead of Revert
-                // Some fields are initialized with 0
-                Order memory rejectedOrder = Order(
-                    bytes32(0), // id - Rejecting order before assigning an orderid
-                    _order.clientOrderId,
-                    _order.tradePairId,
-                    _order.price,
-                    0, //totalAmount
-                    _order.quantity,
-                    0, //quantityFilled
-                    0, // totalFee
-                    _order.traderaddress,
-                    _order.side,
-                    _order.type1,
-                    _order.type2,
-                    Status.REJECTED,
-                    uint32(block.number) //updateBlock
-                );
-                emit OrderStatusChanged(
-                    ORDER_STATUS_CHANGED_VERSION,
-                    rejectedOrder.traderaddress,
-                    rejectedOrder.tradePairId,
-                    rejectedOrder,
-                    rejectedOrder.updateBlock, // previous update block is the same as updateBlock
-                    rejectReason
-                );
-                return; // reject & stop processing the order
-            }
-        }
-
+    function addOrderPrivate(address _msSender, NewOrder memory _order, bool _fillGasTank) private whenNotPaused {
         TradePair storage tradePair = tradePairMap[_order.tradePairId];
         bytes32 orderId = getNextOrderId();
-        clientOrderIDMap[_order.traderaddress][_order.clientOrderId] = orderId;
-        Order storage order = orderMap[orderId];
-        order.id = orderId;
-        order.clientOrderId = _order.clientOrderId;
-        order.tradePairId = _order.tradePairId;
-        order.traderaddress = _order.traderaddress;
-        order.price = price;
-        order.quantity = _order.quantity;
+
+        Order memory takerOrder;
+        takerOrder.id = orderId;
+        takerOrder.clientOrderId = _order.clientOrderId;
+        takerOrder.tradePairId = _order.tradePairId;
+        takerOrder.traderaddress = _order.traderaddress;
+        takerOrder.price = _order.price;
+        takerOrder.quantity = _order.quantity;
         // for new orders this ensures that previousUpdateBlock is the same as updateBlock
-        order.updateBlock = uint32(block.number);
-        if (_order.side != Side.BUY) {
-            // evm initialized to BUY already
-            order.side = _order.side;
-        }
+        takerOrder.updateBlock = uint32(block.number);
+        takerOrder.side = _order.side;
+        //takerOrder.totalAmount= 0;         // evm initialized
+        //takerOrder.quantityFilled= 0;      // evm initialized
+        //takerOrder.status= Status.NEW;     // evm initialized
+        //takerOrder.totalFee= 0;            // evm initialized
+        //takerOrder.type1= Type1.MARKET;    // evm initialized
+        //takerOrder.type2= Type2.GTC;       // evm initialized
+        //MARKET orders can only be GTC;  Leave evm initialized values as is unless type1 !=MARKET
         if (_order.type1 != Type1.MARKET) {
-            // evm initialized to MARKET already
-            order.type1 = _order.type1;
-            if (_order.type2 != Type2.GTC) {
-                // evm initialized to GTC already
-                // MARKET orders can only be GTC
-                // All auction orders have to be LIMIT & GTC
-                order.type2 = UtilsLibrary.matchingAllowed(tradePair.auctionMode) ? _order.type2 : Type2.GTC;
+            takerOrder.type1 = _order.type1;
+
+            if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
+                takerOrder.type2 = _order.type2;
+            } else {
+                // All auction orders have to be LIMIT & GTC & STP.NONE
+                takerOrder.type2 = Type2.GTC;
+                _order.stp = STP.NONE;
             }
         }
-        //order.totalAmount= 0;         // evm initialized
-        //order.quantityFilled= 0;      // evm initialized
-        //order.status= Status.NEW;     // evm initialized
-        //order.totalFee= 0;            // evm initialized
+
+        // Returns applicable price for Type1=MARKET
+        // OR _price unchanged for Type1=LIMIT
+        // OR 0 price along with a errorCode
+        (uint256 price, bytes32 code) = addOrderChecks(_msSender, _order);
+        if (price == 0) {
+            takerOrder.status = Status.REJECTED;
+            // previous update block is the same as updateBlock
+            emitStatusUpdateMemory(takerOrder, code);
+            return; // reject & stop processing the order
+        }
+        // Use the price returned by addOrderCheck as it returns applicable price for Type1=MARKET
+        takerOrder.price = price;
+
+        // Add to clientOrderIDMap quickly to be able to check potential dups
+        clientOrderIDMap[_order.traderaddress][_order.clientOrderId] = orderId;
 
         //Skip matching if in Auction Mode
-        uint quantityRemaining = order.quantity;
         if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
-            quantityRemaining = matchOrder(order.id, maxNbrOfFills);
+            (takerOrder, code) = matchOrder(takerOrder, maxNbrOfFills, _order.stp);
         }
-
-        bytes32 adjSymbol = order.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
+        uint256 quantityRemaining = UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled);
+        bytes32 adjSymbol = takerOrder.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
 
         if (_order.type1 == Type1.MARKET) {
-            order.price = 0; //Reset the market order price back to 0
+            takerOrder.price = 0; // Reset the market takerOrder price back to 0
         } else {
-            if (order.type2 == Type2.FOK) {
+            if (takerOrder.type2 == Type2.FOK) {
+                // need to revert here because takerOrder may match with multiple maker orders and yet not get
+                // fully filled. revert ensures that all the maker orders that were matching against this
+                // taker order remain intact
                 require(quantityRemaining == 0, "T-FOKF-01");
             }
-            if (_order.type2 == Type2.IOC && quantityRemaining > 0) {
-                order.status = Status.CANCELED;
+            if (quantityRemaining > 0 && takerOrder.type2 == Type2.IOC) {
+                // IOC order with remaining qty needs to be canceled
+                takerOrder.status = Status.CANCELED;
             }
             // Unfilled Limit Orders Go in the Orderbook (Including Auction Orders)
-            if (
-                quantityRemaining > 0 &&
-                order.status != Status.CANCELED &&
-                (order.type2 == Type2.GTC || order.type2 == Type2.PO)
-            ) {
-                bytes32 bookIdSameSide = order.side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
-                orderBooks.addOrder(bookIdSameSide, order.id, order.price);
-
-                uint256 adjAmount = order.side == Side.BUY
-                    ? UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, order.price, quantityRemaining)
-                    : quantityRemaining;
-                portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
-            }
+            addTakerToOrderBook(takerOrder.tradePairId, quantityRemaining, takerOrder);
         }
+
         // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
         // when taker order,  previousupdateblock = updateblock
-        emitStatusUpdate(order.id);
-        if (_autofill) {
+        emitStatusUpdateMemory(takerOrder, code);
+        if (_fillGasTank) {
             // Only called if it is a single order or the very last order in an order list.
-            // if any funds available for ALOT or adjSymbol in the portfolio then use it to autoFill the gasTank.
-            portfolio.autoFill(order.traderaddress, adjSymbol);
+            // if any funds available for ALOT or adjSymbol in the portfolio then use it to fill the GasTank.
+            portfolio.autoFill(takerOrder.traderaddress, adjSymbol);
         }
-        removeClosedOrder(order.id);
+    }
+
+    /**
+     * @notice  Adds the remaining quantity of an unfilled taker order to the orderbook
+     * @dev     memory taker order is cast to storage prospective maker order before being added
+     * to the orderbook  (Including Auction Orders)
+     * */
+    function addTakerToOrderBook(bytes32 _tradePairId, uint256 _quantityRemaining, Order memory _takerOrder) private {
+        if (
+            _quantityRemaining > 0 &&
+            (_takerOrder.status == Status.PARTIAL || _takerOrder.status == Status.NEW) &&
+            (_takerOrder.type2 == Type2.GTC || _takerOrder.type2 == Type2.PO)
+        ) {
+            TradePair storage tradePair = tradePairMap[_tradePairId];
+            (Side side, bytes32 clientOrderId) = (_takerOrder.side, _takerOrder.clientOrderId);
+            bytes32 bookIdSameSide = side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
+            //the remaining of the taker order is entered in the orderbook as a maker order
+            Order storage makerOrder = orderMap[_takerOrder.id];
+
+            (makerOrder.id, makerOrder.clientOrderId, makerOrder.traderaddress) = (
+                _takerOrder.id,
+                clientOrderId,
+                _takerOrder.traderaddress
+            );
+
+            makerOrder.tradePairId = _tradePairId;
+            makerOrder.price = _takerOrder.price;
+            makerOrder.totalAmount = _takerOrder.totalAmount;
+            makerOrder.quantity = _takerOrder.quantity;
+            makerOrder.quantityFilled = _takerOrder.quantityFilled;
+            makerOrder.totalFee = _takerOrder.totalFee;
+            makerOrder.side = side;
+            makerOrder.type1 = _takerOrder.type1;
+            makerOrder.type2 = _takerOrder.type2;
+            makerOrder.status = _takerOrder.status;
+
+            orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
+            bytes32 adjSymbol = side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
+            uint256 adjAmount = side == Side.BUY
+                ? UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, makerOrder.price, _quantityRemaining)
+                : _quantityRemaining;
+            portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, makerOrder.traderaddress, adjSymbol, adjAmount);
+        } else {
+            delete clientOrderIDMap[_takerOrder.traderaddress][_takerOrder.clientOrderId];
+        }
     }
 
     /**
      * @notice  Function to match Auction orders
      * @dev     Requires `DEFAULT_ADMIN_ROLE`, also called by `ExchangeSub.matchAuctionOrders` that
      * requires `AUCTION_ADMIN_ROLE`.
-     * @param   _takerOrderId  Taker Order id
+     * @param   _takerOrder  Taker Order
      * @param   _maxNbrOfFills   controls max number of fills an order can get at a time to avoid running out of gas
-     * @return  uint256  Remaining quantity of the taker order
+     * @return  quantityRemaining Remaining quantity of the taker order
      */
     function matchAuctionOrder(
-        bytes32 _takerOrderId,
+        Order memory _takerOrder,
         uint256 _maxNbrOfFills
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256) {
-        TradePair storage tradePair = tradePairMap[orderMap[_takerOrderId].tradePairId];
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256 quantityRemaining) {
+        TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
         require(tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
         require(tradePair.auctionPrice > 0, "T-AUCT-03");
-        return matchOrder(_takerOrderId, _maxNbrOfFills);
+        (_takerOrder, ) = matchOrder(_takerOrder, _maxNbrOfFills, STP.NONE);
+        quantityRemaining = UtilsLibrary.getRemainingQuantity(_takerOrder.quantity, _takerOrder.quantityFilled);
     }
 
     /**
@@ -1075,15 +1089,20 @@ contract TradePairs is
      * because we are guaranteed to run into such situations where a single large SELL order (quantity 1000)
      * is potentially matched with multiple small BUY orders (1000 orders with quantity 1) , creating 1000 matches
      * which will run out of gas.
-     * @param   _takerOrderId  Taker Order id
-     * @param   _maxNbrOfFills  Max number of fills an order can get at a time to avoid running out of gas
-     * (Defaults to maxNbrOfFills=100).
-     * @return  uint256  Remaining quantity of the taker order
+     * Self Trade Prevention is also checked here before allowing any matches.
+     * @param   _takerOrder  Taker Order
+     * @param   _maxNbrOfFills  Max number of fills an order can get at a time to avoid running out of gas (Default: 100)
+     * @param   _stp  Self Trade Prevention mode
+     * @return  updated taker order (status,quantityFilled, totalAmount etc..)
+     * @return  code reason for the cancel in the `code` field. Currently only due to STP
      */
-    function matchOrder(bytes32 _takerOrderId, uint256 _maxNbrOfFills) private returns (uint256) {
-        Order storage takerOrder = orderMap[_takerOrderId];
-        Side side = takerOrder.side;
-        TradePair storage tradePair = tradePairMap[takerOrder.tradePairId];
+    function matchOrder(
+        Order memory _takerOrder,
+        uint256 _maxNbrOfFills,
+        STP _stp
+    ) private returns (Order memory, bytes32 code) {
+        Side side = _takerOrder.side;
+        TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
         // Get the opposite Book. if buying need to match with SellBook and vice versa
         bytes32 bookId = side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
 
@@ -1092,18 +1111,36 @@ contract TradePairs is
         Order storage makerOrder;
         uint256 quantity;
         uint256 takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(
-            takerOrder.quantity,
-            takerOrder.quantityFilled
+            _takerOrder.quantity,
+            _takerOrder.quantityFilled
         );
         // Don't need price > 0 check as orderBooks.getHead(bookId,price) != ""
         // which is makerOrderId != "" takes care of it
         while (
             takerRemainingQuantity > 0 &&
             makerOrderId != "" &&
-            (side == Side.BUY ? takerOrder.price >= price : takerOrder.price <= price) &&
+            (side == Side.BUY ? _takerOrder.price >= price : _takerOrder.price <= price) &&
             _maxNbrOfFills > 0
         ) {
             makerOrder = orderMap[makerOrderId];
+            // Self Trade Prevention is not applied in Auction Mode
+            if (_takerOrder.traderaddress == makerOrder.traderaddress && _stp != STP.NONE) {
+                code = UtilsLibrary.stringToBytes32("T-STPR-01");
+                if (_stp == STP.CANCELTAKER) {
+                    break; // stop matching the takerOrder with any other maker orders
+                } else {
+                    doOrderCancel(makerOrderId, false, code);
+                    if (_stp == STP.CANCELBOTH) {
+                        break; // stop matching the takerOrder with any other maker orders
+                    }
+                    if (_stp == STP.CANCELMAKER) {
+                        code = bytes32(0);
+                        (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+                        continue; // continue with the next maker order
+                    }
+                }
+            }
+
             quantity = orderBooks.matchTrade(
                 bookId,
                 price,
@@ -1117,14 +1154,16 @@ contract TradePairs is
                 // has to be made available before addExecution
                 portfolio.adjustAvailable(
                     IPortfolio.Tx.INCREASEAVAIL,
-                    takerOrder.traderaddress,
+                    _takerOrder.traderaddress,
                     tradePair.baseSymbol,
                     quantity
                 );
                 // In Auction, all executions should be at auctionPrice
                 price = tradePair.auctionPrice;
             }
-            addExecution(makerOrder.id, takerOrder.id, price, quantity); // this makes a state change to Order Map
+
+            // this makes a state change on the makerOrder in the orderMap
+            _takerOrder = addExecution(makerOrder.id, _takerOrder, price, quantity);
 
             if (tradePair.auctionMode == AuctionMode.MATCHING && makerOrder.price > tradePair.auctionPrice) {
                 // Increase the available by the difference between the makerOrder & the auction Price
@@ -1141,28 +1180,33 @@ contract TradePairs is
             }
             removeClosedOrder(makerOrder.id);
             (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
-            takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled);
+            takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(
+                _takerOrder.quantity,
+                _takerOrder.quantityFilled
+            );
             _maxNbrOfFills--;
         }
 
         if (tradePair.auctionMode == AuctionMode.MATCHING) {
-            // when taker order, previousupdateblock = updateblock
-            emitStatusUpdate(takerOrder.id); // EMIT taker order's status update
+            emitStatusUpdate(_takerOrder.id, bytes32(0)); // EMIT taker order's status update
             if (takerRemainingQuantity == 0) {
                 // Remove the taker auction order from the sell orderbook
-                orderBooks.removeFirstOrder(tradePair.sellBookId, takerOrder.price);
-                removeClosedOrder(takerOrder.id);
+                orderBooks.removeFirstOrder(tradePair.sellBookId, _takerOrder.price);
+                removeClosedOrder(_takerOrder.id);
             }
-        } else if (takerRemainingQuantity > 0 && (_maxNbrOfFills == 0 || takerOrder.type1 == Type1.MARKET)) {
+        } else if (
+            code != bytes32(0) || // Self trade Prevention, cancel the remaining of the taker order.
+            (takerRemainingQuantity > 0 && (_maxNbrOfFills == 0 || _takerOrder.type1 == Type1.MARKET))
+        ) {
             // This is not applicable to Auction Matching Mode
             // if an order gets the max number of fills in a single block, it gets CANCELED for the
             // remaining amount to protect the above loop from running out of gas.
             // OR IF the Market Order fills all the way to the worst price and still has remaining,
             // it gets CANCELED for the remaining amount.
-            takerOrder.status = Status.CANCELED;
+            _takerOrder.status = Status.CANCELED;
         }
 
-        return takerRemainingQuantity;
+        return (_takerOrder, code);
     }
 
     /**
@@ -1188,7 +1232,7 @@ contract TradePairs is
         bytes32 bookId = _isBuyBook ? tradePair.buyBookId : tradePair.sellBookId;
         (uint256 price, bytes32 orderId) = orderBooks.getBottomOfTheBook(bookId);
         while (orderId != "" && _maxCount > 0) {
-            doOrderCancel(orderId, false); //Admin Function, no autofill needed
+            doOrderCancel(orderId, false, UtilsLibrary.stringToBytes32("T-USCL-01")); //Admin Function, no fillGasTank needed
             (price, orderId) = orderBooks.getBottomOfTheBook(bookId);
             _maxCount--;
         }
@@ -1197,11 +1241,13 @@ contract TradePairs is
     /**
      * @notice  Cancels an order and immediately enters a similar order in the same direction.
      * @dev     Only the quantity and the price of the order can be changed. All the other order
-     * fields are copied from the canceled order to the new order.
+     * fields are copied from the to-be canceled order to the new order.
      * The time priority of the original order is lost.
      * Canceled order's locked quantity is made available for the new order within this tx
-     * This function will technically accept the same clientOrderId as the previous because when the previous order
-     * is cancelled it is removed from the mapping and the previous clientOrderId is now available. Not recommended!
+     * This function will technically accept the same clientOrderId as the previous because previous clientOrderId
+     * is made vailable when the previous order is cancelled as  it is removed from the mapping.
+     * !!Not recommended! \
+     * `Important: STP defaults to STP.CANCELMAKER`
      * @param   _orderId  order id to cancel
      * @param   _clientOrderId  client order id of the new order
      * @param   _price  price of the new order
@@ -1224,55 +1270,55 @@ contract TradePairs is
             order.traderaddress,
             order.side,
             order.type1,
-            order.type2
+            order.type2,
+            STP.CANCELMAKER
         );
-        doOrderCancel(order.id, false); // let autofill run in addOrderPrivate in the next line
-        addOrderPrivate(msg.sender, newOrder, true, true);
+        doOrderCancel(order.id, false, bytes32(0)); // let fillGasTank run in addOrderPrivate in the next line
+        addOrderPrivate(msg.sender, newOrder, true);
     }
 
     /**
      * @notice  Cancels an order given the order id supplied
      * @dev     FILLED & CANCELED orders are removed from the blockchain state.
-     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are
+     * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OAEX-01` for orders that are
      * already canceled/filled.
      * The remaining status are NEW & PARTIAL and they are ok to cancel
-     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= T-OOCC-02" if the order.traderaddress
+     * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OOCC-02` if the order.traderaddress
      * of the order that is canceled is different than msg.sender
      * Will only revert if tradePair.pairPaused is set to true by admins
      * @param   _orderId  order id to cancel
      */
     function cancelOrder(bytes32 _orderId) external override nonReentrant {
-        cancelOrderPrivate(msg.sender, _orderId, true); // Single Cancel, default autofill to true
+        cancelOrderPrivate(msg.sender, _orderId, true); // Single Cancel, default fillGasTank to true
     }
 
     /**
      * @notice  Cancels an order given the order id supplied
-     * @dev     See cancelOrder
-     * @param   _msgSender  address of the msg.Sender
+     * @dev     See #cancelOrder
+     * @param   _msSender  address of the msg.Sender
      * @param   _orderId  order id to cancel
-     * @param   _autofill  controls the autofill logic. Autofill is applied
-     * if it is a single cancel or the very last cancel in a cancel list.
+     * @param   _fillGasTank  fill GasTank if true and when the user's balance is below the treshold
      */
-    function cancelOrderPrivate(address _msgSender, bytes32 _orderId, bool _autofill) private whenNotPaused {
+    function cancelOrderPrivate(address _msSender, bytes32 _orderId, bool _fillGasTank) private whenNotPaused {
         Order storage order = orderMap[_orderId];
-        bytes32 rejectReason;
+        bytes32 code;
         if (order.id == bytes32(0)) {
             // Cancel Reject if the order is CLOSED
-            rejectReason = UtilsLibrary.stringToBytes32("T-OAEX-01");
-        } else if (order.traderaddress != _msgSender) {
+            code = UtilsLibrary.stringToBytes32("T-OAEX-01");
+        } else if (order.traderaddress != _msSender) {
             // Cancel Reject if the order is not owned by the msgSender
-            rejectReason = UtilsLibrary.stringToBytes32("T-OOCC-02");
+            code = UtilsLibrary.stringToBytes32("T-OOCC-02");
         }
 
-        if (rejectReason == bytes32(0)) {
+        if (code == bytes32(0)) {
             TradePair storage tradePair = tradePairMap[order.tradePairId];
             require(!tradePair.pairPaused, "T-PPAU-02");
-            doOrderCancel(order.id, _autofill);
+            doOrderCancel(order.id, _fillGasTank, code);
         } else {
             //It takes less contract space in here to do a few assignments instead of
             //Order memory rejectedOrder = Order(....)
             Order memory rejectedOrder;
-            rejectedOrder.traderaddress = _msgSender;
+            rejectedOrder.traderaddress = _msSender;
             rejectedOrder.id = _orderId;
             rejectedOrder.status = Status.CANCEL_REJECT;
             rejectedOrder.type1 = Type1.LIMIT; //Can't cancel a MARKET order so defaulting to LIMIT
@@ -1280,49 +1326,40 @@ contract TradePairs is
             // All other fields are initialized with default values as their values are unknown
             // rejectedOrder.side = Side.BUY
             // rejectedOrder.type2 = Type2.GTC
-
-            emit OrderStatusChanged(
-                ORDER_STATUS_CHANGED_VERSION,
-                _msgSender, //assuming msg sender is the owner of the order to be canceled.
-                bytes32(0), //tradePairId value is unknown
-                rejectedOrder,
-                0, // previous update block unknown
-                rejectReason // Reject reason
-            );
+            // previous update block is the same as updateBlock which are both 0
+            emitStatusUpdateMemory(rejectedOrder, code); // tradePairId unknown
         }
     }
 
     /**
-     * @notice  To Cancel and then add multiple Orders in a single transaction designed specifically for Market Makers
-     * @dev     It calls cancelOrderList and then addLimitOrderList functions
-     * Cancels all the orders in the _orderIds list and then adds the orders in the _orders list immediately in the same block.
-     * Cancel List is completely independent of the new list to be added. In other words, you can technically cancel 2 orders
-     * from 2 different tradepairs and then add 5 new orders for a third tradePairId.
+     * @notice  To Cancel and then Add multiple orders in a single transaction designed for Market Making operations.
+     * It calls cancelOrderList and then addOrderList functions.
+     * This function ensures that cancelation and addition of the orders are done in the same block for a healthy
+     * orderbook.
+     * Note to Market Makers. Please use this function rather than calling cancelOrderList and then addOrderList
+     * separately. For example, suppose there is a single market maker on the orderbook X/USDC. If the market maker
+     * cancels all his orders and wait for the confirmation before sending the new orders, the orderbook can be
+     * theoretically be completely empty for a block or two which will cause a lot of grief to the market participants.
+     * @dev Cancels all the orders in the _orderIds list and then adds the orders in the _orders list immediately in the
+     * same block. Cancel List is completely independent of the new list to be added. In other words, you can technically
+     * cancel 2 orders from 2 different tradepairs and then add 5 new orders for a third tradePairId.
      * Canceled order's locked quantity is made available for the new order within this tx if they are for the same pair.
-     * Call with Maximum ~15 orders at a time for a block size of 30M
-     * When processing cancellations list (_orderIdsToCancel) ******
-     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already canceled/filled \
-     * In this case, because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
-     * event except "orderId", "traderaddress", "status" and "code" fields will be empty/default values. This includes the
-     * indexed field "pair" which you may use as filters for your event listeners. Hence you should process the
-     * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
-     * filtering your events using the "pair" field.
-     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= T-OOCC-02" if the traderaddress
-     * of the order that is being canceled is different than msg.sender
-     * if any of the cancels are rejected, the rest of the cancel request will still be processed.
-     * When processing the NEW Orders list(_orders) ******
-     * if a single order in the new list reverts due to insufficient funds or if the msg sender is different than the
-     * order.traderaddress, the entire transaction is reverted. No orders nor cancels will go through. Otherwise, this
-     * function will only revert if either tradePair.pairPaused or tradePair.addOrderPaused is set to true by admins  \
-     * For the rest of the order level check failures, It will reject but not revert those orders by emitting
-     * OrderStatusChanged event with "status" = Status.REJECTED and "code" = rejectReason
-     * In other words, if any of the new orders are rejected, the rest of the new orders will still be processed.
-     * New Order rejects will only be raised if called from this function. Single orders entered using addOrder
-     * function will revert as before for backward compatibility. \
-     * See addOrderChecks function. Every line that starts with return (0, rejectReason) will be rejected.
-     * @param   _orderIdsToCancel  array of order ids to be canceled
-     * @param   _orders  array of newOrder struct to be sent out. See ITradePairs.NewOrder
-     * Sample typescript code
+     * Call with Maximum ~15 orders at a time for a block size of 30M \
+     * `When processing cancellations list (_orderIdsToCancel)` \
+     * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OAEX-01` for orders that are already canceled/filled \
+     * In this case, because the closed orders are already removed from the blockchain, all the values in the OrderStatusChanged
+     * event except `id`, `traderaddress`, `status` and `code` fields will be empty/default values. This includes the
+     * indexed field `pair` which you may use as filters for your event listeners. Hence you should process the
+     * transaction log rather than relying on your event listeners if you need to capture `CANCEL_REJECT` messages and
+     * filtering your events using the `pair` field.
+     * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OOCC-02` if the traderaddress
+     * of the order that is being canceled is different than msg.sender.
+     * if any of the cancels are rejected, the rest of the cancel requests will still be processed.\
+     * `When processing the NEW Orders list(_orders)` \
+     * if a single order in the new list REVERTS, the entire transaction is reverted. No orders nor cancels will go through.
+     * If any of the orders/cancels is rejected, it will continue to process the rest of the orders without any issues.
+     * See #addNewOrder for `REVERT` and `REJECT` conditions. \
+     * ```typescript:no-line-numbers
      * const orderIdsToCancel =["id1","id2"];
      * const orders = [];
      * const order = { traderaddress: Ox
@@ -1332,56 +1369,61 @@ contract TradePairs is
      *               , quantity:
      *               , side: 0  // Buy
      *               , type1: 1 // Limit
-     *               , type2: 3 //PO
+     *               , type2: 3 // PO
+     *               , stp : 0  // STP
      *          };
      * orders.push(order);
-     * await tradePairs.cancelAddList(orderIdsToCancel, orders);
+     * const tx = await tradePairs.cancelAddList(orderIdsToCancel, orders);
+     * orderLog = await tx.wait();
+     * ```
+     * @param   _orderIdsToCancel  array of order ids to be canceled
+     * @param   _orders  array of newOrder struct to be sent out. See ITradePairs.NewOrder
      */
     function cancelAddList(
         bytes32[] calldata _orderIdsToCancel,
         NewOrder[] calldata _orders
     ) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIdsToCancel, false); // Don't autofill while processing the cancels list
-        addOrderListPrivate(msg.sender, _orders); // will autofill when processing the last order in the add list
+        cancelOrderListPrivate(msg.sender, _orderIdsToCancel, false); // Don't fillGasTank while processing the cancels list
+        addOrderListPrivate(msg.sender, _orders); // will fillGasTank when processing the last order in the add list
     }
 
     /**
      * @notice  Cancels all the orders in the array of order ids supplied
      * @dev     This function may run out of gas if a trader is trying to cancel too many orders
      * Call with Maximum ~50 orders at a time for a block size of 30M
-     * Will emit OrderStatusChanged "status" = CANCEL_REJECT, "code"= "T-OAEX-01" for orders that are already
+     * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OAEX-01` for orders that are already
      * canceled/filled while continuing to cancel the remaining open orders in the list. \
      * Because the closed orders are already removed from the blockchain, all values in the OrderStatusChanged
-     * event except "orderId", "traderaddress", "status" and "code" fields will be empty/default values. This includes the
-     * indexed field "pair" which you may use as filters for your event listeners. Hence you should process the
-     * transaction log rather than relying on your event listeners if you need to capture CANCEL_REJECT messages and
-     * filtering your events using the "pair" field.
+     * event except `id`, `traderaddress`, `status` and `code` fields will be empty/default values. This includes the
+     * indexed field `pair` which you may use as filters for your event listeners. Hence you should process the
+     * transaction log rather than relying on your event listeners if you need to capture `CANCEL_REJECT` messages and
+     * filtering your events using the `pair` field.
      * @param   _orderIds  array of order ids
      */
     function cancelOrderList(bytes32[] calldata _orderIds) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIds, true); // will autofill with the last cancel in the cancel list
+        cancelOrderListPrivate(msg.sender, _orderIds, true); // will fillGasTank with the last cancel in the cancel list
     }
 
     /**
      * @notice  Cancels all the orders in the array of order ids supplied
-     * @dev     See cancelOrderList
-     * @param   _msgSender  array of order ids to be canceled
+     * @dev     See #cancelOrderList
+     * @param   _msSender  array of order ids to be canceled
      * @param   _orderIds   array of order ids
-     * @param   _autofill  controls the autofill logic. Autofill only when processing the last
-     * cancel in the cancel list & if also the _autofill flag is true
+     * @param   _fillGasTank  fill GasTank if true and only when processing the last cancel in the cancel list
      */
-    function cancelOrderListPrivate(address _msgSender, bytes32[] calldata _orderIds, bool _autofill) private {
+    function cancelOrderListPrivate(address _msSender, bytes32[] calldata _orderIds, bool _fillGasTank) private {
         for (uint256 i = 0; i < _orderIds.length; ++i) {
-            cancelOrderPrivate(_msgSender, _orderIds[i], i == _orderIds.length - 1 && _autofill);
+            cancelOrderPrivate(_msSender, _orderIds[i], i == _orderIds.length - 1 && _fillGasTank);
         }
     }
 
     /**
      * @notice  Cancels an order and makes the locked amount available in the portfolio
      * @param   _orderId  order id to cancel
-     * @param   _autofill when true autofills the user's gas tank if it is below the treshold
+     * @param   _fillGasTank fill GasTank if true and when the user's balance is below the treshold
+     * @param   _code additional explanation ( i.e unsolicited Cancel)
      */
-    function doOrderCancel(bytes32 _orderId, bool _autofill) private {
+    function doOrderCancel(bytes32 _orderId, bool _fillGasTank, bytes32 _code) private {
         //DO not add requires here for unsolicitedCancel to work
         Order storage order = orderMap[_orderId];
         TradePair storage tradePair = tradePairMap[order.tradePairId];
@@ -1400,10 +1442,10 @@ contract TradePairs is
         orderBooks.removeOrder(bookId, _orderId, order.price);
         portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
 
-        emitStatusUpdate(order.id);
+        emitStatusUpdate(order.id, _code);
 
-        if (_autofill) {
-            // we just made some funds available for the adjSymbol, so we can autofill without worrying about
+        if (_fillGasTank) {
+            // we just made some funds available for the adjSymbol, so we can fillGasTank without worrying about
             // funds availability
             portfolio.autoFill(order.traderaddress, adjSymbol);
         }

@@ -327,19 +327,19 @@ it("Should be able to send orders properly", async () => {
   const type2toBeReplaced = 3; //PO contract will replace it with GTC
 
   for (let i=0; i<2; i++) {  // 2 sells at 0.01
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "0.01", quantity: "1000", side, type1, type2:type2toBeReplaced};
+    const order: IOrder = {id: Utils.fromUtf8(`sell6-${i+1}`), tp, price: "0.01", quantity: "1000", side, type1, type2:type2toBeReplaced};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
   side = 0;//BUY
   for (let i=2; i<4; i++) {  // 2 buys  at 5000000
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "500000", quantity: "0.01", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`buy6-${i+1}`), tp, price: "500000", quantity: "0.01", side, type1, type2};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
   side = 0;//BUY
   for (let i=4; i<6; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "50000", quantity: "0.01", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`buy7-${i+1}`), tp, price: "50000", quantity: "0.01", side, type1, type2};
     if(i===5) {
       order.quantity="0.02"
     }
@@ -348,13 +348,13 @@ it("Should be able to send orders properly", async () => {
 
   side = 0;//BUY
   for (let i=6; i<8; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "1", quantity: "5000", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`buy8-${i+1}`), tp, price: "1", quantity: "5000", side, type1, type2};
     expect(await addOrder (wallets[i], order, pair, orders)).to.equal(true);
   }
 
   side = 1;//SELL
   for (let i=8; i<10; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "0.02", quantity: "500", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`sells-${i+1}`), tp, price: "0.02", quantity: "500", side, type1, type2};
     if(i===9) {
       order.quantity="501"
     }
@@ -397,7 +397,7 @@ it("Should allow all order operations when auction mode = 3 (CLOSING)", async ()
   const type1 = 1;//LIMIT
   const type2 = 0;//GTC
 
-  const order: IOrder = {id: Utils.fromUtf8(`${1}`), tp, price: "0.03", quantity: "400", side, type1, type2};
+  const order: IOrder = {id: Utils.fromUtf8(`sell1-${1}`), tp, price: "0.03", quantity: "400", side, type1, type2};
   expect(await addOrder(wallets[3], order, pair, orders)).to.equal(true);
   expect(orders.size).to.equal(11);
   const fOrder1 = findOrder(accounts[3], side, "0.03", "400", orders);
@@ -430,7 +430,7 @@ it("Should not allow any order operation when mode = 5 (MATCHING)", async () => 
   const type2 = 0;//GTC
 
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5)   // auction in mode = 5 (MATCHING)
-  const order = {id: Utils.fromUtf8(`${12}`), tp, price: "500000", quantity: "0.01", side, type1, type2};  // add one order
+  const order = {id: Utils.fromUtf8(`buy1-${12}`), tp, price: "500000", quantity: "0.01", side, type1, type2};  // add one order
   await expect(addOrder(wallets[3], order, pair, orders)).to.be.revertedWith("T-PPAU-01");
 
   const fOrder1 = findOrder(accounts[3], side, "500000", "0.01", orders);
@@ -491,8 +491,26 @@ it("Should fail matchAuctionOrder() for unprivileged accounts", async () => {
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5);  // auction is MATCHING
   // try from exchange
   await expect(exchange.connect(wallets[3]).matchAuctionOrders(tp, 8)).to.be.revertedWith("AccessControl:");
-  // try from trade pairs directly
-  await expect(tradePairs.connect(wallets[3]).matchAuctionOrder(tp, 8)).to.be.revertedWith("AccessControl:");
+  // try from trade pairs directly, any order would do
+  const order = {
+    id: ethers.constants.HashZero
+    , tradePairId: tp
+    , totalAmount: 0
+    , quantityFilled :0
+    , traderaddress: wallets[3].address
+    , clientOrderId : await Utils.getClientOrderId(ethers.provider, wallets[3].address)
+    , totalFee: 0
+    , status: 0
+    , updateBlock:96
+    , price: Utils.parseUnits('100', pair.quoteDecimals)
+    , quantity: Utils.parseUnits('10', pair.baseDecimals)
+    , side :  0   // Buy
+    , type1 : 1   // market orders not enabled
+    , type2: 0   // GTC
+    , stp : 0   // CancelTaker
+  }
+
+  await expect(tradePairs.connect(wallets[3]).matchAuctionOrder(order, 8)).to.be.revertedWith("AccessControl:");
 })
 
 it("Should fail matchAuctionOrder() for incorrect mode", async () => {
@@ -553,7 +571,7 @@ it("Should allow to add new and C/R orders in Live Trading Mode", async () => {
   const type1 = 1;//LIMIT
   const type2 = 0;//GTC
 
-  const order1: IOrder = {id: Utils.fromUtf8(`${14}`), tp, price: "1.03", quantity: "100", side, type1, type2};  // add 1st order
+  const order1: IOrder = {id: Utils.fromUtf8(`sell2-${14}`), tp, price: "1.03", quantity: "100", side, type1, type2};  // add 1st order
   expect(await addOrder(wallets[3], order1, pair, orders)).to.be.true;
 
  const fOrder1 = findOrder(accounts[3], side, "1.03", "100", orders);
@@ -598,9 +616,8 @@ it("Should correctly make a partial fill", async () => {
   const side = 0;//BUY
   const type1 = 1;//LIMIT
   const type2 = 0;//GTC
-
-  const order1: IOrder = {id: Utils.fromUtf8(`${15}`), tp, price: "1.03", quantity: "180", side, type1, type2};  // add 1st order
-  expect(await addOrder(wallets[3], order1, pair, orders)).to.be.true;  // This will be fully filled
+  const order1: IOrder = {id: Utils.fromUtf8(`buy3-${15}`), tp, price: "1.03", quantity: "180", side, type1, type2};  // add 1st order
+  expect(await addOrder(wallets[4], order1, pair, orders)).to.be.true;  // This will be fully filled
 });
 
 it("Should get the correct OrderBook state after the partial fill", async () => {
@@ -710,7 +727,7 @@ it("Should handle the full trading. Turn Auction Mode OFF. Match 2 orders Live",
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(0);
 
-  const order1: IOrder = {id: Utils.fromUtf8(`${16}`), tp, price: "0.03", quantity: "400", side: 0, type1: 1, type2: 0};  // add buy order
+  const order1: IOrder = {id: Utils.fromUtf8(`buy4-${16}`), tp, price: "0.03", quantity: "400", side: 0, type1: 1, type2: 0};  // add buy order
   expect(await addOrder(wallets[3], order1, pair, orders)).to.be.true;  // This will be fully filled
 
   let buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
@@ -719,7 +736,7 @@ it("Should handle the full trading. Turn Auction Mode OFF. Match 2 orders Live",
   expect(buybook.length).to.equal(1);
   expect(sellbook.length).to.equal(0);
 
-  const order2: IOrder = {id: Utils.fromUtf8(`${17}`), tp, price: "0.03", quantity: "400", side: 1, type1: 1, type2: 0};  // add sell order
+  const order2: IOrder = {id: Utils.fromUtf8(`buy5-${17}`), tp, price: "0.03", quantity: "400", side: 1, type1: 1, type2: 0};  // add sell order
   expect(await addOrder(wallets[4], order2, pair, orders)).to.be.true;  // This will be fully filled
 
   buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
@@ -800,7 +817,8 @@ async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, ord
     , quantity:  Utils.parseUnits(order.quantity, pair.baseDecimals)
     , side :  order.side
     , type1 : order.type1   // market orders not enabled
-    , type2 : order.type2   // GTC
+    , type2: order.type2   // GTC
+    , stp: 3 // Cancel NONE
 }
   //console.log(newOrder);
   const tx = await tradePairs.connect(wallet).addNewOrder(newOrder);
@@ -891,7 +909,7 @@ async function cancelOrder(wallet: SignerWithAddress, order: IOrder, pair: any, 
         if (_log.event === 'OrderStatusChanged') {
           const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
                                            _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
-                                           _log.args.order.quantityfilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
+                                           _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
           if (rOrder) orders.set(rOrder.id, rOrder);
         }
       }

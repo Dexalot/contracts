@@ -25,10 +25,10 @@ interface ITradePairs {
      * @param   clientOrderId  client order id given by the sender of the order as a reference (immutable)
      * @param   tradePairId  client order id given by the sender of the order as a reference (immutable)
      * @param   price  price of the order entered by the trader. (0 if market order) (immutable)
-     * @param   totalamount  cumulative amount in quote currency: `price* quantityfilled`
+     * @param   totalAmount  cumulative amount in quote currency: `price* quantityfilled`
      * @param   quantity  order quantity (immutable)
-     * @param   quantityfilled  cumulative quantity filled
-     * @param   totalfee cumulative fee paid for the order
+     * @param   quantityFilled  cumulative quantity filled
+     * @param   totalFee cumulative fee paid for the order
      * @param   traderaddress`  traders’s wallet (immutable)
      * @param   side  Order side  See #Side (immutable)
      * @param   type1  Order Type1  See #Type1 (immutable)
@@ -64,6 +64,7 @@ interface ITradePairs {
      * @param   side  Order side  See #Side
      * @param   type1  Order Type1  See #Type1
      * @param   type2  Order Type2  See #Type2
+     * @param   stp  Self Trade Prevention Mode. See #STP
      */
     struct NewOrder {
         bytes32 clientOrderId;
@@ -74,6 +75,7 @@ interface ITradePairs {
         Side side;
         Type1 type1;
         Type2 type2;
+        STP stp;
     }
     /**
      * @notice  TradePair is the data structure defining a trading pair on Dexalot.
@@ -171,17 +173,6 @@ interface ITradePairs {
 
     function getOrderByClientOrderId(address _trader, bytes32 _clientOrderId) external view returns (Order memory);
 
-    function addOrder(
-        address _trader,
-        bytes32 _clientOrderId,
-        bytes32 _tradePairId,
-        uint256 _price,
-        uint256 _quantity,
-        Side _side,
-        Type1 _type1,
-        Type2 _type2
-    ) external;
-
     function addNewOrder(NewOrder calldata _order) external;
 
     function addOrderList(NewOrder[] calldata _orders) external;
@@ -202,7 +193,7 @@ interface ITradePairs {
 
     function getBookId(bytes32 _tradePairId, Side _side) external view returns (bytes32);
 
-    function matchAuctionOrder(bytes32 _takerOrderId, uint256 _maxNbrOfFills) external returns (uint256);
+    function matchAuctionOrder(Order memory _takerOrder, uint256 _maxNbrOfFills) external returns (uint256);
 
     function getOrderRemainingQuantity(bytes32 _orderId) external view returns (uint256);
 
@@ -243,7 +234,7 @@ interface ITradePairs {
      * 4: CANCELED – Order canceled and removed from the orderbook. PARTIAL before CANCELED is allowed \
      * 5: EXPIRED  – For future use \
      * 6: KILLED   – For future use \
-     * 7: CANCEL_REJECT   – Cancel Request Rejected with reason code
+     * 7: CANCEL_REJECT   – Cancel Request Rejected with reason code \
      */
     enum Status {
         NEW,
@@ -266,6 +257,21 @@ interface ITradePairs {
         TAKER
     }
 
+  /**
+     * @notice  Self Trade Prevention
+     * @dev     STP Mode when both maker and taker orders are from the same traderaddress
+     * 0: CANCELTAKER   – cancel Taker Order
+     * 1: CANCELMAKER   – cancel Maker Order
+     * 2: CANCELBOTH    – cancel both Maker & Taker Orders
+     * 3: NONE          – Self Trade allowed
+     */
+    enum STP {
+        CANCELTAKER,
+        CANCELMAKER,
+        CANCELBOTH,
+        NONE
+    }
+
     /**
      * @notice  Order Type2 to be used in conjunction with when Type1= LIMIT
      * @dev     GTC is the default Type2 \
@@ -274,8 +280,8 @@ interface ITradePairs {
      * If reverted, no transaction is committed to the blockchain) \
      * 2: IOC  – Immediate or Cancel. The order will either get a PARTIAL followed by an automatic CANCELED
      * or a FILLED. If PARTIAL, the remaining will not be entered into the orderbook) \
-     * 3: PO   – Post Only. The order will either be entered into the orderbook without any fills or be reverted with
-     * T-T2PO-01. If reverted, no transaction is committed to the blockchain)
+     * 3: PO   – Post Only. The order will either be entered into the orderbook without any fills or will be REJECTED
+     * with code = T-T2PO-01)
      */
     enum Type2 {
         GTC,
@@ -334,10 +340,10 @@ interface ITradePairs {
     /**
      * @notice  Emits a given order's latest state
      * @dev     If there are multiple partial fills, the new partial fill `price * quantity`
-     * is added to the current value in `totalamount`. Average execution price can be
-     * quickly calculated by `totalamount / quantityfilled` regardless of the number of
+     * is added to the current value in `totalAmount`. Average execution price can be
+     * quickly calculated by `totalAmount / quantityFilled` regardless of the number of
      * partial fills at different prices \
-     * `totalfee` is always in terms of received(incoming) currency. ie. if Buy ALOT/AVAX,
+     * `totalFee` is always in terms of received(incoming) currency. ie. if Buy ALOT/AVAX,
      * fee is paid in ALOT, if Sell ALOT/AVAX , fee is paid in AVAX \
      * **Note**: The execution price will always be equal or better than the Order price.
      * @param   version  event version
@@ -345,7 +351,7 @@ interface ITradePairs {
      * @param   pair  traded pair. ie. ALOT/AVAX in bytes32 (immutable)
      * @param   order  See ITradePairs.Order Struct (Order details)
      * @param   previousUpdateBlock Previous Block No the order was last changed/created
-     * @param   code reason when order has REJECT or CANCEL_REJECT status
+     * @param   code reason code when order has CANCELED(due to self trade protection), REJECTED or CANCEL_REJECT status
      */
     event OrderStatusChanged(
         uint8 version,

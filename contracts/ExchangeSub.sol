@@ -23,7 +23,7 @@ import "./interfaces/ITradePairs.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.4");
+    bytes32 public constant VERSION = bytes32("2.2.5");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -352,7 +352,7 @@ contract ExchangeSub is Exchange {
                 takerOrder.quantity,
                 takerOrder.quantityFilled
             );
-            uint256 takerRemainingQuantity = tradePairs.matchAuctionOrder(takerOrder.id, _maxNbrOfFills);
+            uint256 takerRemainingQuantity = tradePairs.matchAuctionOrder(takerOrder, _maxNbrOfFills);
             if (startRemainingQuantity == takerRemainingQuantity) {
                 //Sell taker order didn't match with any buy orders, auction is finished
                 emit AuctionMatchFinished(_tradePairId);
