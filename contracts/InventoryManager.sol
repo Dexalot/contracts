@@ -46,7 +46,6 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
     event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
     event AUpdated(uint256 A, uint256 timestamp);
-    event InventorySet(bytes32 indexed symbol, bytes32 indexed symbolId, uint256 quantity, uint256 timestamp);
 
     /**
      * @notice  Initialize the upgradeable contract
