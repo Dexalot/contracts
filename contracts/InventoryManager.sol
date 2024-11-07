@@ -24,7 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.1.1");
+    bytes32 public constant VERSION = bytes32("3.1.2");
     uint256 private constant STARTING_A = 50;
     uint256 private constant MIN_A = 10;
     uint256 private constant MAX_A = 10 ** 8;
@@ -46,7 +46,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
     event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
     event AUpdated(uint256 A, uint256 timestamp);
-    event InventorySet(bytes32 indexed symbol, bytes32 indexed symbolId, uint256 quantity, uint256 timestamp);
+    event PortfolioBridgeSubUpdated(address portfolioBridgeSub);
 
     /**
      * @notice  Initialize the upgradeable contract
@@ -128,6 +128,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         _revokeRole(PORTFOLIO_BRIDGE_ROLE, address(portfolioBridgeSub));
         _grantRole(PORTFOLIO_BRIDGE_ROLE, _portfolioBridgeSub);
         portfolioBridgeSub = IPortfolioBridgeSub(_portfolioBridgeSub);
+        emit PortfolioBridgeSubUpdated(_portfolioBridgeSub);
     }
 
     /**

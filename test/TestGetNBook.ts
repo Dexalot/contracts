@@ -373,7 +373,8 @@ describe("Dexalot [ @noskip-on-coverage ]", () => {
                     , quantity:  Utils.parseUnits(order["quantity"].toString(), baseDecimals)
                     , side :  _side
                     , type1 : _type1   // market orders not enabled
-                    , type2 : _type2   // GTC
+                    , type2: _type2   // GTC
+                    , stp: 0 // Cancel Taker
                 }
 
                 const tx = await tradePair.connect(acc).addNewOrder(newOrder);

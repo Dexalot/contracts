@@ -60,7 +60,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.4");
+    bytes32 public constant VERSION = bytes32("1.1.5");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -76,7 +76,7 @@ contract MainnetRFQ is
     // typehash for cross chain swaps
     bytes32 private constant XCHAIN_SWAP_TYPEHASH =
         keccak256(
-            "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
+            "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,uint8 bridgeProvider,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
         );
     // mask for nonce in cross chain transfer customdata, last 12 bytes
     uint96 private constant NONCE_MASK = 0xffffffffffffffffffffffff;
@@ -99,6 +99,7 @@ contract MainnetRFQ is
         uint32 expiry;
         address taker;
         uint32 destChainId;
+        IPortfolioBridge.BridgeProvider bridgeProvider;
         bytes32 makerSymbol;
         address makerAsset;
         address takerAsset;
@@ -181,6 +182,8 @@ contract MainnetRFQ is
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
+    event UpdatedSlippageTolerance(uint256 slippageTolerance);
+    event UpdatedVolatilePairs(uint256 volatilePairs);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -258,7 +261,10 @@ contract MainnetRFQ is
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      */
-    function xChainSwap(XChainSwap calldata _order, bytes calldata _signature) external payable whenNotPaused {
+    function xChainSwap(
+        XChainSwap calldata _order,
+        bytes calldata _signature
+    ) external payable whenNotPaused nonReentrant {
         address destTrader = _verifyXSwap(_order, _signature);
 
         _executeXSwap(_order, destTrader);
@@ -417,6 +423,7 @@ contract MainnetRFQ is
     function setSlippageTolerance(uint256 _slippageTolerance) external onlyRole(VOLATILITY_ADMIN_ROLE) {
         require(_slippageTolerance <= 10000 && _slippageTolerance >= 9900, "RF-STTA-01");
         slippageTolerance = _slippageTolerance;
+        emit UpdatedSlippageTolerance(_slippageTolerance);
     }
 
     /**
@@ -427,6 +434,7 @@ contract MainnetRFQ is
      */
     function setVolatilePairs(uint256 _volatilePairs) external onlyRole(VOLATILITY_ADMIN_ROLE) {
         volatilePairs = _volatilePairs;
+        emit UpdatedVolatilePairs(_volatilePairs);
     }
 
     /**
@@ -538,6 +546,7 @@ contract MainnetRFQ is
                 _order.expiry,
                 _order.taker,
                 _order.destChainId,
+                _order.bridgeProvider,
                 _order.makerSymbol,
                 _order.makerAsset,
                 _order.takerAsset,
@@ -742,7 +751,7 @@ contract MainnetRFQ is
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage{value: gasFee}(
             _order.destChainId,
-            IPortfolioBridge.BridgeProvider.LZ,
+            _order.bridgeProvider,
             IPortfolio.XFER(
                 0,
                 IPortfolio.Tx.CCTRADE,

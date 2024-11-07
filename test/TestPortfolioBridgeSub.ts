@@ -1090,4 +1090,37 @@ describe("Portfolio Bridge Sub", () => {
 
         await expect(portfolioBridgeSub.processPayload(0, cChain.chainListOrgId, payload)).to.be.revertedWith("PB-ETNS-01");
      })
+
+     it("Should fail to send message for token that does not exist", async function () {
+        const {cChain} = f.getChains();
+
+        const invalidSymbol = Utils.fromUtf8("AVAXCC");
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+
+        const xfer = {
+            nonce: 0,
+            transaction: 1,
+            trader: owner.address,
+            symbol: invalidSymbol,
+            quantity: ethers.utils.parseEther("0.5"),
+            timestamp: BigNumber.from(await f.latestTime()),
+            customdata: Utils.emptyCustomData()
+        }
+
+        await expect(portfolioBridgeSub.sendXChainMessage(cChain.chainListOrgId, 0, xfer, owner.address)).to.be.revertedWith("PB-ETNS-01");
+     })
+
+     it("Should fail to set max bridge fee cap", async function () {
+        await expect(portfolioBridgeSub.connect(trader1).setMaxBridgeFeeCaps(0, [], [])).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeSub.setMaxBridgeFeeCaps(0, [], [10])).to.be.revertedWith("PB-LENM-01");
+     });
+
+     it("Should successfully set max bridge fee cap", async function () {
+        const {cChain} = f.getChains();
+
+        const avax = Utils.fromUtf8("AVAX");
+
+        await expect(portfolioBridgeSub.setMaxBridgeFeeCaps(cChain.chainListOrgId, [avax], [50])).to.emit(portfolioBridgeSub, "MaxBridgeFeeCapUpdated").withArgs(cChain.chainListOrgId, [avax], [50]);
+     });
 });

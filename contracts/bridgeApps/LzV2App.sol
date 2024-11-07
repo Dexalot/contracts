@@ -4,6 +4,7 @@ pragma solidity 0.8.25;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@layerzerolabs/oapp-evm/contracts/oapp/OApp.sol";
 import "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
+import "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 
 import "./DefaultBridgeApp.sol";
 import "../interfaces/IBridgeProvider.sol";
@@ -21,7 +22,10 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098c";
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.1.0");
+
+    event LzMessageSent(uint32 dstEid, uint64 nonce, bytes32 guid);
+    event LzMessageReceived(uint32 srcEid, uint64 nonce, bytes32 guid);
 
     constructor(address _endpoint, address _owner) OApp(_endpoint, _owner) {
         _transferOwnership(_owner);
@@ -53,7 +57,7 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
      * @return The bridge fee in terms of the native token
      */
     function getBridgeFee(uint32 _chainID, CrossChainMessageType _msgType) public view override returns (uint256) {
-        RemoteChain memory destination = remoteChainIDs[_chainID];
+        RemoteChain memory destination = _verifyDestination(_chainID);
         uint32 dstEid = uint32(uint256(destination.blockchainID));
         return _quote(dstEid, DEFAULT_PAYLOAD, enforcedOptions[dstEid][uint16(_msgType)], false).nativeFee;
     }
@@ -73,12 +77,13 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
      */
     function _lzReceive(
         Origin calldata _origin,
-        bytes32,
+        bytes32 _guid,
         bytes calldata _payload,
         address, // Executor address as specified by the OApp.
         bytes calldata // Any extra data or options to trigger on receipt.
     ) internal override {
         _receiveMessage(bytes32(uint256(_origin.srcEid)), _origin.sender, _payload);
+        emit LzMessageReceived(_origin.srcEid, _origin.nonce, _guid);
     }
 
     /**
@@ -97,6 +102,13 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
         uint32 dstEid = uint32(uint256(_destination.blockchainID));
         bytes memory options = enforcedOptions[dstEid][uint16(_msgType)];
         require(options.length > 0, "LZ-EONS-01");
-        _lzSend(dstEid, _message, options, MessagingFee(msg.value, 0), _feeRefundAddress);
+        MessagingReceipt memory receipt = _lzSend(
+            dstEid,
+            _message,
+            options,
+            MessagingFee(msg.value, 0),
+            _feeRefundAddress
+        );
+        emit LzMessageSent(dstEid, receipt.nonce, receipt.guid);
     }
 }

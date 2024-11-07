@@ -17,19 +17,18 @@ import "../interfaces/IBridgeProvider.sol";
  */
 contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     // Relayers allowed to execute cross-chain messages
-    address[] public allowedRelayers;
+    mapping(bytes32 blockchainId => address[]) public allowedRelayers;
     // Maximum gas limit for each message type
     mapping(CrossChainMessageType => uint256) public gasLimits;
 
-    uint256[50] private __gap;
-
-    event AddRelayer(address relayer);
-    event ClearRelayers();
+    event SetRelayers(bytes32 blockchainId, address[] relayers);
+    event AddRelayer(bytes32 blockchainId, address relayer);
+    event ClearRelayers(bytes32 blockchainId);
     event SetGasLimit(CrossChainMessageType msgType, uint256 gasLimit);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual returns (bytes32) {
-        return bytes32("1.0.3");
+        return bytes32("1.1.0");
     }
 
     function initialize(
@@ -50,21 +49,34 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     }
 
     /**
-     * @notice Add an allowed relayer address
-     * @param _relayer The address of the relayer
+     * @notice Set the allowed relayer addresses
+     * @param _blockchainId The destination blockchain ID
+     * @param _relayers The addresses of the relayers
      */
-    function addRelayer(address _relayer) external onlyOwner {
-        require(_relayer != address(0), "IC-ARNZ-01");
-        allowedRelayers.push(_relayer);
-        emit AddRelayer(_relayer);
+    function setRelayers(bytes32 _blockchainId, address[] calldata _relayers) external onlyOwner {
+        require(_relayers.length > 0, "IC-SRNZ-01");
+        allowedRelayers[_blockchainId] = _relayers;
+        emit SetRelayers(_blockchainId, _relayers);
     }
 
     /**
-     * @notice Clear all allowed relayer addresses
+     * @notice Add an allowed relayer address
+     * @param _blockchainId The destination blockchain ID
+     * @param _relayer The address of the relayer
      */
-    function clearRelayers() external onlyOwner {
-        delete allowedRelayers;
-        emit ClearRelayers();
+    function addRelayer(bytes32 _blockchainId, address _relayer) external onlyOwner {
+        require(_relayer != address(0), "IC-ARNZ-01");
+        allowedRelayers[_blockchainId].push(_relayer);
+        emit AddRelayer(_blockchainId, _relayer);
+    }
+
+    /**
+     * @notice Clear all allowed relayer addresses for a given chain
+     * @param _blockchainId The destination blockchain ID
+     */
+    function clearRelayers(bytes32 _blockchainId) external onlyOwner {
+        delete allowedRelayers[_blockchainId];
+        emit ClearRelayers(_blockchainId);
     }
 
     /**
@@ -120,7 +132,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
                 destinationAddress: address(uint160(uint256(_destination.remoteContract))),
                 feeInfo: TeleporterFeeInfo({feeTokenAddress: address(0), amount: 0}),
                 requiredGasLimit: gasLimit,
-                allowedRelayerAddresses: allowedRelayers,
+                allowedRelayerAddresses: allowedRelayers[_destination.blockchainID],
                 message: _message
             })
         );

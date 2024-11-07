@@ -136,7 +136,7 @@ describe("MultiChain Deployments & Interactions", () => {
     it("Should not initialize again after deployment", async function () {
         let counter = 0;
         for (const pb of portfolioBridges) {
-            await expect(pb.initialize(lzApps[counter].address, owner.address))
+            await expect(pb.initialize(0, lzApps[counter].address, owner.address))
                 .to.be.revertedWith("Initializable: contract is already initialized");
             counter++;
         }

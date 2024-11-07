@@ -319,13 +319,13 @@ it("Should be able to send perfectly matching orders buy qty=sell qty", async ()
   const type2toBeReplaced = 3; //PO contract will replace it with GTC
 
   for (let i=0; i<3; i++) {  // 2 sells at 0.01
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2:type2toBeReplaced};
+    const order: IOrder = {id: Utils.fromUtf8(`sell1-${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2:type2toBeReplaced};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
   side = 0;//BUY
   for (let i=3; i<5; i++) {  // 2 buys  at 5000000
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`buy1-${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
@@ -390,7 +390,7 @@ it("More buys than sells ", async () => {
 
   const side = 0;//BUY
   for (let i=3; i<5; i++) {  // 2 buys  at 5000000
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
+    const order: IOrder = {id: Utils.fromUtf8(`buy2-${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
@@ -423,15 +423,18 @@ it("More sells than buys ", async () => {
   const pair = pairs[0];
   const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
   await exchangeSub.connect(auctionAdminWallet).setAuctionMode(tp, 2)
-
+  let buybook =  await getBookwithLoop(pair.id, "BUY");
+  console.log("Buybook", buybook)
   const side = 1;//SELL
-  for (let i=0; i<2; i++) {  // 2 buys  at 5000000
-    const order: IOrder = {id: Utils.fromUtf8(`${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
+  for (let i=0; i<2; i++) {  // 2 sells
+    const order: IOrder = {id: Utils.fromUtf8(`sell2-${i+1}`), tp, price: "1.5", quantity: "10", side, type1, type2};
     expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
   }
 
-  let buybook =  await getBookwithLoop(pair.id, "BUY");
+  buybook =  await getBookwithLoop(pair.id, "BUY");
   let sellbook = await getBookwithLoop(pair.id, "SELL");
+  console.log("Buybook", buybook);
+  console.log("Sellbook", sellbook);
   expect(buybook.length).to.equal(1);
   expect(sellbook.length).to.equal(1);
   expect(Utils.formatUnits(buybook[0].price, pair.quoteDecimals)).to.equal('1.5');
@@ -469,8 +472,9 @@ async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, ord
     , quantity:  Utils.parseUnits(order.quantity, pair.baseDecimals)
     , side :  order.side
     , type1 : order.type1   // market orders not enabled
-    , type2 : order.type2   // GTC
-}
+    , type2: order.type2   // GTC
+    , stp: 3 // NONE
+  }
   const tx = await tradePairs.connect(wallet).addNewOrder(newOrder);
 
   orderLog = await tx.wait();

@@ -36,8 +36,6 @@ describe("Portfolio Bridge Main", () => {
     let trader1: SignerWithAddress;
     let trader2: SignerWithAddress;
 
-    let depositAvaxPayload: string;
-
     const AVAX: string = Utils.fromUtf8("AVAX");
     const ALOT: string = Utils.fromUtf8("ALOT");
     // const auctionMode: any = 0;
@@ -68,16 +66,10 @@ describe("Portfolio Bridge Main", () => {
         lzAppMain = portfolioContracts.lzAppMainnet;
         lzAppSub = portfolioContracts.lzAppSub;
         mainnetRFQAvax = portfolioContracts.mainnetRFQ;
-
-        const nonce = 0;
-        const tx = 1;                // TX = 1 = DEPOSIT [main --> sub]
-        const xChainMessageType = 0; // XChainMsgType = 0 = XFER
-
-        depositAvaxPayload = Utils.generatePayload(xChainMessageType, nonce, tx, trader1.address, AVAX, Utils.toWei("10"), await f.latestTime(), Utils.emptyCustomData());
     });
 
     it("Should not initialize again after deployment", async function () {
-        await expect(portfolioBridgeMain.initialize(lzAppMain.address, owner.address))
+        await expect(portfolioBridgeMain.initialize(0, lzAppMain.address, owner.address))
             .to.be.revertedWith("Initializable: contract is already initialized");
     });
 
@@ -94,6 +86,7 @@ describe("Portfolio Bridge Main", () => {
     it("Should set & get default bridge provider  correctly", async () => {
         await expect(portfolioBridgeMain.connect(trader1).setDefaultBridgeProvider(1)).to.be.revertedWith("AccessControl:");
         await expect(portfolioBridgeMain.setDefaultBridgeProvider(0)).to.be.revertedWith("PB-DBCD-01");
+        await expect(portfolioBridgeMain.setDefaultBridgeProvider(1)).to.be.revertedWith("PB-DBCD-01");
         await expect( portfolioBridgeMain.setDefaultBridgeProvider(nonSupportedBridge)).to.be.reverted;
     });
 
@@ -111,6 +104,7 @@ describe("Portfolio Bridge Main", () => {
         const { dexalotSubnet } = f.getChains();
         expect(await portfolioBridgeMain.getDefaultDestinationChain()).to.be.equal(dexalotSubnet.chainListOrgId);
 
+        await portfolioBridgeMain.enableBridgeProvider(1, lzAppMain.address);
         // Destination not found, destChain id =0
         await portfolioBridgeMain.setDefaultBridgeProvider(1);
         expect(await portfolioBridgeMain.getDefaultBridgeProvider()).to.be.equal(1);
@@ -168,24 +162,33 @@ describe("Portfolio Bridge Main", () => {
     });
 
     it("Should enable and disable bridge", async () => {
-        const {owner, trader1} = await f.getAccounts();
+        const {trader1} = await f.getAccounts();
 
         // fail for non-owner
         await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(0, lzAppMain.address)).to.be.revertedWith("AccessControl:");
         // await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(1, true)).to.be.revertedWith("AccessControl:");
         await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(0, ethers.constants.AddressZero)).to.be.revertedWith("AccessControl:");
-        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         //Can't disable default bridge
         expect(portfolioBridgeMain.enableBridgeProvider(0, ethers.constants.AddressZero)).to.be.revertedWith("PB-DBCD-01");
         // expect(portfolioBridgeMain.enableBridgeProvider(1, false)).to.be.revertedWith("PB-DBCD-01");
         expect(await portfolioBridgeMain.isBridgeProviderEnabled(0)).to.be.true;
         // // succeed for owner
 
-        // TODO: add teleporter here
-        // await portfolioBridgeMain.enableBridgeProvider(1, true);
-        // expect(await portfolioBridgeMain.isBridgeProviderEnabled(1)).to.be.true;
-        // await portfolioBridgeMain.enableBridgeProvider(1, false);
-        // expect(await portfolioBridgeMain.isBridgeProviderEnabled(1)).to.be.false;
+        const mockICMAddress = trader1.address;
+
+        await portfolioBridgeMain.enableBridgeProvider(1, mockICMAddress);
+        expect(await portfolioBridgeMain.isBridgeProviderEnabled(1)).to.be.true;
+        await portfolioBridgeMain.setDefaultBridgeProvider(1);
+        expect(await portfolioBridgeMain.getDefaultBridgeProvider()).to.be.equal(1);
+
+        // remove lzAppMain
+        expect(await portfolioBridgeMain.hasRole(await portfolioBridgeMain.BRIDGE_PROVIDER_ROLE(), lzAppMain.address)).to.be.true;
+        await expect(portfolioBridgeMain.connect(trader1).removeBridgeProvider(0, lzAppMain.address)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.removeBridgeProvider(0, lzAppMain.address)).to.be.revertedWith("PB-OBSA-01");
+
+        await portfolioBridgeMain.enableBridgeProvider(0, ethers.constants.AddressZero);
+        await expect(portfolioBridgeMain.removeBridgeProvider(0, lzAppMain.address)).to.not.be.reverted;
+        expect(await portfolioBridgeMain.hasRole(await portfolioBridgeMain.BRIDGE_PROVIDER_ROLE(), lzAppMain.address)).to.be.false;
     });
 
     it("Should return bridge status", async () => {

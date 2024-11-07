@@ -113,6 +113,11 @@ describe("LzV2App", () => {
     await expect(defaultBridgeAppMock.receiveMessage(blockchainID, remoteAddress, ethers.constants.HashZero)).to.be.revertedWith('DB-RCNS-02');
   })
 
+  it("Should fail to get bridge fee if unsupportedChain", async () => {
+    await expect(lzAppMain['getBridgeFee(uint32)'](0)).to.be.revertedWith("DB-RCNS-01");
+    await expect(lzAppMain['getBridgeFee(uint32,uint8)'](0, 0)).to.be.revertedWith("DB-RCNS-01");
+  })
+
   it("Should fail to receive message if remote contract does not match", async () => {
     const { dexalotSubnet } = f.getChains();
 

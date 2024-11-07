@@ -73,15 +73,17 @@ contract PortfolioBridgeMain is
     // chainListOrgChainId => bridge type => bool mapping to control user pays fee for each destination and bridge
     mapping(uint32 => mapping(BridgeProvider => bool)) public userPaysFee;
 
-    BridgeProvider internal defaultBridgeProvider; //Layer0
+    BridgeProvider internal defaultBridgeProvider; // ICM for avalanche eco, Layer0 for other chains
     uint32 internal defaultChainId; // c-chain for Dexalot L1, Dexalot L1 for other chains
 
     uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 2;
 
     // Controls actions that can be executed on the contract. PortfolioM or MainnetRFQ are the current users.
     bytes32 public constant BRIDGE_USER_ROLE = keccak256("BRIDGE_USER_ROLE");
-    // Controls all bridge implementations access. Currently only LZ
+    // Controls setting of bridge fees and executing delayed transfers.
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
+    // Allows access to processPayload for bridge providers e.g. LayerZero, ICM.
+    bytes32 public constant BRIDGE_PROVIDER_ROLE = keccak256("BRIDGE_PROVIDER_ROLE");
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
     uint64 public outNonce;
@@ -89,28 +91,36 @@ contract PortfolioBridgeMain is
     EnumerableMapUpgradeable.UintToUintMap internal supportedChains;
 
     // storage gap for upgradeability
-    uint256[46] __gap;
+    uint256[50] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.0.5");
+        return bytes32("4.1.0");
     }
 
     /**
      * @notice  Initializer for upgradeable contract.
-     * @dev     Grant admin, pauser and msg_sender role to the sender. Enable lz bridge contract as default.
+     * @dev     Grant admin, pauser and msg_sender role to the sender. Enable _defaultBridgeProviderAddress as default.
+     * @param   _defaultBridgeProvider  Default bridge provider
+     * @param   _defaultBridgeProviderAddress  Address of the default bridge provider contract
+     * @param   _owner  Owner of the contract
      */
-    function initialize(address _lzBridgeProvider, address _owner) external initializer {
+    function initialize(
+        BridgeProvider _defaultBridgeProvider,
+        address _defaultBridgeProviderAddress,
+        address _owner
+    ) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
         _setupRole(DEFAULT_ADMIN_ROLE, _owner);
 
-        defaultBridgeProvider = BridgeProvider.LZ;
-        enabledBridges[BridgeProvider.LZ] = IBridgeProvider(_lzBridgeProvider);
+        defaultBridgeProvider = _defaultBridgeProvider;
+        enabledBridges[_defaultBridgeProvider] = IBridgeProvider(_defaultBridgeProviderAddress);
+        _setupRole(BRIDGE_PROVIDER_ROLE, _defaultBridgeProviderAddress);
     }
 
     /**
@@ -130,14 +140,35 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Enables/disables given bridge. Default bridge's state can't be modified
-     * @dev     Only admin can enable/disable bridge
+     * @notice  Enables/disables given bridge. Default bridge cannot be removed.
+     * @dev     Only admin can enable/disable bridge. Default bridge can only be updated to new contract when paused
      * @param   _bridge  Bridge to enable/disable
      * @param   _bridgeProvider  Address of bridge provider contract, 0 address if not exists
      */
-    function enableBridgeProvider(BridgeProvider _bridge, address _bridgeProvider) external onlyRole(BRIDGE_USER_ROLE) {
-        require(_bridge != defaultBridgeProvider || paused(), "PB-DBCD-01");
+    function enableBridgeProvider(
+        BridgeProvider _bridge,
+        address _bridgeProvider
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_bridge != defaultBridgeProvider || (paused() && _bridgeProvider != address(0)), "PB-DBCD-01");
+        if (_bridgeProvider != address(0)) {
+            grantRole(BRIDGE_PROVIDER_ROLE, _bridgeProvider);
+        }
         enabledBridges[_bridge] = IBridgeProvider(_bridgeProvider);
+    }
+
+    /**
+     * @notice  Removes an bridge provider's access to processPayload
+     * @dev     Only admin can remove bridge provider. Executed when a bridge provider is disabled
+     * or updated and has no inflight messages.
+     * @param   _bridge  Bridge type to remove
+     * @param   _bridgeProvider  Address of old bridge provider contract
+     */
+    function removeBridgeProvider(
+        BridgeProvider _bridge,
+        address _bridgeProvider
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(enabledBridges[_bridge]) != _bridgeProvider, "PB-OBSA-01");
+        revokeRole(BRIDGE_PROVIDER_ROLE, _bridgeProvider);
     }
 
     /**
@@ -158,10 +189,11 @@ contract PortfolioBridgeMain is
 
     /**
      * @notice Sets the default bridge Provider
-     * @param   _bridge  Bridge Provider type
+     * @dev Default bridge provider can only be changed to an enabled bridge provider
+     * @param  _bridge  Bridge Provider type
      */
     function setDefaultBridgeProvider(BridgeProvider _bridge) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_bridge != defaultBridgeProvider, "PB-DBCD-01");
+        require(_bridge != defaultBridgeProvider && address(enabledBridges[_bridge]) != address(0), "PB-DBCD-01");
         defaultBridgeProvider = _bridge;
     }
 

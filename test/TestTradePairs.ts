@@ -100,6 +100,108 @@ describe("TradePairs", function () {
 
     const alotWithdrawnToGasTankMultiplier = 10;  // 1 if token swap 10 if ALOT is withdrawn from portfolio to wallet
 
+    async function  addOrderAndVerify(trader: SignerWithAddress, order: any, expectedStatus: number
+        , expectedCode: string = ethers.constants.HashZero
+        , expectedTotalAmount = BigNumber.from(0), expectedQuantityFilled = BigNumber.from(0), expectedTotalFee = BigNumber.from(0)
+        ): Promise<string | any>{
+
+        const tx = await tradePairs.connect(trader).addNewOrder(order);
+        const res: any  = await tx.wait();
+
+        for (const e of res.events) {
+
+            if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader.address && e.args.order.clientOrderId == order.clientOrderId) {
+                //console.log("event", i, e.args.order);
+                //expect(e.event).to.be.equal('OrderStatusChanged');
+                //expect(e.args.traderaddress).to.be.equal(order.traderaddress);
+               // console.log (expectedTotalAmount, expectedQuantityFilled, expectedTotalFee)
+               if (e.args.order.status ==1 && e.args.order.status != expectedStatus &&  e.args.code != expectedCode) {
+                console.log("Order Rejected unexpectedly", Utils.toUtf8(e.args.code));
+               }
+                expect(e.args.pair).to.be.equal(order.tradePairId);
+
+                expect(e.args.order.traderaddress).to.be.equal(order.traderaddress);
+                expect(e.args.order.tradePairId).to.be.equal(order.tradePairId);
+                expect(e.args.order.clientOrderId).to.be.equal(order.clientOrderId);
+
+                if (!e.args.order.totalAmount.eq(expectedTotalAmount) || e.args.order.status != expectedStatus ) {
+                    console.log("expectedStatus:", expectedStatus , "expectedTotalAmount:", expectedTotalAmount, "Order:", e.args.order);
+                }
+
+                expect(e.args.order.totalAmount).to.be.equal(expectedTotalAmount);      // not executed, yet, so totalamount is 0
+                expect(e.args.order.quantity).to.be.equal(order.quantity);
+                expect(e.args.order.side).to.be.equal(order.side);             // side is BUY=0
+                expect(e.args.order.type1).to.be.equal(order.type1);            // type1 is LIMIT=1
+                expect(e.args.order.type2).to.be.equal(order.type2);            // type2 is GTC=0
+                expect(e.args.order.status).to.be.equal(expectedStatus);           // status is NEW = 0
+                expect(e.args.order.quantityFilled).to.be.equal(expectedQuantityFilled);   // not executed, yet, so quantityfilled is 0
+                expect(e.args.order.totalFee).to.be.equal(expectedTotalFee);         // not executed, yet, so free is 0
+
+                expect(e.args.code).to.be.equal(expectedCode);         // error code
+                return e.args.order.id;
+            }
+        }
+    }
+
+    async function  addOrderAndVerifyWithCancel(trader: SignerWithAddress, orderToEnter: any, expectedStatus: number
+        , stpCanceledOrderToVerify:any ={}
+        , expectedCode: string = ethers.constants.HashZero
+        , expectedTotalAmount = BigNumber.from(0), expectedQuantityFilled = BigNumber.from(0), expectedTotalFee = BigNumber.from(0)
+        ): Promise<string | any>{
+
+        const tx = await tradePairs.connect(trader).addNewOrder(orderToEnter);
+        const res: any  = await tx.wait();
+        // let i = 0;
+        for (const e of res.events) {
+
+            if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader.address ) {
+                //console.log("event", i, e.args.order);
+                //i++;
+                //expect(e.event).to.be.equal('OrderStatusChanged');
+                //expect(e.args.traderaddress).to.be.equal(order.traderaddress);
+                let order: any;
+                if (e.args.order.clientOrderId == orderToEnter.clientOrderId) {
+                    order = orderToEnter;
+                } else if (e.args.order.clientOrderId == stpCanceledOrderToVerify.clientOrderId) {
+                    order = stpCanceledOrderToVerify;
+                    expectedStatus = 4
+                    expectedCode = Utils.fromUtf8("T-STPR-01");
+                    expectedTotalAmount = BigNumber.from(0);
+                    expectedQuantityFilled = BigNumber.from(0);
+                    expectedTotalFee = BigNumber.from(0);
+                } else {
+                    continue;
+                }
+
+                if (e.args.order.status ==1 && e.args.order.status != expectedStatus &&  e.args.code != expectedCode) {
+                    console.log("Order Rejected unexpectedly", Utils.toUtf8(e.args.code));
+                }
+                if (!e.args.order.totalAmount.eq(expectedTotalAmount) || e.args.order.status != expectedStatus ) {
+                    console.log("expectedStatus:", expectedStatus , "expectedTotalAmount:", expectedTotalAmount, "Order:", e.args.order);
+                }
+
+                expect(e.args.pair).to.be.equal(order.tradePairId);
+
+                expect(e.args.order.traderaddress).to.be.equal(order.traderaddress);
+                expect(e.args.order.tradePairId).to.be.equal(order.tradePairId);
+                expect(e.args.order.clientOrderId).to.be.equal(order.clientOrderId);
+
+                expect(e.args.order.price).to.be.equal(order.price);
+                expect(e.args.order.totalAmount).to.be.equal(expectedTotalAmount);      // not executed, yet, so totalamount is 0
+                expect(e.args.order.quantity).to.be.equal(order.quantity);
+                expect(e.args.order.side).to.be.equal(order.side);             // side is BUY=0
+                expect(e.args.order.type1).to.be.equal(order.type1);            // type1 is LIMIT=1
+                expect(e.args.order.type2).to.be.equal(order.type2);            // type2 is GTC=0
+                expect(e.args.order.status).to.be.equal(expectedStatus);           // status is NEW = 0
+                expect(e.args.order.quantityFilled).to.be.equal(expectedQuantityFilled);   // not executed, yet, so quantityfilled is 0
+                expect(e.args.order.totalFee).to.be.equal(expectedTotalFee);         // not executed, yet, so free is 0
+                expect(e.args.code).to.be.equal(expectedCode);         // error code
+                return e.args.order.id;
+            }
+        }
+    }
+
+
     before(async function () {
         const { owner: owner1, admin: admin1, auctionAdmin: admin2, trader1: t1, trader2: t2 , treasurySafe: ts} = await f.getAccounts();
         owner = owner1;
@@ -147,7 +249,8 @@ describe("TradePairs", function () {
             , quantity: Utils.parseUnits('10', baseDecimals)
             , side :  0   // Buy
             , type1 : 1   // market orders not enabled
-            , type2 : 0   // GTC
+            , type2: 0   // GTC
+            , stp : 0   // CancelTaker
         }
 
         sellOrder = {
@@ -158,11 +261,11 @@ describe("TradePairs", function () {
             , quantity: Utils.parseUnits('10', baseDecimals)
             , side :  1   // Sell
             , type1 : 1   // market orders not enabled
-            , type2 : 0   // GTC
+            , type2: 0   // GTC
+            , stp : 0   // CancelTaker
         }
     });
 
-    describe("TradePairs", function () {
         it("Should not initialize again after deployment", async function () {
             await expect(tradePairs.initialize(orderBooks.address, portfolio.address))
                 .to.be.revertedWith("Initializable: contract is already initialized");
@@ -436,32 +539,15 @@ describe("TradePairs", function () {
                 , quantity: Utils.parseUnits('10', baseDecimals)
                 , side :  0   // Buy
                 , type1 : 1   // market orders not enabled
-                , type2 : 0   // GTC
+                , type2: 0   // GTC
+                , stp: 0 // Cancel Taker
             }
-            const tx = await tradePairs.connect(trader1).addNewOrder(order);
-            const res: any = await tx.wait();
-            console.log (res.events[1].args)
-            expect(res.events[1].event).to.be.equal('OrderStatusChanged');
-            expect(res.events[1].args.traderaddress).to.be.equal(order.traderaddress);
-            expect(res.events[1].args.pair).to.be.equal(order.tradePairId);
 
-            expect(res.events[1].args.order.traderaddress).to.be.equal(order.traderaddress);
-            expect(res.events[1].args.order.tradePairId).to.be.equal(order.tradePairId);
-            expect(res.events[1].args.order.clientOrderId).to.be.equal(order.clientOrderId);
-
-            expect(res.events[1].args.order.price).to.be.equal(order.price);
-            expect(res.events[1].args.order.totalAmount).to.be.equal(0);      // not executed, yet, so totalamount is 0
-            expect(res.events[1].args.order.quantity).to.be.equal(order.quantity);
-            expect(res.events[1].args.order.side).to.be.equal(order.side);             // side is BUY=0
-            expect(res.events[1].args.order.type1).to.be.equal(order.type1);            // type1 is LIMIT=1
-            expect(res.events[1].args.order.type2).to.be.equal(order.type2);            // type2 is GTC=0
-            expect(res.events[1].args.order.status).to.be.equal(0);           // status is NEW = 0
-            expect(res.events[1].args.order.quantityFilled).to.be.equal(0);   // not executed, yet, so quantityfilled is 0
-            expect(res.events[1].args.order.totalFee).to.be.equal(0);         // not executed, yet, so free is 0
-
+            await addOrderAndVerify(trader1, order, 0);  // status is NEW = 0
             // Clientorderid not unique
             // {GTC, FOK, IOC, PO}
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-CLOI-01");
+
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-CLOI-01"));  // status is REJECTED = 1
 
             order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address);
             order.type2 = 1; // FOK
@@ -470,47 +556,51 @@ describe("TradePairs", function () {
 
             order.side = 1
             order.type2 = 3; // PO
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-T2PO-01");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-T2PO-01"));  // status is REJECTED = 1
 
             // cannot add market order if not an allowed type
             order.side = 0
             order.type1 = 0;  // market orders not enabled
             order.type2 = 0; // GTC
+            order.price = BigNumber.from(0); // market orders should have 0 price
             //No need to get new clientorderid as it will revert for other reasons first
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-IVOT-01");
-            order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 2);
-            order.traderaddress = trader2.address;
-
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-OOCA-01");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-IVOT-01"));  // status is REJECTED = 1
 
             // cannot add market order if auction is on
             await tradePairs.connect(owner).addOrderType(tradePairId, 0);    // add market order first
             await tradePairs.connect(owner).setAuctionMode(tradePairId, 2);  // auction is OPEN
-            order.traderaddress = trader1.address;
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-AUCT-04");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-AUCT-04"));  // status is REJECTED = 1
             await tradePairs.connect(owner).setAuctionMode(tradePairId, 0);  // auction is OFF
+
+            // add a market order too small
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-LTMT-01"));  // status is REJECTED = 1
+
+            // Revert when traderaddress != sender
+            order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 2);
+            order.traderaddress = trader2.address;
+            order.price = Utils.parseUnits('100', quoteDecimals);
+            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-OOCA-01");
+
 
             // add a limit order too small
             order.type1 = 1;  // limit order
             order.price = Utils.parseUnits('0.1', quoteDecimals);
             order.quantity = Utils.parseUnits('5', baseDecimals);
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-LTMT-01");
-
-            // add a market order too small
-            order.type1 = 0;  // market order
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-LTMT-01");
+            order.traderaddress = trader1.address;
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-LTMT-01"));  // status is REJECTED = 1
 
             // add buy limit order too big
             order.type1 = 1;  // limit order
             order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 3);
             order.price = Utils.parseUnits('10', quoteDecimals);
             order.quantity = Utils.parseUnits('1000', baseDecimals)
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-MTMT-01");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-MTMT-01"));  // status is REJECTED = 1
 
             // add sell limit order too big
             order.side = 1; // sell side
             order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 3);
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-MTMT-01");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-MTMT-01"));  // status is REJECTED = 1
+
         });
 
         it("Should be able to add a new sell order from the trader accounts", async function () {
@@ -538,24 +628,12 @@ describe("TradePairs", function () {
                 , quantity: Utils.parseUnits('10', baseDecimals)
                 , side :  1   // Sell
                 , type1 : 1   // market orders not enabled
-                , type2 : 0   // GTC
+                , type2: 0   // GTC
+                , stp: 0 // Cancel Taker
             }
-            const tx = await tradePairs.connect(trader1).addNewOrder(order);
-            const res: any = await tx.wait();
 
-            expect(res.events[1].event).to.be.equal('OrderStatusChanged');
-            expect(res.events[1].args.order.clientOrderId).to.be.equal(order.clientOrderId);
-            expect(res.events[1].args.traderaddress).to.be.equal(order.traderaddress);
-            expect(res.events[1].args.pair).to.be.equal(order.tradePairId);
-            expect(res.events[1].args.order.price).to.be.equal(order.price);
-            expect(res.events[1].args.order.totalAmount).to.be.equal(0);      // not executed, yet, so totalamount is 0
-            expect(res.events[1].args.order.quantity).to.be.equal(order.quantity);
-            expect(res.events[1].args.order.side).to.be.equal(order.side);             // side is BUY=0
-            expect(res.events[1].args.order.type1).to.be.equal(order.type1);            // type1 is LIMIT=1
-            expect(res.events[1].args.order.type2).to.be.equal(order.type2);            // type2 is GTC=0
-            expect(res.events[1].args.order.status).to.be.equal(0);           // status is NEW = 0
-            expect(res.events[1].args.order.quantityFilled).to.be.equal(0);   // not executed, yet, so quantityfilled is 0
-            expect(res.events[1].args.order.totalFee).to.be.equal(0);         // not executed, yet, so free is 0
+            await addOrderAndVerify(trader1, order, 0);  // status is NEW = 0
+
 
             order.side = 0;   // buy side
             //{GTC, FOK, IOC, PO}
@@ -563,11 +641,13 @@ describe("TradePairs", function () {
             order.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address);
             order.type2 = 1; // FOK
             order.price = Utils.parseUnits('98', quoteDecimals);
+
             await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-FOKF-01");
+
 
             order.type2 = 3; // PO
             order.price = Utils.parseUnits('100', quoteDecimals);
-            await expect(tradePairs.connect(trader1).addNewOrder(order)).to.be.revertedWith("T-T2PO-01");
+            await addOrderAndVerify(trader1, order, 1, Utils.fromUtf8("T-T2PO-01"));  // status is REJECTED = 1
         });
 
         it("Should be able to send addOrderList with autoFill", async function () {
@@ -612,16 +692,15 @@ describe("TradePairs", function () {
                     traderaddress: trader1.address
                     , clientOrderId: await Utils.getClientOrderId(ethers.provider, trader1.address, i)
                     , tradePairId
-                    , price: Utils.parseUnits((100 - i).toString(), quoteDecimals)
+                    , price: Utils.parseUnits((100 - i).toString(), quoteDecimals) // 100, 99, 98
                     , quantity: Utils.parseUnits('1', baseDecimals)
                     , side: 0
                     , type1: 1
                     , type2
+                    , stp: 0 // Cancel Taker
                 }
                 newOrders.push(order)
             }
-
-
 
             const tx1 = await tradePairs.connect(trader1)
                     .addOrderList(newOrders,{gasLimit: 3000000, maxFeePerGas:ethers.utils.parseUnits("5", "gwei")});
@@ -652,7 +731,7 @@ describe("TradePairs", function () {
 
             //Sell orders reuse the newOrders array
             for (let i=0; i<6; i++) {
-                newOrders[i].clientOrderId =await Utils.getClientOrderId(ethers.provider, trader1.address,i);
+                newOrders[i].clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, i);
                 newOrders[i].price = (Utils.parseUnits((100 + i).toString(), quoteDecimals)); //100, 101, 102
                 newOrders[i].side = 1;
             }
@@ -661,27 +740,30 @@ describe("TradePairs", function () {
             const receipt = await tx.wait();
 
             //console.log("addOrderList Gas used", Utils.formatUnits(receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice).div(10**9),18));
-            console.log("addOrderList Gas used", receipt.cumulativeGasUsed.toString(), receipt.effectiveGasPrice.toString());
+            // console.log("addOrderList Gas used", receipt.cumulativeGasUsed.toString(), receipt.effectiveGasPrice.toString());
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
-            // One got filled @100
-            expect(buybook.length).to.equal(5);
+            // One sell order gets STP
+            expect(buybook.length).to.equal(6);
             expect(sellbook.length).to.equal(5);
-            // we have 99 - 101
+            // we have 100 - 101
+
 
             for (let i = 0; i < 6; i++) {
-                newOrders[i].clientOrderId =await Utils.getClientOrderId(ethers.provider, trader1.address,i);
-                newOrders[i].price = Utils.parseUnits((100.5 + i).toString(), quoteDecimals); //100.5 , 101, 101.5
+                newOrders[i].clientOrderId =await Utils.getClientOrderId(ethers.provider, trader1.address, i);
+                newOrders[i].price = Utils.parseUnits((100.5 + i).toString(), quoteDecimals); //100.5 , 101.5
             }
-            newOrders[1].type2=1; //FOK
-
+            newOrders[1].type2 = 1;  //FOK
+            //console.log (newOrders)
             // Only 1 order is unfilled FOK but the entire batch reverts
             await expect(tradePairs.connect(trader1).addOrderList(newOrders)).to.be.revertedWith("T-FOKF-01");
 
+
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
-            // No impact
-            expect(buybook.length).to.equal(5);
+
+
+            expect(buybook.length).to.equal(6);
             expect(sellbook.length).to.equal(5);
 
             newOrders[1].type2=2 // IOC,
@@ -691,16 +773,17 @@ describe("TradePairs", function () {
             buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
             sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
             // No impact
-            expect(buybook.length).to.equal(5);
+            expect(buybook.length).to.equal(6);
             expect(sellbook.length).to.equal(10); // 5 more added to the orderbook
+
 
             for (let i = 0; i < 6; i++) {
                 newOrders[i].clientOrderId =await Utils.getClientOrderId(ethers.provider, trader1.address,i);
-                newOrders[i].price = Utils.parseUnits((97.9 + i).toString(), quoteDecimals);
-                newOrders[i].type2=3 // PO,
+                newOrders[i].price = Utils.parseUnits((98.9 + i).toString(), quoteDecimals);
+                newOrders[i].type2 = 3 // PO,
             }
 
-            //First 2 PO orders will get a match hence they are rejected
+            // First 2 PO orders will get a match hence they are rejected
             // the rest of the orders are processed
             const tx2 = await tradePairs.connect(trader1).addOrderList(newOrders);
             const receipt2 : any  = await tx2.wait();
@@ -725,7 +808,7 @@ describe("TradePairs", function () {
                         expect(e.args.code).to.be.equal(Utils.fromUtf8("T-T2PO-01"));
                     } else {
                         expect(e.args.order.status).to.be.equal(0);            // status is NEW = 0
-                        expect(e.args.code).to.be.equal(ethers.constants.HashZero );
+                        expect(e.args.code).to.be.equal(ethers.constants.HashZero);
                     }
                     expect(e.args.order.quantityFilled).to.be.equal(0);
 
@@ -740,7 +823,7 @@ describe("TradePairs", function () {
             // }
 
             // No impact
-            expect(buybook.length).to.equal(5);
+            expect(buybook.length).to.equal(6);
             expect(sellbook.length).to.equal(14); //Only 4 more added to the orderbook 2 PO orders ignored
 
             // fail paused
@@ -787,6 +870,7 @@ describe("TradePairs", function () {
                     , side: 0  // Buy
                     , type1: 1 //Limit
                     , type2
+                    , stp: 0 // Cancel Taker
                 }
                 buyOrders.push(order)
             }
@@ -968,7 +1052,7 @@ describe("TradePairs", function () {
                             //console.log ("Rejected", e.args.orderId, orderIndex2)
                             if (sellOrder?.clientOrderId === sellOrders[0].clientOrderId) {
                                 expect(e.args.code).to.be.equal(Utils.fromUtf8("T-OAEX-01"));
-                                console.log("1", sellOrder);
+                                //console.log("1", sellOrder);
                             }
                         } else if (order?.clientOrderId === replaceSellOrders[0].clientOrderId // First 2 new orders are rejected
                                 || order?.clientOrderId === replaceSellOrders[1].clientOrderId) {
@@ -999,7 +1083,6 @@ describe("TradePairs", function () {
 
             expect(buybook.length).to.equal(6); // the Bestbid is partial
             expect(sellbook.length).to.equal(4); // One of the sells got filled, the other got canceled but it couldn't post a new one instead
-
 
         });
 
@@ -1034,6 +1117,7 @@ describe("TradePairs", function () {
                 , side: 0  // Buy
                 , type1: 1 //Limit
                 , type2: 3 //PO
+                , stp : 3 // Cancel None
             }
             const sellOrder = Object.assign({}, buyOrder);
             sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 3);
@@ -1116,6 +1200,104 @@ describe("TradePairs", function () {
 
         });
 
+        it("Should get cancel status based on self trade Prevention mode", async function () {
+            expect((await tradePairs.getTradePairs()).length).to.be.equal(0);
+            await f.addTradePair(exchange, pair, defaultPairSettings)
+            expect((await tradePairs.getTradePairs()).length).to.be.equal(1);
+            //console.log (Utils.toUtf8((await tradePairs.getTradePairs())[0]))
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
+            await quoteToken.mint(trader2.address, Utils.parseUnits('10000', quoteDecimals));
+            // deposit some tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
+            expect((await portfolio.getBalance(trader1.address, quoteSymbol))[0]).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
+            // Deposit some base token for trader1
+            await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
+            expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits(defaultNativeDeposit, baseDecimals));
+
+            // trader2 also buying AVAX selling QT
+            // deposit some QT to portfolio for trader2
+            await f.depositToken(portfolioMain, trader2, quoteToken, quoteDecimals, quoteSymbol, defaultTokenDeposit)
+            expect((await portfolio.getBalance(trader2.address, quoteSymbol))[0]).to.equal(Utils.parseUnits(defaultTokenDeposit, quoteDecimals));
+
+            const price = 10
+            const qty = 2;
+
+            const buyOrders = []
+
+            //2 buy orders all 2  @10 & @112 / trader1 buying AVAX selling QT
+            for (let i = 0; i < 2; i++) {
+                const order = {
+                    traderaddress: trader1.address
+                    , clientOrderId: await Utils.getClientOrderId(ethers.provider, trader1.address, i)
+                    , tradePairId
+                    , price: Utils.parseUnits((price + 2*i).toString(), quoteDecimals)
+                    , quantity: Utils.parseUnits(qty.toString(), baseDecimals)
+                    , side: 0  // Buy
+                    , type1: 1 // Limit
+                    , type2: 0   // GTC
+                    , stp: 0 // Cancel Taker
+                }
+                buyOrders.push(order)
+            }
+            // another buy order from trader2 @11
+            const buyOrder = {
+                traderaddress: trader2.address
+                , clientOrderId: await Utils.getClientOrderId(ethers.provider, trader2.address)
+                , tradePairId
+                , price: Utils.parseUnits('11', quoteDecimals)
+                , quantity: Utils.parseUnits(qty.toString(), baseDecimals)
+                , side: 0 // Buy
+                , type1: 1 // Limit
+                , type2: 0   // GTC
+                , stp: 0 // Cancel Taker
+            }
+
+            await tradePairs.connect(trader1).addOrderList(buyOrders);
+            await tradePairs.connect(trader2).addNewOrder(buyOrder);
+
+            const buybook =  await Utils.getBookwithLoop(tradePairs, tradePairStr, "BUY");
+            const sellbook = await Utils.getBookwithLoop(tradePairs, tradePairStr, "SELL");
+
+            //console.log(buyOrders.length);
+
+            expect(buybook.length).to.equal(3);
+            expect(sellbook.length).to.equal(0);
+
+            //trader1 trying to sell
+            const sellOrder = {
+                traderaddress: trader1.address
+                , clientOrderId: await Utils.getClientOrderId(ethers.provider, trader1.address, 3)
+                , tradePairId
+                , price: Utils.parseUnits('12', quoteDecimals)
+                , quantity: Utils.parseUnits(qty.toString(), baseDecimals)
+                , side: 1 // Sell
+                , type1: 1 // Limit
+                , type2: 0   // GTC
+                , stp: 0 // Cancel Taker
+            }
+
+            await addOrderAndVerify(trader1, sellOrder, 4, Utils.fromUtf8("T-STPR-01"));  // status is CANCELED = 4
+
+
+            sellOrder.stp = 3 // Cancel NONE
+
+            await addOrderAndVerify(trader1, sellOrder, 3, ethers.constants.HashZero, Utils.parseUnits((BigNumber.from(12).mul(qty)).toString(), quoteDecimals),
+            buyOrder.quantity, BigNumber.from(72000));  // status is FILLED = 3
+
+            // 2 buy orders left 2 @11, 2 @10
+
+            // Try to Sell 4 @ 10 , should only get a partial for 2 at 11 and get a cancel for the remaining
+
+            sellOrder.price =Utils.parseUnits('10', quoteDecimals)
+            sellOrder.quantity = Utils.parseUnits('4', baseDecimals)
+            sellOrder.stp = 0 // Cancel Taker
+            //sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 5)
+            await addOrderAndVerify(trader1, sellOrder, 4, Utils.fromUtf8("T-STPR-01"), Utils.parseUnits((BigNumber.from(11).mul(2)).toString(), quoteDecimals),
+            buyOrder.quantity, BigNumber.from(66000));  // status is CANCLED = 4
+
+        });
+
 
 
         it("Should get unsolicited cancel when maxNbrOfFills reached", async function () {
@@ -1149,6 +1331,7 @@ describe("TradePairs", function () {
                     , side: 0  // Buy
                     , type1: 1 // Limit
                     , type2: 0   // GTC
+                    , stp: 0 // Cancel Taker
                 }
                 buyOrders.push(order)
             }
@@ -1181,6 +1364,7 @@ describe("TradePairs", function () {
                 , side: 1  // SELL
                 , type1: 1 // Limit
                 , type2: 0   // GTC
+                , stp: 0 // Cancel Taker
             }
             //console.log(sellOrder);
             const tx = await tradePairs.connect(trader2).addNewOrder(sellOrder);
@@ -1188,8 +1372,8 @@ describe("TradePairs", function () {
             let fillCounter = 0;
 
             // const gasUsedInTx = Utils.formatUnits(res.cumulativeGasUsed.mul(res.effectiveGasPrice).div(10**9),18);
-            console.log("addOrderList Gas used", res.cumulativeGasUsed.toString(), res.effectiveGasPrice.toString());
-            //console.log("Multiple fills gas usage", gasUsedInTx)
+            // console.log("addOrderList Gas used", res.cumulativeGasUsed.toString(), res.effectiveGasPrice.toString());
+            // console.log("Multiple fills gas usage", gasUsedInTx)
 
             for (const e of res.events) {
                 if (e.event === "Executed"){
@@ -1536,23 +1720,30 @@ describe("TradePairs", function () {
             await f.addTradePair(exchange, pair, pairSettings)
 
             await tradePairs.connect(owner).addOrderType(tradePairId, 0);
+            //Empty order book. Attempt a BUY Market order
+            buyOrder.type1 = 0; // market
+            buyOrder.clientOrderId = clientOrderid;
+            buyOrder.price = 0;
+            await addOrderAndVerify(trader1, buyOrder, 1, Utils.fromUtf8("T-LTMT-01"));  // status is REJECTED = 1
+            //Empty order book. Attempt  a SELL Market order
+            sellOrder.type1 = 0; // market
+            sellOrder.clientOrderId = clientOrderid;
+            sellOrder.price = 0;
+            await addOrderAndVerify(trader1, sellOrder, 1, Utils.fromUtf8("T-LTMT-01"));  // status is REJECTED = 1
 
-            const price =  BigNumber.from(0);
-            //Empty order book with a BUY Market order
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, price
-                , Utils.parseUnits('10', baseDecimals), 0, 0, type2))
-                .to.be.revertedWith("T-LTMT-01");
-            //Empty order book with a SELL Market order
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, price
-                , Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("T-LTMT-01");
-           let  tx = await f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                    , Utils.parseUnits('15', baseDecimals), 1, 1, type2);
+            sellOrder.type1 = 1; // limit
+            sellOrder.price = Utils.parseUnits('100', quoteDecimals);
+            sellOrder.quantity = Utils.parseUnits('15', baseDecimals);
+            let tx = await tradePairs.connect(trader1).addNewOrder(sellOrder);
             await tx.wait();
 
             const clientOrderid2 = await Utils.getClientOrderId(ethers.provider, trader1.address);
-             tx = await f.addOrderOld(tradePairs, trader2, clientOrderid2, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                    , Utils.parseUnits('10', baseDecimals), 0, 0, type2);
+            buyOrder.clientOrderId = clientOrderid2;
+            buyOrder.price = Utils.parseUnits('100', quoteDecimals);
+            buyOrder.traderaddress = trader2.address;
+
+            tx = await tradePairs.connect(trader2).addNewOrder(buyOrder);
+
             const res: any = await tx.wait();
 
             for (const e of res.events) {
@@ -1619,10 +1810,8 @@ describe("TradePairs", function () {
             expect((await portfolio.getBalance(trader1.address, quoteSymbol))[1]).to.equal(Utils.parseUnits('2000', quoteDecimals));
 
             await f.addTradePair(exchange, pair, defaultPairSettings)
-
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100.1234', quoteDecimals)
-                , Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("T-TMDP-01");
+            sellOrder.price = Utils.parseUnits('100.1234', quoteDecimals);
+            await addOrderAndVerify(trader1, sellOrder, 1, Utils.fromUtf8("T-TMDP-01"));  // status is REJECTED = 1
 
         });
 
@@ -1644,12 +1833,8 @@ describe("TradePairs", function () {
 
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('10.1234', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("T-TMDQ-01");
-
-            // await expect(tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10.1234', baseDecimals), 0, 1, type2))
-            //     .to.be.revertedWith("T-TMDQ-01");
+            sellOrder.quantity = Utils.parseUnits('10.1234', baseDecimals);
+            await addOrderAndVerify(trader1, sellOrder, 1, Utils.fromUtf8("T-TMDQ-01"));  // status is REJECTED = 1
 
         });
 
@@ -1736,10 +1921,6 @@ describe("TradePairs", function () {
                 maxTradeAmount: maxTradeAmount,
                 mode: mode
             };
-
-            const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
-            let type2=0; // GTC
-
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
             await quoteToken.mint(trader2.address, Utils.parseUnits('10000', quoteDecimals));
@@ -1759,14 +1940,12 @@ describe("TradePairs", function () {
             await tradePairs.connect(owner).postOnly(tradePairId, true);
 
             // fail if order type is not PO
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('15', baseDecimals), 1, 1, type2))
-                .to.be.revertedWith("T-POOA-01");
-            // succeed if order is a PO type
-            type2=3; // PO
+            await addOrderAndVerify(trader1, sellOrder, 1, Utils.fromUtf8("T-POOA-01"));  // status is REJECTED = 1
 
-            await f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                , Utils.parseUnits('15', baseDecimals), 1, 1, type2);
+            // succeed if order is a PO type
+            sellOrder.type2=3; // PO
+            await addOrderAndVerify(trader1, sellOrder, 0);
+
         });
 
         it("Should pause a trade pair from owner account", async function () {
@@ -1792,26 +1971,18 @@ describe("TradePairs", function () {
             // succeed from owner accounts
             await tradePairs.connect(owner).pauseTradePair(tradePairId, true);
             // fail addOrder
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("T-PPAU-01");
+            await expect(tradePairs.connect(trader1).addNewOrder(buyOrder)).to.be.revertedWith("T-PPAU-01");
 
 
             // fail paused
             await tradePairs.connect(owner).pause();
-
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                , Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("Pausable: paused");
+            await expect(tradePairs.connect(trader1).addNewOrder(buyOrder)).to.be.revertedWith("Pausable: paused");
 
             await tradePairs.connect(owner).unpause();
             // unpause to succeed
             await tradePairs.connect(owner).pauseTradePair(tradePairId, false);
             // succeed addOrder
-            await f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-            , Utils.parseUnits('10', baseDecimals), 0, 1, type2)
-
-            //await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1, type2);
+            await addOrderAndVerify(trader1, buyOrder, 0);  // status is NEW = 0
         });
 
         it("Should pause addOrder for a trade pair from owner account", async function () {
@@ -1837,17 +2008,12 @@ describe("TradePairs", function () {
             await expect(tradePairs.connect(trader1).pauseAddOrder(tradePairId, true)).to.be.revertedWith("AccessControl:");
             // succeed from owner accounts
             await tradePairs.connect(owner).pauseAddOrder(tradePairId, true);
-            // await expect(tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-            //     .to.be.revertedWith("T-AOPA-01");
-            await expect(f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                , Utils.parseUnits('10', baseDecimals), 0, 1, type2))
-                .to.be.revertedWith("T-AOPA-01");
-
+            await expect(tradePairs.connect(trader1).addNewOrder(buyOrder)).to.be.revertedWith("T-AOPA-01");
 
             await tradePairs.connect(owner).pauseAddOrder(tradePairId, false);
-            // await tradePairs.connect(trader1).addOrder(trader1.address, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals), Utils.parseUnits('10', baseDecimals), 0, 1, type2);
-            await f.addOrderOld(tradePairs, trader1, clientOrderid, tradePairId, Utils.parseUnits('100', quoteDecimals)
-                , Utils.parseUnits('10', baseDecimals), 0, 1, type2);
+
+            await addOrderAndVerify(trader1, buyOrder, 0);  // status is NEW = 0
+
         });
 
         it("Should use setAuctionPrice correctly", async function () {
@@ -1970,7 +2136,7 @@ describe("TradePairs", function () {
 
         });
 
-        it("Should be able to use cancelOrder(), cancelOrderList() and cancelReplaceOrders() correctly", async function () {
+        it("Should be able to use cancelOrder(), cancelOrderList() and cancelReplaceOrder() correctly", async function () {
             let clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
@@ -2015,12 +2181,13 @@ describe("TradePairs", function () {
             // set auction mode to OFF
             await tradePairs.connect(owner).setAuctionMode(tradePairId, 0);  // auction is OFF
 
+
             // trigger available funds not enough
             sellOrder.traderaddress = trader2.address;
             sellOrder.price = Utils.parseUnits('1', quoteDecimals);
             sellOrder.quantity = Utils.parseUnits('100', baseDecimals);
             await expect(tradePairs.connect(trader2).addNewOrder(sellOrder))
-            .to.be.revertedWith("P-AFNE-02");
+                .to.be.revertedWith("P-AFNE-02");
 
             // mint some tokens for trader1
             await quoteToken.mint(trader2.address, Utils.parseUnits('20000', quoteDecimals));
@@ -2154,6 +2321,239 @@ describe("TradePairs", function () {
             expect(prtfBaseBalance[1]).to.equal(Utils.parseUnits('10', baseDecimals));
         });
 
+        it("Should cancel outstanding maker from the same trader when cancelReplaceOrder() (STP=CANCELMAKER)", async function () {
+
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
+            // deposit only 100 native to portfolio for trader1
+            await f.depositNative(portfolioMain, trader1, '100')
+            const prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
+            expect(prtfBaseBalance[0]).to.equal(Utils.parseUnits('100', baseDecimals));
+            expect(prtfBaseBalance[1]).to.equal(Utils.parseUnits('100', baseDecimals));
+
+            // deposit only 100 tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, '1000')
+            let prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
+
+            expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('1000', quoteDecimals));
+            expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('1000', quoteDecimals));
+            await f.depositNative(portfolioMain, trader2, '500')
+
+            await f.addTradePair(exchange, pair, defaultPairSettings)
+
+            // add a buy order using the entire 100 token @price 1
+            buyOrder.price = Utils.parseUnits('1', quoteDecimals);
+            buyOrder.quantity = Utils.parseUnits('100', baseDecimals);
+            const id1 = await addOrderAndVerify(trader1, buyOrder, 0);  // status is NEW = 0
+
+            prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
+            expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('1000', quoteDecimals));
+            expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('900', quoteDecimals));
+
+
+            // add a sell order for trader1
+            sellOrder.price = Utils.parseUnits('2', quoteDecimals);
+            sellOrder.quantity = Utils.parseUnits('50', baseDecimals);
+
+            await addOrderAndVerify(trader1, sellOrder, 0);  // status is NEW = 0
+            // add a sell order for trader2
+            sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader2.address, 3);
+            sellOrder.traderaddress = trader2.address;
+            await addOrderAndVerify(trader2, sellOrder, 0);  // status is NEW = 0
+
+
+            const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
+
+            // replace buy order at the same price but decrease quantity to 90
+            const tx2 = await tradePairs.connect(trader1).cancelReplaceOrder(id1, clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('100', baseDecimals));
+            const res: any  = await tx2.wait();
+            const id2 = (await tradePairs.connect(trader1).getOrderByClientOrderId(trader1.address, clientOrderid)).id ;
+
+
+            for (const e of res.events) {
+                if (e.event === "OrderStatusChanged") {
+                    if (e.args.traderaddress === trader1.address) {
+                        if (e.args.order.id == id1) { // Buy maker order that should have been canceled
+                            expect(e.args.order.status).to.be.equal(4);           // status is NEW = 4
+                            expect(e.args.order.quantityFilled).to.be.equal(0);
+                        }
+
+                        if (e.args.order.id == id2) { // Sell taker order that should be partially filled with
+                            expect(e.args.order.status).to.be.equal(2);           // status is PARTIAL = 2
+                            expect(e.args.order.quantityFilled).to.be.equal(sellOrder.quantity); // only 50 should be filled
+                        }
+                    }
+
+                    if (e.args.traderaddress === trader2.address) {
+                        const id3 = (await tradePairs.connect(trader2).getOrderByClientOrderId(trader2.address, sellOrder.clientOrderId)).id;
+                        if (e.args.order.id == id3) { // Sell maker order from trader2 that is fully filled
+                            expect(e.args.order.status).to.be.equal(3);           // status is FILLED = 3
+                            expect(e.args.order.quantityFilled).to.be.equal(sellOrder.quantity);
+                        }
+                    }
+                }
+            }
+
+        });
+
+        it("Should STP=CANCELTAKER, CANCELMAKER, CANCELBOTH during addNewOrder()", async function () {
+
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
+            // deposit only 100 native to portfolio for trader1
+            await f.depositNative(portfolioMain, trader1, '100')
+            const prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
+            expect(prtfBaseBalance[0]).to.equal(Utils.parseUnits('100', baseDecimals));
+            expect(prtfBaseBalance[1]).to.equal(Utils.parseUnits('100', baseDecimals));
+
+            // deposit only 100 tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, '500')
+            let prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
+
+            expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('500', quoteDecimals));
+            expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('500', quoteDecimals));
+
+            //trader2
+            await f.depositNative(portfolioMain, trader2, '200')
+            await quoteToken.mint(trader2.address, Utils.parseUnits('20000', quoteDecimals));
+            // deposit only 500 tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader2, quoteToken, quoteDecimals, quoteSymbol, '500')
+
+
+            await f.addTradePair(exchange, pair, defaultPairSettings)
+
+            // add a buy order using the entire 100 token @price 1
+            const firstBuyOrder = {
+                traderaddress: trader1.address
+                , clientOrderId : await Utils.getClientOrderId(ethers.provider, trader1.address)
+                , tradePairId
+                , price: Utils.parseUnits('1', quoteDecimals)
+                , quantity: Utils.parseUnits('30', baseDecimals)
+                , side :  0   // Buy
+                , type1 : 1   // market orders not enabled
+                , type2: 0   // GTC
+                , stp : 0   // CancelTaker
+            }
+
+            const id1 = await addOrderAndVerify(trader1, firstBuyOrder, 0);  // status is NEW=0
+
+            prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
+            expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('500', quoteDecimals));
+            expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('470', quoteDecimals));
+
+            // add a buy order for trader2
+            buyOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader2.address, 2);
+            buyOrder.traderaddress = trader2.address;
+            buyOrder.quantity = Utils.parseUnits('50', baseDecimals);
+            buyOrder.price= Utils.parseUnits('1', quoteDecimals)
+            await addOrderAndVerify(trader2, buyOrder, 0);  // status is NEW = 0
+
+            // add a sell order for trader1
+            sellOrder.price = Utils.parseUnits('1', quoteDecimals);
+            sellOrder.quantity = Utils.parseUnits('50', baseDecimals);
+            sellOrder.stp = 0 // CancelTaker
+            // Sell order is canceled.
+            await addOrderAndVerify(trader1, sellOrder, 4, Utils.fromUtf8("T-STPR-01"));  // sellOrder(taker) status is CANCELED = 4
+
+            // buyOrder(maker) still intact
+            let order1 = await tradePairs.getOrder(id1);
+            expect(order1.id).to.be.equal(id1);
+            expect(order1.status).to.be.equal(0);        // status is NEW = 0
+            expect(order1.quantityFilled).to.be.equal(0);
+
+
+            // add a new sell order for trader1 with CancelMaker this time
+            sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 3);
+            sellOrder.stp = 1// CancelMaker
+
+            const id2 = await addOrderAndVerifyWithCancel(trader1, sellOrder, 3, firstBuyOrder, ethers.constants.HashZero
+            , buyOrder.quantity, buyOrder.quantity, BigNumber.from(0));  // sellOrder(taker) status is NEW=0 , buyOrder(maker) canceled
+            // orders filled. Nothing left in the orderbook
+
+            await addOrderAndVerify(trader1, sellOrder, 0);
+            // buy order has been removed
+            order1 = await tradePairs.getOrder(id1);
+            expect(order1.id).to.be.equal(ethers.constants.HashZero);
+
+            buyOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 4);
+            buyOrder.traderaddress = trader1.address;
+            buyOrder.stp = 2 // CancelBoth
+            await addOrderAndVerifyWithCancel(trader1, buyOrder, 4, sellOrder, Utils.fromUtf8("T-STPR-01"));  // status is CANCELED = 4, sellOrder(maker) is CANCELED
+
+            // sell order has been removed
+            order1 = await tradePairs.getOrder(id2);
+            expect(order1.id).to.be.equal(ethers.constants.HashZero);
+        });
+
+        it("Should STP c when 2 opposing orders in the same block during addListOrder()", async function () {
+            // mint some tokens for trader1
+            await quoteToken.mint(trader1.address, Utils.parseUnits('20000', quoteDecimals));
+            // deposit only 100 native to portfolio for trader1
+            await f.depositNative(portfolioMain, trader1, '100')
+            const prtfBaseBalance = await portfolio.getBalance(trader1.address, baseSymbol);
+            expect(prtfBaseBalance[0]).to.equal(Utils.parseUnits('100', baseDecimals));
+            expect(prtfBaseBalance[1]).to.equal(Utils.parseUnits('100', baseDecimals));
+
+            // deposit only 100 tokens to portfolio for trader1
+            await f.depositToken(portfolioMain, trader1, quoteToken, quoteDecimals, quoteSymbol, '500')
+            const prtfQuoteBalance = await portfolio.getBalance(trader1.address, quoteSymbol);
+
+            expect(prtfQuoteBalance[0]).to.equal(Utils.parseUnits('500', quoteDecimals));
+            expect(prtfQuoteBalance[1]).to.equal(Utils.parseUnits('500', quoteDecimals));
+            await f.addTradePair(exchange, pair, defaultPairSettings)
+
+            const orders =[]
+            //buy PO, followed by sell Limit at the same price
+            const buyOrder = {
+                traderaddress: trader1.address
+                , clientOrderId: await Utils.getClientOrderId(ethers.provider, trader1.address, 2)
+                , tradePairId
+                , price: Utils.parseUnits((100).toString(), quoteDecimals)
+                , quantity: Utils.parseUnits('1', baseDecimals)
+                , side: 0  // Buy
+                , type1: 1 //Limit
+                , type2: 3 //PO
+                , stp : 0 // Cancel Taker - will be entered to ob first hence will be ignored
+            }
+            const sellOrder = Object.assign({}, buyOrder);
+            sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 3);
+            sellOrder.side = 1;
+            sellOrder.type2 = 0; //GTC
+            sellOrder.stp = 2; // This will cancel both orders
+
+            orders.push(buyOrder);
+            orders.push(sellOrder);
+
+            const tx = await tradePairs.connect(trader1).addOrderList(orders);
+            const res: any = await tx.wait();
+            let i = 0;
+            for (const e of res.events) {
+                if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader1.address){
+                    //console.log(e.args.order)
+                    expect(e.args.pair).to.be.equal(tradePairId);
+                    //expect(e.args.order.clientOrderId).to.be.equal(sellOrder.clientOrderId);
+                    expect(e.args.traderaddress).to.be.equal(sellOrder.traderaddress);
+                    expect(e.args.order.price).to.be.equal(sellOrder.price);
+                    expect(e.args.order.quantity).to.be.equal(sellOrder.quantity);
+                    expect(e.args.order.type1).to.be.equal(sellOrder.type1);             // type1 is LIMIT=1
+                    // 1st event raised is the buy order commit to the blockchain
+                    // 2nd is the cancel of the buy order
+                    // 3rd is the cancel of the sell
+                    const expectedStatus = i == 0 ? 0 : 4;     // status is CANCELED = 4
+                    const expectedSide = i == 2 ? 1 : 0;
+                    const expectedType2 = i == 2 ? 0 : 3;
+                    expect(e.args.order.side).to.be.equal(expectedSide);
+                    expect(e.args.order.status).to.be.equal(expectedStatus);
+                    expect(e.args.order.type2).to.be.equal(expectedType2);
+
+                    expect(e.args.order.quantityFilled).to.be.equal(0);
+                    expect(e.args.order.totalAmount).to.be.equal(0);
+                    expect(e.args.order.totalFee).to.be.equal(0);
+                    i++;
+                }
+            }
+        });
+
         it("Should be able to use unsolicitedCancel() correctly", async function () {
 
             // mint some tokens for trader1
@@ -2172,6 +2572,7 @@ describe("TradePairs", function () {
             const tx1 = await tradePairs.connect(trader1).addNewOrder(buyOrder);
             const clientOrderid = buyOrder.clientOrderId;
             const res1: any = await tx1.wait();
+            //console.log("event0",res1.events[0]);
             const id1 = res1.events[1].args.order.id;
 
 
@@ -2210,6 +2611,7 @@ describe("TradePairs", function () {
             for (const e of res.events) {
                 if (e.event ==='OrderStatusChanged') {
                     expect(e.args.order.status).to.be.equal(4);
+                    expect(e.args.code).to.be.equal(Utils.fromUtf8("T-USCL-01"));
                 }
             }
 
@@ -2235,4 +2637,3 @@ describe("TradePairs", function () {
             expect(balBefore).to.be.equal(balAfter);
         });
     });
-});

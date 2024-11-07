@@ -12,6 +12,7 @@ import { expect } from "chai";
 
 
 describe("ICMApp", () => {
+  const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
   let portfolioBridgeMain: PortfolioBridgeMain;
   let portfolioBridgeSub: PortfolioBridgeSub;
   let portfolioMain: PortfolioMain;
@@ -81,28 +82,41 @@ describe("ICMApp", () => {
     expect(await icmAppMain.portfolioBridge()).to.equal(portfolioBridgeMain.address);
   });
 
+  it("Should fail to setRelayers if not owner", async () => {
+    await expect(icmAppMain.connect(trader1).setRelayers(subnetBlockchainID, [portfolioBridgeMain.address])).to.be.revertedWith("OwnableUnauthorizedAccount");
+  });
+
+  it("Should fail to setRelayers if empty array", async () => {
+    await expect(icmAppMain.setRelayers(subnetBlockchainID, [])).to.be.revertedWith("IC-SRNZ-01");
+  });
+
+  it("Should successfully setRelayers if owner", async () => {
+    await expect(icmAppMain.setRelayers(subnetBlockchainID, [relayer.address])).to.emit(icmAppMain, "SetRelayers").withArgs(subnetBlockchainID, [relayer.address]);
+    expect(await icmAppMain.allowedRelayers(subnetBlockchainID, 0)).to.equal(relayer.address);
+  });
+
   it("Should fail to addRelayer if not owner", async () => {
-    await expect(icmAppMain.connect(trader1).addRelayer(portfolioBridgeMain.address)).to.be.revertedWith("OwnableUnauthorizedAccount");
+    await expect(icmAppMain.connect(trader1).addRelayer(subnetBlockchainID, portfolioBridgeMain.address)).to.be.revertedWith("OwnableUnauthorizedAccount");
   });
 
   it("Should fail to addRelayer if zero address", async () => {
-    await expect(icmAppMain.addRelayer(ethers.constants.AddressZero)).to.be.revertedWith("IC-ARNZ-01");
+    await expect(icmAppMain.addRelayer(subnetBlockchainID, ethers.constants.AddressZero)).to.be.revertedWith("IC-ARNZ-01");
   });
 
   it("Should successfully addRelayer if owner", async () => {
-    await expect(icmAppMain.addRelayer(relayer.address)).to.emit(icmAppMain, "AddRelayer").withArgs(relayer.address);
-    expect(await icmAppMain.allowedRelayers(0)).to.equal(relayer.address);
+    await expect(icmAppMain.addRelayer(subnetBlockchainID, relayer.address)).to.emit(icmAppMain, "AddRelayer").withArgs(subnetBlockchainID, relayer.address);
+    expect(await icmAppMain.allowedRelayers(subnetBlockchainID, 0)).to.equal(relayer.address);
   });
 
   it("Should fail to clearRelayers if not owner", async () => {
-    await expect(icmAppMain.connect(trader1).clearRelayers()).to.be.revertedWith("OwnableUnauthorizedAccount");
+    await expect(icmAppMain.connect(trader1).clearRelayers(subnetBlockchainID)).to.be.revertedWith("OwnableUnauthorizedAccount");
   });
 
   it("Should successfully clearRelayers if owner", async () => {
-    await expect(icmAppMain.addRelayer(relayer.address)).to.emit(icmAppMain, "AddRelayer").withArgs(relayer.address);
-    expect(await icmAppMain.allowedRelayers(0)).to.equal(relayer.address);
-    await expect(icmAppMain.clearRelayers()).to.emit(icmAppMain, "ClearRelayers");
-    await expect(icmAppMain.allowedRelayers(0)).to.be.reverted;
+    await expect(icmAppMain.addRelayer(subnetBlockchainID, relayer.address)).to.emit(icmAppMain, "AddRelayer").withArgs(subnetBlockchainID, relayer.address);
+    expect(await icmAppMain.allowedRelayers(subnetBlockchainID, 0)).to.equal(relayer.address);
+    await expect(icmAppMain.clearRelayers(subnetBlockchainID)).to.emit(icmAppMain, "ClearRelayers").withArgs(subnetBlockchainID);
+    await expect(icmAppMain.allowedRelayers(subnetBlockchainID, 0)).to.be.reverted;
   });
 
   it("Should fail to setGasLimit if not owner", async () => {
@@ -134,7 +148,6 @@ describe("ICMApp", () => {
     const { dexalotSubnet } = f.getChains();
 
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
-    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
     await expect(portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false)).to.be.revertedWith("PB-BCNE-01");
   });
@@ -143,9 +156,7 @@ describe("ICMApp", () => {
     const { dexalotSubnet } = f.getChains();
 
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
-    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     await icmAppMain.setPortfolioBridge(owner.address);
@@ -156,9 +167,7 @@ describe("ICMApp", () => {
     const { dexalotSubnet } = f.getChains();
 
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
-    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     await icmAppMain.setPortfolioBridge(owner.address);
@@ -184,14 +193,12 @@ describe("ICMApp", () => {
     ]);
     // await owner.sendTransaction({ to: teleporterMessengerAddr, value: ethers.utils.parseEther("1") });
 
-    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const payload = Utils.generatePayload(0, 1, 0, trader1.address, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), f.getTime(), Utils.emptyCustomData());
     await expect(icmAppMain.connect(icmMessenger).receiveTeleporterMessage(subnetBlockchainID, icmAppMain.address, payload)).to.be.revertedWith("DB-RCNS-02");
 
     // set icm configs
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
     const randRemoteAddress = Utils.addressToBytes32(icmAppMain.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     const msgType = 0
@@ -211,7 +218,6 @@ describe("ICMApp", () => {
     const { cChain } = f.getChains();
 
     await icmAppSub.setPortfolioBridge(portfolioBridgeSub.address);
-    const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
     await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
     let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"));

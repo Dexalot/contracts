@@ -219,7 +219,7 @@ describe("Portfolio Shared", () => {
         expect(await portfolio.getChainId()).to.be.equal(cChain.chainListOrgId)
         const PortfolioBridge = await ethers.getContractFactory("PortfolioBridgeMain") as PortfolioBridgeMain__factory;
         const portfolioBridge = await upgrades.deployProxy(
-            PortfolioBridge, [lzAppMain.address, owner.address]) as PortfolioBridgeMain;
+            PortfolioBridge, [0, lzAppMain.address, owner.address]) as PortfolioBridgeMain;
         await portfolioBridge.deployed();
 
         await portfolioBridge.setPortfolio(portfolio.address);
@@ -233,17 +233,6 @@ describe("Portfolio Shared", () => {
         .to.emit(portfolio, "RoleGranted")
         .to.emit(portfolio, "AddressSet")
     });
-
-
-    it("Should enable bridge correctly", async () => {
-        // fail for non-admin
-        await expect(portfolio.connect(trader1).enableBridgeProvider(1, lzAppMain.address)).to.be.revertedWith("AccessControl:");
-
-        // succeed
-        await expect(portfolio.enableBridgeProvider(1, lzAppMain.address))
-        .to.emit(portfolio, "ParameterUpdated")
-        .withArgs(Utils.fromUtf8("Portfolio"), "P-BRIDGE-ENABLE", 1, 1);
-    })
 
     it("Should set and get bridgeFee", async () => {
         // fail for non-admin

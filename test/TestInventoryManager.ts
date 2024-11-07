@@ -393,6 +393,13 @@ describe("InventoryManager", () => {
     expect(allICM.chainIds[2]).to.be.equal(0);
     expect(allICM.chainIds[3]).to.be.equal(0);
 
+     // 0 bridge fee for unsupported token
+     const allNonToken = await portfolioSub.getAllBridgeFees(0, Utils.fromUtf8("USDC1"), quantity);
+     expect(allNonToken.chainIds[0]).to.be.equal(0);
+     expect(allNonToken.chainIds[1]).to.be.equal(0);
+     expect(allNonToken.chainIds[2]).to.be.equal(0);
+     expect(allNonToken.chainIds[3]).to.be.equal(0);
+
     const all = await portfolioSub.getAllBridgeFees(0, usdcHex, quantity);
     const avax = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, usdcHex, quantity);
     const arb = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, usdcHex, quantity);

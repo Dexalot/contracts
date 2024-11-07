@@ -99,6 +99,7 @@
     "PB-IUMF-01": "PortfolioBridge: insufficient user message fee received",
     "PB-BCNE-01": "PortfolioBridge: bridge contract not enabled",
     "PB-MPGT-01": "PortfolioBridge: bridge fee multipler is greater than 100%",
+    "PB-OBSA-01": "PortfolioBridge: old bridge provider still active",
 
     "PM-ZADD-01": "PortfolioMinter: cannot initialize with 0 address",
     "PM-ZAMT-01": "PortfolioMinter: mint amount must be greater than 0",
@@ -120,7 +121,7 @@
     "T-TMDP-01": "TradePairs: too many decimals in the price",
     "T-CLOI-01": "TradePairs: client order id has to be unique per trader",
     "T-T2PO-01": "TradePairs: Post Only order is not allowed to be a taker",
-    "T-OOCA-01": "TradePairs: only msg.sender or permissioned contracts can add orders",
+    "T-OOCA-01": "TradePairs: only msg.sender can add orders",
     "T-RMTP-01": "TradePairs: orderbook has to be empty to remove the tradePair",
     "T-MPNA-01": "TradePairs: mirror pair not allowed",
     "T-MNOE-01": "TradePairs: max number of fills has to be at least 10",
@@ -129,6 +130,9 @@
     "T-AUCT-03": "TradePairs: auction price should be > 0 before matchAuctionOrders",
     "T-AUCT-04": "TradePairs: market orders not allowed in auction mode",
     "T-AUCT-05": "TradePairs: setAuctionMode can not turn on live trading when orderbook is crossed",
+    "T-STPR-01": "TradePairs: order cancled due to self trade prevention",
+    "T-USCL-01": "TradePairs: unsolicited cancel from exchange",
+    "T-FOKF-01": "TradePairs: FOK order can't be fully filled. Tx reverted",
 
     "E-OIZA-01": "Exchange: address can not be address(0)",
     "E-OACC-01": "Exchange: default or auction admin account needed",
@@ -282,5 +286,5 @@
 
     "IC-ARNZ-01": "ICMApp: add relayer address must be non-zero",
     "IC-GLNS-01": "ICMApp: gas limit not set for msgType",
-    "IC-TNTH-01": "ICMApp: teleporter nonce too high"
+    "IC-SRNZ-01": "ICMApp: set relayer addresses must be non-zero"
 }

@@ -16,6 +16,9 @@ abstract contract DefaultBridgeApp is IBridgeProvider {
     mapping(uint32 => RemoteChain) public remoteChainIDs;
     address public portfolioBridge;
 
+    // storage gap for upgradeability
+    uint256[50] private __gap;
+
     event PortfolioBridgeUpdated(address portfolioBridgeAddr);
     event RemoteChainUpdated(uint32 chainID, bytes32 blockchainID, bytes32 remoteContract);
 
@@ -57,9 +60,7 @@ abstract contract DefaultBridgeApp is IBridgeProvider {
         CrossChainMessageType _msgType,
         address _feeRefundAddress
     ) external payable onlyPortfolioBridge {
-        RemoteChain memory destination = remoteChainIDs[_dstChainID];
-        require(destination.chainID != 0, "DB-RCNS-01");
-        _sendMessage(destination, _message, _msgType, _feeRefundAddress);
+        _sendMessage(_verifyDestination(_dstChainID), _message, _msgType, _feeRefundAddress);
     }
 
     /**
@@ -109,6 +110,16 @@ abstract contract DefaultBridgeApp is IBridgeProvider {
         require(source.chainID != 0, "DB-RCNS-02");
         require(source.remoteContract == _sourceContract, "DB-RCNM-01");
         IBridgeAggregator(portfolioBridge).processPayload(getBridgeProvider(), source.chainID, _payload);
+    }
+
+    /**
+     * @notice Internal function to verify the destination chain
+     * @param _chainId The chainlist chain ID
+     * @return destination RemoteChain struct
+     */
+    function _verifyDestination(uint32 _chainId) internal view returns (RemoteChain memory destination) {
+        destination = remoteChainIDs[_chainId];
+        require(destination.chainID != 0, "DB-RCNS-01");
     }
 
     function _sendMessage(
