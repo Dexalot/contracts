@@ -46,6 +46,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
     event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
     event AUpdated(uint256 A, uint256 timestamp);
+    event PortfolioBridgeSubUpdated(address portfolioBridgeSub);
 
     /**
      * @notice  Initialize the upgradeable contract
@@ -127,6 +128,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         _revokeRole(PORTFOLIO_BRIDGE_ROLE, address(portfolioBridgeSub));
         _grantRole(PORTFOLIO_BRIDGE_ROLE, _portfolioBridgeSub);
         portfolioBridgeSub = IPortfolioBridgeSub(_portfolioBridgeSub);
+        emit PortfolioBridgeSubUpdated(_portfolioBridgeSub);
     }
 
     /**

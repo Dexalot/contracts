@@ -181,6 +181,8 @@ contract MainnetRFQ is
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
+    event UpdatedSlippageTolerance(uint256 slippageTolerance);
+    event UpdatedVolatilePairs(uint256 volatilePairs);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -420,6 +422,7 @@ contract MainnetRFQ is
     function setSlippageTolerance(uint256 _slippageTolerance) external onlyRole(VOLATILITY_ADMIN_ROLE) {
         require(_slippageTolerance <= 10000 && _slippageTolerance >= 9900, "RF-STTA-01");
         slippageTolerance = _slippageTolerance;
+        emit UpdatedSlippageTolerance(_slippageTolerance);
     }
 
     /**
@@ -430,6 +433,7 @@ contract MainnetRFQ is
      */
     function setVolatilePairs(uint256 _volatilePairs) external onlyRole(VOLATILITY_ADMIN_ROLE) {
         volatilePairs = _volatilePairs;
+        emit UpdatedVolatilePairs(_volatilePairs);
     }
 
     /**
