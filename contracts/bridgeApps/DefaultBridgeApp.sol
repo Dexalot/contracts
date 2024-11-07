@@ -16,6 +16,9 @@ abstract contract DefaultBridgeApp is IBridgeProvider {
     mapping(uint32 => RemoteChain) public remoteChainIDs;
     address public portfolioBridge;
 
+    // storage gap for upgradeability
+    uint256[50] private __gap;
+
     event PortfolioBridgeUpdated(address portfolioBridgeAddr);
     event RemoteChainUpdated(uint32 chainID, bytes32 blockchainID, bytes32 remoteContract);
 

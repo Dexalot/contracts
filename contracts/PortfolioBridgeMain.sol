@@ -89,7 +89,7 @@ contract PortfolioBridgeMain is
     EnumerableMapUpgradeable.UintToUintMap internal supportedChains;
 
     // storage gap for upgradeability
-    uint256[46] __gap;
+    uint256[50] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);

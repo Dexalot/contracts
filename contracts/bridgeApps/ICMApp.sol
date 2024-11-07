@@ -21,8 +21,6 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     // Maximum gas limit for each message type
     mapping(CrossChainMessageType => uint256) public gasLimits;
 
-    uint256[50] private __gap;
-
     event AddRelayer(address relayer);
     event ClearRelayers();
     event SetGasLimit(CrossChainMessageType msgType, uint256 gasLimit);
