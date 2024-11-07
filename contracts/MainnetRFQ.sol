@@ -76,7 +76,7 @@ contract MainnetRFQ is
     // typehash for cross chain swaps
     bytes32 private constant XCHAIN_SWAP_TYPEHASH =
         keccak256(
-            "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
+            "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,uint8 bridgeProvider,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
         );
     // mask for nonce in cross chain transfer customdata, last 12 bytes
     uint96 private constant NONCE_MASK = 0xffffffffffffffffffffffff;
@@ -99,6 +99,7 @@ contract MainnetRFQ is
         uint32 expiry;
         address taker;
         uint32 destChainId;
+        IPortfolioBridge.BridgeProvider bridgeProvider;
         bytes32 makerSymbol;
         address makerAsset;
         address takerAsset;
@@ -545,6 +546,7 @@ contract MainnetRFQ is
                 _order.expiry,
                 _order.taker,
                 _order.destChainId,
+                _order.bridgeProvider,
                 _order.makerSymbol,
                 _order.makerAsset,
                 _order.takerAsset,
@@ -749,7 +751,7 @@ contract MainnetRFQ is
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage{value: gasFee}(
             _order.destChainId,
-            IPortfolioBridge.BridgeProvider.LZ,
+            _order.bridgeProvider,
             IPortfolio.XFER(
                 0,
                 IPortfolio.Tx.CCTRADE,
