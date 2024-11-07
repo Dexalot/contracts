@@ -22,7 +22,7 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098c";
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.1.0");
 
     event LzMessageSent(uint32 dstEid, uint64 nonce, bytes32 guid);
     event LzMessageReceived(uint32 srcEid, uint64 nonce, bytes32 guid);

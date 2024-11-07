@@ -28,7 +28,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual returns (bytes32) {
-        return bytes32("1.0.3");
+        return bytes32("1.1.0");
     }
 
     function initialize(

@@ -73,7 +73,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.8");
+    bytes32 public constant VERSION = bytes32("2.5.9");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
