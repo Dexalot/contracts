@@ -53,7 +53,7 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
      * @return The bridge fee in terms of the native token
      */
     function getBridgeFee(uint32 _chainID, CrossChainMessageType _msgType) public view override returns (uint256) {
-        RemoteChain memory destination = remoteChainIDs[_chainID];
+        RemoteChain memory destination = _verifyDestination(_chainID);
         uint32 dstEid = uint32(uint256(destination.blockchainID));
         return _quote(dstEid, DEFAULT_PAYLOAD, enforcedOptions[dstEid][uint16(_msgType)], false).nativeFee;
     }
