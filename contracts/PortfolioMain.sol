@@ -126,7 +126,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         super.addTokenInternal(_details, _fee, _gasSwapRatio);
         // Tokens can't be used to swap gas by default
         setBridgeParamInternal(_details.symbol, _fee, _gasSwapRatio, _details.symbol == bytes32("ALOT") ? true : false);
-        if (_details.symbol != native && !_details.isVirtual) {
+        if (_details.symbol != native) {
             require(_details.tokenAddress != address(0), "P-ZADDR-01");
             IERC20MetadataUpgradeable assetIERC20 = IERC20MetadataUpgradeable(_details.tokenAddress);
             require(UtilsLibrary.stringToBytes32(assetIERC20.symbol()) == _details.symbol, "P-TSDM-01");
@@ -144,7 +144,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      */
     function removeToken(bytes32 _symbol, uint32) public virtual override onlyRole(DEFAULT_ADMIN_ROLE) {
         TokenDetails memory tokenDetails = tokenDetailsMap[_symbol];
-        if (tokenDetails.symbol != bytes32(0) && !tokenDetails.isVirtual) {
+        if (tokenDetails.symbol != bytes32(0)) {
             require(
                 _symbol == native ? address(this).balance == 0 : tokenMap[_symbol].balanceOf(address(this)) == 0,
                 "P-NZBL-01"
