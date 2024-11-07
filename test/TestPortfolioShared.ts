@@ -234,17 +234,6 @@ describe("Portfolio Shared", () => {
         .to.emit(portfolio, "AddressSet")
     });
 
-
-    it("Should enable bridge correctly", async () => {
-        // fail for non-admin
-        await expect(portfolio.connect(trader1).enableBridgeProvider(1, lzAppMain.address)).to.be.revertedWith("AccessControl:");
-
-        // succeed
-        await expect(portfolio.enableBridgeProvider(1, lzAppMain.address))
-        .to.emit(portfolio, "ParameterUpdated")
-        .withArgs(Utils.fromUtf8("Portfolio"), "P-BRIDGE-ENABLE", 1, 1);
-    })
-
     it("Should set and get bridgeFee", async () => {
         // fail for non-admin
         await expect(portfolio.connect(trader1).setBridgeParam(AVAX, bridgeFee, 0, true))

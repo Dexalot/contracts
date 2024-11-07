@@ -112,7 +112,7 @@ describe("Portfolio Bridge Main", () => {
         const { dexalotSubnet } = f.getChains();
         expect(await portfolioBridgeMain.getDefaultDestinationChain()).to.be.equal(dexalotSubnet.chainListOrgId);
 
-        await portfolioMain.enableBridgeProvider(1, lzAppMain.address);
+        await portfolioBridgeMain.enableBridgeProvider(1, lzAppMain.address);
         // Destination not found, destChain id =0
         await portfolioBridgeMain.setDefaultBridgeProvider(1);
         expect(await portfolioBridgeMain.getDefaultBridgeProvider()).to.be.equal(1);
@@ -176,7 +176,6 @@ describe("Portfolio Bridge Main", () => {
         await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(0, lzAppMain.address)).to.be.revertedWith("AccessControl:");
         // await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(1, true)).to.be.revertedWith("AccessControl:");
         await expect(portfolioBridgeMain.connect(trader1).enableBridgeProvider(0, ethers.constants.AddressZero)).to.be.revertedWith("AccessControl:");
-        await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         //Can't disable default bridge
         expect(portfolioBridgeMain.enableBridgeProvider(0, ethers.constants.AddressZero)).to.be.revertedWith("PB-DBCD-01");
         // expect(portfolioBridgeMain.enableBridgeProvider(1, false)).to.be.revertedWith("PB-DBCD-01");

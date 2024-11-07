@@ -82,6 +82,8 @@ contract PortfolioBridgeMain is
     bytes32 public constant BRIDGE_USER_ROLE = keccak256("BRIDGE_USER_ROLE");
     // Controls setting of bridge fees and executing delayed transfers.
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
+    // Allows access to processPayload for bridge providers e.g. LayerZero, ICM.
+    bytes32 public constant BRIDGE_PROVIDER_ROLE = keccak256("BRIDGE_PROVIDER_ROLE");
     // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
     mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
     uint64 public outNonce;
@@ -118,6 +120,7 @@ contract PortfolioBridgeMain is
 
         defaultBridgeProvider = _defaultBridgeProvider;
         enabledBridges[_defaultBridgeProvider] = IBridgeProvider(_defaultBridgeProviderAddress);
+        _setupRole(BRIDGE_PROVIDER_ROLE, _defaultBridgeProviderAddress);
     }
 
     /**
@@ -142,9 +145,30 @@ contract PortfolioBridgeMain is
      * @param   _bridge  Bridge to enable/disable
      * @param   _bridgeProvider  Address of bridge provider contract, 0 address if not exists
      */
-    function enableBridgeProvider(BridgeProvider _bridge, address _bridgeProvider) external onlyRole(BRIDGE_USER_ROLE) {
+    function enableBridgeProvider(
+        BridgeProvider _bridge,
+        address _bridgeProvider
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_bridge != defaultBridgeProvider || (paused() && _bridgeProvider != address(0)), "PB-DBCD-01");
+        if (_bridgeProvider != address(0)) {
+            grantRole(BRIDGE_PROVIDER_ROLE, _bridgeProvider);
+        }
         enabledBridges[_bridge] = IBridgeProvider(_bridgeProvider);
+    }
+
+    /**
+     * @notice  Removes an bridge provider's access to processPayload
+     * @dev     Only admin can remove bridge provider. Executed when a bridge provider is disabled
+     * or updated and has no inflight messages.
+     * @param   _bridge  Bridge type to remove
+     * @param   _bridgeProvider  Address of old bridge provider contract
+     */
+    function removeBridgeProvider(
+        BridgeProvider _bridge,
+        address _bridgeProvider
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(enabledBridges[_bridge]) != _bridgeProvider, "");
+        revokeRole(BRIDGE_PROVIDER_ROLE, _bridgeProvider);
     }
 
     /**

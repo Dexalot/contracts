@@ -440,34 +440,34 @@ describe("Portfolio Interactions", () => {
         await celerMockSub.setPortfolioBridge(portfolioBridgeSub.address)
 
         // set up bridge links for celer then disable bridge provider
-        await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
-        await portfolioSub.enableBridgeProvider(bridge, celerMockSub.address)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
+        await portfolioBridgeSub.enableBridgeProvider(bridge, celerMockSub.address)
         await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, 400000, bridge);
-        await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
-        await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
 
         // no need to add ALOT to subnet as it is added while deploying portfolioSub
         await alot.mint(trader1.address, ethers.utils.parseEther("100"))
         await f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "50");
 
         // // bridge not enabled in mains
-        await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await expect(f.depositToken(portfolioMain, trader1, alot, alot_token_decimals, ALOT, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
 
         // bridge-enabled in main but not in sub
-        await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
-        await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
+        await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await f.depositNativeWithContractCall(portfolioMain, trader1, "5", bridge) // silent fails w/ "NoPeer" in bridge
         await expect(portfolioBridgeSub.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
 
         // bridge-not enabled in sub
-        await portfolioMain.enableBridgeProvider(bridge, celerMockMain.address)
-        await portfolioSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
+        await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await expect(f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge)).to.be.revertedWith("PB-RBNE-01")
 
         // withdraw-enabled in sub but not in main
-        await portfolioMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
-        await portfolioSub.enableBridgeProvider(bridge, celerMockSub.address)
+        await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
+        await portfolioBridgeSub.enableBridgeProvider(bridge, celerMockSub.address)
         await f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge) // silent fails w/ "NoPeer" in bridge
         await expect(portfolioBridgeMain.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
     })

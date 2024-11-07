@@ -145,7 +145,6 @@ describe("ICMApp", () => {
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
     const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     await icmAppMain.setPortfolioBridge(owner.address);
@@ -158,7 +157,6 @@ describe("ICMApp", () => {
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
     const subnetBlockchainID = "0x4629d736bcd8c3a7bd7eef1c872365e9db32dc06eacf57fed72a94db5d934443";
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     await icmAppMain.setPortfolioBridge(owner.address);
@@ -191,7 +189,6 @@ describe("ICMApp", () => {
     // set icm configs
     await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
     const randRemoteAddress = Utils.addressToBytes32(icmAppMain.address);
-    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
     await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
     const msgType = 0
