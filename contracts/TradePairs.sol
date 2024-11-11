@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.5.0");
+    bytes32 public constant VERSION = bytes32("3.5.1");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
