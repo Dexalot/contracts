@@ -98,7 +98,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.0");
+        return bytes32("4.1.1");
     }
 
     /**
@@ -527,7 +527,6 @@ contract PortfolioBridgeMain is
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
     ) internal returns (IPortfolio.XFER memory xfer) {
-        require(address(enabledBridges[_bridge]) == msg.sender, "PB-RBNE-02");
         xfer = this.unpackXFerMessage(_payload);
         xfer.timestamp = block.timestamp; // log receival/process timestamp
         emit XChainXFerMessage(
@@ -568,7 +567,7 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
-    ) external virtual {
+    ) external virtual onlyRole(BRIDGE_PROVIDER_ROLE) {
         IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         // check the validity of the symbol
         IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(xfer.symbol);

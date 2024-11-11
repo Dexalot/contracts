@@ -791,8 +791,8 @@ contract TradePairs is
      * If any of the orders/cancels is rejected, it will continue to process the rest of the orders without any issues.
      * See #addNewOrder for `REVERT` and `REJECT` conditions. \
      * ```typescript:no-line-numbers
-     * const orders = [];
-     * const order = { traderaddress: Ox
+     * const _orders = [];
+     * const _order = { traderaddress: Ox
      *               , clientOrderId: Oxid3
      *               , tradePairId:
      *               , price:
@@ -802,8 +802,8 @@ contract TradePairs is
      *               , type2: 3 // PO
      *               , stp: 0   // STP
      *          };
-     * orders.push(order);
-     * const tx = await tradePairs.addOrderList(orders);
+     * _orders.push(_order);
+     * const tx = await tradePairs.addOrderList(_orders);
      * orderLog = await tx.wait();
      * ```
      * @param   _orders  array of newOrder struct. See ITradePairs.NewOrder
@@ -841,12 +841,12 @@ contract TradePairs is
      * will cause them to revert all together.
      * Orders from Reverted transactions will NOT show up in your order history. \
      *
-     * When an order is REJECTED, the order is accepted for processing, an orderId is assigned to it but
-     * then gets REJECTED. The transaction is also successfully committed to the blockchain.
+     * When an order is `REJECTED`, the order is accepted for processing, an orderId is assigned to it but
+     * then gets `REJECTED`. The transaction is also successfully committed to the blockchain.
      * An `OrderStatusChanged` event is raised to give the user additional information about the reject
      * condition. The order will show up in your order history as `REJECTED`. The rejection has no impact
      * on the additional orders submitted along with the rejected order. The remaining orders are processed
-     * without disruption.\
+     * without disruption. \
      *
      * `REVERT conditions:`
      *
@@ -858,20 +858,20 @@ contract TradePairs is
      *
      * `REJECT conditions:`
      *
-     * For all the order level check failures, the order will be REJECTED by emitting
+     * For all the order level check failures, the order will be `REJECTED` by emitting
      * OrderStatusChanged event with `status = REJECTED` and `code = errorCode`.
      * - `T-IVOT-01` : invalid order type / order type not enabled
      * - `T-TMDQ-01` : too many decimals in the quantity
      * - `T-TMDP-01` : too many decimals in the price
      * - `T-CLOI-01` : client order id has to be unique per trader
      * - `T-LTMT-01` : trade amount is less than minTradeAmount for the tradePair
-     * - `T-LTMT-01` : trade amount is more than maxTradeAmount for the tradePair
+     * - `T-MTMT-01` : trade amount is more than maxTradeAmount for the tradePair
      * - `T-T2PO-01` : Post Only order is not allowed to be a taker
      * - `T-POOA-01` : Only PO(PostOnly) Orders allowed for this pair
      * - `T-AUCT-04` : market orders not allowed in auction mode
      *
      * The `OrderStatusChanged` event always will return an `id` (orderId) assigned by the blockchain along
-     * with your `clientOrderId` when trying to enter a new order regardless of the status of the order.\
+     * with your `clientOrderId` when trying to enter a new order even if 'REJECTED'. \
      * `clientOrderId` is user generated and must be unique per traderaddress. \
      * For MARKET orders, values sent by the user in the `price` and `type2` fields will be ignored and
      * defaulted to `0` and `Type2.GTC` respectively. \
@@ -892,14 +892,14 @@ contract TradePairs is
      *
      * `STP`   : Self Trade Prevention Mode when both maker and taker orders are from the same traderaddress. \
      * `0 = CANCELTAKER`   – Cancel taker Order. Let the resting maker order remain in the orderbook. \
-     * `1 = CANCELMAKER`  – Cancel maker Order. Continue to execute the newer taking order.\
-     * `2 = CANCELBOTH`    – Cancel both maker & taker orders immediately.\
+     * `1 = CANCELMAKER`  – Cancel maker Order. Continue to execute the newer taking order. \
+     * `2 = CANCELBOTH`    – Cancel both maker & taker orders immediately. \
      * `3 = NONE`          – Do nothing. Self Trade allowed
      *
      * When the blockchain is extremely busy, the transactions are queued up in the mempool and prioritized
      * based on their gas price.
      * ```typescript:no-line-numbers
-     * const order = { traderaddress: Ox    // address of the trader. If msg.sender != `traderaddress` the tx will revert with `T-OOCA-01`.
+     * const _order = { traderaddress: Ox    // address of the trader. If msg.sender != `traderaddress` the tx will revert with `T-OOCA-01`.
      *               , clientOrderId: Oxid3 // unique id provided by the owner of an order in bytes32
      *               , tradePairId:         // id of the trading pair in bytes32
      *               , price:               // price of the order
@@ -909,7 +909,7 @@ contract TradePairs is
      *               , type2: 3             // enum ITradePairs.Type2 SubType of the order
      *               , stp: 0               // enum ITradePairs.STP self trade prevention mode
      *          };
-     * const tx = await tradePairs.addNewOrder(order);
+     * const tx = await tradePairs.addNewOrder(_order);
      * orderLog = await tx.wait();
      * ```
      * @param   _order  newOrder struct to be sent out. See ITradePairs.NewOrder
@@ -1039,14 +1039,21 @@ contract TradePairs is
 
             makerOrder.tradePairId = _tradePairId;
             makerOrder.price = _takerOrder.price;
-            makerOrder.totalAmount = _takerOrder.totalAmount;
             makerOrder.quantity = _takerOrder.quantity;
-            makerOrder.quantityFilled = _takerOrder.quantityFilled;
-            makerOrder.totalFee = _takerOrder.totalFee;
+            //makerOrder.totalAmount= 0;         // evm initialized
+            //makerOrder.quantityFilled= 0;      // evm initialized
+            //makerOrder.status= Status.NEW;     // evm initialized
+            //makerOrder.totalFee= 0;            // evm initialized
+            if (_takerOrder.quantityFilled > 0) {
+                // save gas
+                makerOrder.totalAmount = _takerOrder.totalAmount;
+                makerOrder.quantityFilled = _takerOrder.quantityFilled;
+                makerOrder.totalFee = _takerOrder.totalFee;
+                makerOrder.status = _takerOrder.status;
+            }
             makerOrder.side = side;
             makerOrder.type1 = _takerOrder.type1;
             makerOrder.type2 = _takerOrder.type2;
-            makerOrder.status = _takerOrder.status;
 
             orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
             bytes32 adjSymbol = side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
@@ -1082,11 +1089,11 @@ contract TradePairs is
      * @notice  Matches a taker order with maker orders in the opposite Orderbook before
      * it is entered in its own orderbook.
      * Also handles matching auction orders.
-     * @dev     IF BUY order, it will try to match with an order in the SELL OrderBook and vice versa
+     * @dev     IF `BUY` order, it will try to match with an order in the `SELL OrderBook` and vice versa
      * A taker order that is entered can match with multiple maker orders that are waiting in the orderbook.
      * This function may run out of gas not because of the single taker order but because of the number of
-     * maker orders that are matching with it. This variable is ESSENTIAL for tradepairs in AUCTION_MODE== MATCHING
-     * because we are guaranteed to run into such situations where a single large SELL order (quantity 1000)
+     * maker orders that are matching with it. This variable is ESSENTIAL for tradepairs in `AUCTION_MODE== MATCHING`
+     * because we are guaranteed to run into such situations where a single large `SELL` order (quantity 1000)
      * is potentially matched with multiple small BUY orders (1000 orders with quantity 1) , creating 1000 matches
      * which will run out of gas.
      * Self Trade Prevention is also checked here before allowing any matches.
@@ -1279,7 +1286,7 @@ contract TradePairs is
 
     /**
      * @notice  Cancels an order given the order id supplied
-     * @dev     FILLED & CANCELED orders are removed from the blockchain state.
+     * @dev     `FILLED` & `CANCELED` orders are removed from the blockchain state.
      * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OAEX-01` for orders that are
      * already canceled/filled.
      * The remaining status are NEW & PARTIAL and they are ok to cancel
@@ -1333,10 +1340,10 @@ contract TradePairs is
 
     /**
      * @notice  To Cancel and then Add multiple orders in a single transaction designed for Market Making operations.
-     * It calls cancelOrderList and then addOrderList functions.
+     * It calls `cancelOrderList` and then `addOrderList` functions.
      * This function ensures that cancelation and addition of the orders are done in the same block for a healthy
      * orderbook.
-     * Note to Market Makers. Please use this function rather than calling cancelOrderList and then addOrderList
+     * Note to Market Makers. Please use this function rather than calling `cancelOrderList` and then `addOrderList`
      * separately. For example, suppose there is a single market maker on the orderbook X/USDC. If the market maker
      * cancels all his orders and wait for the confirmation before sending the new orders, the orderbook can be
      * theoretically be completely empty for a block or two which will cause a lot of grief to the market participants.
@@ -1345,7 +1352,7 @@ contract TradePairs is
      * cancel 2 orders from 2 different tradepairs and then add 5 new orders for a third tradePairId.
      * Canceled order's locked quantity is made available for the new order within this tx if they are for the same pair.
      * Call with Maximum ~15 orders at a time for a block size of 30M \
-     * `When processing cancellations list (_orderIdsToCancel)` \
+     * `cancelOrderList(_orderIdsToCancel) processing:` \
      * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OAEX-01` for orders that are already canceled/filled \
      * In this case, because the closed orders are already removed from the blockchain, all the values in the OrderStatusChanged
      * event except `id`, `traderaddress`, `status` and `code` fields will be empty/default values. This includes the
@@ -1355,14 +1362,14 @@ contract TradePairs is
      * Will emit OrderStatusChanged `status = CANCEL_REJECT`, `code= T-OOCC-02` if the traderaddress
      * of the order that is being canceled is different than msg.sender.
      * if any of the cancels are rejected, the rest of the cancel requests will still be processed.\
-     * `When processing the NEW Orders list(_orders)` \
-     * if a single order in the new list REVERTS, the entire transaction is reverted. No orders nor cancels will go through.
+     * `addOrderList(_orders) processing:` \
+     * if a single order in the new list REVERTS, te entire transaction is reverted. No orders nor cancels will go through.
      * If any of the orders/cancels is rejected, it will continue to process the rest of the orders without any issues.
      * See #addNewOrder for `REVERT` and `REJECT` conditions. \
      * ```typescript:no-line-numbers
-     * const orderIdsToCancel =["id1","id2"];
-     * const orders = [];
-     * const order = { traderaddress: Ox
+     * const _orderIdsToCancel =["id1","id2"];
+     * const _orders = [];
+     * const _order = { traderaddress: Ox
      *               , clientOrderId: Oxid3
      *               , tradePairId:
      *               , price:
@@ -1372,8 +1379,8 @@ contract TradePairs is
      *               , type2: 3 // PO
      *               , stp : 0  // STP
      *          };
-     * orders.push(order);
-     * const tx = await tradePairs.cancelAddList(orderIdsToCancel, orders);
+     * _orders.push(_order);
+     * const tx = await tradePairs.cancelAddList(_orderIdsToCancel, _orders);
      * orderLog = await tx.wait();
      * ```
      * @param   _orderIdsToCancel  array of order ids to be canceled

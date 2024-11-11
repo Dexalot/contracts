@@ -458,7 +458,7 @@ describe("Portfolio Interactions", () => {
         await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
         await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await f.depositNativeWithContractCall(portfolioMain, trader1, "5", bridge) // silent fails w/ "NoPeer" in bridge
-        await expect(portfolioBridgeSub.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
+        await expect(portfolioBridgeSub.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("AccessControl:")
 
         // bridge-not enabled in sub
         await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
@@ -469,7 +469,7 @@ describe("Portfolio Interactions", () => {
         await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await portfolioBridgeSub.enableBridgeProvider(bridge, celerMockSub.address)
         await f.withdrawToken(portfolioSub, trader1, ALOT, alot_token_decimals, "5", bridge) // silent fails w/ "NoPeer" in bridge
-        await expect(portfolioBridgeMain.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("PB-RBNE-02")
+        await expect(portfolioBridgeMain.processPayload(bridge, cChain.chainListOrgId, "0x")).to.be.revertedWith("AccessControl:")
     })
 
     it("Should pause and unpause Portfolio deposit from the admin account", async function () {
