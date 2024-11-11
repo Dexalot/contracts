@@ -13,7 +13,7 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   OrderBooks.sol               |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                |      100 |    95.45 |      100 |      100 |                |
   PortfolioBridgeMain.sol      |      100 |    97.12 |      100 |      100 |                |
-  PortfolioBridgeSub.sol       |      100 |    95.95 |      100 |      100 |                |
+  PortfolioBridgeSub.sol       |      100 |    96.05 |      100 |      100 |                |
   PortfolioMain.sol            |      100 |    92.86 |      100 |      100 |                |
   PortfolioMinter.sol          |      100 |      100 |      100 |      100 |                |
   PortfolioSub.sol             |      100 |    92.53 |      100 |      100 |                |
@@ -61,5 +61,5 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   TokenVestingCloneFactory.sol |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol    |      100 |    96.67 |      100 |      100 |                |
 -------------------------------|----------|----------|----------|----------|----------------|
-All files                      |    99.87 |    96.98 |      100 |    99.91 |                |
+All files                      |    99.87 |    96.99 |      100 |    99.91 |                |
 -------------------------------|----------|----------|----------|----------|----------------|

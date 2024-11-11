@@ -64,7 +64,6 @@
 
     "PB-OACC-01": "PortfolioBridge: admin account or PORTFOLIO_ROLE needed for this function",
     "PB-RBNE-01": "PortfolioBridge: requested bridge not enabled",
-    "PB-RBNE-02": "PortfolioBridge: requested bridge not implemented",
     "PB-RBNE-03": "PortfolioBridge: requested bridge not enabled for bridge fee",
     "PB-DBCD-01": "PortfolioBridge: default bridge can not be disabled",
     "PB-DDNS-01": "PortfolioBridge: destination not found when calling getTokenId",

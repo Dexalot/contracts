@@ -61,7 +61,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.1.0");
+        return bytes32("4.1.1");
     }
 
     /**
@@ -376,7 +376,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         BridgeProvider _bridge,
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
-    ) external override {
+    ) external override onlyRole(BRIDGE_PROVIDER_ROLE) {
         IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         bytes32 subnetSymbol;
         // overwrite the xfer.symbol with the sourceSymbol + chainId
