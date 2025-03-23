@@ -49,11 +49,13 @@ interface IPortfolioBridge {
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
         bytes32 _symbol,
-        uint256 _quantity
+        uint256 _quantity,
+        bytes1 _options
     ) external view returns (uint256 bridgeFee);
 
     enum XChainMsgType {
-        XFER
+        XFER,
+        XFER_SOLANA
     }
     enum Direction {
         SENT,

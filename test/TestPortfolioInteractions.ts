@@ -197,8 +197,9 @@ describe("Portfolio Interactions", () => {
 
 
         // fail for account other then msg.sender
-        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8)"](trader2.address, USDT, Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
         await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8,uint32)"](trader2.address, USDT, Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId)).to.be.revertedWith("P-OOWT-01");
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,bytes32,uint256,uint8,uint32,bytes1)"](trader2.address, Utils.addressToBytes32(trader2.address), USDT, Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId, Utils.emptyOptions())).to.be.revertedWith("P-OOWT-01");
+
         // fail for 0 quantity
          await expect(f.withdrawToken(portfolioSub, owner, USDT, token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
@@ -229,8 +230,9 @@ describe("Portfolio Interactions", () => {
         const remaining_amount: number = Number(deposit_amount_less_fee) - parseFloat(withdrawal_amount)
         // fail for account other then msg.sender
                // fail for account other then msg.sender
-        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8)"](trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0)).to.be.revertedWith("P-OOWT-01");
         await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,uint256,uint8,uint32)"](trader2.address, Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId)).to.be.revertedWith("P-OOWT-01");
+        await expect(portfolioSub.connect(owner)["withdrawToken(address,bytes32,bytes32,uint256,uint8,uint32,bytes1)"](trader2.address, Utils.addressToBytes32(trader2.address), Utils.fromUtf8("AVAX"), Utils.toWei(withdrawal_amount), 0, defaultDestinationChainId, Utils.emptyOptions())).to.be.revertedWith("P-OOWT-01");
+
         // fail for 0 quantity
         await expect(f.withdrawToken(portfolioSub, owner, Utils.fromUtf8("AVAX"), token_decimals, '0')).to.be.revertedWith("P-WUTH-01");
         // fail for non-existent token
@@ -347,7 +349,7 @@ describe("Portfolio Interactions", () => {
         await portfolioBridgeSub.setBridgeFees(defaultDestinationChainId, [ALOT], [bridgeFee])
         //no bridge fee to collect, // Silent exit
         await portfolioMain.collectBridgeFees([ALOT]);
-        expect(await portfolioBridgeSub.getBridgeFee(0, defaultDestinationChainId, ALOT, 0)).to.be.equal(bridgeFee);
+        expect(await portfolioBridgeSub.getBridgeFee(0, defaultDestinationChainId, ALOT, 0, Utils.emptyOptions())).to.be.equal(bridgeFee);
         expect( (await portfolioMain.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
         expect( (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio).to.be.equal(ethers.utils.parseUnits('1',alot_token_decimals));
 

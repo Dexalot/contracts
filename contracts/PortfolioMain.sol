@@ -9,6 +9,7 @@ import "./Portfolio.sol";
 import "./interfaces/ITradePairs.sol";
 import "./interfaces/IPortfolioMain.sol";
 import "./interfaces/IBannedAccounts.sol";
+import "./interfaces/IWrappedToken.sol";
 
 /**
  * @title Mainnet Portfolio
@@ -27,7 +28,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.9");
+    bytes32 public constant VERSION = bytes32("2.6.0");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -43,6 +44,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     IBannedAccounts internal bannedAccounts;
     uint8 public minDepositMultiplier;
     bool public nativeDepositsRestricted;
+    bytes32 public wrappedNative;
 
     /**
      * @notice  Initializes the PortfolioMain contract
@@ -59,12 +61,23 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             address(0),
             ITradePairs.AuctionMode.OFF, // Auction Mode is ignored as it is irrelevant in the Mainnet
             _chainId,
+            18,
             native,
             bytes32(0),
             native,
             false
         );
         addTokenInternal(details, 0, 1 * 10 ** 16);
+    }
+
+    /**
+     * @notice  Receive function to receive native tokens
+     * @dev     If sender is the wrappedNative token, do not process as a deposit
+     *          since it is a withdrawal from the wrappedNative token
+     */
+    function handleReceive() internal override {
+        if (wrappedNative != 0 && msg.sender == address(tokenMap[wrappedNative])) return;
+        super.handleReceive();
     }
 
     /**
@@ -83,6 +96,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         bytes32 _symbol,
         address _tokenAddress,
         uint8 _decimals,
+        uint8 _l1Decimals,
         uint256 _fee,
         uint256 _gasSwapRatio
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -93,10 +107,11 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             ITradePairs.AuctionMode.OFF,
             //always add with the chain id of the Portfolio
             chainId,
+            _l1Decimals,
             _symbol, //symbol
             bytes32(0), //symbolId
             _symbol, //sourceChainSymbol, it is always equal to symbol for PortfolioMain
-            false //  Virtual tokens are deprecated for mainnet. Only valid for Dexalot L1(subnet)
+            false
         );
 
         addTokenInternal(details, _fee, _gasSwapRatio);
@@ -178,12 +193,24 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         IPortfolioBridge.BridgeProvider _bridge
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
+        TokenDetails memory tokenDetails = tokenDetailsMap[nativeDepositsRestricted ? wrappedNative : native];
+        uint256 quantity = UtilsLibrary.truncateQuantity(msg.value, tokenDetails.decimals, tokenDetails.l1Decimals);
+
         if (nativeDepositsRestricted) {
-            revert("P-NDNS-01");
-            //TODO Wrap native to its Wrapped equivalent in the future
-        } else {
-            deposit(_from, native, msg.value, _bridge);
+            if (wrappedNative == bytes32(0)) {
+                revert("P-NDNS-01");
+            }
+            IWrappedToken wrappedToken = IWrappedToken(address(tokenMap[wrappedNative]));
+            wrappedToken.deposit{value: quantity}();
         }
+
+        // refund the extra amount
+        if (msg.value - quantity > 0) {
+            // solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = _from.call{value: msg.value - quantity}("");
+            require(success, "P-NQTR-01");
+        }
+        deposit(_from, tokenDetails.symbol, quantity, _bridge, tokenDetails.decimals, tokenDetails.l1Decimals);
     }
 
     /**
@@ -207,29 +234,44 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         require(tokenList.contains(_symbol), "P-ETNS-01");
         require(_quantity <= tokenMap[_symbol].balanceOf(_from), "P-NETD-01");
 
+        // Truncate quantity if l1Decimals < decimals
+        TokenDetails memory tokenDetails = tokenDetailsMap[_symbol];
+        _quantity = UtilsLibrary.truncateQuantity(_quantity, tokenDetails.decimals, tokenDetails.l1Decimals);
+
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
-        deposit(_from, _symbol, _quantity, _bridge);
+        deposit(_from, _symbol, _quantity, _bridge, tokenDetails.decimals, tokenDetails.l1Decimals);
     }
 
     function deposit(
         address _from,
         bytes32 _symbol,
         uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
+        IPortfolioBridge.BridgeProvider _bridge,
+        uint8 _fromDecimals,
+        uint8 _toDecimals
     ) private {
         require(allowDeposit, "P-NTDP-01");
         require(_quantity > this.getMinDepositAmount(_symbol), "P-DUTH-01");
         require(!bannedAccounts.isBanned(_from), "P-BANA-01");
-        BridgeParams storage bridgeParam = bridgeParams[_symbol];
+        BridgeParams memory bridgeParam = bridgeParams[_symbol];
         if (bridgeParam.fee > 0) {
             bridgeFeeCollected[_symbol] = bridgeFeeCollected[_symbol] + bridgeParam.fee;
         }
         emitPortfolioEvent(_from, _symbol, _quantity, bridgeParam.fee, Tx.DEPOSIT);
+
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage(
             portfolioBridge.getDefaultDestinationChain(),
             _bridge,
-            XFER(0, Tx.DEPOSIT, _from, _symbol, _quantity - bridgeParam.fee, block.timestamp, bytes28(0)),
+            XFER(
+                0,
+                Tx.DEPOSIT,
+                UtilsLibrary.addressToBytes32(_from),
+                _symbol,
+                scaleQuantity(_quantity - bridgeParam.fee, _fromDecimals, _toDecimals),
+                block.timestamp,
+                bytes18(0)
+            ),
             _from
         );
     }
@@ -249,6 +291,12 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      */
     function setBridgeParamInternal(bytes32 _symbol, uint256 _fee, uint256 _gasSwapRatio, bool) internal override {
         require(_gasSwapRatio > 0, "P-GSRO-01");
+
+        TokenDetails memory token = tokenDetailsMap[_symbol];
+        // Ensure fee is correctly scaled if l1Decimals < decimals
+        if (token.l1Decimals < token.decimals) {
+            require(_fee % 10 ** (token.decimals - token.l1Decimals) == 0, "P-SBPD-01");
+        }
         super.setBridgeParamInternal(_symbol, _fee, _gasSwapRatio, false);
     }
 
@@ -365,22 +413,43 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
         if (_xfer.transaction == Tx.WITHDRAW) {
-            require(_xfer.trader != address(0), "P-ZADDR-02");
+            address trader = UtilsLibrary.bytes32ToAddress(_xfer.trader);
+            require(trader != address(0), "P-ZADDR-02");
             require(_xfer.quantity > 0, "P-ZETD-01");
-            if (_xfer.symbol == native) {
+            TokenDetails memory tokenDetails = tokenDetailsMap[_xfer.symbol];
+            uint256 quantity = scaleQuantity(_xfer.quantity, tokenDetails.l1Decimals, tokenDetails.decimals);
+
+            bool unwrapToken = processOptions(_xfer);
+
+            if (_xfer.symbol == native || unwrapToken) {
                 //Withdraw native
                 // solhint-disable-next-line avoid-low-level-calls
-                (bool success, ) = _xfer.trader.call{value: _xfer.quantity}("");
+                (bool success, ) = trader.call{value: quantity}("");
                 require(success, "P-WNFA-01");
             } else {
                 //Withdraw Token
                 //We don't check the AuctionMode of the token in the mainnet. If Dexalot L1(subnet) allows the message to be sent
                 //Then the token is no longer is auction
-                tokenMap[_xfer.symbol].safeTransfer(_xfer.trader, _xfer.quantity);
+                tokenMap[_xfer.symbol].safeTransfer(trader, quantity);
             }
-            emitPortfolioEvent(_xfer.trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction);
+            emitPortfolioEvent(trader, _xfer.symbol, quantity, 0, _xfer.transaction);
         } else {
             revert("P-PTNS-02");
+        }
+    }
+
+    function processOptions(IPortfolio.XFER calldata _xfer) private returns (bool unwrapToken) {
+        if (_xfer.customdata[0] == 0) {
+            return false;
+        }
+
+        unwrapToken =
+            UtilsLibrary.isOptionSet(_xfer.customdata[0], uint8(Options.UNWRAP)) &&
+            _xfer.symbol == wrappedNative;
+
+        if (unwrapToken) {
+            IWrappedToken wrappedToken = IWrappedToken(address(tokenMap[wrappedNative]));
+            wrappedToken.withdraw(_xfer.quantity);
         }
     }
 
@@ -415,6 +484,15 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     }
 
     /**
+     * @notice Set the wrapped native token address
+     * @dev Only callable by admin
+     * @param _wrappedNative Address of the wrapped native token
+     */
+    function setWrappedNative(bytes32 _wrappedNative) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        wrappedNative = _wrappedNative;
+    }
+
+    /**
      * @notice  Wrapper for emit event
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol of the token
@@ -430,5 +508,15 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         Tx transaction
     ) private {
         emit PortfolioUpdated(transaction, _trader, _symbol, _quantity, _feeCharged, 0, 0, _trader);
+    }
+
+    function scaleQuantity(uint256 _quantity, uint8 _fromDecimals, uint8 _toDecimals) private pure returns (uint256) {
+        if (_fromDecimals == _toDecimals) {
+            return _quantity;
+        }
+        if (_fromDecimals > _toDecimals) {
+            return _quantity / (10 ** (_fromDecimals - _toDecimals));
+        }
+        return _quantity * (10 ** (_toDecimals - _fromDecimals));
     }
 }

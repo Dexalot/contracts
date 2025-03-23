@@ -19,7 +19,7 @@ import "./interfaces/IMainnetRFQ.sol";
 
 contract ExchangeMain is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.4");
+    bytes32 public constant VERSION = bytes32("2.2.5");
 
     // price feed contract address from Chainlink Oracle set externally with setPriceFeed as part of deployment
     AggregatorV3Interface internal priceFeed;
@@ -93,6 +93,7 @@ contract ExchangeMain is Exchange {
      * @param   _symbol  symbol of the token
      * @param   _tokenaddress  address of the token
      * @param   _decimals  decimals of the token
+     * @param   _l1Decimals  decimals of the token on Dexalot L1
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
      */
@@ -100,10 +101,18 @@ contract ExchangeMain is Exchange {
         bytes32 _symbol,
         address _tokenaddress,
         uint8 _decimals,
+        uint8 _l1Decimals,
         uint256 _fee,
         uint256 _gasSwapRatio
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
-        IPortfolioMain(address(portfolio)).addToken(_symbol, _tokenaddress, _decimals, _fee, _gasSwapRatio);
+        IPortfolioMain(address(portfolio)).addToken(
+            _symbol,
+            _tokenaddress,
+            _decimals,
+            _l1Decimals,
+            _fee,
+            _gasSwapRatio
+        );
     }
 
     /**

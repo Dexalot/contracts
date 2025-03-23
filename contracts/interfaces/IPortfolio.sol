@@ -58,18 +58,29 @@ interface IPortfolio {
     struct XFER {
         uint64 nonce;
         IPortfolio.Tx transaction;
-        address trader;
+        bytes32 trader;
         bytes32 symbol;
         uint256 quantity;
         uint256 timestamp;
-        bytes28 customdata;
+        bytes18 customdata;
+    }
+
+    struct XFERSolana {
+        uint64 nonce;
+        IPortfolio.Tx transaction;
+        bytes32 trader;
+        bytes32 tokenAddress;
+        uint64 quantity;
+        uint32 timestamp;
+        bytes10 customdata;
     }
 
     struct TokenDetails {
-        uint8 decimals; //2
+        uint8 decimals; //1
         address tokenAddress; //20
-        ITradePairs.AuctionMode auctionMode; //2
+        ITradePairs.AuctionMode auctionMode; //1
         uint32 srcChainId; //4
+        uint8 l1Decimals; //1
         bytes32 symbol;
         bytes32 symbolId;
         bytes32 sourceChainSymbol;
@@ -91,5 +102,10 @@ interface IPortfolio {
         CCTRADE, // Cross Chain Trade.
         CONVERTFROM,
         CONVERTTO
+    }
+
+    enum Options {
+        GASAIRDROP,
+        UNWRAP
     }
 }

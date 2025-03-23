@@ -23,6 +23,7 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber, Event } from "ethers";
+import { createBlock } from 'typescript';
 
 let MockToken: MockToken__factory;
 
@@ -180,14 +181,14 @@ before(async () => {
       // deposit native coin for account to portfolio
       const _nativeBytes32 = Utils.fromUtf8(native);
       let _bal = await portfolioSub.getBalance(account, _nativeBytes32);
-      Utils.printBalances(account, _bal, 18);
+      Utils.printBalances(account, _bal, native, 18);
       if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
         const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
           await wallet.sendTransaction({to: portfolioMain.address,
                                         value: Utils.toWei(_deposit_amount.toString())});
           //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
           _bal = await portfolioSub.getBalance(account, _nativeBytes32);
-          Utils.printBalances(account, _bal, 18);
+          Utils.printBalances(account, _bal, native, 18);
       }
       console.log();
 
@@ -200,7 +201,7 @@ before(async () => {
           _token = MockToken.attach(_tokenAddr);
           _tokenDecimals = await _token.decimals();
           _bal = await portfolioSub.getBalance(account, _tokenBytes32);
-          Utils.printBalances(account, _bal, _tokenDecimals);
+          Utils.printBalances(account, _bal, _tokenStr, _tokenDecimals);
           if ((parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) + parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals))) < initial_portfolio_deposits[_tokenStr]) {
             const _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
             const _deposit_amount_bn = Utils.parseUnits(_deposit_amount.toString(), _tokenDecimals);
@@ -273,7 +274,7 @@ before(async () => {
       for (let j=0; j<tokens.length; j++) {
           const token = tokens[j];
           const res = await portfolioSub.getBalance(account, Utils.fromUtf8(token));
-          Utils.printBalances(account, res, decimalsMap[token]);
+          Utils.printBalances(account, res, token, decimalsMap[token]);
       }
   }
   console.log();
@@ -508,6 +509,7 @@ it("Should fail matchAuctionOrder() for unprivileged accounts", async () => {
     , type1 : 1   // market orders not enabled
     , type2: 0   // GTC
     , stp : 0   // CancelTaker
+    , createBlock: 96
   }
 
   await expect(tradePairs.connect(wallets[3]).matchAuctionOrder(order, 8)).to.be.revertedWith("AccessControl:");

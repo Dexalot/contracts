@@ -20,7 +20,7 @@ import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { BigNumber} from "ethers";
+import { BigNumber, constants} from "ethers";
 
 describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
     let portfolioAvax: PortfolioMain;
@@ -119,9 +119,10 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         await usdcArb.mint(mainnetRFQArb.address, initialUSDCBalance);
 
         //Enable GUN for CCTRADE at Cchain for destination gun
-        await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, true);
+        await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, constants.HashZero);
+        await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, gunDetails.symbolbytes32);
         //Enable USDC for CCTRADE at gunzilla for destination avax
-        await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, true);
+        await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(usdc.address));
 
         const nonce = 0;
         const tx = 11;                // TX = 1 = CCTRADE [main --> sub]
@@ -136,7 +137,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                 "bytes32",  // symbol
                 "uint256",  // quantity
                 "uint256",   // timestamp
-                "bytes28"  //customdata
+                "bytes18"  //customdata
             ] ,
             [
                 nonce,
@@ -162,7 +163,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = Utils.fromUtf8("AVAX");
         const quantity = Utils.parseUnits("10", gunDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -180,7 +182,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  timestamp,
                  customdata: Utils.emptyCustomData()
         };
-        await expect(portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+        await expect(portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, traderAddress)).to.be.revertedWith("PB-CCTR-02");
 
     });
 
@@ -190,7 +192,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         const bridge0 = 0;            // BridgeProvider = 0 = LZ
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = Utils.fromUtf8("GUN2");
         const quantity = Utils.parseUnits("10", gunDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -207,9 +210,10 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
         //Enable GUN2 for CCTRADE at Cchain for destination gun
-        await portfolioBridgeAvax.enableXChainSwapDestination(symbol, gunzillaSubnet.chainListOrgId, true);
+        await portfolioBridgeAvax.enableXChainSwapDestination(symbol, gunzillaSubnet.chainListOrgId, constants.HashZero);
+        await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, symbol);
         // This transaction reverts with PB-CCTR-03 but it goes into storedPayload instead of raising the error.
-        await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader)
+        await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, traderAddress)
     });
 
     it("Should use sendXChainMessage for GUN from cChain to GUN correctly", async () => {
@@ -217,7 +221,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = gunDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", gunDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -235,13 +240,14 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  timestamp,
                  customdata: Utils.emptyCustomData()
         };
-        await portfolioBridgeAvax.enableXChainSwapDestination(xfer1.symbol, gunzillaSubnet.chainListOrgId, true);
+        await portfolioBridgeAvax.enableXChainSwapDestination(xfer1.symbol, gunzillaSubnet.chainListOrgId, Utils.addressToBytes32(usdc.address));
+        //await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, symbol);
 
         // This transaction reverts with PB-ETNS-02 but it silent fails in LZEndpointV2 ??
-        await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
+        await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, traderAddress);
 
         xfer1.symbol = symbol;
-        const tx = await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
+        const tx = await portfolioBridgeAvax.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, traderAddress);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -252,7 +258,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeAvax.address) {
@@ -283,7 +289,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = gunDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", gunDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -302,9 +309,10 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         await portfolioBridgeArb.grantRole(await portfolioBridgeArb.BRIDGE_USER_ROLE(), owner.address);
         //Enable GUN for CCTRADE at arb for destination gun
-        await portfolioBridgeArb.enableXChainSwapDestination(symbol, gunzillaSubnet.chainListOrgId, true);
+        await portfolioBridgeArb.enableXChainSwapDestination(symbol, gunzillaSubnet.chainListOrgId, constants.HashZero);
+        await portfolioBridgeArb.enableSupportedNative(gunzillaSubnet.chainListOrgId, symbol);
 
-        const tx = await portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, trader);
+        const tx = await portfolioBridgeArb.sendXChainMessage(gunzillaSubnet.chainListOrgId, bridge0, xfer1, traderAddress);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -315,7 +323,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeArb.address) {
@@ -348,7 +356,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;  // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = usdcDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", usdcDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -367,9 +376,9 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
 
-        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0);
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0, Utils.emptyOptions());
 
-        const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader, {value: value});
+        const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -380,7 +389,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeAvax.address) {
@@ -416,7 +425,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = usdcDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", usdcDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -436,11 +446,11 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         };
 
         //Enable USDC for CCTRADE at gunzilla for destination arb
-        await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, arbitrumChain.chainListOrgId, true);
-        const value = await portfolioBridgeGun.getBridgeFee(bridge0, arbitrumChain.chainListOrgId, ethers.constants.HashZero, 0);
+        await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, arbitrumChain.chainListOrgId, Utils.addressToBytes32(usdcArb.address));
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, arbitrumChain.chainListOrgId, ethers.constants.HashZero, 0, Utils.emptyOptions());
 
         // succeed
-        const tx = await portfolioBridgeGun.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, trader, {value: value});
+        const tx = await portfolioBridgeGun.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -451,7 +461,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeArb.address) {
@@ -483,7 +493,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = usdcDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", usdcDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -501,16 +512,16 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         };
 
         await portfolioBridgeArb.grantRole(await portfolioBridgeArb.BRIDGE_USER_ROLE(), owner.address);
-        expect(await portfolioBridgeArb.xChainAllowedDestinations(symbol, cChain.chainListOrgId)).to.be.equal(false);
-        await expect(portfolioBridgeArb.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+        expect(await portfolioBridgeArb.xChainAllowedDestinations(symbol, cChain.chainListOrgId)).to.be.equal(constants.HashZero);
+        await expect(portfolioBridgeArb.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, traderAddress)).to.be.revertedWith("PB-CCTR-02");
 
         //Enable USDC for CCTRADE at arb for destination CChain
-        await portfolioBridgeArb.enableXChainSwapDestination(symbol, cChain.chainListOrgId, true);
-        expect(await portfolioBridgeArb.xChainAllowedDestinations(symbol, cChain.chainListOrgId)).to.be.equal(true);
-        expect(await portfolioBridgeArb.xChainAllowedDestinations(gunDetails.symbolbytes32, cChain.chainListOrgId)).to.be.equal(false);
+        await portfolioBridgeArb.enableXChainSwapDestination(symbol, cChain.chainListOrgId, Utils.addressToBytes32(usdc.address));
+        expect(await portfolioBridgeArb.xChainAllowedDestinations(symbol, cChain.chainListOrgId)).to.be.equal(Utils.addressToBytes32(usdc.address));
+        expect(await portfolioBridgeArb.xChainAllowedDestinations(gunDetails.symbolbytes32, cChain.chainListOrgId)).to.be.equal(constants.HashZero);
 
 
-        const tx = await portfolioBridgeArb.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, trader);
+        const tx = await portfolioBridgeArb.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, traderAddress);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -521,7 +532,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeArb.address) {
@@ -552,7 +563,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 11;                // transaction = 11 = CCTRADE [main --> main]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = usdcDetails.symbolbytes32;
         const quantity = Utils.parseUnits("10", usdcDetails.decimals);
         const timestamp = BigNumber.from(await f.latestTime());
@@ -570,16 +582,16 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         };
 
         await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
-        expect(await portfolioBridgeAvax.xChainAllowedDestinations(symbol, arbitrumChain.chainListOrgId)).to.be.equal(false);
-        await expect(portfolioBridgeAvax.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+        expect(await portfolioBridgeAvax.xChainAllowedDestinations(symbol, arbitrumChain.chainListOrgId)).to.be.equal(constants.HashZero);
+        await expect(portfolioBridgeAvax.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, traderAddress)).to.be.revertedWith("PB-CCTR-02");
 
         //Enable USDC for CCTRADE at arb for destination CChain
-        await portfolioBridgeAvax.enableXChainSwapDestination(symbol, arbitrumChain.chainListOrgId, true);
-        expect(await portfolioBridgeAvax.xChainAllowedDestinations(symbol, arbitrumChain.chainListOrgId)).to.be.equal(true);
-        expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(false);
+        await portfolioBridgeAvax.enableXChainSwapDestination(symbol, arbitrumChain.chainListOrgId, Utils.addressToBytes32(usdcArb.address));
+        expect(await portfolioBridgeAvax.xChainAllowedDestinations(symbol, arbitrumChain.chainListOrgId)).to.be.equal(Utils.addressToBytes32(usdcArb.address));
+        expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(constants.HashZero);
 
 
-        const tx = await portfolioBridgeAvax.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, trader);
+        const tx = await portfolioBridgeAvax.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, traderAddress);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -590,7 +602,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeAvax.address) {

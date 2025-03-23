@@ -396,12 +396,12 @@ describe("Exchange Sub", function () {
 
         it("Should update maker and taker fee rates from the auction admin", async function () {
 
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
@@ -425,12 +425,12 @@ describe("Exchange Sub", function () {
         });
 
         it("Should update maker and taker fee rates simultaneously with updateRates() from the auction admin account", async function () {
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals),auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals),auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const mRate = ethers.BigNumber.from(5);
@@ -470,12 +470,12 @@ describe("Exchange Sub", function () {
         });
 
         it("Should set min trade amount from the auction admin", async function () {
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const minTradeAmount1 = Utils.parseUnits('50', quoteDecimals);
@@ -489,12 +489,12 @@ describe("Exchange Sub", function () {
         });
 
         it("Should set max trade amount from the auction admin", async function () {
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const maxTradeAmount1 = Utils.parseUnits('250', quoteDecimals);
@@ -519,10 +519,10 @@ describe("Exchange Sub", function () {
 
 
             // fail from non admin accounts
-            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)).to.revertedWith("AccessControl:");
-            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)).to.revertedWith("AccessControl:");
+            await expect(exchange.addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)).to.be.revertedWith("AccessControl:");
             // succeed from admin accounts
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol);
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol);
             const tokenList = await portfolioSub.getTokenList();
 
             // AVAX is the first token in the list, refer deployPortfolioComplete
@@ -533,12 +533,12 @@ describe("Exchange Sub", function () {
 
         it("Should set auction mode from the auction admin account", async function () {
 
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const auctionMode = 4;
@@ -556,12 +556,12 @@ describe("Exchange Sub", function () {
 
         it("Should set auction price from the auction admin account", async function () {
 
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             const auctionPrice = Utils.parseUnits("4.16", quoteDecimals);
@@ -602,12 +602,12 @@ describe("Exchange Sub", function () {
 
 
         it("Should pause a specific trade pair from admin or auctionAdmin accounts based on mode", async function () {
-            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
-            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
+            await exchange.connect(auctionAdmin).addToken(baseSymbol, baseToken.address, srcChainId, await baseToken.decimals(), await baseToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',baseDecimals), baseSymbol)
+            await exchange.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, srcChainId, await quoteToken.decimals(), await quoteToken.decimals(), mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals), quoteSymbol)
             await f.addTradePair(exchange, pair, defaultPairSettings)
 
             auctionToken = await MockToken.deploy(auctionTokenStr, auctionSymbolStr, auctionDecimals);
-            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
+            await exchange.connect(auctionAdmin).addToken(auctionSymbol, auctionToken.address, srcChainId, auctionDecimals, auctionDecimals, 2, '0', ethers.utils.parseUnits('0.5',auctionDecimals), auctionSymbol);
             await f.addTradePairFromExchange(exchange, auctionPair, auctionPairSettings)
 
             // fail as only admin can pause when auction is off (mode = 0)

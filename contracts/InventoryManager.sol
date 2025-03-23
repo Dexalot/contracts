@@ -7,9 +7,9 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgrad
 
 import "./library/InvariantMathLibrary.sol";
 
-import "./interfaces/IPortfolioBridgeSub.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IInventoryManager.sol";
+import "./library/UtilsLibrary.sol";
 
 /**
  * @title   InventoryManager
@@ -24,7 +24,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.1.2");
+    bytes32 public constant VERSION = bytes32("3.2.0");
     uint256 private constant STARTING_A = 50;
     uint256 private constant MIN_A = 10;
     uint256 private constant MAX_A = 10 ** 8;
@@ -42,6 +42,9 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     mapping(bytes32 => uint256) public scalingFactor;
 
     IPortfolioBridgeSub public portfolioBridgeSub;
+
+    // symbolId => [account => liqprovided] map
+    mapping(bytes32 => mapping(address => uint256)) public userProvidedLiquidity;
 
     event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
     event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
@@ -75,30 +78,41 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     }
 
     /**
-     * @notice  Increments the inventory of a token
+     * @notice  Increments the inventory of a token and the liquidity provided by the users from each chain
      * @dev     Only called by the PortfolioBridgeSub contract for processing a deposit
-     * @param   _symbol  Subnet symbol of the token
-     * @param   _symbolId  SymbolId of the token
-     * @param   _quantity  Quantity to increment
+     * @param   _deposit  Deposit struct
      */
-    function increment(bytes32 _symbol, bytes32 _symbolId, uint256 _quantity) external onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
-        (, uint256 current) = map.tryGet(_symbolId);
-        map.set(_symbolId, current + _quantity);
+    function increment(IPortfolioBridgeSub.XferShort calldata _deposit) external onlyRole(PORTFOLIO_BRIDGE_ROLE) {
+        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_deposit.symbol];
+        (, uint256 currentInventory) = map.tryGet(_deposit.symbolId);
+        map.set(_deposit.symbolId, currentInventory + _deposit.quantity);
+
+        userProvidedLiquidity[_deposit.symbolId][_deposit.traderaddress] += _deposit.quantity;
     }
 
     /**
-     * @notice  Decrements the inventory of a token
-     * @dev     Only called by the PortfolioBridgeSub contract for processing a withdrawal
-     * @param   _symbol  Subnet symbol of the token
-     * @param   _symbolId  SymbolId of the token
-     * @param   _quantity  Quantity to decrement
+     * @notice  Decrements the inventory of a token and the liquidity provided by the users from each chain
+     * @dev     Only called by the PortfolioBridgeSub contract for processing a withdrawal.
+     * @param   _withdrawal  Withdrawal transaction
+
      */
-    function decrement(bytes32 _symbol, bytes32 _symbolId, uint256 _quantity) external onlyRole(PORTFOLIO_BRIDGE_ROLE) {
-        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
-        (, uint256 current) = map.tryGet(_symbolId);
-        require(current >= _quantity, "IM-INVT-01");
-        map.set(_symbolId, current - _quantity);
+    function decrement(IPortfolioBridgeSub.XferShort calldata _withdrawal) external onlyRole(PORTFOLIO_BRIDGE_ROLE) {
+        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_withdrawal.symbol];
+        (, uint256 current) = map.tryGet(_withdrawal.symbolId);
+        require(current >= _withdrawal.quantity, "IM-INVT-01");
+        map.set(_withdrawal.symbolId, current - _withdrawal.quantity);
+        uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
+
+        if (userLiquidity > 0) {
+            // calculate remaining user liquidity
+            userLiquidity = userLiquidity - UtilsLibrary.min(userLiquidity, _withdrawal.quantity);
+            if (userLiquidity > 0) {
+                userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress] = userLiquidity;
+            } else {
+                // clean the state if user liquidity provided is 0
+                delete (userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress]);
+            }
+        }
     }
 
     /**
@@ -194,23 +208,29 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
      * @notice  Calculates the withdrawal fee for a token
      * @dev     Uses the InvariantMathLibrary to provide exponential fees if
      * inventory is spread across multiple chains, unbalanced and quantity is large
-     * @param   _symbol  Subnet symbol of the token
-     * @param   _symbolId  SymbolId of the token
-     * @param   _quantity  Quantity to withdraw
+     * if the user provided liquidity from that chain already, he gets lower fees up to the
+     * inventory supplied
+     * @param   _withdrawal  withdrawal transaction
      * @return  fee  Withdrawal fee
      */
     function calculateWithdrawalFee(
-        bytes32 _symbol,
-        bytes32 _symbolId,
-        uint256 _quantity
+        IPortfolioBridgeSub.XferShort calldata _withdrawal
     ) external view returns (uint256 fee) {
-        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_symbol];
+        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_withdrawal.symbol];
         uint256 numChains = map.length();
-        uint256 currentInventory = get(_symbol, _symbolId);
+        uint256 currentInventory = get(_withdrawal.symbol, _withdrawal.symbolId);
+
         if (numChains == 1 || currentInventory == 0) {
             return 0;
         }
-        require(currentInventory >= _quantity, "IM-INVT-02");
+        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
+
+        uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
+        // If the user already provided liquidity to the chain it is trying to withdraw, no additional fee required
+        if (_withdrawal.quantity <= userLiquidity) {
+            return 0;
+        }
+
         uint256[] memory inventories = new uint256[](numChains);
         uint256 totalInventory = 0;
         uint256 index = numChains;
@@ -218,23 +238,28 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         // Generates all non-zero inventories and calculates total inventory
         uint256 j = 0;
         uint256 scaleFactor;
+
         for (uint256 i = 0; i < numChains; ++i) {
             (bytes32 symbolId, uint256 inventory) = map.at(i);
             if (inventory == 0) {
                 continue;
             }
+
             (uint256 scaledInventory, uint256 sf) = scaleInventory(symbolId, inventory);
             inventories[j] = scaledInventory;
             totalInventory += scaledInventory;
-            if (symbolId == _symbolId) {
+            if (symbolId == _withdrawal.symbolId) {
                 index = j;
                 scaleFactor = sf;
             }
             j++;
         }
+
+        // Charge fee for the partial. If 100 USDC provided and trying to withraw 150 USDC, he pays only
+        // for the additional 50 ==>  _withdrawal.quantity - userLiquidity
         fee =
             InvariantMathLibrary.calcWithdrawOneChain(
-                _quantity / scaleFactor,
+                (_withdrawal.quantity) / scaleFactor,
                 index,
                 inventories,
                 totalInventory,

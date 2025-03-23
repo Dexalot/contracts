@@ -121,7 +121,7 @@ describe("Portfolio Sub", () => {
 
     it("Should not add native token again after deployment", async function () {
         //Silent fail
-        await portfolioSub.addToken(ALOT, ethers.constants.AddressZero, srcChainListOrgId, 18, auctionMode, '0', ethers.utils.parseUnits('0.5',18), ALOT);
+        await portfolioSub.addToken(ALOT, ethers.constants.AddressZero, srcChainListOrgId, 18, 18, auctionMode, '0', ethers.utils.parseUnits('0.5',18), ALOT);
     });
 
     it("Should have starting portfolio with zero total and available balances for native token", async () => {
@@ -175,10 +175,10 @@ describe("Portfolio Sub", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
 
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
 
         // Silent Fail the same token with the same subnet & source Symbol is being added
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5', token_decimals), USDT);
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5', token_decimals), USDT);
 
         // fail from non-privileged account
         // trader1
@@ -299,7 +299,7 @@ describe("Portfolio Sub", () => {
     });
 
     it("Should fail adjustAvailable()", async function () {
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, 6, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, 6, 6, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
         // fail if caller is not tradePairs
         await expect(portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-OACC-03");
 
@@ -1259,9 +1259,9 @@ describe("Portfolio Sub", () => {
 
     it("Should add and remove ERC20 token to portfolio sub", async () => {
         // fail for non-admin
-        await expect(portfolioSub.connect(other1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(other1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
         // succeed for admin
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
         const tokens = await portfolioSub.getTokenList();
         expect(tokens[2]).to.equal(USDT);
 
@@ -1461,7 +1461,7 @@ describe("Portfolio Sub", () => {
         let xfer: any = {};
         xfer = {nonce:0,
                  transaction: 0,  // WITHDRAW
-                 trader:trader2.address,
+                 trader: Utils.addressToBytes32(trader2.address),
                  symbol: AVAX,
                  quantity: Utils.toWei("0.01"),
                  timestamp: BigNumber.from(await f.latestTime()),
@@ -1498,7 +1498,7 @@ describe("Portfolio Sub", () => {
         await portfolioSub.processXFerPayload(xfer);
         // using an unfunded address
 
-        xfer.trader = "0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D"
+        xfer.trader = Utils.addressToBytes32("0x1FB3cDeFF8d7531EA5b696cfc2d4eaFA5E54824D")
         xfer.symbol = AVAX;
         await portfolioSub.setAuctionMode(AVAX, 1);
         await portfolioSub.processXFerPayload(xfer);
@@ -1546,18 +1546,18 @@ describe("Portfolio Sub", () => {
         expect(tokenList.length).to.be.equal(2);
 
         // silent fail can't add native again
-        await portfolioSub.addToken(Utils.fromUtf8(native), ethers.constants.AddressZero, srcChainListOrgId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),Utils.fromUtf8(native));
+        await portfolioSub.addToken(Utils.fromUtf8(native), ethers.constants.AddressZero, srcChainListOrgId, 0, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),Utils.fromUtf8(native));
         tokenList = await portfolioSub.getTokenList();
         expect(tokenList.length).to.be.equal(2);
 
         // fail with decimals 0 token
-        await expect(portfolioSub.addToken(SYMBOL, t.address, srcChainListOrgId, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),SYMBOL)).to.be.revertedWith("P-CNAT-01");
+        await expect(portfolioSub.addToken(SYMBOL, t.address, srcChainListOrgId, 0, 0, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),SYMBOL)).to.be.revertedWith("P-CNAT-01");
         // check AVAX
         tokenList = await portfolioSub.getTokenList();
         expect(tokenList.includes(AVAX)).to.be.true;
 
         // succeed adding MOCK
-        await portfolioSub.addToken(SYMBOL, t.address, srcChainListOrgId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),SYMBOL);
+        await portfolioSub.addToken(SYMBOL, t.address, srcChainListOrgId, tokenDecimals, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),SYMBOL);
         tokenList = await portfolioSub.getTokenList();
         expect(tokenList.includes(SYMBOL)).to.be.true;
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("MOCK" + srcChainListOrgId));

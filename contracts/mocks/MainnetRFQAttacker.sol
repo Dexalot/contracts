@@ -4,6 +4,7 @@ pragma solidity 0.8.17;
 import "../MainnetRFQ.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "../interfaces/IPortfolio.sol";
+import "../library/UtilsLibrary.sol";
 
 contract MainnetRFQAttacker {
     enum Function {
@@ -51,11 +52,11 @@ contract MainnetRFQAttacker {
     }
 
     function attackProcessXFerPayload(
-        address _trader,
+        bytes32 _trader,
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolio.Tx _transaction,
-        bytes28 _customdata
+        bytes18 _customdata
     ) external payable {
         functionToAttack = Function.PROCESS_XFER_PAYLOAD;
         params = abi.encode(_trader, _symbol, _quantity, _transaction, _customdata);
@@ -83,8 +84,8 @@ contract MainnetRFQAttacker {
             (address[] memory _assets, uint256[] memory _amounts) = abi.decode(params, (address[], uint256[]));
             mainnetRFQ.batchClaimBalance(_assets, _amounts);
         } else if (functionToAttack == Function.PROCESS_XFER_PAYLOAD) {
-            (address _trader, bytes32 _symbol, uint256 _quantity, IPortfolio.Tx _transaction, bytes28 _customdata) = abi
-                .decode(params, (address, bytes32, uint256, IPortfolio.Tx, bytes28));
+            (bytes32 _trader, bytes32 _symbol, uint256 _quantity, IPortfolio.Tx _transaction, bytes18 _customdata) = abi
+                .decode(params, (bytes32, bytes32, uint256, IPortfolio.Tx, bytes18));
             IPortfolio.XFER memory xfer = IPortfolio.XFER(0, _transaction, _trader, _symbol, _quantity, 0, _customdata);
             mainnetRFQ.processXFerPayload(xfer);
         } else if (functionToAttack == Function.REMOVE_FROM_SWAP_QUEUE) {

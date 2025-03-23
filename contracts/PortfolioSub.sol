@@ -12,7 +12,7 @@ import "./interfaces/IPortfolioSubHelper.sol";
 
 /**
  * @title  Dexalot L1(previously subnet) Portfolio
- * @notice Receives deposits messages from the mainnets and sends withdraw requests backk to any mainnet.
+ * @notice Receives deposits messages from the mainnets and sends withdraw requests back to any mainnet.
  * It also transfers tokens between traders as their orders gets matched.
  * @dev    Allows only the native token to be withdrawn and deposited from/to the L1 wallet. Any other
  * token deposit has to be done via PortfolioMain's deposit functions that sends a message via the bridge.
@@ -73,7 +73,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.5.9");
+    bytes32 public constant VERSION = bytes32("2.6.0");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -91,6 +91,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             address(0),
             ITradePairs.AuctionMode.OFF,
             _chainId,
+            18,
             native,
             bytes32(0),
             native,
@@ -118,6 +119,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
+        uint8 _l1Decimals,
         ITradePairs.AuctionMode _mode,
         uint256 _fee,
         uint256 _gasSwapRatio,
@@ -130,6 +132,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _tokenAddress,
                 _mode, // Auction Mode is ignored as it is irrelevant in the Mainnet
                 _srcChainId,
+                _l1Decimals,
                 _subnetSymbol, //symbol
                 bytes32(0), //symbolId
                 _srcChainSymbol, //sourceChainSymbol
@@ -168,6 +171,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     function addTokenInternal(TokenDetails memory _details, uint256 _fee, uint256 _gasSwapRatio) internal override {
         address mainnetAddress = _details.tokenAddress;
         uint32 srcChainId = _details.srcChainId;
+        uint8 mainnetDecimals = _details.decimals;
+        _details.decimals = _details.l1Decimals; // Set Dexalot L1(subnet) decimals
         if (!tokenList.contains(_details.symbol)) {
             // All tokens from mainnet have 0 address including AVAX because Dexalot L1(subnet) doesn't have ERC20
             _details.tokenAddress = address(0);
@@ -192,6 +197,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 _details.sourceChainSymbol,
                 mainnetAddress,
                 srcChainId,
+                mainnetDecimals,
                 _details.decimals,
                 _details.auctionMode,
                 _details.symbol,
@@ -380,10 +386,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // Only allow deposits in the Dexalot L1(subnet) from PortfolioBridgeSub that has
         // PORTFOLIO_BRIDGE_ROLE and not from the users
         if (_xfer.transaction == Tx.DEPOSIT) {
+            address trader = UtilsLibrary.bytes32ToAddress(_xfer.trader);
             // Deposit the entire amount to the portfolio first
-            safeIncrease(_xfer.trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction, _xfer.trader);
+            safeIncrease(trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction, trader);
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
-            autoFillPrivate(_xfer.trader, _xfer.symbol, _xfer.transaction);
+            autoFillPrivate(trader, _xfer.symbol, _xfer.transaction);
         } else {
             revert("P-PTNS-01");
         }
@@ -514,23 +521,6 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
      * @param   _bridge  Enum bridge type
-     */
-    function withdrawToken(
-        address _to,
-        bytes32 _symbol,
-        uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
-    ) external override {
-        require(_to == msg.sender, "P-OOWT-01");
-        this.withdrawToken(_to, _symbol, _quantity, _bridge, portfolioBridge.getDefaultDestinationChain());
-    }
-
-    /**
-     * @notice  Withdraws token to a destination chain
-     * @param   _to  Address of the withdrawer
-     * @param   _symbol  Symbol of the token
-     * @param   _quantity  Amount of the token
-     * @param   _bridge  Enum bridge type
      * @param   _dstChainListOrgChainId  Destination chain the token is being withdrawn
      */
     function withdrawToken(
@@ -539,20 +529,60 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         uint256 _quantity,
         IPortfolioBridge.BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId
+    ) external override {
+        require(_to == msg.sender, "P-OOWT-01");
+        this.withdrawToken(
+            _to,
+            UtilsLibrary.addressToBytes32(_to),
+            _symbol,
+            _quantity,
+            _bridge,
+            _dstChainListOrgChainId,
+            bytes1(0)
+        );
+    }
+
+    /**
+     * @notice  Withdraws token to a destination chain
+     * @param   _from Source address of the withdrawer
+     * @param   _to  Bytes32 destination address of the withdrawer
+     * @param   _symbol  Symbol of the token
+     * @param   _quantity  Amount of the token
+     * @param   _bridge  Enum bridge type
+     * @param   _dstChainListOrgChainId  Destination chain the token is being withdrawn
+     * @param   _options  Options for the withdrawal transaction
+     */
+    function withdrawToken(
+        address _from,
+        bytes32 _to,
+        bytes32 _symbol,
+        uint256 _quantity,
+        IPortfolioBridge.BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes1 _options
     ) external override whenNotPaused nonReentrant {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
-        require(_to == msg.sender || msg.sender == address(this), "P-OOWT-01");
+        require(_from == msg.sender || msg.sender == address(this), "P-OOWT-01");
         require(tokenList.contains(_symbol), "P-ETNS-01");
         // bridgeFee = bridge Fees both in the Mainnet the Dexalot L1(subnet)
         // no bridgeFees for treasury and feeCollector (isAdminAccountForRates)
         // bridgeParams[_symbol].fee is redundant in the Dexalot L1(subnet) and has been replaced
         // with portfolioBridge.getBridgeFee which uses
         // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
-        uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_to)
+        uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_from)
             ? 0
-            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _options);
+
+        // Truncate the quantity such that quantity - bridgeFee is accurate to destination chain decimals
+        _quantity = IPortfolioBridgeSub(address(portfolioBridge)).truncateQuantity(
+            _dstChainListOrgChainId,
+            _symbol,
+            _quantity,
+            bridgeFee
+        );
         // We need to safeDecrease with the original(non-converted _symbol)
-        safeDecrease(_to, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _to);
+        // _from, ...., _to
+        safeDecrease(_from, _symbol, _quantity, bridgeFee, Tx.WITHDRAW, _from);
         portfolioBridge.sendXChainMessage(
             _dstChainListOrgChainId,
             _bridge,
@@ -564,9 +594,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
                 block.timestamp,
-                bytes28(0)
+                // set bytes18 to 1 for autofill gas
+                _options
             ),
-            _to
+            _from
         );
     }
 
@@ -886,23 +917,6 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(address(_portfolioMinter) != address(0), "P-OACC-02");
         emit AddressSet("PORTFOLIO", "SET_PORTFOLIOMINTER", address(portfolioMinter), address(_portfolioMinter));
         portfolioMinter = _portfolioMinter;
-    }
-
-    /**
-     * @notice  Returns the bridge fees for all the host chain tokens of a given Dexalot L1(subnet) token
-     * @dev     Calls the PortfolioBridgeSub contract to get the bridge fees
-     * @param   _bridge  bridge provider
-     * @param   _symbol  Dexalot L1(subnet) symbol of the token
-     * @param   _quantity  quantity of the token to withdraw
-     * @return  bridgeFees  Array of bridge fees for each corresponding chainId
-     * @return  chainIds  Array of chainIds for each corresponding bridgeFee
-     */
-    function getAllBridgeFees(
-        IPortfolioBridge.BridgeProvider _bridge,
-        bytes32 _symbol,
-        uint256 _quantity
-    ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
-        return IPortfolioBridgeSub(address(portfolioBridge)).getAllBridgeFees(_bridge, _symbol, _quantity);
     }
 
     /**

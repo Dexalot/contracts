@@ -23,7 +23,7 @@ import "./interfaces/ITradePairs.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.5");
+    bytes32 public constant VERSION = bytes32("2.2.6");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
@@ -129,6 +129,7 @@ contract ExchangeSub is Exchange {
      * @param   _tokenaddress  address of the token
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  decimals of the token
+     * @param   _l1Decimals  decimals of the token on Dexalot L1
      * @param   _mode  starting auction mode
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
@@ -139,6 +140,7 @@ contract ExchangeSub is Exchange {
         address _tokenaddress,
         uint32 _srcChainId,
         uint8 _decimals,
+        uint8 _l1Decimals,
         ITradePairs.AuctionMode _mode,
         uint256 _fee,
         uint256 _gasSwapRatio,
@@ -149,6 +151,7 @@ contract ExchangeSub is Exchange {
             _tokenaddress,
             _srcChainId,
             _decimals,
+            _l1Decimals,
             _mode,
             _fee,
             _gasSwapRatio,

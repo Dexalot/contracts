@@ -51,7 +51,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     // symbol => chainId => { symbolId, bridgeFee }
     mapping(bytes32 => mapping(uint32 => TokenDestinationInfo)) private tokenInfoMapBySymbolChainId;
 
-    // bridgeProvider => multipler, used to discount the bridge fee for certain bridges
+    // bridgeProvider => multiplier, used to discount the bridge fee for certain bridges
     mapping(BridgeProvider => uint256) private bridgeFeeMultipler;
 
     // Add by symbolId rather than symbol
@@ -59,9 +59,12 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     IDelayedTransfers public delayedTransfers;
     IInventoryManager public inventoryManager;
 
+    // option => standard bridge fee multiplier
+    mapping(uint256 => uint256) public optionsGasCost;
+
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.1.1");
+        return bytes32("4.1.5");
     }
 
     /**
@@ -94,6 +97,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _tokenAddress  Mainnet token address the symbol or zero address for AVAX
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  Decimals of the token
+     * @param   _l1Decimals  Decimals of the token in the Dexalot L1
      * param   ITradePairs.AuctionMode  irrelevant for PBridge
      * @param   _subnetSymbol  Dexalot L1(subnet) Symbol of the token (Shared Symbol of the same token from different chains)
      * @param   _bridgeFee  Bridge Fee
@@ -103,6 +107,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         address _tokenAddress,
         uint32 _srcChainId,
         uint8 _decimals,
+        uint8 _l1Decimals,
         ITradePairs.AuctionMode,
         bytes32 _subnetSymbol,
         uint256 _bridgeFee
@@ -125,6 +130,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             IPortfolio.TokenDetails storage tokenDetails = tokenDetailsMapById[symbolId];
             //tokenDetails.auctionMode = _mode; //irrelevant in this context
             tokenDetails.decimals = _decimals;
+            tokenDetails.l1Decimals = _l1Decimals;
             tokenDetails.tokenAddress = _tokenAddress;
             tokenDetails.srcChainId = _srcChainId;
             tokenDetails.symbol = _subnetSymbol;
@@ -172,12 +178,31 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
+     * @notice  Sets the dexalot L1 decimals for the given token
+     * @dev     Only callable by admin, removable in future releases
+     * @param   _symbolId  Symbol id of the token
+     * @param   _l1Decimals  Decimals of the token in the Dexalot L1
+     */
+    function setL1Decimals(bytes32 _symbolId, uint8 _l1Decimals) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        tokenDetailsMapById[_symbolId].l1Decimals = _l1Decimals;
+    }
+
+    /**
      * @notice  private function that handles the addition of native token
      * @dev     gets the native token details from portfolio
      */
     function addNativeToken() internal override {
         IPortfolio.TokenDetails memory t = portfolio.getTokenDetails(portfolio.getNative());
-        this.addToken(t.symbol, t.tokenAddress, t.srcChainId, t.decimals, ITradePairs.AuctionMode.OFF, t.symbol, 0);
+        this.addToken(
+            t.symbol,
+            t.tokenAddress,
+            t.srcChainId,
+            t.decimals,
+            t.decimals,
+            ITradePairs.AuctionMode.OFF,
+            t.symbol,
+            0
+        );
     }
 
     /**
@@ -206,13 +231,15 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _bridge  Bridge provider to use
      * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
+     * @param   _options  Custom options for the withdrawal transaction
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
      */
     function getAllBridgeFees(
         BridgeProvider _bridge,
         bytes32 _symbol,
-        uint256 _quantity
+        uint256 _quantity,
+        bytes1 _options
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
         uint256 numChains = supportedChains.length();
         bridgeFees = new uint256[](numChains);
@@ -225,9 +252,10 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             if (symbolId == bytes32(0) || (supportedBridges & (1 << uint8(_bridge))) == 0) {
                 continue;
             }
-            try inventoryManager.calculateWithdrawalFee(_symbol, symbolId, _quantity) returns (uint256 invFee) {
+            XferShort memory withdrawal = XferShort(_symbol, symbolId, _quantity, msg.sender);
+            try inventoryManager.calculateWithdrawalFee(withdrawal) returns (uint256 invFee) {
                 chainIds[i] = chainId;
-                bridgeFees[i] = _calcBridgeFee(_bridge, chainId, _symbol, _quantity, invFee);
+                bridgeFees[i] = _calcBridgeFee(withdrawal, _bridge, chainId, invFee, _options);
             } catch {
                 continue;
             }
@@ -325,6 +353,20 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
+     * @notice Sets the gas cost multiplier for a given option
+     * @dev Only admin can call this function
+     * @param _option Option to set the gas cost for
+     * @param _gasMultiplier Gas cost multiplier
+     */
+    function setOptionGasCost(
+        IPortfolio.Options _option,
+        uint256 _gasMultiplier
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        optionsGasCost[uint256(_option)] = _gasMultiplier;
+        emit OptionsGasCostUpdated(_option, _gasMultiplier);
+    }
+
+    /**
      * @notice  Actual internal function that implements the message sending.
      * @param   _dstChainListOrgChainId the destination chain identifier
      * @param   _bridge  Bridge to send message to
@@ -354,12 +396,18 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param  _xfer  Transfer Message
      */
     function updateInventoryBySource(bytes32 _subnetSymbol, IPortfolio.XFER memory _xfer) private {
+        XferShort memory XferShort = XferShort(
+            _subnetSymbol,
+            _xfer.symbol,
+            _xfer.quantity,
+            _xfer.transaction == IPortfolio.Tx.WITHDRAW ? msg.sender : UtilsLibrary.bytes32ToAddress(_xfer.trader)
+        );
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
-            inventoryManager.decrement(_subnetSymbol, _xfer.symbol, _xfer.quantity);
+            inventoryManager.decrement(XferShort);
             return;
         }
         if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
-            inventoryManager.increment(_subnetSymbol, _xfer.symbol, _xfer.quantity);
+            inventoryManager.increment(XferShort);
         }
     }
 
@@ -387,6 +435,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         updateInventoryBySource(subnetSymbol, xfer);
         //After the inventory is updated, process the XFer with the Dexalot L1(subnet) symbol that Portfolio needs
         xfer.symbol = subnetSymbol;
+
         portfolio.processXFerPayload(xfer);
     }
 
@@ -419,14 +468,14 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
-     * @notice  Set the bridge fee multipler for a given bridge
-     * @dev     Only admin can set the bridge fee multipler
+     * @notice  Set the bridge fee multiplier for a given bridge
+     * @dev     Only admin can set the bridge fee multiplier
      * @param   _bridge  Bridge provider to use
-     * @param   _multipler  Multipler to set
+     * @param   _multiplier  multiplier to set
      */
-    function setBridgeFeeMultipler(BridgeProvider _bridge, uint256 _multipler) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_multipler <= TENK, "PB-MPGT-01");
-        bridgeFeeMultipler[_bridge] = _multipler;
+    function setBridgeFeeMultipler(BridgeProvider _bridge, uint256 _multiplier) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_multiplier <= TENK, "PB-MPGT-01");
+        bridgeFeeMultipler[_bridge] = _multiplier;
     }
 
     /**
@@ -449,6 +498,32 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     }
 
     /**
+     * @notice  Truncate the quantity to the token's mainnet decimals
+     * @param   _dstChainListOrgChainId  destination chain id
+     * @param   _symbol  Dexalot L1(subnet) symbol of the token
+     * @param   _quantity  quantity of the token to withdraw
+     * @param   _bridgeFee  bridge fee for the destination
+     * @return  truncated quantity
+     */
+    function truncateQuantity(
+        uint32 _dstChainListOrgChainId,
+        bytes32 _symbol,
+        uint256 _quantity,
+        uint256 _bridgeFee
+    ) external view override returns (uint256) {
+        if (_bridgeFee > _quantity) {
+            return 0;
+        }
+        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _dstChainListOrgChainId);
+        return
+            UtilsLibrary.truncateQuantity(
+                _quantity - _bridgeFee,
+                tokenDetailsMapById[symbolId].l1Decimals,
+                tokenDetailsMapById[symbolId].decimals
+            ) + _bridgeFee;
+    }
+
+    /**
      * @notice  Returns the minimum bridgeFee calculated offChain for the targetChainId, in addition to the
      * inventoryManager calculated withdrawal fee
      * @dev     This is in terms of token transferred. LZ charges us using based on the payload size and gas px at
@@ -459,6 +534,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _dstChainListOrgChainId  destination chain id
      * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
+     * @param   _options  Custom options for the withdrawal transaction
      * @return  bridgeFee  bridge fee for the destination
      */
 
@@ -466,38 +542,58 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
         bytes32 _symbol,
-        uint256 _quantity
+        uint256 _quantity,
+        bytes1 _options
     ) public view override returns (uint256 bridgeFee) {
-        bridgeFee = _calcBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, 0);
+        XferShort memory withdrawal = XferShort(_symbol, bytes32(0), _quantity, msg.sender);
+        bridgeFee = _calcBridgeFee(withdrawal, _bridge, _dstChainListOrgChainId, 0, _options);
     }
 
     /**
      * @notice  Calculate the bridge fee for a given bridge
+     * @param   _withdrawal  withdrawal struct
      * @param   _bridge  Bridge provider to use
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @return  bridgeFee  bridge fee for the destination
      */
     function _calcBridgeFee(
+        XferShort memory _withdrawal,
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
-        bytes32 _symbol,
-        uint256 _quantity,
-        uint256 _inventoryFee
+        uint256 _inventoryFee,
+        bytes1 _options
     ) internal view returns (uint256) {
         if (_bridge != BridgeProvider.LZ && _bridge != BridgeProvider.ICM) {
             return 0;
         }
-        uint256 multipler = bridgeFeeMultipler[_bridge];
-        if (multipler == 0) {
-            multipler = TENK;
+        uint256 multiplier = bridgeFeeMultipler[_bridge];
+        if (multiplier == 0) {
+            multiplier = TENK;
         }
-        TokenDestinationInfo memory tokenInfo = tokenInfoMapBySymbolChainId[_symbol][_dstChainListOrgChainId];
+        TokenDestinationInfo memory tokenInfo = tokenInfoMapBySymbolChainId[_withdrawal.symbol][
+            _dstChainListOrgChainId
+        ];
         require(tokenInfo.symbolId != bytes32(0), "PB-ETNS-01");
-        if (_inventoryFee == 0) {
-            _inventoryFee = inventoryManager.calculateWithdrawalFee(_symbol, tokenInfo.symbolId, _quantity);
+        if (_withdrawal.symbolId != tokenInfo.symbolId) {
+            _withdrawal.symbolId = tokenInfo.symbolId;
         }
-        uint256 bridgeFee = _inventoryFee + (tokenInfo.bridgeFee * multipler) / TENK;
+        uint256 bridgeFee = (tokenInfo.bridgeFee * multiplier) / TENK;
+
+        uint256 options = uint256(uint8(_options));
+        uint256 bitIndex = 0;
+
+        while (options != 0) {
+            if (options & 1 != 0) {
+                _inventoryFee += (bridgeFee * optionsGasCost[bitIndex]) / TENK;
+            }
+            options >>= 1;
+            bitIndex++;
+        }
+        if (_inventoryFee == 0) {
+            _inventoryFee = inventoryManager.calculateWithdrawalFee(_withdrawal);
+        }
+        bridgeFee += _inventoryFee;
+
         uint256 maxBridgeFee = tokenInfo.bridgeFee * tokenInfo.maxBridgeFeeCap;
         return bridgeFee >= maxBridgeFee ? maxBridgeFee : bridgeFee;
     }

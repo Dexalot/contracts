@@ -9,9 +9,9 @@ import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers, upgrades } from "hardhat";
-import { MainnetRFQ, MockToken, PortfolioBridgeMain } from '../typechain-types';
+import { MainnetRFQ, MockToken, MockWrappedToken, PortfolioBridgeMain } from '../typechain-types';
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { BigNumber } from 'ethers';
+import { BigNumber, constants } from 'ethers';
 
 interface Order {
   nonceAndMeta: string,
@@ -25,16 +25,17 @@ interface Order {
 }
 
 interface XChainSwap {
-  nonceAndMeta: string,
-  expiry: number,
-  taker: string,
-  destChainId: number,
-  bridgeProvider: number,
+  from: string,
+  to: string,
   makerSymbol: string,
   makerAsset: string,
   takerAsset: string,
   makerAmount: string,
   takerAmount: string,
+  nonce: string,
+  expiry: number,
+  destChainId: number,
+  bridgeProvider: number
 }
 
 
@@ -77,19 +78,21 @@ describe("Mainnet RFQ Multichain", () => {
     const taker = trader1.address;
     const num  = 100
     const destTrader = isTransfer ? trader2.address : trader1.address;
-    const nonceAndMeta = `${destTrader}${num.toString(16).padStart(24, '0')}`;
+    const nonce = `0x${num.toString(16).padStart(24, '0')}`;
+    const nonceAndMeta = `${taker}${nonce.slice(2)}`;
 
     const xChainSwap: XChainSwap = {
-      nonceAndMeta: nonceAndMeta,
-      expiry: time + 120,
-      taker: taker,
-      destChainId: destInfo.chainid,
-      bridgeProvider: 0,
+      from: Utils.addressToBytes32(taker),
+      to: Utils.addressToBytes32(destTrader),
       makerSymbol: destInfo.symbolbytes32,
-      makerAsset: destInfo.address,
-      takerAsset: srcInfo.address,
+      makerAsset: Utils.addressToBytes32(destInfo.address),
+      takerAsset: Utils.addressToBytes32(srcInfo.address),
       makerAmount: destInfo.amount,
       takerAmount: srcInfo.amount,
+      nonce: nonce,
+      expiry: time + 120,
+      destChainId: destInfo.chainid,
+      bridgeProvider: 0
     };
 
     const domain = {
@@ -101,21 +104,22 @@ describe("Mainnet RFQ Multichain", () => {
 
     const types = {
       XChainSwap: [
-        { name: "nonceAndMeta", type: "uint256", },
-        { name: "expiry", type: "uint32", },
-        { name: "taker", type: "address", },
-        { name: "destChainId", type: "uint32", },
-        { name: "bridgeProvider", type: "uint8", },
+        { name: "from", type: "bytes32", },
+        { name: "to", type: "bytes32", },
         { name: "makerSymbol", type: "bytes32", },
-        { name: "makerAsset", type: "address", },
-        { name: "takerAsset", type: "address", },
+        { name: "makerAsset", type: "bytes32", },
+        { name: "takerAsset", type: "bytes32", },
         { name: "makerAmount", type: "uint256", },
         { name: "takerAmount", type: "uint256", },
+        { name: "nonce", type: "uint96", },
+        { name: "expiry", type: "uint32", },
+        { name: "destChainId", type: "uint32", },
+        { name: "bridgeProvider", type: "uint8", },
       ],
     };
 
     const signature = await signer._signTypedData(domain, types, xChainSwap);
-    return {xChainSwap, signature};
+    return {xChainSwap, signature, nonceAndMeta};
   }
 
   beforeEach(async function () {
@@ -147,11 +151,13 @@ describe("Mainnet RFQ Multichain", () => {
     mockUSDT = await f.deployMockToken("USDT", 6);
 
     //Enable GUN for CCTRADE at Cchain for destination gun
-    await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, true);
+    await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, constants.HashZero);
+    await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, gunDetails.symbolbytes32);
     //Enable USDC for CCTRADE at gunzilla for destination avax
-    await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, true);
+    await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(mockUSDC.address));
     //Enable AVAX for CCTRADE at Gunzilla for destination avax
-    await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("AVAX"), cChain.chainListOrgId, true);
+    await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("AVAX"), cChain.chainListOrgId, constants.HashZero);
+    await portfolioBridgeGun.enableSupportedNative(cChain.chainListOrgId, Utils.fromUtf8("AVAX"));
 
     await f.addToken(portfolioContracts.portfolioAvax, portfolioContracts.portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
 
@@ -196,6 +202,14 @@ describe("Mainnet RFQ Multichain", () => {
     await expect(mainnetRFQAvax.connect(owner).setPortfolioMain()).to.emit(mainnetRFQAvax, "AddressSet").withArgs("MAINNETRFQ", "SET-PORTFOLIOMAIN", portfolioBridgeMain);
   })
 
+  it("Should not accept via fallback()", async function () {
+      const ABI = ["function NOT_EXISTING_FUNCTION(address,uint256)"]
+      const iface = new ethers.utils.Interface(ABI)
+      const calldata = iface.encodeFunctionData("NOT_EXISTING_FUNCTION", [trader2.address, Utils.toWei('100')])
+      await expect(owner.sendTransaction({to: mainnetRFQAvax.address, data: calldata}))
+          .to.be.revertedWith("RF-NFUN-01")
+  })
+
   it("Should be able to pause/unpause", async () => {
     expect(await mainnetRFQAvax.paused()).to.equal(false);
 
@@ -236,15 +250,15 @@ describe("Mainnet RFQ Multichain", () => {
 
     //*********Enable Cross Chain Trade between USDC(sell in avax) and USDT(buy in arb) **********/
     //Enable USDT for CCTRADE at Cchain for destination arb
-    await portfolioBridgeAvax.enableXChainSwapDestination(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId, true);
+    await portfolioBridgeAvax.enableXChainSwapDestination(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId, Utils.addressToBytes32(mockUSDT.address));
     //Enable USDC for CCTRADE at arb for destination avax
-    await portfolioBridgeArb.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, true);
+    await portfolioBridgeArb.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(mockUSDC.address));
 
-    expect(await portfolioBridgeAvax.xChainAllowedDestinations(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(true);
-    expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(false);
-    expect(await portfolioBridgeArb.xChainAllowedDestinations(usdcDetails.symbolbytes32, cChain.chainListOrgId)).to.be.equal(true);
+    expect(await portfolioBridgeAvax.xChainAllowedDestinations(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(Utils.addressToBytes32(mockUSDT.address));
+    expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(constants.HashZero);
+    expect(await portfolioBridgeArb.xChainAllowedDestinations(usdcDetails.symbolbytes32, cChain.chainListOrgId)).to.be.equal(Utils.addressToBytes32(mockUSDC.address));
 
-    const {xChainSwap, signature} = await generateXChainOrder("USDC", "USDT");
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("USDC", "USDT");
     // Fail if token dosn't exist in the portfolio at the target chain
     // await expect(mainnetRFQAvax.connect(trader1).xChainSwap(
     //   xChainSwap,
@@ -261,12 +275,12 @@ describe("Mainnet RFQ Multichain", () => {
         )
     ).to.emit(mainnetRFQAvax, "SwapExecuted")
       .withArgs(
-        xChainSwap.nonceAndMeta,
+        nonceAndMeta,
         trader1.address,
-        trader1.address,
+        Utils.addressToBytes32(trader1.address),
         xChainSwap.destChainId,
         mockUSDC.address,
-        mockUSDT.address,
+        Utils.addressToBytes32(mockUSDT.address),
         swapAmountUSDC,
         swapAmountUSDT,
       );
@@ -288,7 +302,7 @@ describe("Mainnet RFQ Multichain", () => {
 
 
   it("Should trade two tokens ERC20 -> Native no user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("USDC", "GUN");
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("USDC", "GUN");
 
     await expect(
         mainnetRFQAvax.connect(trader1).xChainSwap(
@@ -297,12 +311,12 @@ describe("Mainnet RFQ Multichain", () => {
         )
     ).to.emit(mainnetRFQAvax, "SwapExecuted")
       .withArgs(
-        xChainSwap.nonceAndMeta,
+        nonceAndMeta,
         trader1.address,
-        trader1.address,
+        Utils.addressToBytes32(trader1.address),
         xChainSwap.destChainId,
         mockUSDC.address,
-        ethers.constants.AddressZero,
+        ethers.constants.HashZero,
         swapAmountUSDC,
         nativeSwapAmount,
       );
@@ -323,7 +337,7 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade two tokens Native -> Native no user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("AVAX", "GUN");
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("AVAX", "GUN");
 
     await expect(
         mainnetRFQAvax.connect(trader1).xChainSwap(
@@ -333,12 +347,12 @@ describe("Mainnet RFQ Multichain", () => {
       )
     ).to.emit(mainnetRFQAvax, "SwapExecuted")
     .withArgs(
-      xChainSwap.nonceAndMeta,
+      nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       xChainSwap.destChainId,
       ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
+      ethers.constants.HashZero,
       nativeSwapAmount,
       nativeSwapAmount,
     );
@@ -352,9 +366,9 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade two tokens Native -> ERC20 w/ user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("GUN", "USDC");
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("GUN", "USDC");
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(
@@ -364,12 +378,12 @@ describe("Mainnet RFQ Multichain", () => {
       )
     ).to.emit(mainnetRFQGun, "SwapExecuted")
     .withArgs(
-      xChainSwap.nonceAndMeta,
+      nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       xChainSwap.destChainId,
       ethers.constants.AddressZero,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       nativeSwapAmount,
       swapAmountUSDC,
     );
@@ -400,14 +414,14 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade two tokens Native -> Native w/ user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("GUN", "AVAX");
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("GUN", "AVAX");
 
     await rebalancer.sendTransaction({
       to: mainnetRFQAvax.address,
       value: ethers.utils.parseEther("100.0"),
     });
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
 
     await expect(
       mainnetRFQGun.connect(trader1).xChainSwap(
@@ -417,12 +431,12 @@ describe("Mainnet RFQ Multichain", () => {
       )
     ).to.emit(mainnetRFQGun, "SwapExecuted")
     .withArgs(
-      xChainSwap.nonceAndMeta,
+      nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       xChainSwap.destChainId,
       ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
+      ethers.constants.HashZero,
       nativeSwapAmount,
       nativeSwapAmount,
     );
@@ -449,7 +463,7 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade and transfer two tokens ERC20 -> Native no user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("USDC", "GUN", true);
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("USDC", "GUN", true);
 
     const trader2InitialBalance = await ethers.provider.getBalance(trader2.address);
 
@@ -460,12 +474,12 @@ describe("Mainnet RFQ Multichain", () => {
         )
     ).to.emit(mainnetRFQAvax, "SwapExecuted")
       .withArgs(
-        xChainSwap.nonceAndMeta,
+        nonceAndMeta,
         trader1.address,
-        trader2.address,
+        Utils.addressToBytes32(trader2.address),
         xChainSwap.destChainId,
         mockUSDC.address,
-        ethers.constants.AddressZero,
+        ethers.constants.HashZero,
         swapAmountUSDC,
         nativeSwapAmount,
       );
@@ -490,7 +504,7 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade and transfer two tokens Native -> Native no user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("AVAX", "GUN", true);
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("AVAX", "GUN", true);
 
     const trader2InitialBalance = await ethers.provider.getBalance(trader2.address);
 
@@ -502,12 +516,12 @@ describe("Mainnet RFQ Multichain", () => {
       )
     ).to.emit(mainnetRFQAvax, "SwapExecuted")
     .withArgs(
-      xChainSwap.nonceAndMeta,
+      nonceAndMeta,
       trader1.address,
-      trader2.address,
+      Utils.addressToBytes32(trader2.address),
       xChainSwap.destChainId,
       ethers.constants.AddressZero,
-      ethers.constants.AddressZero,
+      ethers.constants.HashZero,
       nativeSwapAmount,
       nativeSwapAmount,
     );
@@ -525,9 +539,9 @@ describe("Mainnet RFQ Multichain", () => {
   });
 
   it("Should trade and transfer two tokens Native -> ERC20 w/ user gas fee", async () => {
-    const {xChainSwap, signature} = await generateXChainOrder("GUN", "USDC", true);
+    const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("GUN", "USDC", true);
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0);
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(
@@ -537,12 +551,12 @@ describe("Mainnet RFQ Multichain", () => {
       )
     ).to.emit(mainnetRFQGun, "SwapExecuted")
     .withArgs(
-      xChainSwap.nonceAndMeta,
+      nonceAndMeta,
       trader1.address,
-      trader2.address,
+      Utils.addressToBytes32(trader2.address),
       xChainSwap.destChainId,
       ethers.constants.AddressZero,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       nativeSwapAmount,
       swapAmountUSDC,
     );
@@ -568,7 +582,7 @@ describe("Mainnet RFQ Multichain", () => {
     // processing of deposit messages will fail on mainnet
     const transaction = 1;  // DEPOSIT
     const nonce = 0;
-    const trader = trader2.address;
+    const trader = Utils.addressToBytes32(trader2.address);
     const symbol = Utils.fromUtf8("AVAX")
     const quantity =  Utils.toWei("0.01")
     const timestamp = BigNumber.from(await f.latestTime());
@@ -593,14 +607,14 @@ describe("Mainnet RFQ Multichain", () => {
       .to.be.revertedWith("RF-PTNS-01");
 
     xfer.transaction = 11;   // CCTRADE
-    xfer.trader = owner.address;
+    xfer.trader = Utils.addressToBytes32(owner.address);
     xfer.quantity = 0;
     // fail with 0 quantity
     await expect(mainnetRFQAvax.processXFerPayload(xfer)).to.be.revertedWith("RF-ZETD-01");
-    xfer.trader = ethers.constants.AddressZero;
+    xfer.trader = ethers.constants.HashZero;
     // fail for trader witrh zero address(0)
     await expect(mainnetRFQAvax.processXFerPayload(xfer)).to.be.revertedWith("RF-ZADDR-01");
-    xfer.trader = owner.address;
+    xfer.trader = Utils.addressToBytes32(owner.address);
     xfer.quantity = Utils.toWei("0.01");
     xfer.symbol = Utils.fromUtf8("USDt");
     // fail due to token not in portfolioBridge
@@ -615,9 +629,9 @@ describe("Mainnet RFQ Multichain", () => {
     await mainnetRFQGun.grantRole(await mainnetRFQGun.PORTFOLIO_BRIDGE_ROLE(), mainnetRFQAttacker.address);
 
     const tx = 11;
-    const customdata = ethers.utils.hexZeroPad("0xff", 28);
+    const customdata = ethers.utils.hexZeroPad("0xff", 18);
     const amount = Utils.toWei("1");
-    await mainnetRFQAttacker.attackProcessXFerPayload(mainnetRFQAttacker.address, Utils.fromUtf8("GUN"), amount, tx, customdata)
+    await mainnetRFQAttacker.attackProcessXFerPayload(Utils.addressToBytes32(mainnetRFQAttacker.address), Utils.fromUtf8("GUN"), amount, tx, customdata)
     expect(await ethers.provider.getBalance(mainnetRFQGun.address)).to.equal(ethers.utils.parseEther("100.0"));
     expect(await ethers.provider.getBalance(mainnetRFQAttacker.address)).to.equal(ethers.utils.parseEther("0"));
   });
@@ -629,13 +643,12 @@ describe("Mainnet RFQ Multichain", () => {
     let xfer: any = {};
     const transaction = 11;
     const nonce = 0;
-    const trader = trader1.address;
+    const trader = Utils.addressToBytes32(trader1.address);
     const symbol = Utils.fromUtf8("AVAX")
     const quantity =  Utils.toWei("1")
     const timestamp = BigNumber.from(await f.latestTime());
-    const customdata = ethers.utils.hexZeroPad("0xff", 28);
-    const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
-
+    const customdata = ethers.utils.hexZeroPad("0xff", 18);
+    const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`;
 
     xfer = {
       nonce,
@@ -646,6 +659,8 @@ describe("Mainnet RFQ Multichain", () => {
       timestamp,
       customdata
     }
+
+    console.log(xfer)
 
     await expect(mainnetRFQAvax.processXFerPayload(xfer))
         .to.emit(mainnetRFQAvax, "SwapQueue");
@@ -668,10 +683,10 @@ describe("Mainnet RFQ Multichain", () => {
     let xfer: any = {};
 
     const transaction = 11;
-    const customdata = ethers.utils.hexZeroPad("0xff", 28);
+    const customdata = ethers.utils.hexZeroPad("0xff", 18);
     const nonce = 1112
     const quantity = ethers.utils.parseUnits("1", 6)
-    const trader = trader1.address;
+    const trader = Utils.addressToBytes32(trader1.address);
     const symbol =  Utils.fromUtf8("USDC")
     const timestamp = BigNumber.from(await f.latestTime());
     const nonceAndMeta = `${trader1.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`
@@ -706,10 +721,10 @@ describe("Mainnet RFQ Multichain", () => {
     let xfer: any = {};
 
     const transaction = 11;
-    const customdata = ethers.utils.hexZeroPad("0xff", 28);
+    const customdata = ethers.utils.hexZeroPad("0xff", 18);
     const nonce = 1112;
     const quantity =  Utils.toWei("1")
-    const trader = mainnetRFQAttacker.address;
+    const trader = Utils.addressToBytes32(mainnetRFQAttacker.address);
     const symbol =  Utils.fromUtf8("AVAX")
     const timestamp = BigNumber.from(await f.latestTime());
     const nonceAndMeta = `${mainnetRFQAttacker.address}${ethers.utils.hexZeroPad("0xff", 12).slice(2)}`;
@@ -745,11 +760,11 @@ describe("Mainnet RFQ Multichain", () => {
     let xfer: any = {};
     const transaction = 11;
     const nonce = 1112;
-    const trader = trader1.address;
+    const trader = Utils.addressToBytes32(trader1.address);
     const symbol = Utils.fromUtf8("GUN")
     const quantity =  Utils.toWei("1")
     const timestamp = BigNumber.from(await f.latestTime());
-    const customdata = ethers.utils.hexZeroPad("0xff", 28);
+    const customdata = ethers.utils.hexZeroPad("0xff", 18);
 
     xfer = {
       nonce,
@@ -770,6 +785,7 @@ describe("Mainnet RFQ", () => {
   let mainnetRFQ: MainnetRFQ;
   let mockUSDC: MockToken;
   let mockALOT: MockToken;
+  let mockWrapped: MockWrappedToken
 
   const initialUSDCBalance: string = Utils.parseUnits("10000", 6).toString()
   const initialALOTBalance: string = Utils.parseUnits("10000", 18).toString()
@@ -860,6 +876,7 @@ describe("Mainnet RFQ", () => {
     // deploy mock tokens
     mockUSDC = await f.deployMockToken("USDC", 6);
     mockALOT = portfolioContracts.alot;
+    mockWrapped = await f.deployMockWrappedToken("WrappedAVAX", 18);
 
     // mint tokens
     await mockUSDC.mint(mainnetRFQ.address, initialUSDCBalance);
@@ -887,6 +904,7 @@ describe("Mainnet RFQ", () => {
     swapAmounts[mockUSDC.address] = swapAmountUSDC;
     swapAmounts[mockALOT.address] = swapAmountALOT;
     swapAmounts[ethers.constants.AddressZero] = swapAmountAVAX;
+    swapAmounts[mockWrapped.address] = swapAmountAVAX;
   });
 
   it("Should not deploy with 0 address", async function () {
@@ -959,6 +977,7 @@ describe("Mainnet RFQ", () => {
     await expect(mainnetRFQ.connect(signer).setVolatilePairs(0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
     await expect(mainnetRFQ.connect(owner).removeAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
     await expect(mainnetRFQ.connect(owner).removeVolatilityAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
+    await expect(mainnetRFQ.connect(signer).setWrapped(dummyAddress, false)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
 
 
     await mainnetRFQ.connect(owner).setSwapSigner(dummyAddress);
@@ -1001,10 +1020,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1157,10 +1176,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1249,13 +1268,13 @@ describe("Mainnet RFQ", () => {
 
   });
 
-  it("Only admin can send AVAX.", async () => {
+  it("Only admin or wrapped token can send AVAX.", async () => {
     await expect(
       owner.sendTransaction({
         to: mainnetRFQ.address,
         value: ethers.utils.parseEther("1"),
       })
-    ).to.be.revertedWith("AccessControl: account 0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266 is missing role 0xf48fc9fa479390222c2fd5227bb7e4f7c4a85d969b82dfa11eb0954487273ab9");
+    ).to.be.revertedWith("RF-RAOW-01");
 
     rebalancer.sendTransaction({
       to: mainnetRFQ.address,
@@ -1457,10 +1476,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1502,10 +1521,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       newTakerAmount,
       swapAmountUSDC,
     );
@@ -1549,10 +1568,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       expectedTakerAmount,
       expectedMakerAmount,
     );
@@ -1598,10 +1617,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       expectedTakerAmount,
       expectedMakerAmount,
     );
@@ -1655,10 +1674,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1812,10 +1831,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1901,10 +1920,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -1946,10 +1965,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       newTakerAmount,
       swapAmountUSDC,
     );
@@ -1993,10 +2012,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       expectedTakerAmount,
       expectedMakerAmount,
     );
@@ -2042,10 +2061,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      aggregator.address,
+      Utils.addressToBytes32(aggregator.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       expectedTakerAmount,
       expectedMakerAmount,
     );
@@ -2099,10 +2118,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      owner.address,
+      Utils.addressToBytes32(owner.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -2133,7 +2152,7 @@ describe("Mainnet RFQ", () => {
 
     const ownerAVAXBalance = await ethers.provider.getBalance(owner.address);
 
-    const tx =  await mainnetRFQ.connect(trader1).simpleSwap(
+    await mainnetRFQ.connect(trader1).simpleSwap(
         order,
         signature
     )
@@ -2240,10 +2259,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -2286,10 +2305,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       swapAmountUSDC,
     );
@@ -2337,10 +2356,10 @@ describe("Mainnet RFQ", () => {
     .withArgs(
       order.nonceAndMeta,
       trader1.address,
-      trader1.address,
+      Utils.addressToBytes32(trader1.address),
       chainId,
       mockALOT.address,
-      mockUSDC.address,
+      Utils.addressToBytes32(mockUSDC.address),
       swapAmountALOT,
       finalUSDCAmount,
     );
@@ -2362,6 +2381,375 @@ describe("Mainnet RFQ", () => {
 
     expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
       ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token false and allow for normal swaps", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, false);
+
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      Utils.addressToBytes32(trader1.address),
+      chainId,
+      mockALOT.address,
+      Utils.addressToBytes32(mockUSDC.address),
+      swapAmountALOT,
+      swapAmountUSDC,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token false and trade AVAX as maker asset", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, false);
+
+    const order = await getOrder(ethers.constants.AddressZero, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).add(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  })
+
+  it("Should set wrapped token false and trade AVAX as taker", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, false);
+
+    const order = await getOrder(mockALOT.address, ethers.constants.AddressZero);
+    const signature = await toSignature(order, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature,
+        {value: swapAmountAVAX},
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).sub(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).add(swapAmountAVAX)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token false and trade WAVAX as maker asset", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, false);
+
+    const order = await getOrder(mockWrapped.address, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature
+    )
+
+    expect(await mockWrapped.balanceOf(trader1.address)).to.equal(ethers.BigNumber.from(swapAmountAVAX));
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  })
+
+  it("Should set wrapped token false and trade WAVAX as taker", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, false);
+
+    const order = await getOrder(mockALOT.address, mockWrapped.address);
+    const signature = await toSignature(order, signer);
+
+    await mockWrapped.connect(trader1).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(trader1).approve(mainnetRFQ.address, swapAmountAVAX);
+
+    await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature,
+    )
+
+    expect(await mockWrapped.balanceOf(trader1.address)).to.equal(ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX));
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).add(swapAmountAVAX)
+    );
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token true and allow for normal swaps", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, true);
+    await mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, initialAVAXBalance);
+    await mockWrapped.connect(rebalancer).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(rebalancer).transfer(mainnetRFQ.address, initialAVAXBalance);
+
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      Utils.addressToBytes32(trader1.address),
+      chainId,
+      mockALOT.address,
+      Utils.addressToBytes32(mockUSDC.address),
+      swapAmountALOT,
+      swapAmountUSDC,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token true and trade AVAX as maker asset", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, true);
+    await mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, initialAVAXBalance);
+    await mockWrapped.connect(rebalancer).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(rebalancer).transfer(mainnetRFQ.address, initialAVAXBalance);
+
+    const order = await getOrder(ethers.constants.AddressZero, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).add(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await mockWrapped.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(0);
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  })
+
+  it("Should set wrapped token true and trade AVAX as taker", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, true);
+    await mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, initialAVAXBalance);
+    await mockWrapped.connect(rebalancer).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(rebalancer).transfer(mainnetRFQ.address, initialAVAXBalance);
+
+    const order = await getOrder(mockALOT.address, ethers.constants.AddressZero);
+    const signature = await toSignature(order, signer);
+
+    const t1AVAXBalance = await ethers.provider.getBalance(trader1.address);
+
+    const tx =  await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature,
+        {value: swapAmountAVAX},
+    )
+
+    const receipt = await tx.wait()
+
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice)
+
+
+    expect(await ethers.provider.getBalance(trader1.address)).to.equal(
+      ethers.BigNumber.from(t1AVAXBalance).sub(swapAmountAVAX).sub(gasSpent)
+    );
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+
+    expect(await mockWrapped.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).add(swapAmountAVAX)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(0);
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+  });
+
+  it("Should set wrapped token true and trade WAVAX as maker asset", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, true);
+    await mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, initialAVAXBalance);
+    await mockWrapped.connect(rebalancer).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(rebalancer).transfer(mainnetRFQ.address, initialAVAXBalance);
+
+    const order = await getOrder(mockWrapped.address, mockALOT.address);
+
+    const signature = await toSignature(order, signer);
+
+    await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature
+    )
+
+    expect(await mockWrapped.balanceOf(trader1.address)).to.equal(ethers.BigNumber.from(swapAmountAVAX));
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+    expect(await mockWrapped.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(0);
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  })
+
+  it("Should set wrapped token true and trade WAVAX as taker", async () => {
+    await mainnetRFQ.connect(owner).setWrapped(mockWrapped.address, true);
+    await mainnetRFQ.connect(rebalancer).claimBalance(ethers.constants.AddressZero, initialAVAXBalance);
+    await mockWrapped.connect(rebalancer).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(rebalancer).transfer(mainnetRFQ.address, initialAVAXBalance);
+
+    const order = await getOrder(mockALOT.address, mockWrapped.address);
+    const signature = await toSignature(order, signer);
+
+    await mockWrapped.connect(trader1).deposit({value: initialAVAXBalance});
+    await mockWrapped.connect(trader1).approve(mainnetRFQ.address, swapAmountAVAX);
+
+    await mainnetRFQ.connect(trader1).simpleSwap(
+        order,
+        signature,
+    )
+
+    expect(await mockWrapped.balanceOf(trader1.address)).to.equal(ethers.BigNumber.from(initialAVAXBalance).sub(swapAmountAVAX));
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+
+    expect(await mockWrapped.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialAVAXBalance).add(swapAmountAVAX)
+    );
+
+    expect(await ethers.provider.getBalance(mainnetRFQ.address)).to.equal(0);
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
     );
   });
 });

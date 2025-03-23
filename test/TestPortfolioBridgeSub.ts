@@ -12,6 +12,7 @@ import {
     MockToken,
     DelayedTransfers,
     InventoryManager,
+    DefaultBridgeAppMock__factory,
 } from '../typechain-types'
 
 import * as f from "./MakeTestSuite";
@@ -111,12 +112,12 @@ describe("Portfolio Bridge Sub", () => {
         const auctionMode: any = 0;
         const { cChain, dexalotSubnet } = f.getChains();
         // fail for non-privileged role
-        await expect(portfolioBridgeSub.connect(trader1).addToken(ALOT, ethers.constants.AddressZero, cChain.chainListOrgId, tokenDecimals, auctionMode, ALOT, 0))
+        await expect(portfolioBridgeSub.connect(trader1).addToken(ALOT, ethers.constants.AddressZero, cChain.chainListOrgId, tokenDecimals, tokenDecimals,auctionMode, ALOT, 0))
             .to.be.revertedWith("PB-OACC-01");
 
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(2);
         // silent fail / do nothing if native token is already added
-        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, dexalotSubnet.chainListOrgId, tokenDecimals, auctionMode, ALOT, 0);
+        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, dexalotSubnet.chainListOrgId, tokenDecimals, tokenDecimals, auctionMode, ALOT, 0);
         //BOth AVAX & ALOT is added by default
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(2);
         const tdet = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" + dexalotSubnet.chainListOrgId))
@@ -130,7 +131,7 @@ describe("Portfolio Bridge Sub", () => {
         //Add ALOT from another chain
         const ALOT_ADDRESS = "0x5498BB86BC934c8D34FDA08E81D444153d0D06aD"; //any address
         const srcChainId2 = cChain.chainListOrgId;
-        await portfolioBridgeSub.addToken(ALOT, ALOT_ADDRESS, srcChainId2, tokenDecimals, auctionMode, ALOT, 0);
+        await portfolioBridgeSub.addToken(ALOT, ALOT_ADDRESS, srcChainId2, tokenDecimals, tokenDecimals, auctionMode, ALOT, 0);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
 
         const tdet2 = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("ALOT" + srcChainId2))
@@ -149,17 +150,17 @@ describe("Portfolio Bridge Sub", () => {
         const auctionMode: any = 0;
 
         // fail for non-privileged role
-        await expect(portfolioBridgeSub.connect(trader1).addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK, 0))
+        await expect(portfolioBridgeSub.connect(trader1).addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode,MOCK, 0))
             .to.be.revertedWith("PB-OACC-01");
 
         // fail if token is not in Portfolio common symbols
-        await expect(portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK, 0))
+        await expect(portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode,MOCK, 0))
             .to.be.revertedWith("PB-SDMP-01");
 
         // succeed for default admin role
-        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
+        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
-        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK, 0);
+        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode,MOCK, 0);
         const tdet = await portfolioBridgeSub.getTokenDetails(Utils.fromUtf8("MOCK" + 1))
         expect(tdet.decimals).to.equal(tokenDecimals);
         expect(tdet.tokenAddress).to.equal(mock.address);
@@ -169,7 +170,7 @@ describe("Portfolio Bridge Sub", () => {
         expect(tdet.symbolId).to.equal(Utils.fromUtf8("MOCK" + srcChainId));
 
         // silent fail / do nothing if ERC20 token is already added
-        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode,MOCK, 0);
+        await portfolioBridgeSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode,MOCK, 0);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);
     });
 
@@ -179,7 +180,7 @@ describe("Portfolio Bridge Sub", () => {
         const tokenDecimals = await mock.decimals();
         const auctionMode: any = 0;
 
-        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, srcChainId, tokenDecimals, auctionMode, ALOT, 0);
+        await portfolioBridgeSub.addToken(ALOT, ethers.constants.AddressZero, srcChainId, tokenDecimals, tokenDecimals, auctionMode, ALOT, 0);
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + srcChainId));
 
         // fail not paused
@@ -194,14 +195,14 @@ describe("Portfolio Bridge Sub", () => {
             .to.be.revertedWith("PB-OACC-01");
 
         //Add ALOT with the mainnet chain id  (use portfolioBridgeMain.address to mock ALOT address)
-        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode, ALOT, 0);
+        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, tokenDecimals, auctionMode, ALOT, 0);
 
         //Remove with BRIDGE_USER_ROLE
         await portfolioBridgeSub.connect(trader1).removeToken(ALOT, 5555, ALOT);
         expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("ALOT" + '5555'));
 
         //Add ALOT with the mainnet chain id again (use portfolioBridgeMain.address to mock ALOT address)
-        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, auctionMode, ALOT, 0);
+        await portfolioBridgeSub.addToken(ALOT, portfolioBridgeMain.address, 5555, tokenDecimals, tokenDecimals, auctionMode, ALOT, 0);
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("ALOT" + '5555'));
         // Remove ALOT from chain 5555 with DEFAULT_ADMIN_ROLE
         await portfolioBridgeSub.removeToken(ALOT, 5555, ALOT);
@@ -223,7 +224,7 @@ describe("Portfolio Bridge Sub", () => {
         const tokenDecimals = 18;
         const auctionMode: any = 0;
 
-        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
+        await portfolioSub.addToken(MOCK, mock.address, srcChainId, tokenDecimals, tokenDecimals, auctionMode, '0', ethers.utils.parseUnits('0.5',tokenDecimals),MOCK);
         expect((await portfolioBridgeSub.getTokenList()).length).to.equal(3);  // ALOT + AVAX + MOCK
         expect(await portfolioBridgeSub.getTokenList()).to.include(Utils.fromUtf8("MOCK" + srcChainId));
 
@@ -412,7 +413,7 @@ describe("Portfolio Bridge Sub", () => {
         const xfer = {
             nonce: 0,
             transaction: 1,
-            trader: trader1.address,
+            trader: Utils.addressToBytes32(trader1.address),
             symbol: AVAX,
             quantity: ethers.utils.parseEther("0.5"),
             timestamp: BigNumber.from(await f.latestTime()),
@@ -475,7 +476,7 @@ describe("Portfolio Bridge Sub", () => {
 
         // need to deposit for inventory to be initialised and withdrawal fee to be set
         await f.depositNative(portfolioMain, trader1, "0.5");
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0)).to.be.equal(fee2);
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, Utils.emptyOptions())).to.be.equal(fee2);
     });
 
     it("Should set BridgeFees correctly with bridge multipler", async () => {
@@ -500,7 +501,7 @@ describe("Portfolio Bridge Sub", () => {
 
         // need to deposit for inventory to be initialised and withdrawal fee to be set
         await f.depositNative(portfolioMain, trader1, "0.5");
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0)).to.be.equal(fee2.div(2));
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, Utils.emptyOptions())).to.be.equal(fee2.div(2));
     });
 
     // TESTING DEPOSIT
@@ -559,7 +560,7 @@ describe("Portfolio Bridge Sub", () => {
         let xfer: any = {};
         xfer = {nonce,
                 transaction,
-                trader,
+                trader: Utils.addressToBytes32(trader),
                 symbol,
                 quantity,
                 timestamp,
@@ -609,7 +610,7 @@ describe("Portfolio Bridge Sub", () => {
             log.data
         );
         const delayedTransfer = await delayedTransfers.delayedTransfers(data[1])
-        expect(delayedTransfer.trader).to.equal(trader);
+        expect(delayedTransfer.trader).to.equal(Utils.addressToBytes32(trader));
         expect(delayedTransfer.symbol).to.equal(symbol);
         expect(delayedTransfer.quantity.toString()).to.equal(quantity);
         expect(BigNumber.from(delayedTransfer.customdata).eq(defaultDestinationChainId));
@@ -692,9 +693,65 @@ describe("Portfolio Bridge Sub", () => {
         receipt = await tx.wait();
         expect(receipt.events[1].args.xfer.nonce).to.be.equal(1);       // nonce is 1
         expect(receipt.events[1].args.xfer.transaction).to.be.equal(0); // withdraw
-        expect(receipt.events[1].args.xfer.trader).to.be.equal(admin.address);
+        expect(receipt.events[1].args.xfer.trader).to.be.equal(Utils.addressToBytes32(admin.address));
         expect(receipt.events[1].args.xfer.symbol).to.be.equal(AVAX);
         expect(receipt.events[1].args.xfer.quantity).to.be.equal(ethers.utils.parseEther("0.51"));
+    });
+
+    it("Should use executeDelayedTransfer correctly - withdraw, checking userPaysFee", async () => {
+        const { admin } = await f.getAccounts();
+
+        await f.setBridgeSubSettings(
+            delayedTransfers,
+            {
+                delayPeriod,
+                epochLength,
+                token: AVAX,
+                delayThreshold: delayThreshold.toString(),
+                epochVolumeCap: volumeCap.toString()
+            }
+        )
+
+        // Deposit
+        await f.depositNative(portfolioMain, admin, "0.3");
+        await f.depositNative(portfolioMain, admin, "0.3");
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_ADMIN_ROLE(), admin.address);
+
+        // quantity 0.51 > delayThreshold 0.50 so it will create a delayedTransfer
+        let tx = await f.withdrawToken(portfolioSub, admin, AVAX, 18, "0.51", 0);
+        let receipt: any = await tx.wait();
+
+        const log = receipt.logs[1]
+        const data = ethers.utils.defaultAbiCoder.decode(
+            [ 'string', 'bytes32'],
+            log.data
+         );
+
+        await ethers.provider.send("evm_increaseTime", [delayPeriod]);
+        await ethers.provider.send("evm_mine", []);
+
+        const defaultBridgeAppMock = await new DefaultBridgeAppMock__factory(owner).deploy();
+        await defaultBridgeAppMock.setPortfolioBridge(portfolioBridgeSub.address);
+        await portfolioBridgeSub.enableBridgeProvider(1, defaultBridgeAppMock.address);
+        await portfolioBridgeSub.setTrustedRemoteAddress(1, f.getChains().cChain.chainListOrgId, ethers.constants.HashZero, Utils.addressToBytes32(defaultBridgeAppMock.address), false);
+        await portfolioBridgeSub.setDefaultBridgeProvider(1);
+
+        // execute delayed withdraw transaction after delayedPeriod
+        tx = await portfolioBridgeSub.connect(admin).executeDelayedTransfer(data[1]);
+        receipt = await tx.wait();
+
+        const refundFeeAddr = ethers.utils.defaultAbiCoder.decode(
+            [ 'address'],
+            receipt.events[1].data
+         );
+
+        expect(refundFeeAddr[0]).to.be.equal(portfolioBridgeSub.address);
+        expect(receipt.events[2].args.xfer.nonce).to.be.equal(1);       // nonce is 1
+        expect(receipt.events[2].args.xfer.transaction).to.be.equal(0); // withdraw
+        expect(receipt.events[2].args.xfer.trader).to.be.equal(Utils.addressToBytes32(admin.address));
+        expect(receipt.events[2].args.xfer.symbol).to.be.equal(AVAX);
+        expect(receipt.events[2].args.xfer.quantity).to.be.equal(ethers.utils.parseEther("0.51"));
     });
 
     // it("Should execute delayed transfer - deposit", async () => {
@@ -1010,7 +1067,7 @@ describe("Portfolio Bridge Sub", () => {
          );
 
         const delayedTransfer = await delayedTransfers.delayedTransfers(data[1])
-        expect(delayedTransfer.trader).to.equal(owner.address);
+        expect(delayedTransfer.trader).to.equal(Utils.addressToBytes32(owner.address));
         expect(delayedTransfer.symbol).to.equal(AVAX);
         expect(delayedTransfer.quantity.toString()).to.equal(ethers.utils.parseEther("0.68").toString());
         expect(BigNumber.from(delayedTransfer.customdata).eq(defaultDestinationChainId));
@@ -1057,7 +1114,7 @@ describe("Portfolio Bridge Sub", () => {
         .to.emit(portfolioMain, "PortfolioUpdated")
         .withArgs(0, trader1.address, AVAX, ethers.utils.parseEther("0.68"), 0, 0, 0, trader1.address)
 
-        expect((await delayedTransfers.delayedTransfers(data[1])).trader).to.equal("0x0000000000000000000000000000000000000000");
+        expect((await delayedTransfers.delayedTransfers(data[1])).trader).to.equal(ethers.constants.HashZero);
 
         const mainnetAfterBalance = await trader1.getBalance()
 
@@ -1074,14 +1131,14 @@ describe("Portfolio Bridge Sub", () => {
     })
 
     it("Should fail to get bridge fee to token that does not exist", async function () {
-       await expect(portfolioBridgeSub.getBridgeFee(0, 0, ALOT, 0)).to.be.revertedWith("PB-ETNS-01");
+       await expect(portfolioBridgeSub.getBridgeFee(0, 0, ALOT, 0, Utils.emptyOptions())).to.be.revertedWith("PB-ETNS-01");
     })
 
     it("Should fail to process payload for token that does not exist", async function () {
         const {cChain} = f.getChains();
 
         const invalidSymbol = Utils.fromUtf8("AVAXCC");
-        const payload = Utils.generatePayload(0, 1, 0, trader1.address, invalidSymbol, Utils.toWei("0.5"), await f.latestTime(), Utils.emptyCustomData());
+        const payload = Utils.generatePayload(0, 1, 0, Utils.addressToBytes32(trader1.address), invalidSymbol, Utils.toWei("0.5"), await f.latestTime(), Utils.emptyCustomData());
 
         await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
         await portfolioBridgeSub.pause();
@@ -1101,7 +1158,7 @@ describe("Portfolio Bridge Sub", () => {
         const xfer = {
             nonce: 0,
             transaction: 1,
-            trader: owner.address,
+            trader: Utils.addressToBytes32(owner.address),
             symbol: invalidSymbol,
             quantity: ethers.utils.parseEther("0.5"),
             timestamp: BigNumber.from(await f.latestTime()),

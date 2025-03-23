@@ -84,15 +84,15 @@ describe("Exchange Main", function () {
             const token_decimals = 18;
 
             // fail for non-admin & Admin
-            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address,  token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
-            await expect(exchange.addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(trader1).addToken(MOCK, mockToken.address,  token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.addToken(MOCK, mockToken.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
 
             await exchange.removeAdmin(auctionAdmin.address);
-            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+            await expect(exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, token_decimals,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
 
             // succeed for auctionAdmin
             await exchange.addAuctionAdmin(auctionAdmin.address);
-            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals));
+            await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals));
         });
 
 

@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.5.1");
+    bytes32 public constant VERSION = bytes32("3.5.3");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
@@ -64,7 +64,7 @@ contract TradePairs is
 
     //Event versions to better communicate changes to listening components
     uint8 private constant NEW_TRADE_PAIR_VERSION = 1;
-    uint8 private constant ORDER_STATUS_CHANGED_VERSION = 3;
+    uint8 private constant ORDER_STATUS_CHANGED_VERSION = 4;
     uint8 private constant EXECUTED_VERSION = 1;
     uint8 private constant PARAMETER_UPDATED_VERSION = 1;
     uint256 public maxNbrOfFills;
@@ -944,6 +944,7 @@ contract TradePairs is
         takerOrder.quantity = _order.quantity;
         // for new orders this ensures that previousUpdateBlock is the same as updateBlock
         takerOrder.updateBlock = uint32(block.number);
+        takerOrder.createBlock = uint32(block.number);
         takerOrder.side = _order.side;
         //takerOrder.totalAmount= 0;         // evm initialized
         //takerOrder.quantityFilled= 0;      // evm initialized
@@ -966,7 +967,7 @@ contract TradePairs is
 
         // Returns applicable price for Type1=MARKET
         // OR _price unchanged for Type1=LIMIT
-        // OR 0 price along with a errorCode
+        // OR 0 price along with an errorCode
         (uint256 price, bytes32 code) = addOrderChecks(_msSender, _order);
         if (price == 0) {
             takerOrder.status = Status.REJECTED;
@@ -1026,17 +1027,14 @@ contract TradePairs is
             (_takerOrder.type2 == Type2.GTC || _takerOrder.type2 == Type2.PO)
         ) {
             TradePair storage tradePair = tradePairMap[_tradePairId];
-            (Side side, bytes32 clientOrderId) = (_takerOrder.side, _takerOrder.clientOrderId);
+            (Side side, bytes32 id) = (_takerOrder.side, _takerOrder.id);
             bytes32 bookIdSameSide = side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
             //the remaining of the taker order is entered in the orderbook as a maker order
-            Order storage makerOrder = orderMap[_takerOrder.id];
+            Order storage makerOrder = orderMap[id];
 
-            (makerOrder.id, makerOrder.clientOrderId, makerOrder.traderaddress) = (
-                _takerOrder.id,
-                clientOrderId,
-                _takerOrder.traderaddress
-            );
-
+            makerOrder.id = id;
+            makerOrder.clientOrderId = _takerOrder.clientOrderId;
+            makerOrder.traderaddress = _takerOrder.traderaddress;
             makerOrder.tradePairId = _tradePairId;
             makerOrder.price = _takerOrder.price;
             makerOrder.quantity = _takerOrder.quantity;
@@ -1051,9 +1049,18 @@ contract TradePairs is
                 makerOrder.totalFee = _takerOrder.totalFee;
                 makerOrder.status = _takerOrder.status;
             }
-            makerOrder.side = side;
-            makerOrder.type1 = _takerOrder.type1;
-            makerOrder.type2 = _takerOrder.type2;
+            if (side != Side.BUY) {
+                // save gas
+                makerOrder.side = side;
+            }
+            makerOrder.type1 = Type1.LIMIT; //_takerOrder.type1; takerOrder has to be LIMIT to go in the orderbook - Save gas
+            if (_takerOrder.type2 != Type2.GTC) {
+                // save gas
+                makerOrder.type2 = _takerOrder.type2;
+            }
+            // makerOrder.updateBlock = _takerOrder.updateBlock = block.number commented out for gas savings
+            makerOrder.updateBlock = uint32(block.number);
+            makerOrder.createBlock = uint32(block.number);
 
             orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
             bytes32 adjSymbol = side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;

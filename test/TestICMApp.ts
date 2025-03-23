@@ -193,7 +193,7 @@ describe("ICMApp", () => {
     ]);
     // await owner.sendTransaction({ to: teleporterMessengerAddr, value: ethers.utils.parseEther("1") });
 
-    const payload = Utils.generatePayload(0, 1, 0, trader1.address, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), f.getTime(), Utils.emptyCustomData());
+    const payload = Utils.generatePayload(0, 1, 0, Utils.addressToBytes32(trader1.address), Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), f.getTime(), Utils.emptyCustomData());
     await expect(icmAppMain.connect(icmMessenger).receiveTeleporterMessage(subnetBlockchainID, icmAppMain.address, payload)).to.be.revertedWith("DB-RCNS-02");
 
     // set icm configs
@@ -220,14 +220,14 @@ describe("ICMApp", () => {
     await icmAppSub.setPortfolioBridge(portfolioBridgeSub.address);
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
     await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
-    let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"));
+    let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), Utils.emptyOptions());
     expect(icmBridgeFees.chainIds.length).to.equal(1);
     expect(icmBridgeFees.chainIds[0]).to.equal(0);
 
     await portfolioBridgeSub.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeSub.setTrustedRemoteAddress(2, cChain.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
 
-    icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"));
+    icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), Utils.emptyOptions());
     expect(icmBridgeFees.chainIds.length).to.equal(1);
     expect(icmBridgeFees.chainIds[0]).to.equal(cChain.chainListOrgId);
   });

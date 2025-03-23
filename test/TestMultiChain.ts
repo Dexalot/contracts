@@ -353,7 +353,7 @@ describe("MultiChain Deployments & Interactions", () => {
         console.log("inventory", Utils.toUtf8(symbolId), Utils.formatUnits((await inventoryManager.get(symbol, symbolId)), token_decimals));
 
         const withdraw_amount = (Number(deposit_amount) / 2).toString();
-        const cChainfee = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
+        const cChainfee = await portfolioSub.getBridgeFee(0, cChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals), Utils.emptyOptions());
         console.log("Fee", Utils.formatUnits(cChainfee, token_decimals));
 
         await f.withdrawTokenToDst(portfolioSub, trader1, symbol, token_decimals, withdraw_amount, cChain.chainListOrgId)
@@ -363,7 +363,7 @@ describe("MultiChain Deployments & Interactions", () => {
         // no other deposits in the portfolioMain so trader1 subnet balance should be equal
         expect(await USDtAvax.balanceOf(portfolioAvax.address)).to.equal(Utils.parseUnits(withdraw_amount, token_decimals).add(cChainfee));
 
-        const arbFee = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals));
+        const arbFee = await portfolioSub.getBridgeFee(0, arbitrumChain.chainListOrgId, symbol, Utils.parseUnits(withdraw_amount, token_decimals), Utils.emptyOptions());
         console.log("Fee", Utils.formatUnits(arbFee, token_decimals));
         await f.withdrawTokenToDst(portfolioSub, trader1, symbol, token_decimals, withdraw_amount, arbitrumChain.chainListOrgId);
         totalDeposits = totalDeposits - 5;
