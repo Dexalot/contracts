@@ -1,0 +1,27 @@
+[toolchain]
+anchor_version = "0.30.1"
+solana_version = "2.1.14"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.devnet]
+dexalot = "EzNZw3u9WzFHPNKnrPzvN4Rju3eBvTEWve8YdqiYVqrC"
+
+[programs.localnet]
+caller_mock = "8F8sMLA7as3v2KQvQruDWvZtvaz8bXvv6iUCNYTdQv3H"
+dexalot = "EzNZw3u9WzFHPNKnrPzvN4Rju3eBvTEWve8YdqiYVqrC"
+lz_mock = "76y77prsiCMvXMjuoZ5VRrhG5qYBrUMYTE5WgHqgjEn6"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "Localnet"
+wallet = "~/.config/solana/id.json"
+
+[scripts]
+coverage = "cargo install cargo-llvm-cov && cargo llvm-cov --open --ignore-filename-regex '^(.*(caller_mock|lz_mock)/.*|.*/lib\\.rs)$'"
+coverage-terminal = "cargo install cargo-llvm-cov && cargo llvm-cov --ignore-filename-regex '^(.*(caller_mock|lz_mock)/.*|.*/lib\\.rs)$'"
+test = "yarn run jest --testTimeout 1000000"
