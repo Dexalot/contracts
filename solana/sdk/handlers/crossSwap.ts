@@ -16,13 +16,12 @@ import {
 import { Dexalot } from "../../target/types/dexalot";
 import { BN, Program, web3 } from "@coral-xyz/anchor";
 import {
+  CCTRADE_ALLOWED_DEST_SEED,
   CROSS_SWAP_TYPE,
-  DEST_ID,
   PORTFOLIO_SEED,
   SOL_VAULT_SEED,
   SOLANA_ID,
   SPL_VAULT_SEED,
-  TOKEN_DETAILS_SEED,
 } from "../consts";
 import pdaDeriver from "../pda-deriver";
 import { endpointProgram, getSendLibraryProgram } from "../layerzero";
@@ -69,34 +68,30 @@ export const crossSwap = async (
     "Enter the private key hex for signing: "
   );
 
+  const tokenSymbolBuffer = Buffer.alloc(32, 0);
+  if (!destAssetMintPublicKey.equals(PublicKey.default)) {
+    const tokenSymbolStr = await getUserInput(
+      "Enter destination token symbol: "
+    );
+    tokenSymbolBuffer.write(tokenSymbolStr);
+  }
+
   try {
     spinner.start();
 
     const nonce = generateUniqueNonce();
 
-    let tokenSymbol = new Uint8Array(32);
-    if (!destAssetMintPublicKey.equals(PublicKey.default)) {
-      const tokenDetailsPDA = getAccountPubKey(program, [
-        Buffer.from(TOKEN_DETAILS_SEED),
-        destAssetMintPublicKey.toBuffer(),
-      ]);
-      const tokenDetails = await program.account.tokenDetails.fetch(
-        tokenDetailsPDA
-      );
-      tokenSymbol = Buffer.from(tokenDetails.symbol);
-    }
-
     const crossOrder = {
       taker,
       destTrader,
-      makerSymbol: Array.from(tokenSymbol), 
+      makerSymbol: Array.from(tokenSymbolBuffer),
       makerAsset: destAssetMintPublicKey,
       takerAsset: srcAssetMintPublicKey,
       makerAmount: new BN("1000"),
       takerAmount: new BN("1000"),
       nonce: Array.from(nonce),
       expiry: new BN("1899558993"), // 2030
-      destChainId: new BN(DEST_ID),
+      destChainId: destId,
     };
 
     const crossOrderHash = keccak256(
@@ -111,7 +106,7 @@ export const crossSwap = async (
         Buffer.from(crossOrder.takerAmount.toArray("be", 8)),
         Buffer.from(crossOrder.nonce),
         Buffer.from(crossOrder.expiry.toArray("be", 16)),
-        Buffer.from(crossOrder.destChainId.toArray("be", 8)),
+        new BN(destId).toArrayLike(Buffer, "be", 4),
       ])
     );
 
@@ -165,6 +160,12 @@ export const crossSwap = async (
       crossOrder.destTrader
     );
 
+    const destinationEntryPDA = getAccountPubKey(program, [
+      Buffer.from(CCTRADE_ALLOWED_DEST_SEED),
+      new BN(destId).toArrayLike(Buffer, "be", 4),
+      destAssetMintPublicKey.toBytes(),
+    ]);
+
     const [remotePDA] = pdaDeriver.remote(destId);
     const remote = await program.account.remote.fetch(remotePDA);
 
@@ -214,7 +215,18 @@ export const crossSwap = async (
       TOKEN_PROGRAM_ID,
       remotePDA,
       endpointProgram.program,
+      destinationEntryPDA,
     ]);
+    // console.log(`Remote: ${remotePDA.toBase58()}`);
+    // console.log(`Completed: ${completedSwapsEntryPDA.toBase58()}`);
+    // console.log(`DestEntry: ${destinationEntryPDA.toBase58()}`);
+    // console.log(`splVault: ${splVaultPDA.toBase58()}`);
+    // console.log(`solVault: ${solVaultPDA.toBase58()}`);
+    // console.log(`takerSrcAssetATA: ${takerSrcAssetATA.address.toBase58()}`);
+    // console.log(`vaultSrcAssetATA: ${vaultSrcAssetATA.address.toBase58()}`);
+    // console.log(`srcAssetMintPublicKey: ${srcAssetMintPublicKey.toBase58()}`);
+    // console.log(`portfolioPDA: ${portfolioPDA.toBase58()}`);
+
     const lookupTableAccount = await connection
       .getAddressLookupTable(lookupTableAddress)
       .then((res) => res.value);
@@ -249,6 +261,7 @@ export const crossSwap = async (
         tokenProgram: TOKEN_PROGRAM_ID,
         remote: remotePDA,
         endpointProgram: endpointProgram.program,
+        destinationEntry: destinationEntryPDA,
       })
       .preInstructions([modifyComputeLimitIx])
       .remainingAccounts([...quoteRemainingAccounts, ...sendRemainingAccounts])

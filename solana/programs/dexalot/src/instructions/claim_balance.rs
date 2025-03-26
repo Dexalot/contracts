@@ -5,7 +5,7 @@ use anchor_lang::{
 use anchor_spl::token::{spl_token, Mint, Token, TokenAccount};
 
 use crate::{
-    consts::{NATIVE_VAULT_MIN_THRESHOLD, REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
+    consts::{ADMIN_SEED, AIRDROP_VAULT_SEED, NATIVE_VAULT_MIN_THRESHOLD, REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
     errors::DexalotError,
 };
 
@@ -86,7 +86,7 @@ pub fn claim_spl_balance(
     let signer_seeds = &[&seeds[..]];
 
     // Transfer the tokens from the portfolio to the user
-    if cfg!(not(test)){
+    if cfg!(not(test)) {
         invoke_signed(
             &ix,
             &[
@@ -165,13 +165,76 @@ pub fn claim_native_balance(
     Ok(())
 }
 
+#[derive(Accounts, Clone)]
+pub struct ClaimAirdropBalance<'info> {
+    pub authority: Signer<'info>,
+    /// CHECK: the admin pda
+    #[account(
+        seeds = [ADMIN_SEED, authority.key().as_ref()],
+        bump)]
+    pub admin: AccountInfo<'info>,
+    /// CHECK: the airdrop vault
+    #[account(
+        mut,
+        seeds = [AIRDROP_VAULT_SEED],
+        bump,
+    )]
+    pub airdrop_vault: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Clone, AnchorDeserialize, AnchorSerialize)]
+pub struct ClaimAirdropBalanceParams {
+    pub amount: u64,
+}
+
+pub fn claim_airdrop_balance(
+    ctx: &Context<ClaimAirdropBalance>,
+    params: &ClaimAirdropBalanceParams,
+) -> Result<()> {
+    let authority = &ctx.accounts.authority;
+    let airdrop_vault = &ctx.accounts.airdrop_vault;
+    let admin = &ctx.accounts.admin;
+    let system_program = &ctx.accounts.system_program;
+
+    // check admin
+    require!(
+        admin.owner == ctx.program_id,
+        DexalotError::UnauthorizedSigner
+    );
+    // check balance
+    require!(
+        airdrop_vault.lamports() >= params.amount,
+        DexalotError::NotEnoughNativeBalance
+    );
+
+    let bump = &[ctx.bumps.airdrop_vault];
+    let seeds: &[&[u8]] = &[AIRDROP_VAULT_SEED, bump];
+    let signer_seeds = &[&seeds[..]];
+
+    // Transfer the native SOL from the program to the user
+    let ix = system_instruction::transfer(&airdrop_vault.key(), &authority.key(), params.amount);
+    if cfg!(not(test)) {
+        invoke_signed(
+            &ix,
+            &[
+                airdrop_vault.to_account_info().clone(),
+                authority.to_account_info().clone(),
+                system_program.to_account_info().clone(),
+            ],
+            signer_seeds, // sign with the PDA
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::solana_program::{system_program, program_pack::Pack};
-    use anchor_spl::token::{self, Token, TokenAccount, Mint};
-    use spl_token::state::AccountState;
     use crate::test_utils::create_account_info;
+    use anchor_lang::solana_program::{program_pack::Pack, system_program};
+    use anchor_spl::token::{self, Mint, Token, TokenAccount};
+    use spl_token::state::AccountState;
 
     #[test]
     fn test_claim_spl_balance_success() -> Result<()> {
@@ -248,7 +311,7 @@ mod tests {
             &mut mint_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let mint_account = Account::<Mint>::try_from(&mint_info)?;
 
@@ -266,7 +329,7 @@ mod tests {
             &mut default_token_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -372,7 +435,7 @@ mod tests {
             &mut mint_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let mint_account = Account::<Mint>::try_from(&mint_info)?;
 
@@ -390,7 +453,7 @@ mod tests {
             &mut default_token_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -417,7 +480,10 @@ mod tests {
         };
 
         let result = claim_spl_balance(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughSplTokenBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughSplTokenBalance.into()
+        );
 
         rebalancer_info.owner = &generic_pubkey;
         ctx.accounts.rebalancer = rebalancer_info;
@@ -586,7 +652,10 @@ mod tests {
         };
 
         let result = claim_native_balance(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
 
         rebalancer_info.owner = &generic_pubkey;
         ctx.accounts.rebalancer = rebalancer_info;
@@ -595,5 +664,160 @@ mod tests {
         assert_eq!(result.unwrap_err(), DexalotError::UnauthorizedSigner.into());
         Ok(())
     }
-}
 
+    #[test]
+    fn test_claim_airdrop_balance_success() -> Result<()> {
+        let program_id = crate::id();
+        let authority_key = Pubkey::new_unique();
+        let mut authority_lamports = 100;
+        let mut authority_data = vec![0u8; 100];
+        let authority_info = create_account_info(
+            &authority_key,
+            true,
+            true,
+            &mut authority_lamports,
+            &mut authority_data,
+            &program_id,
+            false,
+            None,
+        );
+        let admin_key = Pubkey::new_unique();
+        let mut admin_lamports = 100;
+        let mut admin_data = vec![0u8; 100];
+        let admin_info = create_account_info(
+            &admin_key,
+            false,
+            false,
+            &mut admin_lamports,
+            &mut admin_data,
+            &program_id,
+            false,
+            None,
+        );
+        let airdrop_vault_key = Pubkey::new_unique();
+        let mut airdrop_vault_lamports = 1000;
+        let mut airdrop_vault_data = vec![0u8; 100];
+        let airdrop_vault_info = create_account_info(
+            &airdrop_vault_key,
+            false,
+            true,
+            &mut airdrop_vault_lamports,
+            &mut airdrop_vault_data,
+            &program_id,
+            false,
+            None,
+        );
+        let system_program_id = system_program::ID;
+        let mut system_data = vec![0u8; 100];
+        let mut system_lamports = 100;
+        let system_info = create_account_info(
+            &system_program_id,
+            false,
+            false,
+            &mut system_lamports,
+            &mut system_data,
+            &system_program_id,
+            true,
+            None,
+        );
+        let mut accounts = ClaimAirdropBalance {
+            authority: Signer::try_from(&authority_info)?,
+            admin: admin_info,
+            airdrop_vault: airdrop_vault_info,
+            system_program: Program::try_from(&system_info)?,
+        };
+        let params = ClaimAirdropBalanceParams { amount: 500 };
+        let ctx = Context {
+            accounts: &mut accounts,
+            remaining_accounts: &[],
+            program_id: &program_id,
+            bumps: ClaimAirdropBalanceBumps::default(),
+        };
+        let result = claim_airdrop_balance(&ctx, &params);
+        assert!(result.is_ok());
+        Ok(())
+    }
+
+    #[test]
+    fn test_claim_airdrop_balance_negative_cases() -> Result<()> {
+        let program_id = crate::id();
+        let authority_key = Pubkey::new_unique();
+        let mut authority_lamports = 100;
+        let mut authority_data = vec![0u8; 100];
+        let authority_info = create_account_info(
+            &authority_key,
+            true,
+            true,
+            &mut authority_lamports,
+            &mut authority_data,
+            &program_id,
+            false,
+            None,
+        );
+        let admin_key = Pubkey::new_unique();
+        let mut admin_lamports = 100;
+        let mut admin_data = vec![0u8; 100];
+        let mut admin_info = create_account_info(
+            &admin_key,
+            false,
+            false,
+            &mut admin_lamports,
+            &mut admin_data,
+            &program_id,
+            false,
+            None,
+        );
+        let airdrop_vault_key = Pubkey::new_unique();
+        let mut airdrop_vault_lamports = 1000;
+        let mut airdrop_vault_data = vec![0u8; 100];
+        let airdrop_vault_info = create_account_info(
+            &airdrop_vault_key,
+            false,
+            true,
+            &mut airdrop_vault_lamports,
+            &mut airdrop_vault_data,
+            &program_id,
+            false,
+            None,
+        );
+        let system_program_id = system_program::ID;
+        let mut system_data = vec![0u8; 100];
+        let mut system_lamports = 100;
+        let system_info = create_account_info(
+            &system_program_id,
+            false,
+            false,
+            &mut system_lamports,
+            &mut system_data,
+            &system_program_id,
+            true,
+            None,
+        );
+
+        let admin_clone = admin_info.clone();
+        let mut accounts = ClaimAirdropBalance {
+            authority: Signer::try_from(&authority_info)?,
+            admin: admin_clone,
+            airdrop_vault: airdrop_vault_info,
+            system_program: Program::try_from(&system_info)?,
+        };
+        let params = ClaimAirdropBalanceParams { amount: 5000 };
+        let mut ctx = Context {
+            accounts: &mut accounts.clone(),
+            remaining_accounts: &[],
+            program_id: &program_id,
+            bumps: ClaimAirdropBalanceBumps::default(),
+        };
+
+        let result = claim_airdrop_balance(&ctx, &params);
+        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+
+        admin_info.owner = &admin_key;
+        accounts.admin = admin_info;
+        ctx.accounts = &mut accounts;
+
+        let result = claim_airdrop_balance(&ctx, &params);
+        assert_eq!(result.unwrap_err(), DexalotError::UnauthorizedSigner.into());
+        Ok(())
+    }
+}

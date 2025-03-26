@@ -30,9 +30,12 @@ const main = async () => {
             await Interactor.initialize();
             break;
           case 2:
-            await Interactor.initializeVaults();
+            await Interactor.initializeSplVaults();
             break;
           case 3:
+            await Interactor.initializeSolVaults();
+            break;
+          case 4:
             await Interactor.initializeLayerzero();
             break;
           default:
@@ -249,10 +252,7 @@ const main = async () => {
             await Interactor.updateSwapExpiry();
             break;
           case 6:
-            await Interactor.claimSplBalance();
-            break;
-          case 7:
-            await Interactor.claimNativeBalance();
+            await Interactor.addDestination();
             break;
           default:
             console.error(red("\n\nInvalid command!\n\n"));
@@ -268,6 +268,9 @@ const main = async () => {
             break;
           case 2:
             await Interactor.claimNativeBalance();
+            break;
+          case 3:
+            await Interactor.claimAirdropBalance();
             break;
           default:
             console.error(red("\n\nInvalid command!\n\n"));

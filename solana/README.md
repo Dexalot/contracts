@@ -53,8 +53,9 @@ npm start
 ### 1. Initialize section
 
 1. **Initialize**: Initializes a newly deployed program
-2. **Initialize vaults**: Initializes the SPL vaults for a newly deployed program
-3. **Initialize Layerzero**: Call the LayerZero Endpoint program to configure message libraries
+2. **Initialize SPL vaults**: Initializes the SPL vaults for a newly deployed program (only admin)
+3. **Initialize SOL vaults**: Initializes the SOL vaults for a newly deployed program (only admin)
+4. **Initialize Layerzero**: Call the LayerZero Endpoint program to configure message libraries
 <hr/>
 
 ### 2. Global configuration section
@@ -138,6 +139,7 @@ _Only admin_
 3. **Cross swap**: Assets are taken from the taker and CCtrade XFER message is sent
 4. **Remove from swap queue**: Re-executes a pending swap which wasn't executed beforehand due to insufficient liquidity (only rebalancer)
 5. **Update swap expiry**: Marks a swap as completed (only rebalancer)
+6. **Add allowed destination**: Adds an allowed destination, token address on specific network (only admin)
 <hr/>
 
 ### 10. Claim balances section
@@ -190,7 +192,7 @@ anchor test
 
 ## Running Unit tests with coverage
 
-You can run them with the coverage report in the terminal or 
+You can run them with the coverage report in the terminal or
 with an interactive coverage report in a browser. The coverage ignores the mock programs
 and the lib.rs file.
 

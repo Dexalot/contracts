@@ -4,8 +4,11 @@ import { createSpinner, getAccountPubKey } from "../utils";
 import { Program, web3 } from "@coral-xyz/anchor";
 import {
   ADMIN_SEED,
+  AIRDROP_VAULT_SEED,
   DEST_ID,
   PORTFOLIO_SEED,
+  SOL_USER_FUNDS_VAULT_SEED,
+  SOL_VAULT_SEED,
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
   TOKEN_LIST_SEED,
@@ -66,7 +69,7 @@ export const initialize = async (program: Program<Dexalot>, admin: Keypair) => {
   }
 };
 
-export const initializeVaults = async (
+export const initializeSplVaults = async (
   program: Program<Dexalot>,
   admin: Keypair
 ) => {
@@ -85,7 +88,7 @@ export const initializeVaults = async (
     ]);
 
     await program.methods
-      .initializeVaults()
+      .initializeSplVaults()
       .accounts({
         authority: admin.publicKey,
         //@ts-ignore
@@ -99,7 +102,53 @@ export const initializeVaults = async (
 
     spinner.stop();
     console.clear();
-    console.log("Vaults initialized");
+    console.log("Spl vaults initialized");
+  } catch (err) {
+    spinner.stop(true);
+    throw err;
+  }
+};
+
+export const initializeSolVaults = async (
+  program: Program<Dexalot>,
+  admin: Keypair
+) => {
+  spinner.start();
+  try {
+    const adminPDA = getAccountPubKey(program, [
+      Buffer.from(ADMIN_SEED),
+      admin.publicKey.toBuffer(),
+    ]);
+
+    const solVaultPDA = getAccountPubKey(program, [
+      Buffer.from(SOL_VAULT_SEED),
+    ]);
+
+    const solUserFundsVaultPDA = getAccountPubKey(program, [
+      Buffer.from(SOL_USER_FUNDS_VAULT_SEED),
+    ]);
+
+    const airdropVaultPDA = getAccountPubKey(program, [
+      Buffer.from(AIRDROP_VAULT_SEED),
+    ]);
+
+    await program.methods
+      .initializeSolVaults()
+      .accounts({
+        authority: admin.publicKey,
+        //@ts-ignore
+        solVault: solVaultPDA,
+        solUserFundsVault: solUserFundsVaultPDA,
+        airdropVault: airdropVaultPDA,
+        admin: adminPDA,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .signers([admin])
+      .rpc({ commitment: "finalized" });
+
+    spinner.stop();
+    console.clear();
+    console.log("Sol vaults initialized");
   } catch (err) {
     spinner.stop(true);
     throw err;

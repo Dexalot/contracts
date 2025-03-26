@@ -13,6 +13,7 @@ export const TOKEN_LIST_SEED = "TokenList";
 export const COMPLETED_SWAPS_SEED = "CompletedSwaps";
 export const EXPIRED_SWAPS_SEED = "ExpiredSwaps";
 export const PENDING_SWAPS_SEED = "PendingSwaps";
+export const CCTRADE_ALLOWED_DEST_SEED = "Cads";
 
 export const ORDER_TYPE =
   "Order(maker_asset: Pubkey, taker_asset: Pubkey, taker: Pubkey, maker_amount: u64, taker_amount: u64, expiry: u128, dest_trader: Pubkey, nonce: u128)";

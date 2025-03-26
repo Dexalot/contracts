@@ -71,4 +71,6 @@ pub enum DexalotError {
     NativeDepositNotAllowed,
     #[msg("XFER error occurred")]
     XFERError,
+    #[msg("Destination not allowed")]
+    DestinationNotAllowed,
 }

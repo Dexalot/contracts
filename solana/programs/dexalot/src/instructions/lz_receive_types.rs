@@ -2,9 +2,9 @@ use crate::errors::DexalotError;
 use crate::xfer::Tx;
 use crate::{
     consts::{
-        PORTFOLIO_SEED, SOL_USER_FUNDS_VAULT_SEED, TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED,
-        SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED,
-        AIRDROP_VAULT_SEED, ENDPOINT_ID, PENDING_SWAPS_SEED
+        AIRDROP_VAULT_SEED, ENDPOINT_ID, PENDING_SWAPS_SEED, PORTFOLIO_SEED,
+        SOL_USER_FUNDS_VAULT_SEED, SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED,
+        TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED,
     },
     cpi_utils::get_accounts_for_clear,
     *,
@@ -56,8 +56,7 @@ pub fn lz_receive_types(
     let trader = xfer_message.trader;
     // we only accept CCTRADE and WITHDRAW
     require!(
-        xfer_message.transaction == Tx::CCTrade
-            || xfer_message.transaction == Tx::Withdraw,
+        xfer_message.transaction == Tx::CCTrade || xfer_message.transaction == Tx::Withdraw,
         DexalotError::UnsupportedTransaction
     );
 
@@ -197,15 +196,15 @@ pub struct LzAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::prelude::*;
-    use anchor_lang::solana_program::pubkey::Pubkey;
-    use anchor_spl::associated_token::get_associated_token_address;
     use crate::consts::{
-        AIRDROP_VAULT_SEED, ENDPOINT_ID, PENDING_SWAPS_SEED, PORTFOLIO_SEED, SOL_USER_FUNDS_VAULT_SEED,
-        SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED,
+        PORTFOLIO_SEED, SOL_USER_FUNDS_VAULT_SEED, SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED,
+        SPL_VAULT_SEED,
     };
     use crate::errors::DexalotError;
     use crate::xfer::Tx;
+    use anchor_lang::prelude::*;
+    use anchor_lang::solana_program::pubkey::Pubkey;
+    use anchor_spl::associated_token::get_associated_token_address;
 
     #[test]
     fn test_lz_receive_types_cctrade_default() -> Result<()> {
@@ -290,8 +289,10 @@ mod tests {
         let accounts = lz_receive_types(&ctx, &params)?;
 
         let (expected_portfolio, _) = Pubkey::find_program_address(&[PORTFOLIO_SEED], &program_id);
-        let (expected_sol_user_vault, _) = Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
-        let (expected_spl_user_vault, _) = Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_sol_user_vault, _) =
+            Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_spl_user_vault, _) =
+            Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
 
         assert_eq!(accounts[0].pubkey, expected_portfolio);
         assert_eq!(accounts[1].pubkey, expected_spl_user_vault);
@@ -321,8 +322,10 @@ mod tests {
         let accounts = lz_receive_types(&ctx, &params)?;
 
         let (expected_portfolio, _) = Pubkey::find_program_address(&[PORTFOLIO_SEED], &program_id);
-        let (expected_sol_user_vault, _) = Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
-        let (expected_spl_user_vault, _) = Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_sol_user_vault, _) =
+            Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_spl_user_vault, _) =
+            Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
 
         let expected_from = get_associated_token_address(&expected_spl_user_vault, &token_mint);
         let expected_to = get_associated_token_address(&trader, &token_mint);
@@ -352,7 +355,10 @@ mod tests {
         };
 
         let result = lz_receive_types(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::UnsupportedTransaction.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::UnsupportedTransaction.into()
+        );
     }
 
     fn create_params(xfer: XFERSolana) -> LzReceiveParams {
@@ -367,4 +373,3 @@ mod tests {
         }
     }
 }
-

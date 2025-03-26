@@ -34,7 +34,7 @@ impl XFERSolana {
             quantity,
             timestamp,
             custom_data,
-            message_type: XChainMsgType::XFER,
+            message_type: XChainMsgType::XFERSolana,
         }
     }
 
@@ -156,6 +156,7 @@ impl TryFrom<u8> for Tx {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug, PartialEq)]
 pub enum XChainMsgType {
     XFER,
+    XFERSolana,
 }
 
 impl TryFrom<u8> for XChainMsgType {
@@ -164,6 +165,7 @@ impl TryFrom<u8> for XChainMsgType {
     fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
         match value {
             0 => Ok(XChainMsgType::XFER),
+            1 => Ok(XChainMsgType::XFERSolana),
             _ => err!(DexalotError::XFERError),
         }
     }

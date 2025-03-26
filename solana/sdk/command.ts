@@ -1,7 +1,8 @@
 export enum Commands {
   Initialize = "1. Initialize",
-  InitializeVaults = "2. Initialize Vaults",
-  InitializeLayerZero = "3. Initialize Layerzero",
+  InitializeSplVaults = "2. Initialize SPL Vaults",
+  InitializeSolVaults = "3. Initialize SOL Vaults",
+  InitializeLayerZero = "4. Initialize Layerzero",
 
   // Global configuration
   SetDefaultChainEid = "1.  Set Default Chain EID",
@@ -64,9 +65,11 @@ export enum Commands {
   CrossSwap = "3. Cross swap",
   RemoveFromSwapQueue = "4. Remove from swap queue",
   UpdateSwapExpiry = "5. Update swap expiry (only rebalancer)",
+  AddAllowedDestination = "6. Add allowed destination",
 
   ClaimSplBalance = "1. Claim SPL balance",
   ClaimNativeBalance = "2. Claim native balance",
+  claimAirdropBalance = "3. Claim airdrop balance (only admin)",
 
   FundSol = "1. Fund SOL (only rebalancer)",
   FundSpl = "2. Fund SPL (only rebalancer)",
@@ -94,7 +97,8 @@ enum Sections {
 const sectionCommands = {
   [Sections.initialize]: [
     Commands.Initialize,
-    Commands.InitializeVaults,
+    Commands.InitializeSplVaults,
+    Commands.InitializeSolVaults,
     Commands.InitializeLayerZero,
   ],
   [Sections.globalConfig]: [
@@ -159,10 +163,12 @@ const sectionCommands = {
     Commands.CrossSwap,
     Commands.RemoveFromSwapQueue,
     Commands.UpdateSwapExpiry,
+    Commands.AddAllowedDestination,
   ],
   [Sections.claimBalances]: [
     Commands.ClaimSplBalance,
     Commands.ClaimNativeBalance,
+    Commands.claimAirdropBalance,
   ],
   [Sections.fund]: [Commands.FundSol, Commands.FundSpl],
   [Sections.tests]: [Commands.GenerateIntegrationTestsRA],

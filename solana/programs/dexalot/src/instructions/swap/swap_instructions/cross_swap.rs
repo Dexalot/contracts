@@ -1,6 +1,10 @@
 use crate::{
-    consts::{COMPLETED_SWAPS_SEED, PORTFOLIO_SEED, REMOTE_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
+    consts::{
+        CCTRADE_ALLOWED_DEST_SEED, COMPLETED_SWAPS_SEED, PORTFOLIO_SEED, REMOTE_SEED,
+        SOL_VAULT_SEED, SPL_VAULT_SEED,
+    },
     errors::DexalotError,
+    map_utils::entry_exists,
     state::{Portfolio, Remote},
 };
 
@@ -10,10 +14,14 @@ use anchor_spl::token::Token;
 
 pub fn cross_swap(ctx: &mut Context<CrossSwap>, params: &CrossSwapParams) -> Result<()> {
     let global_config = &ctx.accounts.portfolio.global_config;
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
+
+    let destination_entry = &ctx.accounts.destination_entry;
     require!(
-        !global_config.program_paused,
-        DexalotError::ProgramPaused
+        entry_exists(destination_entry),
+        DexalotError::DestinationNotAllowed
     );
+
     check_atas(&ctx, &params)?;
     let order = params.order.clone();
 
@@ -76,6 +84,12 @@ pub struct CrossSwap<'info> {
     pub remote: Account<'info, Remote>,
     /// CHECK: the endpoint program
     pub endpoint_program: AccountInfo<'info>,
+    /// CHECK: destination entry
+    #[account(
+        seeds = [CCTRADE_ALLOWED_DEST_SEED, &params.order.dest_chain_id.to_be_bytes(), &params.order.maker_asset.to_bytes()],
+        bump
+    )]
+    pub destination_entry: AccountInfo<'info>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -92,11 +106,7 @@ fn check_atas(ctx: &Context<CrossSwap>, params: &CrossSwapParams) -> Result<()> 
     let src_token_mint = &ctx.accounts.src_token_mint;
 
     // check if taker is correct
-    require_keys_eq!(
-        taker.key(),
-        params.order.taker,
-        DexalotError::InvalidTaker
-    );
+    require_keys_eq!(taker.key(), params.order.taker, DexalotError::InvalidTaker);
 
     // Check ATAs for taker
     check_ata_account(taker_src_asset_ata, taker.key, src_token_mint.key, false)?;
@@ -114,14 +124,16 @@ fn check_atas(ctx: &Context<CrossSwap>, params: &CrossSwapParams) -> Result<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::consts::{
+        COMPLETED_SWAPS_SEED, QUOTE_REMAINING_ACCOUNTS_COUNT, UNUSED_ADDRESS_PUBLIC_KEY,
+    };
+    use crate::state::{AllowedDestinationEntry, GlobalConfig, Portfolio, Remote};
+    use crate::test_utils::{create_account_info, create_dummy_account, generate_valid_signature};
     use anchor_lang::solana_program::{clock::Clock, system_program};
+    use anchor_lang::Discriminator;
     use anchor_spl::token::spl_token;
     use bincode::serialize;
     use std::str::FromStr;
-    use anchor_lang::Discriminator;
-    use crate::consts::{COMPLETED_SWAPS_SEED, QUOTE_REMAINING_ACCOUNTS_COUNT, UNUSED_ADDRESS_PUBLIC_KEY};
-    use crate::state::{GlobalConfig, Portfolio, Remote};
-    use crate::test_utils::{create_account_info, create_dummy_account, generate_valid_signature};
 
     #[test]
     fn test_cross_swap_success() -> Result<()> {
@@ -169,7 +181,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
 
         let mut clock = Clock::default();
@@ -185,11 +197,12 @@ mod tests {
             &mut clock_data,
             &program_id,
             false,
-            None
+            None,
         );
         let base_map_seed = COMPLETED_SWAPS_SEED;
         let entry_map_seed = generate_map_entry_key(order.nonce, order.dest_trader).unwrap();
-        let (pda, _bump) = Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
+        let (pda, _bump) =
+            Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
         let mut cs_data = vec![];
         let mut cs_lamports = 100;
         let completed_swaps_account = create_account_info(
@@ -200,7 +213,7 @@ mod tests {
             &mut cs_data,
             &program_id,
             false,
-            None
+            None,
         );
         let mut sp_data = vec![0u8; 10];
         let mut sp_lamports = 100;
@@ -212,7 +225,7 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let sender_key = order.taker;
         let mut sender_lamports = 1000;
@@ -225,7 +238,7 @@ mod tests {
             &mut sender_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
 
         let mut taker_lamports = 100;
@@ -238,7 +251,7 @@ mod tests {
             &mut taker_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut generic_lamports = 100;
@@ -251,7 +264,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut sol_vault_lamports = 500;
@@ -264,7 +277,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault = SystemAccount::try_from(&sol_vault_info)?;
 
@@ -278,7 +291,7 @@ mod tests {
             &mut token_program_data,
             &spl_token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_program_account)?;
 
@@ -292,9 +305,22 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote = Account::<Remote>::try_from(&remote_account)?;
+
+        let mut destination_entry_data = vec![0u8; AllowedDestinationEntry::LEN];
+        let mut destination_entry_lamports = 100;
+        let destination_entry_account = create_account_info(
+            &generic_key,
+            false,
+            false,
+            &mut destination_entry_lamports,
+            &mut destination_entry_data,
+            &program_id,
+            false,
+            Some(AllowedDestinationEntry::discriminator()),
+        );
 
         let mut ep_lamports = 100;
         let mut ep_data = vec![0u8; 10];
@@ -306,7 +332,7 @@ mod tests {
             &mut ep_data,
             &program_id,
             true,
-            None
+            None,
         );
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -330,6 +356,7 @@ mod tests {
                 token_program,
                 remote,
                 endpoint_program: endpoint_program_account,
+                destination_entry: destination_entry_account,
             },
             remaining_accounts: &remaining_accounts,
             program_id: &program_id,
@@ -391,7 +418,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
 
         let mut clock = Clock::default();
@@ -407,11 +434,12 @@ mod tests {
             &mut clock_data,
             &program_id,
             false,
-            None
+            None,
         );
         let base_map_seed = COMPLETED_SWAPS_SEED;
         let entry_map_seed = generate_map_entry_key(order.nonce, order.dest_trader).unwrap();
-        let (pda, _bump) = Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
+        let (pda, _bump) =
+            Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
         let mut cs_data = vec![];
         let mut cs_lamports = 100;
         let completed_swaps_account = create_account_info(
@@ -422,7 +450,7 @@ mod tests {
             &mut cs_data,
             &program_id,
             false,
-            None
+            None,
         );
         let mut sp_data = vec![0u8; 10];
         let mut sp_lamports = 100;
@@ -434,7 +462,7 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let sender_key = order.taker;
         let mut sender_lamports = 1000;
@@ -447,7 +475,7 @@ mod tests {
             &mut sender_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
 
         let mut taker_lamports = 100;
@@ -460,7 +488,7 @@ mod tests {
             &mut taker_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut generic_lamports = 100;
@@ -473,7 +501,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut sol_vault_lamports = 500;
@@ -486,7 +514,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault = SystemAccount::try_from(&sol_vault_info)?;
 
@@ -500,7 +528,7 @@ mod tests {
             &mut token_program_data,
             &spl_token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_program_account)?;
 
@@ -514,9 +542,22 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote = Account::<Remote>::try_from(&remote_account)?;
+
+        let mut destination_entry_data = vec![0u8; AllowedDestinationEntry::LEN];
+        let mut destination_entry_lamports = 100;
+        let destination_entry_account = create_account_info(
+            &generic_key,
+            false,
+            false,
+            &mut destination_entry_lamports,
+            &mut destination_entry_data,
+            &program_id,
+            false,
+            Some(AllowedDestinationEntry::discriminator()),
+        );
 
         let mut ep_lamports = 100;
         let mut ep_data = vec![0u8; 10];
@@ -528,7 +569,7 @@ mod tests {
             &mut ep_data,
             &program_id,
             true,
-            None
+            None,
         );
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -552,6 +593,7 @@ mod tests {
             token_program,
             remote,
             endpoint_program: endpoint_program_account,
+            destination_entry: destination_entry_account,
         };
         let mut ctx = Context {
             accounts: &mut accounts.clone(),
@@ -584,7 +626,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         accounts.portfolio = Account::try_from(&portfolio_account)?;
         ctx.accounts = &mut accounts;

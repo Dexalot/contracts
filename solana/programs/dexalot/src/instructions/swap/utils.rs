@@ -26,7 +26,7 @@ pub struct SwapData {
     pub taker: Pubkey,
     // aggregator or destination user
     pub dest_trader: Pubkey,
-    pub dest_chain_id: u64,
+    pub dest_chain_id: u32,
     pub src_asset: Pubkey,
     pub dest_asset: Pubkey,
     pub src_amount: u64,
@@ -114,7 +114,6 @@ pub fn take_funds<'info>(
             )?;
         }
     } else {
-        msg!("SPL swap");
         let from = if is_aggregator {
             &take_funds_accounts.dest_trader_src_asset_ata
         } else {
@@ -336,15 +335,15 @@ pub fn nonce_to_custom_data(nonce: [u8; 12]) -> [u8; 18] {
 
 #[cfg(test)]
 mod tests {
-    use anchor_lang::Discriminator;
     use super::*;
-    use anchor_lang::solana_program::system_program;
-    use anchor_spl::associated_token;
-    use bincode::serialize;
-    use solana_program::clock::UnixTimestamp;
     use crate::consts::{COMPLETED_SWAPS_SEED, UNUSED_ADDRESS_PUBLIC_KEY};
     use crate::state::Portfolio;
     use crate::test_utils::{create_account_info, create_packed_token_account};
+    use anchor_lang::solana_program::system_program;
+    use anchor_lang::Discriminator;
+    use anchor_spl::associated_token;
+    use bincode::serialize;
+    use solana_program::clock::UnixTimestamp;
 
     #[test]
     fn test_generate_map_entry_key() -> Result<()> {
@@ -367,7 +366,8 @@ mod tests {
     fn test_check_ata_account_valid() -> Result<()> {
         let expected_mint = Pubkey::new_unique();
 
-        let expected_ata = associated_token::get_associated_token_address(&token::ID, &expected_mint);
+        let expected_ata =
+            associated_token::get_associated_token_address(&token::ID, &expected_mint);
         let mut from_token_data = create_packed_token_account(expected_mint, token::ID, 15000)?;
         let mut from_lamports = 15000;
         let from = create_account_info(
@@ -404,7 +404,10 @@ mod tests {
         );
 
         let result = check_ata_account(&from, &token::ID, &expected_mint, true);
-        assert_eq!(result.unwrap_err(), DexalotError::InvalidDestinationOwner.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::InvalidDestinationOwner.into()
+        );
 
         let result = check_ata_account(&from, &token::ID, &from_key, true);
         assert_eq!(result.unwrap_err(), DexalotError::InvalidMint.into());
@@ -447,7 +450,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
 
         let mut clock = Clock::default();
@@ -463,7 +466,7 @@ mod tests {
             &mut clock_data,
             &program_id,
             false,
-            None
+            None,
         );
         let order = Order {
             maker_asset: Pubkey::new_unique(),
@@ -491,7 +494,8 @@ mod tests {
 
         let base_map_seed = COMPLETED_SWAPS_SEED;
         let entry_map_seed = generate_map_entry_key(order.nonce, order.dest_trader)?;
-        let (pda, _bump) = Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
+        let (pda, _bump) =
+            Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
         let mut cs_data = vec![];
         let mut cs_lamports = 100;
         let completed_swaps_info = AccountInfo::new(
@@ -528,7 +532,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut sol_vault_lamports = 500 + NATIVE_VAULT_MIN_THRESHOLD;
@@ -541,7 +545,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault = SystemAccount::try_from(&sol_vault_info)?;
 
@@ -555,7 +559,7 @@ mod tests {
             &mut token_program_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::<Token>::try_from(&token_program_info)?;
 
@@ -604,7 +608,10 @@ mod tests {
         data.dest_amount = 20000;
 
         let result = release_funds(&ctx, &data);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
         Ok(())
     }
 
@@ -641,7 +648,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
 
         let mut clock = Clock::default();
@@ -657,7 +664,7 @@ mod tests {
             &mut clock_data,
             &program_id,
             false,
-            None
+            None,
         );
         let order = Order {
             maker_asset: Pubkey::new_unique(),
@@ -685,7 +692,8 @@ mod tests {
 
         let base_map_seed = COMPLETED_SWAPS_SEED;
         let entry_map_seed = generate_map_entry_key(order.nonce, order.dest_trader)?;
-        let (pda, _bump) = Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
+        let (pda, _bump) =
+            Pubkey::find_program_address(&[base_map_seed, &entry_map_seed], &program_id);
         let mut cs_data = vec![];
         let mut cs_lamports = 100;
         let completed_swaps_info = AccountInfo::new(
@@ -722,7 +730,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut sol_vault_lamports = 500 + NATIVE_VAULT_MIN_THRESHOLD;
@@ -735,7 +743,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault_info_clone = sol_vault_info.clone();
         let sol_vault = SystemAccount::try_from(&sol_vault_info_clone)?;
@@ -750,7 +758,7 @@ mod tests {
             &mut token_program_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::<Token>::try_from(&token_program_info)?;
 
@@ -801,7 +809,10 @@ mod tests {
         data.src_amount = 20000;
 
         let result = take_funds(&take, &data, false);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
         Ok(())
     }
 }

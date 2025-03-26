@@ -9,6 +9,8 @@ import {
 import { createSpinner, getAccountPubKey, getUserInput } from "../utils";
 import { green } from "kleur";
 import {
+  ADMIN_SEED,
+  AIRDROP_VAULT_SEED,
   REBALANCER_SEED,
   SOL_VAULT_SEED,
   SPL_VAULT_SEED,
@@ -134,6 +136,49 @@ export const claimNativeBalance = async (
         //@ts-ignore
         rebalancer: rebalancerPDA,
         solVault: solVaultPDA,
+        systemProgram: web3.SystemProgram.programId,
+      })
+      .signers([authority])
+      .rpc({ commitment: "finalized" });
+
+    spinner.stop();
+    console.clear();
+    console.log(green(`SOL balance claimed. Tx: ${tx}\n\n`));
+  } catch (err) {
+    spinner.stop(true);
+    throw err;
+  }
+};
+
+export const claimAirdropBalance = async (
+  program: Program<Dexalot>,
+  authority: Keypair
+) => {
+  const amount =
+    Number(await getUserInput("Enter the amount of SOL to claim: ")) *
+    LAMPORTS_PER_SOL;
+
+  try {
+    spinner.start();
+
+    const adminPDA = getAccountPubKey(program, [
+      Buffer.from(ADMIN_SEED),
+      authority.publicKey.toBuffer(),
+    ]);
+
+    const airdropVaultPDA = getAccountPubKey(program, [
+      Buffer.from(AIRDROP_VAULT_SEED),
+    ]);
+
+    const tx = await program.methods
+      .claimAirdropBalance({
+        amount: new BN(amount),
+      })
+      .accounts({
+        authority: authority.publicKey,
+        //@ts-ignore
+        admin: adminPDA,
+        airdropVault: airdropVaultPDA,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])

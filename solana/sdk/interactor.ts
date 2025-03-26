@@ -24,7 +24,11 @@ import {
   setSwapSigner,
   unpauseProgram,
 } from "./handlers/globalConfig";
-import { initialize, initializeVaults } from "./handlers/initialize";
+import {
+  initialize,
+  initializeSolVaults,
+  initializeSplVaults,
+} from "./handlers/initialize";
 import { getPortfolioPDA, getRemote, setRemote } from "./handlers/layerzero";
 import {
   getAirdropVaultBalance,
@@ -73,9 +77,14 @@ import { crossSwap } from "./handlers/crossSwap";
 import { removeFromSwapQueue } from "./handlers/removeFromSwapQueue";
 import { addRebalancer, removeRebalancer } from "./handlers/rebalancer";
 import { updateSwapExpiry } from "./handlers/updateSwapExpiry";
-import { claimNativeBalance, claimSplBalance } from "./handlers/claimBalance";
+import {
+  claimAirdropBalance,
+  claimNativeBalance,
+  claimSplBalance,
+} from "./handlers/claimBalance";
 import { fundSol, fundSpl } from "./handlers/fund";
 import { generateIntegrationTestsRemainingAccounts } from "./handlers/testsRA";
+import { addDestination } from "./handlers/addDestination";
 
 const DEFAULT_WALLET_PATH = "./admin.json";
 
@@ -429,15 +438,27 @@ class Interactor {
     }
   };
 
-  initializeVaults = async () => {
+  initializeSplVaults = async () => {
     if (!this.program || !this.keypair) {
       console.error(red("Program or keypair not found\n\n"));
       return;
     }
     try {
-      await initializeVaults(this.program, this.keypair);
+      await initializeSplVaults(this.program, this.keypair);
     } catch (error) {
-      console.error(red(`Error initializing vaults: ${error}\n\n`));
+      console.error(red(`Error initializing spl vaults: ${error}\n\n`));
+    }
+  };
+
+  initializeSolVaults = async () => {
+    if (!this.program || !this.keypair) {
+      console.error(red("Program or keypair not found\n\n"));
+      return;
+    }
+    try {
+      await initializeSolVaults(this.program, this.keypair);
+    } catch (error) {
+      console.error(red(`Error initializing sol vaults: ${error}\n\n`));
     }
   };
 
@@ -826,6 +847,30 @@ class Interactor {
       console.error(
         red(`Error getting SOL user funds vault balance: ${error}\n\n`)
       );
+    }
+  };
+
+  addDestination = async () => {
+    if (!this.program || !this.keypair) {
+      console.error(red("Program or keypair not found\n\n"));
+      return;
+    }
+    try {
+      await addDestination(this.program, this.keypair);
+    } catch (error) {
+      console.error(red(`Error adding destination: ${error}\n\n`));
+    }
+  };
+
+  claimAirdropBalance = async () => {
+    if (!this.program || !this.keypair) {
+      console.error(red("Program or keypair not found\n\n"));
+      return;
+    }
+    try {
+      await claimAirdropBalance(this.program, this.keypair);
+    } catch (error) {
+      console.error(red(`Error claiming airdrop balance: ${error}\n\n`));
     }
   };
 }

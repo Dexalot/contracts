@@ -11,8 +11,8 @@ mod events;
 mod instructions;
 mod map_utils;
 mod state;
-mod xfer;
 mod test_utils;
+mod xfer;
 
 use crate::xfer::XFERSolana;
 use anchor_lang::prelude::*;
@@ -20,7 +20,7 @@ use anchor_lang::{declare_id, program};
 use instructions::*;
 use state::GlobalConfig;
 
-declare_id!("EzNZw3u9WzFHPNKnrPzvN4Rju3eBvTEWve8YdqiYVqrC");
+declare_id!("2wF7VoXvkMwvMpN1GYETaUvaWth3CqyTyiYQqTFYhgx7");
 
 #[program]
 pub mod dexalot {
@@ -37,14 +37,24 @@ pub mod dexalot {
         instructions::initialize(&mut ctx, &params)
     }
 
-    /// Initializes the program's vault accounts for token storage
+    /// Initializes the program's spl vault accounts for token storage
     /// Can be called only by admins
     ///
     /// Creates and initializes vaults for:
     /// - SPL token storage
     /// - SPL User funds storage
-    pub fn initialize_vaults(ctx: Context<InitializeVaults>) -> Result<()> {
-        instructions::initialize_vaults(&ctx)
+    pub fn initialize_spl_vaults(ctx: Context<InitializeSplVaults>) -> Result<()> {
+        instructions::initialize_spl_vaults(&ctx)
+    }
+
+    /// Initializes the program's sol vault accounts for token storage
+    /// Can be called only by admins
+    ///
+    /// Creates and initializes vaults for:
+    /// - SOL storage
+    /// - SOL User funds storage
+    pub fn initialize_sol_vaults(ctx: Context<InitializeSolVaults>) -> Result<()> {
+        instructions::initialize_sol_vaults(&ctx)
     }
 
     /// Create an account where the remote pair address is stored
@@ -397,5 +407,31 @@ pub mod dexalot {
     /// * `params` - Funding parameters
     pub fn fund_spl(ctx: Context<FundSpl>, params: FundSplParams) -> Result<()> {
         instructions::fund_spl(&ctx, &params)
+    }
+
+    /// Add a token on a network to allowed destinations
+    /// Can only be called by an admin.
+    ///
+    /// # Arguments
+    /// * `ctx` - Context containing the accounts
+    /// * `params` - Eid and token_address
+    pub fn add_destination(
+        ctx: Context<AddDestination>,
+        params: AddDestinationParams,
+    ) -> Result<()> {
+        instructions::add_destination(&ctx, &params)
+    }
+
+    /// Claims native token balance from the program's Airdrop vault
+    /// Can be called only by admin
+    ///
+    /// # Arguments
+    /// * `ctx` - Context containing the accounts
+    /// * `params` - Claim parameters
+    pub fn claim_airdrop_balance(
+        ctx: Context<ClaimAirdropBalance>,
+        params: ClaimAirdropBalanceParams,
+    ) -> Result<()> {
+        instructions::claim_airdrop_balance(&ctx, &params)
     }
 }

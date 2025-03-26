@@ -109,3 +109,11 @@ pub struct CompletedSwapsEntry {}
 impl CompletedSwapsEntry {
     pub const LEN: usize = ANCHOR_DISCRIMINATOR + CompletedSwapsEntry::INIT_SPACE;
 }
+
+#[account]
+#[derive(InitSpace, Debug)]
+pub struct AllowedDestinationEntry {}
+
+impl AllowedDestinationEntry {
+    pub const LEN: usize = ANCHOR_DISCRIMINATOR + AllowedDestinationEntry::INIT_SPACE;
+}

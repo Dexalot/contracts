@@ -1,8 +1,11 @@
 import { Program, web3 } from "@coral-xyz/anchor";
 import {
   ADMIN_SEED,
+  AIRDROP_VAULT_SEED,
   DEST_ID,
   PORTFOLIO_SEED,
+  SOL_USER_FUNDS_VAULT_SEED,
+  SOL_VAULT_SEED,
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
   TOKEN_LIST_SEED,
@@ -56,7 +59,7 @@ export const initialize = async (
     .rpc();
 };
 
-export const initializeVaults = async (
+export const initializeSplVaults = async (
   dexalotProgram: Program<Dexalot>,
   authority: Keypair
 ) => {
@@ -73,12 +76,48 @@ export const initializeVaults = async (
   ]);
 
   await dexalotProgram.methods
-    .initializeVaults()
+    .initializeSplVaults()
     .accounts({
       authority: authority.publicKey,
       //@ts-ignore
       splVault: splVaultPDA,
       splUserFundsVault: splUserFundsVaultPDA,
+      admin: adminPDA,
+      systemProgram: web3.SystemProgram.programId,
+    })
+    .signers([authority])
+    .rpc();
+};
+
+export const initializeSolVaults = async (
+  dexalotProgram: Program<Dexalot>,
+  authority: Keypair
+) => {
+  const adminPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(ADMIN_SEED),
+    authority.publicKey.toBuffer(),
+  ]);
+
+  const solVaultPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(SOL_VAULT_SEED),
+  ]);
+
+  const solUserFundsVaultPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(SOL_USER_FUNDS_VAULT_SEED),
+  ]);
+
+  const airdropVaultPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(AIRDROP_VAULT_SEED),
+  ]);
+
+  await dexalotProgram.methods
+    .initializeSolVaults()
+    .accounts({
+      authority: authority.publicKey,
+      //@ts-ignore
+      solVault: solVaultPDA,
+      solUserFundsVault: solUserFundsVaultPDA,
+      airdropVault: airdropVaultPDA,
       admin: adminPDA,
       systemProgram: web3.SystemProgram.programId,
     })

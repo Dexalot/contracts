@@ -55,7 +55,7 @@ pub struct SwapExecuted {
     pub dest_asset: Pubkey,
     pub src_amount: u64,
     pub dest_amount: u64,
-    pub dest_chain_id: u64,
+    pub dest_chain_id: u32,
     pub nonce: String,
 }
 

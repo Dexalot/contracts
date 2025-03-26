@@ -1,3 +1,4 @@
+mod add_destination;
 mod banned_account;
 mod claim_balance;
 mod create_account;
@@ -9,11 +10,11 @@ mod initialize;
 mod lz_receive;
 mod lz_receive_types;
 mod process_xfer_payload;
-
 mod roles;
 mod set_remote;
 mod swap;
 mod token;
+pub use add_destination::*;
 pub use banned_account::*;
 pub use claim_balance::*;
 pub use create_account::*;

@@ -1,6 +1,5 @@
 use crate::consts::{
-    ADMIN_SEED, ANCHOR_DISCRIMINATOR, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP,
-    SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED,
+    ADMIN_SEED, AIRDROP_VAULT_SEED, ANCHOR_DISCRIMINATOR, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP, SOL_USER_FUNDS_VAULT_SEED, SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED
 };
 use crate::cpi_utils::{create_instruction_data, RegisterOAppParams};
 use crate::errors::DexalotError;
@@ -104,7 +103,7 @@ pub struct Initialize<'info> {
 }
 
 #[derive(Accounts)]
-pub struct InitializeVaults<'info> {
+pub struct InitializeSplVaults<'info> {
     #[account(mut)]
     pub authority: Signer<'info>,
     /// CHECK: SPL ATA authority account to sign transfers.
@@ -134,7 +133,60 @@ pub struct InitializeVaults<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn initialize_vaults(ctx: &Context<InitializeVaults>) -> Result<()> {
+pub fn initialize_spl_vaults(ctx: &Context<InitializeSplVaults>) -> Result<()> {
+    let admin = &ctx.accounts.admin;
+    require!(
+        admin.owner == ctx.program_id,
+        DexalotError::UnauthorizedSigner
+    );
+
+    Ok(())
+}
+
+#[derive(Accounts)]
+pub struct InitializeSolVaults<'info>{
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    /// CHECK: sol vault pda
+    #[account(
+        init, 
+        payer = authority,
+        space = 0,
+        owner = system_program.key(),
+        seeds = [SOL_VAULT_SEED],
+        bump
+    )]
+    sol_vault: AccountInfo<'info>,
+      /// CHECK: sol user funds vault pda
+      #[account(
+        init, 
+        payer = authority,
+        space = 0,
+        owner = system_program.key(),
+        seeds = [SOL_USER_FUNDS_VAULT_SEED],
+        bump
+    )]
+    sol_user_funds_vault: AccountInfo<'info>,
+  /// CHECK: airdrop vault pda
+  #[account(
+        init, 
+        payer = authority,
+        space = 0,
+        owner = system_program.key(),
+        seeds = [AIRDROP_VAULT_SEED],
+        bump
+    )]
+    airdrop_vault: AccountInfo<'info>,
+       /// CHECK: admin account
+       #[account(
+        seeds = [ADMIN_SEED, authority.key().as_ref()],
+        bump
+    )]
+    pub admin: AccountInfo<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn initialize_sol_vaults(ctx: &Context<InitializeSolVaults>) -> Result<()> {
     let admin = &ctx.accounts.admin;
     require!(
         admin.owner == ctx.program_id,
@@ -146,11 +198,11 @@ pub fn initialize_vaults(ctx: &Context<InitializeVaults>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use anchor_lang::Discriminator;
     use super::*;
-    use anchor_lang::solana_program::system_program;
     use crate::consts::QUOTE_REMAINING_ACCOUNTS_COUNT;
     use crate::test_utils::{create_account_info, create_dummy_account};
+    use anchor_lang::solana_program::system_program;
+    use anchor_lang::Discriminator;
 
     #[test]
     fn test_initialize_success() -> Result<()> {
@@ -278,12 +330,18 @@ mod tests {
         let portfolio = &ctx.accounts.portfolio;
         assert_eq!(portfolio.admin, ctx.accounts.authority.key());
         assert_eq!(portfolio.bump, 255);
-        assert_eq!(portfolio.global_config.default_chain_id, params.default_chain_id);
+        assert_eq!(
+            portfolio.global_config.default_chain_id,
+            params.default_chain_id
+        );
         assert!(portfolio.global_config.allow_deposit);
         assert!(!portfolio.global_config.program_paused);
         assert!(!portfolio.global_config.native_deposits_restricted);
         assert_eq!(portfolio.global_config.src_chain_id, params.src_chain_id);
-        assert_eq!(portfolio.global_config.airdrop_amount, DEFAULT_AIRDROP_AMOUNT);
+        assert_eq!(
+            portfolio.global_config.airdrop_amount,
+            DEFAULT_AIRDROP_AMOUNT
+        );
         assert_eq!(portfolio.global_config.swap_signer, params.swap_signer);
         assert_eq!(portfolio.global_config.out_nonce, 0);
 
@@ -363,7 +421,7 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_program_info)?;
 
-        let mut init_vaults_accounts = InitializeVaults {
+        let mut init_vaults_accounts = InitializeSplVaults {
             authority: Signer::try_from(&authority_info)?,
             spl_vault: spl_vault_info,
             spl_user_funds_vault: spl_user_funds_vault_info,
@@ -375,10 +433,10 @@ mod tests {
             accounts: &mut init_vaults_accounts,
             remaining_accounts: &[],
             program_id: &program_id,
-            bumps: InitializeVaultsBumps::default(),
+            bumps: InitializeSplVaultsBumps::default(),
         };
 
-        let result = initialize_vaults(&ctx);
+        let result = initialize_spl_vaults(&ctx);
         assert!(result.is_ok());
         Ok(())
     }
@@ -456,7 +514,7 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_program_info)?;
 
-        let mut init_vaults_accounts = InitializeVaults {
+        let mut init_vaults_accounts = InitializeSplVaults {
             authority: Signer::try_from(&authority_info)?,
             spl_vault: spl_vault_info,
             spl_user_funds_vault: spl_user_funds_vault_info,
@@ -468,10 +526,10 @@ mod tests {
             accounts: &mut init_vaults_accounts,
             remaining_accounts: &[],
             program_id: &program_id,
-            bumps: InitializeVaultsBumps::default(),
+            bumps: InitializeSplVaultsBumps::default(),
         };
 
-        let result = initialize_vaults(&ctx);
+        let result = initialize_spl_vaults(&ctx);
         assert_eq!(result.unwrap_err(), DexalotError::UnauthorizedSigner.into());
         Ok(())
     }

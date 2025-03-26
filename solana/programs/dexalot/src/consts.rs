@@ -1,6 +1,6 @@
 // Anchor
 pub const ANCHOR_DISCRIMINATOR: usize = 8;
-pub const SOLANA_CHAIN_ID: u64 = 40168;
+pub const SOLANA_CHAIN_ID: u32 = 40168;
 pub const NATIVE_VAULT_MIN_THRESHOLD: u64 = 900_000; // Rent-exempt minimum 0.000890880 SOL
 
 // Seeds
@@ -17,7 +17,7 @@ pub const BANNED_ACCOUNT_SEED: &[u8] = b"Banned";
 pub const TOKEN_DETAILS_SEED: &[u8] = b"TokenDetails";
 pub const TOKEN_LIST_SEED: &[u8] = b"TokenList";
 pub const TOKEN_LIST_PAGE_1_SEED: &[u8] = b"0";
-
+pub const CCTRADE_ALLOWED_DEST_SEED: &[u8] = b"Cads";
 // Portfolio
 pub const MAX_TOKENS: usize = 20;
 pub const DEFAULT_AIRDROP_AMOUNT: u64 = 10000; // two spl tranfers in lamports
@@ -50,4 +50,5 @@ pub const CROSS_SWAP_TYPE: &[u8] = b"XChainSwap(taker: Pubkey, dest_trader: Pubk
 
 // Test consts
 pub const UNUSED_ADDRESS_PUBLIC_KEY: &str = "9fF9Ba5F6d119313e065D4cA68727b7Df60063aA";
-pub const UNUSED_ADDRESS_PRIVATE_KEY: &str = "cb1ef6bc04022530f2fc0c702cff22c2fcf654dc35873c423ee6cfeeb5e715f8";
+pub const UNUSED_ADDRESS_PRIVATE_KEY: &str =
+    "cb1ef6bc04022530f2fc0c702cff22c2fcf654dc35873c423ee6cfeeb5e715f8";
