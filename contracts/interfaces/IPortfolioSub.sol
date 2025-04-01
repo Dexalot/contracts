@@ -51,10 +51,13 @@ interface IPortfolioSub {
     ) external;
 
     function withdrawToken(
-        address _to,
+        address _from,
+        bytes32 _to,
         bytes32 _symbol,
         uint256 _quantity,
-        IPortfolioBridge.BridgeProvider _bridge
+        IPortfolioBridge.BridgeProvider _bridge,
+        uint32 _dstChainListOrgChainId,
+        bytes1 _options
     ) external;
 
     function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external;
@@ -66,6 +69,7 @@ interface IPortfolioSub {
         address _tokenaddress,
         uint32 _srcChainId,
         uint8 _decimals,
+        uint8 _l1Decimals,
         ITradePairs.AuctionMode _mode,
         uint256 _fee,
         uint256 _gasSwapRatio,

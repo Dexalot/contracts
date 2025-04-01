@@ -89,6 +89,7 @@ describe("TradePairs", function () {
     const defaultNativeDeposit = '3000'
     const defaultTokenDeposit = '2000'
     const tokenStruct: IPortfolio.TokenDetailsStruct = {decimals : 18,
+        l1Decimals: 18,
         tokenAddress: ethers.constants.AddressZero,
         auctionMode: 0,
         srcChainId:1111,
@@ -136,7 +137,8 @@ describe("TradePairs", function () {
                 expect(e.args.order.status).to.be.equal(expectedStatus);           // status is NEW = 0
                 expect(e.args.order.quantityFilled).to.be.equal(expectedQuantityFilled);   // not executed, yet, so quantityfilled is 0
                 expect(e.args.order.totalFee).to.be.equal(expectedTotalFee);         // not executed, yet, so free is 0
-
+                expect(e.args.order.updateBlock).to.be.equal(res.blockNumber);
+                expect(e.args.order.createBlock).to.be.equal(res.blockNumber);
                 expect(e.args.code).to.be.equal(expectedCode);         // error code
                 return e.args.order.id;
             }
@@ -517,8 +519,8 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
             expect((await portfolio.getBalance(trader1.address, baseSymbol))[0]).to.equal(Utils.parseUnits('3000', baseDecimals));
@@ -1882,8 +1884,8 @@ describe("TradePairs", function () {
             // mint some tokens for trader1
             await quoteToken.mint(trader1.address, Utils.parseUnits('10000', quoteDecimals));
 
-            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals,  '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
-            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolioMain.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, quoteDecimals, quoteDecimals, '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.be.revertedWith("P-TSDM-01");
+            expect(portfolio.addToken(Utils.fromUtf8(quoteTokenStr), quoteAssetAddr, srcChainId, quoteDecimals, quoteDecimals, mode, '0', ethers.utils.parseUnits('0.5',quoteDecimals),Utils.fromUtf8(quoteTokenStr))).to.be.revertedWith("P-TSDM-01");
 
             // deposit some native to portfolio for trader1
             await f.depositNative(portfolioMain, trader1, defaultNativeDeposit)
@@ -2572,8 +2574,8 @@ describe("TradePairs", function () {
             const tx1 = await tradePairs.connect(trader1).addNewOrder(buyOrder);
             const clientOrderid = buyOrder.clientOrderId;
             const res1: any = await tx1.wait();
-            //console.log("event0",res1.events[0]);
             const id1 = res1.events[1].args.order.id;
+            const blockNum1 = res1.blockNumber;
 
 
             buyOrder.price = Utils.parseUnits('2', quoteDecimals);
@@ -2583,11 +2585,17 @@ describe("TradePairs", function () {
             const tx2 = await tradePairs.connect(trader1).addNewOrder(buyOrder);
             const res2: any = await tx2.wait();
             const id2 = res2.events[1].args.order.id;
+            const blockNum2 = res2.blockNumber;
 
             let order1 = await tradePairs.getOrder(id1);
             let order2 = await tradePairs.getOrder(id2);
             expect(order1.id).to.be.equal(id1);
             expect(order2.id).to.be.equal(id2);
+            expect(order1.updateBlock).to.be.equal(blockNum1);
+            expect(order2.updateBlock).to.be.equal(blockNum2);
+            expect(order1.createBlock).to.be.equal(blockNum1);
+            expect(order2.createBlock).to.be.equal(blockNum2);
+
 
             const orderbyCl1= await tradePairs.getOrderByClientOrderId(trader1.address, clientOrderid);
             const orderbyCl2= await tradePairs.getOrderByClientOrderId(trader1.address, buyOrder.clientOrderId);
@@ -2612,6 +2620,15 @@ describe("TradePairs", function () {
                 if (e.event ==='OrderStatusChanged') {
                     expect(e.args.order.status).to.be.equal(4);
                     expect(e.args.code).to.be.equal(Utils.fromUtf8("T-USCL-01"));
+                    if (e.args.order.id == id1) {
+                        expect(e.args.order.updateBlock).to.not.be.equal(blockNum1);
+                        expect(e.args.order.createBlock).to.be.equal(blockNum1);
+                        expect(e.args.previousUpdateBlock).to.be.equal(blockNum1);
+                    } else {
+                        expect(e.args.order.updateBlock).to.not.be.equal(blockNum2);
+                        expect(e.args.order.createBlock).to.be.equal(blockNum2);
+                        expect(e.args.previousUpdateBlock).to.be.equal(blockNum2);
+                    }
                 }
             }
 

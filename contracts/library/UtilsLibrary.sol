@@ -127,6 +127,34 @@ library UtilsLibrary {
         }
     }
 
+    function addressToBytes32(address _addr) internal pure returns (bytes32 result) {
+        assembly {
+            result := _addr
+        }
+    }
+
+    function bytes32ToAddress(bytes32 _bytes32) internal pure returns (address addr) {
+        assembly {
+            addr := _bytes32
+        }
+    }
+
+    function isOptionSet(bytes1 _options, uint8 _bit) internal pure returns (bool isSet) {
+        return uint8(_options) & (1 << _bit) != 0;
+    }
+
+    function truncateQuantity(
+        uint256 _quantity,
+        uint8 _fromDecimals,
+        uint8 _toDecimals
+    ) internal pure returns (uint256) {
+        if (_fromDecimals <= _toDecimals) {
+            return _quantity;
+        }
+        uint256 factor = 10 ** (_fromDecimals - _toDecimals);
+        return (_quantity / factor) * factor;
+    }
+
     /**
      * @notice  Returns the symbolId that consists of symbol+chainid
      * @param   _symbol  token symbol of an asset

@@ -78,7 +78,7 @@ describe("Portfolio Main", () => {
     });
 
     it("Should not add native token again after deployment", async function () {
-        await expect(portfolioMain.addToken(AVAX, ethers.constants.AddressZero,  18, '0', ethers.utils.parseUnits('0.5',18))).to.be.revertedWith("P-TAEX-01");
+        await expect(portfolioMain.addToken(AVAX, ethers.constants.AddressZero,  18, 18, '0', ethers.utils.parseUnits('0.5',18))).to.be.revertedWith("P-TAEX-01");
     });
 
     it("Can only remove mainnet native token if no balances", async function () {
@@ -114,7 +114,7 @@ describe("Portfolio Main", () => {
             .withArgs(AVAX, "P-REMOVETOKEN", 0, 0);
         expect(await portfolioMain.nativeDepositsRestricted()).to.be.true;
         await portfolioMain.unpause();
-        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, 18, '0', ethers.utils.parseUnits('0.5', 18));
+        await portfolioMain.addToken(AVAX, ethers.constants.AddressZero, 18, 18, '0', ethers.utils.parseUnits('0.5', 18));
 
         expect(await portfolioMain.nativeDepositsRestricted()).to.be.false;
         await f.depositNative(portfolioMain, trader1, '50');
@@ -186,11 +186,11 @@ describe("Portfolio Main", () => {
         const token_decimals = 18;
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         const USDT = Utils.fromUtf8(await usdt.symbol());
-
+        const decimals = await usdt.decimals();
         // fail for non-admin
-        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address, decimals, decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
         // succeed for admin
-        await portfolioMain.addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address,  decimals, decimals, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
         const tokens = await portfolioMain.getTokenList();
         expect(tokens.find((token: string)=> token === USDT)).to.equal(USDT);
 
@@ -213,10 +213,10 @@ describe("Portfolio Main", () => {
         const USDT = Utils.fromUtf8(await usdt.symbol());
 
 
-        await expect(portfolioMain.addToken(USDT, usdt.address,  0,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-CNAT-01");
-        await expect(portfolioMain.addToken(USDT, ethers.constants.AddressZero,   tokenDecimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-ZADDR-01");
-        await expect(portfolioMain.addToken(Utils.fromUtf8("MOCK"), usdt.address,   tokenDecimals,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TSDM-01");
-        await expect(portfolioMain.addToken(USDT, usdt.address, 2,  '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TDDM-01");
+        await expect(portfolioMain.addToken(USDT, usdt.address,  0,  0, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-CNAT-01");
+        await expect(portfolioMain.addToken(USDT, ethers.constants.AddressZero,  tokenDecimals, tokenDecimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-ZADDR-01");
+        await expect(portfolioMain.addToken(Utils.fromUtf8("MOCK"), usdt.address,  tokenDecimals, tokenDecimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TSDM-01");
+        await expect(portfolioMain.addToken(USDT, usdt.address, 2, 2, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("P-TDDM-01");
     });
 
     it("Should not remove erc20 if it has deposits", async () => {
@@ -373,7 +373,7 @@ describe("Portfolio Main", () => {
         let xfer: any = {};
         xfer = {nonce:0,
                  transaction: 1, // DEPOSIT
-                 trader:trader2.address,
+                 trader: Utils.addressToBytes32(trader2.address),
                  symbol: AVAX,
                  quantity: Utils.toWei("0.01"),
                  timestamp: BigNumber.from(await f.latestTime()),
@@ -385,23 +385,23 @@ describe("Portfolio Main", () => {
         await expect(portfolioMain.connect(trader1).processXFerPayload(xfer))
             .to.be.revertedWith("AccessControl");
         // succeed for admin
-        xfer.trader = trader2.address;
+        xfer.trader = Utils.addressToBytes32(trader2.address);
         await expect(portfolioMain.processXFerPayload(xfer))
             .to.be.revertedWith("P-PTNS-02");
 
-        xfer.trader = owner.address;
+        xfer.trader = Utils.addressToBytes32(owner.address);
         xfer.transaction = 0; // WITHDRAW
         xfer.quantity = 0;
         // fail with 0 quantity
         await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-ZETD-01");
 
         // fail for trader witrh zero address(0)
-        xfer.trader = ethers.constants.AddressZero;
+        xfer.trader = ethers.constants.HashZero;
         xfer.quantity = Utils.toWei("0.01");
         await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-ZADDR-02");
 
         // fail due to failed send
-        xfer.trader = owner.address;
+        xfer.trader = Utils.addressToBytes32(owner.address);
         await expect(portfolioMain.processXFerPayload(xfer)).to.be.revertedWith("P-WNFA-01");
 
 
@@ -441,15 +441,15 @@ describe("Portfolio Main", () => {
 
         // fail from non-privileged account
         // trader1
-        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address,  await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
-        await expect(portfolioSub.connect(trader1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(trader1).addToken(USDT, usdt.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(trader1).addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
         // auctionAdmin when removed
         await portfolioMain.grantRole(await portfolioMain.DEFAULT_ADMIN_ROLE(), trader2.address);        // adding trader2 so I can remove auctionAdmin
         await portfolioSub.grantRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), trader2.address);  // adding trader2 so I can remove auctionAdmin
         await portfolioMain.revokeRole(await portfolioMain.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
         await portfolioSub.revokeRole(await portfolioSub.DEFAULT_ADMIN_ROLE(), auctionAdmin.address);
-        await expect(portfolioMain.connect(auctionAdmin).addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
-        await expect(portfolioSub.connect(auctionAdmin).addToken(USDT, usdt.address, auctionMode, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioMain.connect(auctionAdmin).addToken(USDT, usdt.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals))).to.be.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(auctionAdmin).addToken(USDT, usdt.address, auctionMode, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT)).to.be.revertedWith("AccessControl:");
         // wrong srcChainId
         // const wrongSrcChainId = 8;
         // await expect(portfolioMain.addToken(USDT, usdt.address, wrongSrcChainId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),false))
@@ -458,8 +458,8 @@ describe("Portfolio Main", () => {
         // auctionAdmin when added
         // await portfolioMain.grantRole(portfolioMain.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
         // await portfolioSub.grantRole(portfolioSub.AUCTION_ADMIN_ROLE(), auctionAdmin.address);
-        await portfolioMain.addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
         await expect(usdt.transfer(tokenVesting.address, Utils.toWei('1000')))
@@ -503,8 +503,8 @@ describe("Portfolio Main", () => {
         const usdt = await f.deployMockToken(token_symbol, token_decimals);
         await usdt.deployed();
         const USDT = Utils.fromUtf8(await usdt.symbol());
-        await portfolioMain.addToken(USDT, usdt.address, await usdt.decimals(), '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
-        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
+        await portfolioMain.addToken(USDT, usdt.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals)); //Auction mode off
+        await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, await usdt.decimals(), await usdt.decimals(), auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
 
         await usdt.mint(owner.address, Utils.toWei('10000'));
         await usdt.transfer(tokenVesting.address, 1000);

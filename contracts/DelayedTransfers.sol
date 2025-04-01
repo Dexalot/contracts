@@ -25,7 +25,12 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
     mapping(bytes32 => uint256) public epochVolumeCaps; // key is token
     mapping(bytes32 => uint256) public lastOpTimestamps; // key is token
 
-    bytes32 public constant VERSION = bytes32("3.0.1");
+    // Destination chain id is stored in 4 bytes of the customdata field in the XFER message
+    bytes18 private constant CHAINID_MASK = 0xFFFFFFFFFFFFFFFFFFFFFFFF00000000FFFF;
+    // Reserved bits for PortfolioBridge specific customdata
+    uint144 private constant RESERVED_BITS = 16;
+
+    bytes32 public constant VERSION = bytes32("3.0.2");
 
     event DelayedTransfer(string action, bytes32 id, IPortfolio.XFER xfer);
     event DelayPeriodUpdated(uint256 period);
@@ -112,7 +117,10 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
      */
     function addDelayedTransfer(bytes32 _id, IPortfolio.XFER memory _xfer, uint32 _dstChainListOrgChainId) private {
         require(delayedTransfers[_id].timestamp == 0, "PB-DTAE-01");
-        _xfer.customdata = bytes28(uint224(_dstChainListOrgChainId));
+        // zero out bytes 3-6 and add destination chain id in its place
+        _xfer.customdata =
+            (_xfer.customdata & CHAINID_MASK) |
+            bytes18(uint144(_dstChainListOrgChainId) << RESERVED_BITS);
         delayedTransfers[_id] = _xfer;
         emit DelayedTransfer("ADDED", _id, _xfer);
     }
@@ -131,8 +139,8 @@ contract DelayedTransfers is Initializable, AccessControlEnumerableUpgradeable, 
         returns (IPortfolio.XFER memory xfer, uint32 dstChainListOrgChainId)
     {
         xfer = delayedTransfers[_id];
-        dstChainListOrgChainId = uint32(uint224(xfer.customdata));
-        xfer.customdata = bytes28(0);
+        dstChainListOrgChainId = uint32(uint144(xfer.customdata) >> RESERVED_BITS);
+        xfer.customdata = xfer.customdata & CHAINID_MASK;
         require(xfer.timestamp > 0, "PB-DTNE-01");
         require(block.timestamp > xfer.timestamp + delayPeriod, "PB-DTSL-01");
         emit DelayedTransfer("EXECUTED", _id, xfer);

@@ -17,6 +17,7 @@ interface IPortfolioMain {
         bytes32 _symbol,
         address _tokenaddress,
         uint8 _decimals,
+        uint8 _l1Decimals,
         uint256 _fee,
         uint256 _gasSwapRatio
     ) external;

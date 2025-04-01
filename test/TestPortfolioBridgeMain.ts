@@ -18,7 +18,7 @@ import * as f from "./MakeTestSuite";
 
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { BigNumber } from "ethers";
+import { BigNumber, constants } from "ethers";
 
 describe("Portfolio Bridge Main", () => {
     const nonSupportedBridge = 3;
@@ -92,9 +92,9 @@ describe("Portfolio Bridge Main", () => {
 
     it("Should get the Bridge Fee correctly", async () => {
         const { dexalotSubnet } = f.getChains();
-        await expect(portfolioBridgeMain.getBridgeFee(1, dexalotSubnet.chainListOrgId, AVAX, 0)).to.be.revertedWith("PB-RBNE-03");
+        await expect(portfolioBridgeMain.getBridgeFee(1, dexalotSubnet.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions())).to.be.revertedWith("PB-RBNE-03");
         // Last parameter symbol is irrelevant
-        const bridgeFee = await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX, 0);
+        const bridgeFee = await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions());
         expect(bridgeFee.gt(0)).to.be.true;
         // console.log (await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX ));
     });
@@ -311,7 +311,8 @@ describe("Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 1;                // transaction = 1 = DEPOSIT [main --> sub]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = AVAX;
         const quantity = Utils.toWei("10");
         const timestamp = BigNumber.from(await f.latestTime());
@@ -331,28 +332,30 @@ describe("Portfolio Bridge Main", () => {
 
         const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
         //Fail to enable Enable AVAX for CCTRADE at Mainnet for destination gun (defaultDestinationChainId)
-        await expect(portfolioBridgeMain.connect(trader1).enableXChainSwapDestination(symbol, defaultDestinationChainId, true)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).enableXChainSwapDestination(symbol, defaultDestinationChainId, constants.HashZero)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).enableSupportedNative(defaultDestinationChainId, symbol)).to.be.revertedWith("AccessControl:");
 
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
         // fail paused contract
         await portfolioBridgeMain.pause();
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("Pausable: paused");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, traderAddress)).to.be.revertedWith("Pausable: paused");
         await portfolioBridgeMain.unpause();
 
         // fail for non-message sender role
-        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId,bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId,bridge0, xfer1, traderAddress)).to.be.revertedWith("AccessControl:");
         // fail for wrong BridgeProvider
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId,bridge3, xfer1, trader)).to.be.revertedWith("Transaction reverted");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId,bridge3, xfer1, traderAddress)).to.be.revertedWith("Transaction reverted");
         // fail for non cross-chain
         xfer1.transaction = 4 // not a cross-chain transaction
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("PB-GCMT-01");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, traderAddress)).to.be.revertedWith("PB-GCMT-01");
         //fail for symbol not allowed for CCTRADE.  You can send any token cross chain as long as it is allowed at destination
         xfer1.transaction = 11 // CCTRADE
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1, trader)).to.be.revertedWith("PB-CCTR-02");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge1, xfer1, traderAddress)).to.be.revertedWith("PB-CCTR-02");
 
         xfer1.transaction = transaction1;
         //Enable AVAX for CCTRADE at Mainnet for destination gun (defaultDestinationChainId)
-        await portfolioBridgeMain.enableXChainSwapDestination(symbol, defaultDestinationChainId, true);
+        await portfolioBridgeMain.enableXChainSwapDestination(symbol, defaultDestinationChainId, constants.HashZero);
+        await portfolioBridgeMain.enableSupportedNative(defaultDestinationChainId, symbol);
 
         // fail - bridge provider enabled but not implemented
         // await portfolioBridgeMain.enableBridgeProvider(bridge1, true);
@@ -361,7 +364,7 @@ describe("Portfolio Bridge Main", () => {
 
 
         // succeed
-        const tx = await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader);
+        const tx = await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, traderAddress);
         const receipt: any = await tx.wait();
 
         for (const log of receipt.events) {
@@ -372,7 +375,7 @@ describe("Portfolio Bridge Main", () => {
             // console.log(log);
             // console.log("**************");
             // console.log(log.address);
-            expect(log.args.version).to.be.equal(2);
+            expect(log.args.version).to.be.equal(3);
             expect(log.args.bridge).to.be.equal(bridge0);
 
             if (log.address == portfolioBridgeMain.address) {
@@ -399,11 +402,11 @@ describe("Portfolio Bridge Main", () => {
 
         }
         // fail for unauthorized sender of lzSend
-        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.connect(trader1).sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, traderAddress)).to.be.revertedWith("AccessControl:");
 
         //Revoke PortfolioRole and fail for owner
         await portfolioBridgeMain.revokeRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
-        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, trader)).to.be.revertedWith("AccessControl:");
+        await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, bridge0, xfer1, traderAddress)).to.be.revertedWith("AccessControl:");
     });
 
     it("Should refund native", async () => {
@@ -414,7 +417,7 @@ describe("Portfolio Bridge Main", () => {
         // fail for non-owner
         await expect(portfolioBridgeMain.connect(trader1).refundNative()).to.be.revertedWith("AccessControl:");
 
-        // succeed for non-owner
+        // succeed for owner
         const tx = await portfolioBridgeMain.refundNative()
         const receipt: any = await tx.wait()
 
@@ -447,7 +450,8 @@ describe("Portfolio Bridge Main", () => {
 
         const nonce = 0;
         const transaction1 = 1;                // transaction = 1 = DEPOSIT [main --> sub]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = AVAX;
         const quantity = Utils.toWei("10");
         const timestamp = BigNumber.from(await f.latestTime());
@@ -470,7 +474,8 @@ describe("Portfolio Bridge Main", () => {
         const defaultBridge = 0;
         const nonce = 0;
         const transaction1 = 1;                // transaction = 1 = DEPOSIT [main --> sub]
-        const trader = trader1.address;
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
         const symbol = AVAX;
         const quantity = Utils.toWei("10");
         const timestamp = BigNumber.from(await f.latestTime());

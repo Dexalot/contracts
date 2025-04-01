@@ -1,24 +1,24 @@
 -------------------------------|----------|----------|----------|----------|----------------|
 File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 -------------------------------|----------|----------|----------|----------|----------------|
- contracts\                    |      100 |    96.86 |      100 |      100 |                |
+ contracts\                    |      100 |    96.91 |      100 |      100 |                |
   BannedAccounts.sol           |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol         |      100 |      100 |      100 |      100 |                |
   Exchange.sol                 |      100 |      100 |      100 |      100 |                |
   ExchangeMain.sol             |      100 |      100 |      100 |      100 |                |
   ExchangeSub.sol              |      100 |      100 |      100 |      100 |                |
-  GasStation.sol               |      100 |    96.67 |      100 |      100 |                |
+  GasStation.sol               |      100 |    93.33 |      100 |      100 |                |
   InventoryManager.sol         |      100 |      100 |      100 |      100 |                |
-  MainnetRFQ.sol               |      100 |    99.26 |      100 |      100 |                |
+  MainnetRFQ.sol               |      100 |    99.36 |      100 |      100 |                |
   OrderBooks.sol               |      100 |      100 |      100 |      100 |                |
-  Portfolio.sol                |      100 |    95.45 |      100 |      100 |                |
-  PortfolioBridgeMain.sol      |      100 |    97.12 |      100 |      100 |                |
-  PortfolioBridgeSub.sol       |      100 |    96.05 |      100 |      100 |                |
-  PortfolioMain.sol            |      100 |    92.86 |      100 |      100 |                |
+  Portfolio.sol                |      100 |    95.65 |      100 |      100 |                |
+  PortfolioBridgeMain.sol      |      100 |     97.5 |      100 |      100 |                |
+  PortfolioBridgeSub.sol       |      100 |    96.51 |      100 |      100 |                |
+  PortfolioMain.sol            |      100 |    93.44 |      100 |      100 |                |
   PortfolioMinter.sol          |      100 |      100 |      100 |      100 |                |
   PortfolioSub.sol             |      100 |    92.53 |      100 |      100 |                |
   PortfolioSubHelper.sol       |      100 |      100 |      100 |      100 |                |
-  TradePairs.sol               |      100 |     96.3 |      100 |      100 |                |
+  TradePairs.sol               |      100 |     96.4 |      100 |      100 |                |
  contracts\bridgeApps\         |      100 |      100 |      100 |      100 |                |
   DefaultBridgeApp.sol         |      100 |      100 |      100 |      100 |                |
   ICMApp.sol                   |      100 |      100 |      100 |      100 |                |
@@ -41,7 +41,8 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   IPortfolioSub.sol            |      100 |      100 |      100 |      100 |                |
   IPortfolioSubHelper.sol      |      100 |      100 |      100 |      100 |                |
   ITradePairs.sol              |      100 |      100 |      100 |      100 |                |
- contracts\library\            |    98.78 |    99.18 |      100 |    99.31 |                |
+  IWrappedToken.sol            |      100 |      100 |      100 |      100 |                |
+ contracts\library\            |    98.82 |    99.19 |      100 |    99.32 |                |
   Bytes32LinkedListLibrary.sol |      100 |    92.86 |      100 |      100 |                |
   InvariantMathLibrary.sol     |    93.55 |      100 |      100 |    95.24 |         69,111 |
   RBTLibrary.sol               |      100 |      100 |      100 |      100 |                |
@@ -49,11 +50,13 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
  contracts\others\             |      100 |      100 |      100 |      100 |                |
   Create3Factory.sol           |      100 |      100 |      100 |      100 |                |
   Multicall2.sol               |      100 |      100 |      100 |      100 |                |
- contracts\token\              |      100 |    95.97 |      100 |      100 |                |
+ contracts\token\              |      100 |       96 |      100 |      100 |                |
   Airdrop.sol                  |      100 |      100 |      100 |      100 |                |
   AlotOFT.sol                  |      100 |      100 |      100 |      100 |                |
   AlotOFTAdapter.sol           |      100 |      100 |      100 |      100 |                |
   DexalotToken.sol             |      100 |      100 |      100 |      100 |                |
+  DexalotTokenOFT.sol          |      100 |      100 |      100 |      100 |                |
+  DexalotTokenOFTMinter.sol    |      100 |      100 |      100 |      100 |                |
   IncentiveDistributor.sol     |      100 |      100 |      100 |      100 |                |
   MockToken.sol                |      100 |      100 |      100 |      100 |                |
   MockWrappedToken.sol         |      100 |    95.45 |      100 |      100 |                |
@@ -61,5 +64,5 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   TokenVestingCloneFactory.sol |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol    |      100 |    96.67 |      100 |      100 |                |
 -------------------------------|----------|----------|----------|----------|----------------|
-All files                      |    99.87 |    96.99 |      100 |    99.91 |                |
+All files                      |    99.88 |    97.02 |      100 |    99.91 |                |
 -------------------------------|----------|----------|----------|----------|----------------|

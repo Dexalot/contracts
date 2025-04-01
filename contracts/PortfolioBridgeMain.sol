@@ -13,6 +13,7 @@ import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IBridgeProvider.sol";
 import "./interfaces/IMainnetRFQ.sol";
+import "./library/UtilsLibrary.sol";
 
 /**
  * @title PortfolioBridgeMain. Bridge aggregator and message relayer for mainnet using multiple different bridges.
@@ -76,7 +77,7 @@ contract PortfolioBridgeMain is
     BridgeProvider internal defaultBridgeProvider; // ICM for avalanche eco, Layer0 for other chains
     uint32 internal defaultChainId; // c-chain for Dexalot L1, Dexalot L1 for other chains
 
-    uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 2;
+    uint8 private constant XCHAIN_XFER_MESSAGE_VERSION = 3;
 
     // Controls actions that can be executed on the contract. PortfolioM or MainnetRFQ are the current users.
     bytes32 public constant BRIDGE_USER_ROLE = keccak256("BRIDGE_USER_ROLE");
@@ -84,21 +85,28 @@ contract PortfolioBridgeMain is
     bytes32 public constant BRIDGE_ADMIN_ROLE = keccak256("BRIDGE_ADMIN_ROLE");
     // Allows access to processPayload for bridge providers e.g. LayerZero, ICM.
     bytes32 public constant BRIDGE_PROVIDER_ROLE = keccak256("BRIDGE_PROVIDER_ROLE");
-    // Symbol => chainListOrgChainId ==> bool mapping to control xchain swaps allowed symbols for each destination
-    mapping(bytes32 => mapping(uint32 => bool)) public xChainAllowedDestinations;
+
+    uint32 private constant SOL_CHAIN_ID = 0x534f4c;
+    // Symbol => chainListOrgChainId ==> address mapping to control xchain swaps allowed symbols for each destination
+    // stores spl token mint address for sending messages to solana
+    mapping(bytes32 => mapping(uint32 => bytes32)) public xChainAllowedDestinations;
+
     uint64 public outNonce;
     // chainId => bridgeProviders bitmap (3 storage slots)
     EnumerableMapUpgradeable.UintToUintMap internal supportedChains;
+    uint256 public gasAirdrop;
+    // chainId => symbol mapping to control supported native tokens for each destination
+    mapping(uint32 => bytes32) public supportedChainNative;
 
     // storage gap for upgradeability
-    uint256[50] __gap;
+    uint256[48] __gap;
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event DefaultChainIdUpdated(uint32 destinationChainId);
     event UserPaysFeeForDestinationUpdated(BridgeProvider bridge, uint32 destinationChainId, bool userPaysFee);
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.1");
+        return bytes32("4.1.5");
     }
 
     /**
@@ -210,14 +218,24 @@ contract PortfolioBridgeMain is
      * @dev     Only admin can enable/disable
      * @param   _symbol  Symbol of the token
      * @param   _chainListOrgChainId  Remote Chainlist.org chainid
-     * @param   _enable  True to enable, false to disable
+     * @param   _tokenAddress  Token address on the destination chain, 0 address if not exists
      */
     function enableXChainSwapDestination(
         bytes32 _symbol,
         uint32 _chainListOrgChainId,
-        bool _enable
+        bytes32 _tokenAddress
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        xChainAllowedDestinations[_symbol][_chainListOrgChainId] = _enable;
+        xChainAllowedDestinations[_symbol][_chainListOrgChainId] = _tokenAddress;
+    }
+
+    /**
+     * @notice  Enables/disables a native token for a given destination for cross chain swaps
+     * @dev     Only admin can enable/disable
+     * @param   _chainListOrgChainId  Remote Chainlist.org chainid
+     * @param   _symbol  Native symbol of the token
+     */
+    function enableSupportedNative(uint32 _chainListOrgChainId, bytes32 _symbol) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        supportedChainNative[_chainListOrgChainId] = _symbol;
     }
 
     /**
@@ -373,6 +391,7 @@ contract PortfolioBridgeMain is
      * @param   _dstChainListOrgChainId  destination chain id
      *           _symbol  symbol of the token, not relevant in for this function
      *           _quantity quantity of the token, not relevant in for this function
+     *           _options custom options for the transaction, not relevant in this function
      * @return  bridgeFee  bridge fee for the destination
      */
 
@@ -380,7 +399,9 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
         bytes32,
-        uint256
+        uint256,
+        address,
+        bytes1
     ) external view virtual override returns (uint256 bridgeFee) {
         IBridgeProvider bridgeProvider = enabledBridges[_bridge];
         require(address(bridgeProvider) != address(0), "PB-RBNE-03");
@@ -413,38 +434,67 @@ contract PortfolioBridgeMain is
         bytes32[4] memory msgData = abi.decode(_payload, (bytes32[4]));
         uint256 slot0 = uint256(msgData[0]);
         // will revert if anything else other than XChainMsgType.XFER is passed
-        XChainMsgType(uint16(slot0));
-        slot0 >>= 16;
-        xfer.transaction = IPortfolio.Tx(uint16(slot0));
-        slot0 >>= 16;
+        XChainMsgType msgType = XChainMsgType(uint8(slot0));
+        // only unpack normal xfer message (xferSolana handled on solana side)
+        require(msgType == XChainMsgType.XFER, "PB-UM-01");
+        slot0 >>= 8;
+        xfer.transaction = IPortfolio.Tx(uint8(slot0));
+        slot0 >>= 8;
         xfer.nonce = uint64(slot0);
-        xfer.trader = address(uint160(slot0 >> 64));
-        xfer.symbol = msgData[1];
-        xfer.quantity = uint256(msgData[2]);
-        xfer.timestamp = uint32(bytes4(msgData[3]));
-        xfer.customdata = bytes28(uint224(uint256(msgData[3]) >> 32));
+        slot0 >>= 64;
+        xfer.timestamp = uint32(slot0);
+        xfer.customdata = bytes18(uint144(uint256(slot0) >> 32));
+        xfer.trader = msgData[1];
+        xfer.symbol = msgData[2];
+        xfer.quantity = uint256(msgData[3]);
     }
 
     /**
      * @notice  Maps symbol to symbolId and encodes XFER message
      * @dev     It is packed as follows:
-     * slot0: trader(20), nonce(8), transaction(2), XChainMsgType(2)
+     * slot0: customdata(18), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
+     * slot1: trader(32)
      * slot1: symbol(32)
      * slot2: quantity(32)
-     * slot3: customdata(28), timestamp(4)
      * @param   _xfer  XFER message to encode
      * @return  message  Encoded XFER message
      */
     function packXferMessage(IPortfolio.XFER memory _xfer) private pure returns (bytes memory message) {
         bytes32 slot0 = bytes32(
-            (uint256(uint160(_xfer.trader)) << 96) |
-                (uint256(_xfer.nonce) << 32) |
-                (uint256(uint16(_xfer.transaction)) << 16) |
-                uint16(XChainMsgType.XFER)
+            (uint256(uint144(_xfer.customdata)) << 112) |
+                (uint256(uint32(_xfer.timestamp)) << 80) |
+                (uint256(_xfer.nonce) << 16) |
+                (uint256(uint8(_xfer.transaction)) << 8) |
+                uint8(XChainMsgType.XFER)
         );
-        bytes32 slot1 = bytes32(_xfer.symbol);
-        bytes32 slot2 = bytes32(_xfer.quantity);
-        bytes32 slot3 = bytes32((uint256(uint224(_xfer.customdata)) << 32) | uint32(_xfer.timestamp));
+        bytes32 slot1 = bytes32(_xfer.trader);
+        bytes32 slot2 = bytes32(_xfer.symbol);
+        bytes32 slot3 = bytes32(_xfer.quantity);
+        message = bytes.concat(slot0, slot1, slot2, slot3);
+    }
+
+    /**
+     * @notice  Maps symbol to symbolId and encodes XFERSolana message
+     * @dev     It is packed as follows:
+     * slot0: customdata(10), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
+     * slot1: trader(32)
+     * slot1: tokenAddress(32)
+     * slot2: quantity(8)
+     * @param   _xfer  XFER message to encode
+     * @return  message  Encoded XFERSolana message
+     */
+    function packXferMessageSolana(IPortfolio.XFER memory _xfer) private view returns (bytes memory message) {
+        bytes32 slot0 = bytes32(
+            (uint256(uint144(_xfer.customdata)) << 112) |
+                (uint256(uint32(_xfer.timestamp)) << 80) |
+                (uint256(_xfer.nonce) << 16) |
+                (uint256(uint8(_xfer.transaction)) << 8) |
+                uint8(XChainMsgType.XFER_SOLANA)
+        );
+        bytes32 slot1 = bytes32(_xfer.trader);
+        bytes32 tokenAddress = xChainAllowedDestinations[_xfer.symbol][SOL_CHAIN_ID];
+        bytes32 slot2 = bytes32(tokenAddress);
+        bytes8 slot3 = bytes8(uint64(_xfer.quantity));
         message = bytes.concat(slot0, slot1, slot2, slot3);
     }
 
@@ -465,7 +515,11 @@ contract PortfolioBridgeMain is
         // Validate for Cross Chain Trade
         if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
             // Symbol allowed at destination
-            require(xChainAllowedDestinations[_xfer.symbol][_dstChainListOrgChainId], "PB-CCTR-02");
+            require(
+                xChainAllowedDestinations[_xfer.symbol][_dstChainListOrgChainId] != bytes32(0) ||
+                    supportedChainNative[_dstChainListOrgChainId] == _xfer.symbol,
+                "PB-CCTR-02"
+            );
         }
         // No need to validate the symbol for DEPOSIT/ WITHDRAWALS again as it is being sent by the Portfolio
         sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
@@ -491,17 +545,21 @@ contract PortfolioBridgeMain is
             outNonce += 1;
             _xfer.nonce = outNonce;
         }
-        bytes memory _payload = packXferMessage(_xfer);
+        bytes memory _payload = _dstChainListOrgChainId == SOL_CHAIN_ID
+            ? packXferMessageSolana(_xfer)
+            : packXferMessage(_xfer);
         bool isUserFeePayer = userPaysFee[_dstChainListOrgChainId][_bridge];
         IBridgeProvider.CrossChainMessageType msgType = getCrossChainMessageType(_xfer.transaction);
         uint256 fee = bridgeContract.getBridgeFee(_dstChainListOrgChainId, msgType);
         if (isUserFeePayer) {
             require(_userFeePayer != address(0), "PB-UFPE-01");
             require(msg.value >= fee, "PB-IUMF-01");
-        } else if (_userFeePayer != address(0)) {
-            (bool success, ) = _userFeePayer.call{value: msg.value}("");
-            require(success, "PB-UFPR-01");
-            require(address(this).balance > fee, "PB-CBIZ-01");
+        } else {
+            if (_userFeePayer != address(0)) {
+                (bool success, ) = _userFeePayer.call{value: msg.value}("");
+                require(success, "PB-UFPR-01");
+                require(address(this).balance > fee, "PB-CBIZ-01");
+            }
             _userFeePayer = address(this);
         }
         bridgeContract.sendMessage{value: fee}(_dstChainListOrgChainId, _payload, msgType, _userFeePayer);
@@ -572,9 +630,28 @@ contract PortfolioBridgeMain is
         // check the validity of the symbol
         IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(xfer.symbol);
         require(details.symbol != bytes32(0), "PB-ETNS-02");
+        processGasAirdrop(xfer.customdata[0], xfer.trader);
         xfer.transaction == IPortfolio.Tx.CCTRADE
             ? mainnetRfq.processXFerPayload(xfer)
             : portfolio.processXFerPayload(xfer);
+    }
+
+    function processGasAirdrop(bytes1 options, bytes32 trader) internal {
+        if (options == 0) return;
+        if (UtilsLibrary.isOptionSet(options, uint8(IPortfolio.Options.GASAIRDROP)) && gasAirdrop != 0) {
+            // solhint-disable-next-line avoid-low-level-calls
+            (bool success, ) = UtilsLibrary.bytes32ToAddress(trader).call{value: gasAirdrop}("");
+            require(success, "PB-GASF-01");
+        }
+    }
+
+    /**
+     * @notice  Sets the gas airdrop amount for withdrawals with GASAIRDROP option
+     * @dev     Only admin can set the gas airdrop amount
+     * @param   _gasAirdrop  Amount of gas to airdrop
+     */
+    function setGasAirdrop(uint256 _gasAirdrop) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        gasAirdrop = _gasAirdrop;
     }
 
     /**

@@ -34,7 +34,8 @@ interface ITradePairs {
      * @param   type1  Order Type1  See #Type1 (immutable)
      * @param   type2  Order Type2  See #Type2 (immutable)
      * @param   status  Order Status  See #Status
-     * @param   updateBlock  Block No the order was created or last changed
+     * @param   updateBlock  Block No the order was last changed
+     * @param   createBlock  Block No the order was created
      */
     struct Order {
         bytes32 id;
@@ -46,11 +47,12 @@ interface ITradePairs {
         uint256 quantityFilled;
         uint256 totalFee;
         address traderaddress; //20
-        Side side; //2
-        Type1 type1; //2
-        Type2 type2; //2
-        Status status; //2
+        Side side; //1
+        Type1 type1; //1
+        Type2 type2; //1
+        Status status; //1
         uint32 updateBlock; //4
+        uint32 createBlock; //4
     }
 
     /**
@@ -257,7 +259,7 @@ interface ITradePairs {
         TAKER
     }
 
-  /**
+    /**
      * @notice  Self Trade Prevention
      * @dev     STP Mode when both maker and taker orders are from the same traderaddress
      * 0: CANCELTAKER   – cancel Taker Order

@@ -4,6 +4,8 @@ pragma solidity 0.8.25;
 import "../bridgeApps/DefaultBridgeApp.sol";
 
 contract DefaultBridgeAppMock is DefaultBridgeApp {
+    event FeeRefundAddress(address feeRefundAddress);
+
     function setPortfolioBridge(address portfolioBridgeAddr) external virtual override {
         _setPortfolioBridge(portfolioBridgeAddr);
     }
@@ -15,9 +17,11 @@ contract DefaultBridgeAppMock is DefaultBridgeApp {
     function getBridgeProvider() public pure virtual override returns (IPortfolioBridge.BridgeProvider) {}
 
     function _sendMessage(
-        RemoteChain memory destination,
-        bytes memory message,
-        CrossChainMessageType msgType,
+        RemoteChain memory,
+        bytes memory,
+        CrossChainMessageType,
         address feeRefundAddress
-    ) internal virtual override {}
+    ) internal virtual override {
+        emit FeeRefundAddress(feeRefundAddress);
+    }
 }

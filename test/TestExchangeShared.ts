@@ -107,12 +107,12 @@ describe("Exchange Shared", function () {
             quoteToken = await MockToken.deploy(quoteTokenStr, quoteSymbolStr, quoteDecimals) as MockToken;
 
             // fail from non admin accounts
-            await expect(exchangeMain.connect(trader1).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
-            await expect(exchangeMain.addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
+            await expect(exchangeMain.connect(trader1).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
+            await expect(exchangeMain.addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals))).to.revertedWith("AccessControl:");
             //Add an auction admin to Exchange
             await exchangeMain.addAuctionAdmin(auctionAdmin.address)
             // succeed from admin accounts
-            await exchangeMain.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals));
+            await exchangeMain.connect(auctionAdmin).addToken(quoteSymbol, quoteToken.address, await quoteToken.decimals(), await quoteToken.decimals(), '0', ethers.utils.parseUnits('0.5',quoteDecimals));
             const tokenList = await portfolio.getTokenList();
 
             expect(tokenList.length).to.be.equal(3);

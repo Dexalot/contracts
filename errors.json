@@ -61,6 +61,8 @@
     "P-LENM-01": "Portfolio: length mismatch in array type function parameters",
     "P-MTNZ-01": "Portfolio: min taker rate can not be 0",
     "P-NDNS-01": "Portfolio: native deposits not supported",
+    "P-NQTR-01": "Portfolio: native token quantity truncated but refund failed",
+    "P-SBPD-01": "Portfolio: set bridge param incorrect decimals, must be truncated",
 
     "PB-OACC-01": "PortfolioBridge: admin account or PORTFOLIO_ROLE needed for this function",
     "PB-RBNE-01": "PortfolioBridge: requested bridge not enabled",
@@ -99,6 +101,7 @@
     "PB-BCNE-01": "PortfolioBridge: bridge contract not enabled",
     "PB-MPGT-01": "PortfolioBridge: bridge fee multipler is greater than 100%",
     "PB-OBSA-01": "PortfolioBridge: old bridge provider still active",
+    "PB-GASF-01": "PortfolioBridge: gas airdrop send fails",
 
     "PM-ZADD-01": "PortfolioMinter: cannot initialize with 0 address",
     "PM-ZAMT-01": "PortfolioMinter: mint amount must be greater than 0",
@@ -171,6 +174,9 @@
     "RF-INVT-01": "MainnetRFQ: target chain does not have enough inventory to remove the xChainSwap from the queue",
     "RF-DTNF-01": "MainnetRFQ: destination token not found",
     "RF-STTA-01": "MainnetRFQ: slippage tolerance too aggressive",
+    "RF-RAOW-01": "MainnetRFQ: rebalancer admin or wrapped token only allowed to deposit native token",
+    "RF-NFUN-01": "MainnetRFQ: unknown function call",
+    "RF-SPAM-01": "MainnetRFQ: slippage points array length mismatch",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",

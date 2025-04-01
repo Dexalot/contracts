@@ -232,6 +232,7 @@ abstract contract Portfolio is
         TokenDetails storage tokenDetails = tokenDetailsMap[_details.symbol];
         tokenDetails.auctionMode = _details.auctionMode;
         tokenDetails.decimals = _details.decimals;
+        tokenDetails.l1Decimals = _details.l1Decimals;
         tokenDetails.tokenAddress = _details.tokenAddress;
         tokenDetails.srcChainId = _details.srcChainId;
         tokenDetails.symbol = _details.symbol;
@@ -317,9 +318,21 @@ abstract contract Portfolio is
         IPortfolioBridge.BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
         bytes32 _symbol,
-        uint256 _quantity
+        uint256 _quantity,
+        address _sender,
+        bytes1 _options
     ) external view returns (uint256 bridgeFee) {
-        return portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity);
+        return portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _sender, _options);
+    }
+
+    /**
+     * @notice  Sets the dexalot L1 decimals for the given token
+     * @dev     Only callable by admin, removable in future releases
+     * @param   _symbol  Symbol of the token
+     * @param   _l1Decimals  Decimals of the token in the Dexalot L1
+     */
+    function setL1Decimals(bytes32 _symbol, uint8 _l1Decimals) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        tokenDetailsMap[_symbol].l1Decimals = _l1Decimals;
     }
 
     /**
@@ -334,7 +347,7 @@ abstract contract Portfolio is
      * @dev we process it as a deposit with the default bridge
      */
     receive() external payable {
-        this.depositNative{value: msg.value}(payable(msg.sender), portfolioBridge.getDefaultBridgeProvider());
+        handleReceive();
     }
 
     /**
@@ -353,4 +366,8 @@ abstract contract Portfolio is
         address payable _from,
         IPortfolioBridge.BridgeProvider _bridge
     ) external payable virtual override;
+
+    function handleReceive() internal virtual {
+        this.depositNative{value: msg.value}(payable(msg.sender), portfolioBridge.getDefaultBridgeProvider());
+    }
 }

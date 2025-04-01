@@ -8,6 +8,7 @@ import fs from 'fs';
 import neatCsv from 'neat-csv';
 
 import { BigNumber, BigNumberish, ethers } from "ethers";
+import { ChainType } from '../scripts/deploy/types';
 
 const assetMap: any = {"0": "NATIVE", "1": "ERC20 ", "2": "NONE"}
 
@@ -17,7 +18,17 @@ export default class utils {
     }
 
     static addressToBytes32(address: string) {
-      return ethers.utils.hexZeroPad(address, 32);
+      return ethers.utils.hexZeroPad(address.toLowerCase(), 32);
+    }
+
+    static chainAddressToBytes32(address: string, chainType: ChainType) {
+      if (chainType == "SOL") {
+        const addressBytes = ethers.utils.base58.decode(address);
+        // convert base58 to hex
+        return ethers.utils.hexZeroPad(ethers.utils.hexlify(addressBytes), 32);
+      }
+      // chainType == "EVM"
+      return ethers.utils.hexZeroPad(address.toLowerCase(), 32);
     }
 
     static fromUtf8(txt: string) {
@@ -85,12 +96,16 @@ export default class utils {
     }
 
     static emptyCustomData() {
-      return ethers.utils.hexZeroPad("0x", 28);
+      return ethers.utils.hexZeroPad("0x", 18);
+    }
+
+    static emptyOptions() {
+      return ethers.utils.hexZeroPad("0x", 1);
     }
 
     static generatePayload(xChainMsgType: number, nonce: number, tx: number, trader: string, symbol: string, quantity: BigNumber, timestamp: number, customdata: string) {
-      const types = ["uint160", "uint64", "uint16", "uint16", "bytes32", "uint256", "bytes28", "uint32"];
-      const values = [trader, nonce, tx, xChainMsgType, symbol, quantity, customdata, timestamp];
+      const types = ["bytes18", "uint32", "uint64", "uint8", "uint8", "bytes32", "bytes32", "uint256"];
+      const values = [customdata, timestamp, nonce, tx, xChainMsgType, trader, symbol, quantity];
       return ethers.utils.solidityPack(types, values);
     }
 

@@ -14,6 +14,8 @@ import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioMain.sol";
 import "./interfaces/IMainnetRFQ.sol";
+import "./interfaces/IWrappedToken.sol";
+import "./library/UtilsLibrary.sol";
 
 /**
  * @title   Request For Quote smart contract
@@ -60,7 +62,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.5");
+    bytes32 public constant VERSION = bytes32("1.1.6");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -76,10 +78,16 @@ contract MainnetRFQ is
     // typehash for cross chain swaps
     bytes32 private constant XCHAIN_SWAP_TYPEHASH =
         keccak256(
-            "XChainSwap(uint256 nonceAndMeta,uint32 expiry,address taker,uint32 destChainId,uint8 bridgeProvider,bytes32 makerSymbol,address makerAsset,address takerAsset,uint256 makerAmount,uint256 takerAmount)"
+            "XChainSwap(bytes32 from,bytes32 to,bytes32 makerSymbol,bytes32 makerAsset,bytes32 takerAsset,uint256 makerAmount,uint256 takerAmount,uint96 nonce,uint32 expiry,uint32 destChainId,uint8 bridgeProvider)"
         );
     // mask for nonce in cross chain transfer customdata, last 12 bytes
     uint96 private constant NONCE_MASK = 0xffffffffffffffffffffffff;
+    // precision for slippage bps (2 decimal places of bps)
+    uint256 private constant SLIP_PRECISION = 1000000;
+    // mask for slippage bps in slipInfo, last 3 bytes
+    uint8 private constant SLIP_BPS_MASK = 0x7;
+    // number of bits to shift for slippage bps in slipInfo
+    uint8 private constant SLIP_BPS_SHIFT = 3;
 
     // firm order data structure sent to user for regular swap from RFQ API
     struct Order {
@@ -95,16 +103,17 @@ contract MainnetRFQ is
 
     // firm order data structure sent to user for cross chain swap from RFQ API
     struct XChainSwap {
-        uint256 nonceAndMeta;
-        uint32 expiry;
-        address taker;
-        uint32 destChainId;
-        IPortfolioBridge.BridgeProvider bridgeProvider;
+        bytes32 from;
+        bytes32 to;
         bytes32 makerSymbol;
-        address makerAsset;
-        address takerAsset;
+        bytes32 makerAsset;
+        bytes32 takerAsset;
         uint256 makerAmount;
         uint256 takerAmount;
+        uint96 nonce;
+        uint32 expiry;
+        uint32 destChainId;
+        IPortfolioBridge.BridgeProvider bridgeProvider;
     }
 
     struct SwapData {
@@ -112,10 +121,10 @@ contract MainnetRFQ is
         // originating user
         address taker;
         // aggregator or destination user
-        address destTrader;
-        uint256 destChainId;
+        bytes32 destTrader;
+        uint32 destChainId;
         address srcAsset;
-        address destAsset;
+        bytes32 destAsset;
         uint256 srcAmount;
         uint256 destAmount;
     }
@@ -127,10 +136,15 @@ contract MainnetRFQ is
         bytes32 symbol;
     }
 
+    struct WrappedInfo {
+        IWrappedToken wrappedNative;
+        bool keepWrapped;
+    }
+
     // address used to sign and verify swap orders
     address public swapSigner;
 
-    // used to slip orders in case of high volatility
+    // (no longer in use, kept for upgradeability)
     uint256 public slippageTolerance;
 
     // (no longer in use, kept for upgradeability)
@@ -152,23 +166,27 @@ contract MainnetRFQ is
     IPortfolioBridge public portfolioBridge;
     // portfolio main contract, used to get token addresses on destination chain
     address public portfolioMain;
-    // bitmap, used to slip quote for a given pair if high volatility
+    // (no longer in use, kept for upgradeability)
     uint256 public volatilePairs;
+    // wrapped info for the given chain, used to unwrap/wrap in a swap
+    WrappedInfo public wrappedInfo;
+    // number of bps to slip quote by to 2 decimal places
+    // key = [ slipBpsEnum ] or [ expiryTime | slipBpsEnum ]
+    mapping(uint256 => uint24) public slippagePoints;
+
     // storage gap for upgradeability
-    uint256[43] __gap;
+    uint256[41] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
     event AddressSet(string indexed name, string actionName, address newAddress);
     event SwapExecuted(
         uint256 indexed nonceAndMeta,
-        // originating user
         address taker,
-        // aggregator or destination user
-        address destTrader,
-        uint256 destChainId,
+        bytes32 destTrader,
+        uint32 destChainId,
         address srcAsset,
-        address destAsset,
+        bytes32 destAsset,
         uint256 srcAmount,
         uint256 destAmount
     );
@@ -182,8 +200,6 @@ contract MainnetRFQ is
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
-    event UpdatedSlippageTolerance(uint256 slippageTolerance);
-    event UpdatedVolatilePairs(uint256 volatilePairs);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -211,7 +227,12 @@ contract MainnetRFQ is
      * @notice  Used to rebalance native token on rfq contract
      */
     // solhint-disable-next-line no-empty-blocks
-    receive() external payable override onlyRole(REBALANCER_ADMIN_ROLE) {}
+    receive() external payable override {
+        require(
+            hasRole(REBALANCER_ADMIN_ROLE, msg.sender) || msg.sender == address(wrappedInfo.wrappedNative),
+            "RF-RAOW-01"
+        );
+    }
 
     /**
      * @notice Swaps two assets for another smart contract or EOA, based off a predetermined swap price.
@@ -265,11 +286,11 @@ contract MainnetRFQ is
         XChainSwap calldata _order,
         bytes calldata _signature
     ) external payable whenNotPaused nonReentrant {
-        address destTrader = _verifyXSwap(_order, _signature);
+        uint256 nonceAndMeta = _verifyXSwap(_order, _signature);
 
-        _executeXSwap(_order, destTrader);
+        _executeXSwap(_order, nonceAndMeta);
 
-        _sendCrossChainTrade(_order, destTrader);
+        _sendCrossChainTrade(_order);
     }
 
     /**
@@ -284,10 +305,22 @@ contract MainnetRFQ is
         IPortfolio.XFER calldata _xfer
     ) external override nonReentrant onlyRole(PORTFOLIO_BRIDGE_ROLE) {
         require(_xfer.transaction == IPortfolio.Tx.CCTRADE, "RF-PTNS-01");
-        require(_xfer.trader != address(0), "RF-ZADDR-01");
+        address destTrader = UtilsLibrary.bytes32ToAddress(_xfer.trader);
+        require(destTrader != address(0), "RF-ZADDR-01");
         require(_xfer.quantity > 0, "RF-ZETD-01");
-        uint256 nonceAndMeta = (uint256(uint160(_xfer.trader)) << 96) | (uint224(_xfer.customdata) & NONCE_MASK);
-        _processXFerPayloadInternal(_xfer.trader, _xfer.symbol, _xfer.quantity, nonceAndMeta);
+        uint256 nonceAndMeta = (uint256(_xfer.trader) << 96) | (uint144(_xfer.customdata) & NONCE_MASK);
+        _processXFerPayloadInternal(destTrader, _xfer.symbol, _xfer.quantity, nonceAndMeta);
+    }
+
+    /**
+     * @notice Sets the wrapped info for the given chain
+     * @dev Only callable by admin
+     * @param _wrappedToken Address of the wrapped token
+     * @param _keepWrapped Boolean to keep wrapped token or false for native token
+     */
+    function setWrapped(address _wrappedToken, bool _keepWrapped) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        wrappedInfo = WrappedInfo(IWrappedToken(_wrappedToken), _keepWrapped);
+        emit AddressSet("MAINNETRFQ", "SET-WRAPPED", _wrappedToken);
     }
 
     /**
@@ -416,25 +449,19 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice  Sets slippage tolerance for the contract
-     * @dev     Slippage tolerance is represented in BIPs. i.e. slippage must be less than 1%.
-     * @param   _slippageTolerance  slippage tolerance in BIPs
+     * @notice  Sets the slippage points for a given key
+     * @dev     Only callable by volatility admin
+     * @param   _slipBpsKeys  Array of keys for slippage points
+     * @param   _slipBpsPoints  Array of slippage points
      */
-    function setSlippageTolerance(uint256 _slippageTolerance) external onlyRole(VOLATILITY_ADMIN_ROLE) {
-        require(_slippageTolerance <= 10000 && _slippageTolerance >= 9900, "RF-STTA-01");
-        slippageTolerance = _slippageTolerance;
-        emit UpdatedSlippageTolerance(_slippageTolerance);
-    }
-
-    /**
-     * @notice  Sets volatile pairs to slip for the contract
-     * @dev     Volatile pairs is a bitmap. If a pair is set to slip, the contract will
-     * slip the quote for that pair during high volatility.
-     * @param   _volatilePairs  volatile pairs to slip bitmap
-     */
-    function setVolatilePairs(uint256 _volatilePairs) external onlyRole(VOLATILITY_ADMIN_ROLE) {
-        volatilePairs = _volatilePairs;
-        emit UpdatedVolatilePairs(_volatilePairs);
+    function setSlippagePoints(
+        uint256[] calldata _slipBpsKeys,
+        uint24[] calldata _slipBpsPoints
+    ) external onlyRole(VOLATILITY_ADMIN_ROLE) {
+        require(_slipBpsKeys.length == _slipBpsPoints.length, "RF-SPAM-01");
+        for (uint256 i = 0; i < _slipBpsKeys.length; i++) {
+            slippagePoints[_slipBpsKeys[i]] = _slipBpsPoints[i];
+        }
     }
 
     /**
@@ -536,28 +563,37 @@ contract MainnetRFQ is
      * @notice Verifies that a XChainSwap order is valid and has not been executed already.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
-     * @return address The address where the funds will be transferred.
+     * @return nonceAndMeta The nonce of the swap
      */
-    function _verifyXSwap(XChainSwap calldata _order, bytes calldata _signature) private returns (address) {
+    function _verifyXSwap(
+        XChainSwap calldata _order,
+        bytes calldata _signature
+    ) private returns (uint256 nonceAndMeta) {
         bytes32 hashedStruct = keccak256(
             abi.encode(
                 XCHAIN_SWAP_TYPEHASH,
-                _order.nonceAndMeta,
-                _order.expiry,
-                _order.taker,
-                _order.destChainId,
-                _order.bridgeProvider,
+                _order.from,
+                _order.to,
                 _order.makerSymbol,
                 _order.makerAsset,
                 _order.takerAsset,
                 _order.makerAmount,
-                _order.takerAmount
+                _order.takerAmount,
+                _order.nonce,
+                _order.expiry,
+                _order.destChainId,
+                _order.bridgeProvider
             )
         );
-        _verifySwapInternal(_order.nonceAndMeta, _order.expiry, _order.taker, false, hashedStruct, _signature);
-
-        address destTrader = address(uint160(_order.nonceAndMeta >> 96));
-        return (destTrader);
+        nonceAndMeta = ((uint256(_order.from) << 96) | _order.nonce);
+        _verifySwapInternal(
+            nonceAndMeta,
+            _order.expiry,
+            UtilsLibrary.bytes32ToAddress(_order.from),
+            false,
+            hashedStruct,
+            _signature
+        );
     }
 
     /**
@@ -565,15 +601,15 @@ contract MainnetRFQ is
      * if the assets are ERC-20's or native tokens. Transfer assets in on the source chain
      * and sends a cross chain message to release assets on the destination chain
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
-     * @param _destTrader The address to transfer funds to on destination chain
+     * @param _nonceAndMeta Nonce of swap
      **/
-    function _executeXSwap(XChainSwap calldata _order, address _destTrader) private {
+    function _executeXSwap(XChainSwap calldata _order, uint256 _nonceAndMeta) private {
         SwapData memory swapData = SwapData({
-            nonceAndMeta: _order.nonceAndMeta,
-            taker: _order.taker,
-            destTrader: _destTrader,
+            nonceAndMeta: _nonceAndMeta,
+            taker: UtilsLibrary.bytes32ToAddress(_order.from),
+            destTrader: _order.to,
             destChainId: _order.destChainId,
-            srcAsset: _order.takerAsset,
+            srcAsset: UtilsLibrary.bytes32ToAddress(_order.takerAsset),
             destAsset: _order.makerAsset,
             srcAmount: _order.takerAmount,
             destAmount: _order.makerAmount
@@ -629,17 +665,17 @@ contract MainnetRFQ is
         uint256 _takerAmount,
         address _destTrader
     ) private {
-        uint8 pair = uint8(_order.nonceAndMeta >> 88);
-        if (pair != 0 && (volatilePairs >> pair) & 1 == 1) {
-            _makerAmount = (_makerAmount * slippageTolerance) / 10000;
+        uint8 slipInfo = uint8(_order.nonceAndMeta >> 88);
+        if (slipInfo > SLIP_BPS_MASK) {
+            _makerAmount = _slipQuote(slipInfo, _order.expiry, _makerAmount);
         }
         SwapData memory swapData = SwapData({
             nonceAndMeta: _order.nonceAndMeta,
             taker: _order.taker,
-            destTrader: _destTrader,
-            destChainId: block.chainid,
+            destTrader: UtilsLibrary.addressToBytes32(_destTrader),
+            destChainId: uint32(block.chainid),
             srcAsset: _order.takerAsset,
-            destAsset: _order.makerAsset,
+            destAsset: UtilsLibrary.addressToBytes32(_order.makerAsset),
             srcAmount: _takerAmount,
             destAmount: _makerAmount
         });
@@ -684,8 +720,15 @@ contract MainnetRFQ is
     function _takeFunds(SwapData memory _swapData) private {
         if (_swapData.srcAsset == address(0)) {
             require(msg.value >= _swapData.srcAmount, "RF-IMV-01");
-        } else {
-            IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(msg.sender, address(this), _swapData.srcAmount);
+            if (wrappedInfo.keepWrapped) {
+                wrappedInfo.wrappedNative.deposit{value: _swapData.srcAmount}();
+            }
+            return;
+        }
+
+        IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(msg.sender, address(this), _swapData.srcAmount);
+        if (!wrappedInfo.keepWrapped && _swapData.srcAsset == address(wrappedInfo.wrappedNative)) {
+            wrappedInfo.wrappedNative.withdraw(_swapData.srcAmount);
         }
     }
 
@@ -694,11 +737,20 @@ contract MainnetRFQ is
      * @param _swapData Struct containing all information for executing a swap
      */
     function _releaseFunds(SwapData memory _swapData) private {
-        if (_swapData.destAsset == address(0)) {
-            (bool success, ) = payable(_swapData.destTrader).call{value: _swapData.destAmount}("");
+        address destAsset = UtilsLibrary.bytes32ToAddress(_swapData.destAsset);
+        address destTrader = UtilsLibrary.bytes32ToAddress(_swapData.destTrader);
+
+        if (destAsset == address(0)) {
+            if (wrappedInfo.keepWrapped) {
+                wrappedInfo.wrappedNative.withdraw(_swapData.destAmount);
+            }
+            (bool success, ) = payable(destTrader).call{value: _swapData.destAmount}("");
             require(success, "RF-TF-01");
         } else {
-            IERC20Upgradeable(_swapData.destAsset).safeTransfer(_swapData.destTrader, _swapData.destAmount);
+            if (!wrappedInfo.keepWrapped && destAsset == address(wrappedInfo.wrappedNative)) {
+                wrappedInfo.wrappedNative.deposit{value: _swapData.destAmount}();
+            }
+            IERC20Upgradeable(destAsset).safeTransfer(destTrader, _swapData.destAmount);
         }
     }
 
@@ -742,11 +794,10 @@ contract MainnetRFQ is
      * symbol and trader. Sends remaining native token as gas fee for cross chain message. Refund for
      * gas fee is handled in PortfolioBridge.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
-     * @param _to Trader address to receive funds on destination chain
      */
-    function _sendCrossChainTrade(XChainSwap calldata _order, address _to) private {
-        bytes28 customdata = bytes28(uint224(_order.nonceAndMeta) & NONCE_MASK);
-        uint256 nativeAmount = _order.takerAsset == address(0) ? _order.takerAmount : 0;
+    function _sendCrossChainTrade(XChainSwap calldata _order) private {
+        bytes18 customdata = bytes18(uint144(_order.nonce));
+        uint256 nativeAmount = _order.takerAsset == bytes32(0) ? _order.takerAmount : 0;
         uint256 gasFee = msg.value - nativeAmount;
         // Nonce to be assigned in PBridge
         portfolioBridge.sendXChainMessage{value: gasFee}(
@@ -755,13 +806,13 @@ contract MainnetRFQ is
             IPortfolio.XFER(
                 0,
                 IPortfolio.Tx.CCTRADE,
-                _to,
+                _order.to,
                 _order.makerSymbol,
                 _order.makerAmount,
                 block.timestamp,
                 customdata
             ),
-            _order.taker
+            UtilsLibrary.bytes32ToAddress(_order.from)
         );
     }
 
@@ -817,5 +868,45 @@ contract MainnetRFQ is
         completedSwaps[bucket] |= mask;
         emit XChainFinalized(_nonceAndMeta, _trader, _symbol, _quantity, block.timestamp);
         return true;
+    }
+
+    /**
+     * @notice  Slips the quote based on the slippage points and expiry
+     * @param   slipInfo  Slip info bitmap
+     * @param   expiry    Expiry of the quote
+     * @param   amount    Original maker amount
+     * @return  uint256   Slipped maker amount
+     */
+    function _slipQuote(uint8 slipInfo, uint128 expiry, uint256 amount) private view returns (uint256) {
+        uint8 slipBpsKey = (slipInfo & SLIP_BPS_MASK);
+
+        // slipInfo = always slip (1) | quote ttl (4) | slippage bps (3)
+        if (slipInfo & 0x80 != 0) {
+            return (amount * (SLIP_PRECISION - slippagePoints[slipBpsKey])) / SLIP_PRECISION;
+        }
+
+        uint256 quoteTtl = 5 * (slipInfo >> SLIP_BPS_SHIFT);
+        uint256 expiryMinusTtl = expiry - quoteTtl;
+        // If block.timestamp < expiry - quoteTtl, return the original amount
+        if (block.timestamp <= expiryMinusTtl) {
+            return amount;
+        }
+
+        uint256 activeQuoteTs = block.timestamp - expiryMinusTtl;
+
+        if (activeQuoteTs > 15) {
+            uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
+            if (slipBps == 0) {
+                slipBps = slippagePoints[slipBpsKey];
+            }
+            return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
+        }
+
+        return amount;
+    }
+
+    // solhint-disable-next-line payable-fallback
+    fallback() external {
+        revert("RF-NFUN-01");
     }
 }

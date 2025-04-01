@@ -127,7 +127,7 @@ describe("TokenVestingCloneable [ @skip-on-coverage ]", function () {
             expect(vestingBalance).to.equal(amount);
 
             //await f.addTokenToPortfolioMain(portfolio, testToken as MockToken, 0.5, false, 0);
-            await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), 0,
+            await portfolio.addToken(dt, testToken.address, srcChainListOrgId, await testToken.decimals(), await testToken.decimals(), 0,
             Utils.parseUnits('0.5', await testToken.decimals()), false);
              await portfolio.addTrustedContract(tokenVesting.address, "Dexalot");
 
