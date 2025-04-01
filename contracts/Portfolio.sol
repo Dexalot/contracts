@@ -319,9 +319,10 @@ abstract contract Portfolio is
         uint32 _dstChainListOrgChainId,
         bytes32 _symbol,
         uint256 _quantity,
+        address _sender,
         bytes1 _options
     ) external view returns (uint256 bridgeFee) {
-        return portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _options);
+        return portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _sender, _options);
     }
 
     /**

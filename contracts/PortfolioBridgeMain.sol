@@ -400,6 +400,7 @@ contract PortfolioBridgeMain is
         uint32 _dstChainListOrgChainId,
         bytes32,
         uint256,
+        address,
         bytes1
     ) external view virtual override returns (uint256 bridgeFee) {
         IBridgeProvider bridgeProvider = enabledBridges[_bridge];

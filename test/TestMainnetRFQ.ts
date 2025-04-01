@@ -368,7 +368,7 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should trade two tokens Native -> ERC20 w/ user gas fee", async () => {
     const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("GUN", "USDC");
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, trader1.address, Utils.emptyOptions());
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(
@@ -421,7 +421,7 @@ describe("Mainnet RFQ Multichain", () => {
       value: ethers.utils.parseEther("100.0"),
     });
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, trader1.address, Utils.emptyOptions());
 
     await expect(
       mainnetRFQGun.connect(trader1).xChainSwap(
@@ -541,7 +541,7 @@ describe("Mainnet RFQ Multichain", () => {
   it("Should trade and transfer two tokens Native -> ERC20 w/ user gas fee", async () => {
     const {xChainSwap, signature, nonceAndMeta} = await generateXChainOrder("GUN", "USDC", true);
 
-    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, Utils.emptyOptions());
+    const value = await portfolioBridgeGun.connect(trader1).getBridgeFee(0, xChainSwap.destChainId, ethers.constants.HashZero, 0, trader1.address, Utils.emptyOptions());
 
     await expect(
         mainnetRFQGun.connect(trader1).xChainSwap(
@@ -659,8 +659,6 @@ describe("Mainnet RFQ Multichain", () => {
       timestamp,
       customdata
     }
-
-    console.log(xfer)
 
     await expect(mainnetRFQAvax.processXFerPayload(xfer))
         .to.emit(mainnetRFQAvax, "SwapQueue");
@@ -973,8 +971,7 @@ describe("Mainnet RFQ", () => {
     await expect(mainnetRFQ.connect(signer).removeRebalancer(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).addVolatilityAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
     await expect(mainnetRFQ.connect(signer).removeVolatilityAdmin(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
-    await expect(mainnetRFQ.connect(signer).setSlippageTolerance(0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
-    await expect(mainnetRFQ.connect(signer).setVolatilePairs(0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
+    await expect(mainnetRFQ.connect(signer).setSlippagePoints([], [])).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
     await expect(mainnetRFQ.connect(owner).removeAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
     await expect(mainnetRFQ.connect(owner).removeVolatilityAdmin(dummyAddress)).to.be.revertedWith("RF-ALOA-01");
     await expect(mainnetRFQ.connect(signer).setWrapped(dummyAddress, false)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x`);
@@ -993,8 +990,6 @@ describe("Mainnet RFQ", () => {
     expect(await mainnetRFQ.connect(owner).isRebalancer(signer.address)).to.equal(false);
 
     await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
-    await expect(mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(0)).to.be.revertedWith("RF-STTA-01");
-    await expect(mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(10001)).to.be.revertedWith("RF-STTA-01");
     await expect(mainnetRFQ.connect(owner).removeVolatilityAdmin(volatiltyAdmin.address)).to.be.revertedWith("RF-ALOA-01");
     await mainnetRFQ.connect(owner).addVolatilityAdmin(dummyAddress);
     await mainnetRFQ.connect(owner).removeVolatilityAdmin(volatiltyAdmin.address);
@@ -2240,10 +2235,67 @@ describe("Mainnet RFQ", () => {
     );
   });
 
-  it("Should trade two tokens normally with slippage set but volatile pairs not", async () => {
+  it("Should fail to set slippage points with array mismatch", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+
+    await expect(
+      mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0, 1], [10000])
+    ).to.be.revertedWith("RF-SPAM-01");
+  });
+
+  it("Should slip with always slip bit set", async () => {
     await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
     // set to 1%
-    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"80".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
+
+    const finalUSDCAmount = ethers.BigNumber.from(swapAmountUSDC).mul(9900).div(10000);
+
+    const signature = await toSignature(order, signer);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      Utils.addressToBytes32(trader1.address),
+      chainId,
+      mockALOT.address,
+      Utils.addressToBytes32(mockUSDC.address),
+      swapAmountALOT,
+      finalUSDCAmount,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should not slip if quote ttl not provided", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
     const order = await getOrder(mockUSDC.address, mockALOT.address);
     const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"2".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
     order.nonceAndMeta = newNonceAndMeta;
@@ -2287,12 +2339,15 @@ describe("Mainnet RFQ", () => {
     );
   });
 
-  it("Should trade two tokens normally with slippage and volatile pairs set but no pair sent", async () => {
+  it("Should not slip tokens if slipInfo set but quote executed before block ts", async () => {
     await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
     // set to 1%
-    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
-    await mainnetRFQ.connect(volatiltyAdmin).setVolatilePairs(2);
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
+
     const order = await getOrder(mockUSDC.address, mockALOT.address);
+    // 30s quote ttl
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"30".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
 
     const signature = await toSignature(order, signer);
 
@@ -2333,19 +2388,130 @@ describe("Mainnet RFQ", () => {
     );
   });
 
-  it("Should slip tokens when slippage set and volatile pairs not", async () => {
+  it("Should not slip tokens if slipInfo set but quote executed within 15 seconds", async () => {
     await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
     // set to 1%
-    await mainnetRFQ.connect(volatiltyAdmin).setSlippageTolerance(9900);
-    await mainnetRFQ.connect(volatiltyAdmin).setVolatilePairs(4);
-    const order = await getOrder(mockUSDC.address, mockALOT.address);
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
 
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+    // 30s quote ttl
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"30".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
+
+    const signature = await toSignature(order, signer);
+
+    await ethers.provider.send("evm_mine", [order.expiry - 20]);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      Utils.addressToBytes32(trader1.address),
+      chainId,
+      mockALOT.address,
+      Utils.addressToBytes32(mockUSDC.address),
+      swapAmountALOT,
+      swapAmountUSDC,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(swapAmountUSDC)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should slip tokens if slipInfo set but quote executed after 15 seconds and point not set", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
+
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
     // 20 bytes | 1 bytes | 11 bytes
-    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"2".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    // 30s quote ttl
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"30".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
     order.nonceAndMeta = newNonceAndMeta;
 
     const signature = await toSignature(order, signer);
     const finalUSDCAmount = ethers.BigNumber.from(swapAmountUSDC).mul(9900).div(10000);
+
+    await ethers.provider.send("evm_mine", [order.expiry - 10]);
+
+    await expect(
+        mainnetRFQ.connect(trader1).simpleSwap(
+          order,
+          signature,
+      )
+    ).to.emit(mainnetRFQ, "SwapExecuted")
+    .withArgs(
+      order.nonceAndMeta,
+      trader1.address,
+      Utils.addressToBytes32(trader1.address),
+      chainId,
+      mockALOT.address,
+      Utils.addressToBytes32(mockUSDC.address),
+      swapAmountALOT,
+      finalUSDCAmount,
+    );
+
+    expect(await mockUSDC.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).add(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(trader1.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).sub(swapAmountALOT)
+    );
+
+
+    expect(await mockUSDC.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialUSDCBalance).sub(finalUSDCAmount)
+    );
+
+
+    expect(await mockALOT.balanceOf(mainnetRFQ.address)).to.equal(
+      ethers.BigNumber.from(initialALOTBalance).add(swapAmountALOT)
+    );
+  });
+
+  it("Should slip tokens if slipInfo set but quote executed after 15 seconds and point set", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+
+    // set to 1%
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [10000]);
+
+    // set to 0.5% for 20s
+    // 20s | 0 slipBps
+    await mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([160], [5000]);
+
+    const order = await getOrder(mockUSDC.address, mockALOT.address);
+    // 20 bytes | 1 bytes | 11 bytes
+    // 30s quote ttl
+    const newNonceAndMeta =  `${order.nonceAndMeta.slice(0, 42)}${"30".padStart(2, '0')}${order.nonceAndMeta.slice(44,)}`;
+    order.nonceAndMeta = newNonceAndMeta;
+
+    const signature = await toSignature(order, signer);
+    const finalUSDCAmount = ethers.BigNumber.from(swapAmountUSDC).mul(9950).div(10000);
+
+    await ethers.provider.send("evm_mine", [order.expiry - 11]);
 
     await expect(
         mainnetRFQ.connect(trader1).simpleSwap(

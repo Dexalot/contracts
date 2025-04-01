@@ -92,9 +92,9 @@ describe("Portfolio Bridge Main", () => {
 
     it("Should get the Bridge Fee correctly", async () => {
         const { dexalotSubnet } = f.getChains();
-        await expect(portfolioBridgeMain.getBridgeFee(1, dexalotSubnet.chainListOrgId, AVAX, 0, Utils.emptyOptions())).to.be.revertedWith("PB-RBNE-03");
+        await expect(portfolioBridgeMain.getBridgeFee(1, dexalotSubnet.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions())).to.be.revertedWith("PB-RBNE-03");
         // Last parameter symbol is irrelevant
-        const bridgeFee = await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX, 0, Utils.emptyOptions());
+        const bridgeFee = await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions());
         expect(bridgeFee.gt(0)).to.be.true;
         // console.log (await portfolioBridgeMain.getBridgeFee(0, dexalotSubnet.chainListOrgId, AVAX ));
     });
@@ -417,7 +417,7 @@ describe("Portfolio Bridge Main", () => {
         // fail for non-owner
         await expect(portfolioBridgeMain.connect(trader1).refundNative()).to.be.revertedWith("AccessControl:");
 
-        // succeed for non-owner
+        // succeed for owner
         const tx = await portfolioBridgeMain.refundNative()
         const receipt: any = await tx.wait()
 

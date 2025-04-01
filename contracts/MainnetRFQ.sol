@@ -82,6 +82,12 @@ contract MainnetRFQ is
         );
     // mask for nonce in cross chain transfer customdata, last 12 bytes
     uint96 private constant NONCE_MASK = 0xffffffffffffffffffffffff;
+    // precision for slippage bps (2 decimal places of bps)
+    uint256 private constant SLIP_PRECISION = 1000000;
+    // mask for slippage bps in slipInfo, last 3 bytes
+    uint8 private constant SLIP_BPS_MASK = 0x7;
+    // number of bits to shift for slippage bps in slipInfo
+    uint8 private constant SLIP_BPS_SHIFT = 3;
 
     // firm order data structure sent to user for regular swap from RFQ API
     struct Order {
@@ -138,7 +144,7 @@ contract MainnetRFQ is
     // address used to sign and verify swap orders
     address public swapSigner;
 
-    // used to slip orders in case of high volatility
+    // (no longer in use, kept for upgradeability)
     uint256 public slippageTolerance;
 
     // (no longer in use, kept for upgradeability)
@@ -160,13 +166,16 @@ contract MainnetRFQ is
     IPortfolioBridge public portfolioBridge;
     // portfolio main contract, used to get token addresses on destination chain
     address public portfolioMain;
-    // bitmap, used to slip quote for a given pair if high volatility
+    // (no longer in use, kept for upgradeability)
     uint256 public volatilePairs;
-    //
+    // wrapped info for the given chain, used to unwrap/wrap in a swap
     WrappedInfo public wrappedInfo;
+    // number of bps to slip quote by to 2 decimal places
+    // key = [ slipBpsEnum ] or [ expiryTime | slipBpsEnum ]
+    mapping(uint256 => uint24) public slippagePoints;
 
     // storage gap for upgradeability
-    uint256[42] __gap;
+    uint256[41] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -191,8 +200,6 @@ contract MainnetRFQ is
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
-    event UpdatedSlippageTolerance(uint256 slippageTolerance);
-    event UpdatedVolatilePairs(uint256 volatilePairs);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -442,25 +449,19 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice  Sets slippage tolerance for the contract
-     * @dev     Slippage tolerance is represented in BIPs. i.e. slippage must be less than 1%.
-     * @param   _slippageTolerance  slippage tolerance in BIPs
+     * @notice  Sets the slippage points for a given key
+     * @dev     Only callable by volatility admin
+     * @param   _slipBpsKeys  Array of keys for slippage points
+     * @param   _slipBpsPoints  Array of slippage points
      */
-    function setSlippageTolerance(uint256 _slippageTolerance) external onlyRole(VOLATILITY_ADMIN_ROLE) {
-        require(_slippageTolerance <= 10000 && _slippageTolerance >= 9900, "RF-STTA-01");
-        slippageTolerance = _slippageTolerance;
-        emit UpdatedSlippageTolerance(_slippageTolerance);
-    }
-
-    /**
-     * @notice  Sets volatile pairs to slip for the contract
-     * @dev     Volatile pairs is a bitmap. If a pair is set to slip, the contract will
-     * slip the quote for that pair during high volatility.
-     * @param   _volatilePairs  volatile pairs to slip bitmap
-     */
-    function setVolatilePairs(uint256 _volatilePairs) external onlyRole(VOLATILITY_ADMIN_ROLE) {
-        volatilePairs = _volatilePairs;
-        emit UpdatedVolatilePairs(_volatilePairs);
+    function setSlippagePoints(
+        uint256[] calldata _slipBpsKeys,
+        uint24[] calldata _slipBpsPoints
+    ) external onlyRole(VOLATILITY_ADMIN_ROLE) {
+        require(_slipBpsKeys.length == _slipBpsPoints.length, "RF-SPAM-01");
+        for (uint256 i = 0; i < _slipBpsKeys.length; i++) {
+            slippagePoints[_slipBpsKeys[i]] = _slipBpsPoints[i];
+        }
     }
 
     /**
@@ -664,9 +665,9 @@ contract MainnetRFQ is
         uint256 _takerAmount,
         address _destTrader
     ) private {
-        uint8 pair = uint8(_order.nonceAndMeta >> 88);
-        if (pair != 0 && (volatilePairs >> pair) & 1 == 1) {
-            _makerAmount = (_makerAmount * slippageTolerance) / 10000;
+        uint8 slipInfo = uint8(_order.nonceAndMeta >> 88);
+        if (slipInfo > SLIP_BPS_MASK) {
+            _makerAmount = _slipQuote(slipInfo, _order.expiry, _makerAmount);
         }
         SwapData memory swapData = SwapData({
             nonceAndMeta: _order.nonceAndMeta,
@@ -867,6 +868,41 @@ contract MainnetRFQ is
         completedSwaps[bucket] |= mask;
         emit XChainFinalized(_nonceAndMeta, _trader, _symbol, _quantity, block.timestamp);
         return true;
+    }
+
+    /**
+     * @notice  Slips the quote based on the slippage points and expiry
+     * @param   slipInfo  Slip info bitmap
+     * @param   expiry    Expiry of the quote
+     * @param   amount    Original maker amount
+     * @return  uint256   Slipped maker amount
+     */
+    function _slipQuote(uint8 slipInfo, uint128 expiry, uint256 amount) private view returns (uint256) {
+        uint8 slipBpsKey = (slipInfo & SLIP_BPS_MASK);
+
+        // slipInfo = always slip (1) | quote ttl (4) | slippage bps (3)
+        if (slipInfo & 0x80 != 0) {
+            return (amount * (SLIP_PRECISION - slippagePoints[slipBpsKey])) / SLIP_PRECISION;
+        }
+
+        uint256 quoteTtl = 5 * (slipInfo >> SLIP_BPS_SHIFT);
+        uint256 expiryMinusTtl = expiry - quoteTtl;
+        // If block.timestamp < expiry - quoteTtl, return the original amount
+        if (block.timestamp <= expiryMinusTtl) {
+            return amount;
+        }
+
+        uint256 activeQuoteTs = block.timestamp - expiryMinusTtl;
+
+        if (activeQuoteTs > 15) {
+            uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
+            if (slipBps == 0) {
+                slipBps = slippagePoints[slipBpsKey];
+            }
+            return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
+        }
+
+        return amount;
     }
 
     // solhint-disable-next-line payable-fallback

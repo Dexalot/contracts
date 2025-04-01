@@ -81,20 +81,20 @@ describe("Portfolio Gas Airdrop", () => {
   });
 
   it("should not add to bridge fee if optionsGasCost not set", async () => {
-    const bFee = await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, airdropOptions);
+    const bFee = await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, owner.address, airdropOptions);
 
     await setGasAirdrop();
 
-    expect(await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, airdropOptions)).to.equal(bFee);
+    expect(await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, owner.address, airdropOptions)).to.equal(bFee);
   });
 
   it("should add to bridge fee if optionsGasCost set", async () => {
-    const bFee = await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, airdropOptions);
+    const bFee = await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, owner.address, airdropOptions);
 
     await setGasAirdrop();
     await setOptionGasCost(Options.GASAIRDROP);
 
-    expect(await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, airdropOptions)).to.equal(bFee.mul(150).div(100));
+    expect(await portfolioSub.getBridgeFee(0, mainnetChainId, tokenSymbol, dummyQty, owner.address, airdropOptions)).to.equal(bFee.mul(150).div(100));
   });
 
   it("should not airdrop if gas airdrop not set", async () => {
@@ -219,17 +219,17 @@ describe("Portfolio Unwrap/Wrap", () => {
   });
 
   it("should not add to bridge fee if optionsGasCost not set", async () => {
-    const bFee = await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, unwrapOptions);
+    const bFee = await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, owner.address, unwrapOptions);
 
-    expect(await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, unwrapOptions)).to.equal(bFee);
+    expect(await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, owner.address, unwrapOptions)).to.equal(bFee);
   });
 
   it("should add to bridge fee if optionsGasCost set", async () => {
-    const bFee = await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, unwrapOptions);
+    const bFee = await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, owner.address, unwrapOptions);
 
     await setOptionGasCost(Options.UNWRAP);
 
-    expect(await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, unwrapOptions)).to.equal(bFee.mul(150).div(100));
+    expect(await portfolioSub.getBridgeFee(0, arbChainId, ethUtf, dummyQty, owner.address, unwrapOptions)).to.equal(bFee.mul(150).div(100));
   });
 
   it("should successfully unwrap if unwrap option set", async () => {
@@ -383,6 +383,27 @@ describe("Portfolio Decimals", () => {
     expect(await usdcArb.balanceOf(trader.address)).to.equal(balBefore.sub(Utils.parseUnits(depositAmt, arbDecimals)));
     const prtfBalance = await portfolioSub.getBalance(trader.address, tokenSymbol);
     expect(prtfBalance.available).to.equal(Utils.parseUnits(depositAmt, subnetDecimals));
+  });
+
+  it("should fail to set bridge fee if incorrect decimals", async () => {
+    await expect(portfolioMain.setBridgeParam(tokenSymbol, Utils.parseUnits("0.5555555", mainnetDecimals), Utils.parseUnits("0.5", mainnetDecimals), false)).to.be.revertedWith("P-SBPD-01");
+  });
+
+  it("should succesfully truncate + refund native token", async () => {
+    const nativeTokenSymbol = Utils.fromUtf8("AVAX");
+    const nativeDepositAmt = "0.111111111111111111";
+    await portfolioMain.setL1Decimals(nativeTokenSymbol, subnetDecimals);
+
+    const balBefore = await trader.getBalance();
+    const tx = await f.depositNative(portfolioMain, trader, nativeDepositAmt);
+    const receipt = await tx.wait();
+    const gasSpent = receipt.gasUsed.mul(receipt.effectiveGasPrice);
+    const balAfter = await trader.getBalance();
+  });
+
+  it("should return 0 for truncation if bridgeFee > quantity", async () => {
+    const truncQ = await portfolioBridgeSub.truncateQuantity(f.getChains().cChain.chainListOrgId, tokenSymbol, 10, 100);
+    expect(truncQ.eq(0)).to.be.true;
   });
 
   it("should successfully withdraw token with larger subnet decimals", async () => {

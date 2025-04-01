@@ -37,6 +37,7 @@ import {
     LzV2App,
     DexalotTokenOFT,
     DexalotTokenOFTMinter,
+    SolPortfolioBridgeMock,
 } from '../typechain-types'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 // import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -53,6 +54,7 @@ const gunzillaSubnet = { native: "GUN", nativeBytes32: Utils.fromUtf8("GUN"), ev
 // Adding the native token for base as ETHB otherwise it clashes with arbitrumChain.
 const baseChain = { native: "ETHB", nativeBytes32: Utils.fromUtf8("ETHB"), evm_decimals: 18, lzChainId: 10245, chainListOrgId: 84532 };
 const bnbChain = { native: "tBNB", nativeBytes32: Utils.fromUtf8("tBNB"), evm_decimals: 18, lzChainId: 10102, chainListOrgId: 97 };
+const solChain = { native: "SOL", nativeBytes32: Utils.fromUtf8("SOL"), evm_decimals: 9, lzChainId: 10168, chainListOrgId: 5459788 };
 const dexalotSubnet = { native: "ALOT", nativeBytes32: Utils.fromUtf8("ALOT"), evm_decimals: 18, lzChainId: 10118, chainListOrgId: 432201 };
 const chainsArray = [cChain, arbitrumChain , baseChain, gunzillaSubnet, dexalotSubnet] //
 
@@ -128,7 +130,7 @@ interface MultiPortfolioContracts {
 */
 
 export const getChains = () => {
-    return { cChain, dexalotSubnet, arbitrumChain, gunzillaSubnet , baseChain, chainsArray };
+    return { cChain, dexalotSubnet, arbitrumChain, gunzillaSubnet , baseChain, solChain, chainsArray };
 }
 
 export const getBnBChain = () => {
@@ -361,9 +363,18 @@ export const deployPortfolioBridge = async (lzV2App: LzV2App, portfolio: Portfol
     return portfolioBridge;
 }
 
+export const deployMockSolana = async () => {
+    const lzEndpointSolana = await deployLZEndpoint(solChain.lzChainId);
+    const lzV2AppSolana = await deployLZV2App(lzEndpointSolana);
+    const PBridgeSolana = await ethers.getContractFactory("SolPortfolioBridgeMock");
+    const pBridgeSolana = await PBridgeSolana.deploy(lzV2AppSolana.address);
+    await lzV2AppSolana.setPortfolioBridge(pBridgeSolana.address);
+    return {lzEndpointSolana, lzV2AppSolana, pBridgeSolana};
+}
+
 export const setRemoteBridges = async (
-    sourcePortfolioBridge: PortfolioBridgeMain,
-    destinationPorfolioBridge: PortfolioBridgeMain,
+    sourcePortfolioBridge: PortfolioBridgeMain | SolPortfolioBridgeMock,
+    destinationPorfolioBridge: PortfolioBridgeMain | SolPortfolioBridgeMock,
     sourceLzEndPoint: Contract | MockContract<Contract>,
     destLzEndPoint: Contract | MockContract<Contract>,
     sourceLzApp: LzV2App,
@@ -761,7 +772,7 @@ export const addTradePair = async (exchangeSub: ExchangeSub, pair: any, pairSett
 
 export const depositNative = async (portfolio: PortfolioMain, from:SignerWithAddress, amount: string): Promise<any> => {
     return await from.sendTransaction({to: portfolio.address, value: Utils.toWei(amount),
-        gasLimit: 700000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei")});
+        gasLimit: 900000, maxFeePerGas: ethers.utils.parseUnits("5", "gwei")});
 
 }
 

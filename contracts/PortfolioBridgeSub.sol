@@ -231,6 +231,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _bridge  Bridge provider to use
      * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
+     * @param   _sender  Address of the sender
      * @param   _options  Custom options for the withdrawal transaction
      * @return  bridgeFees  Array of bridge fees for each corresponding chainId
      * @return  chainIds  Array of chainIds for each corresponding bridgeFee
@@ -239,6 +240,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         BridgeProvider _bridge,
         bytes32 _symbol,
         uint256 _quantity,
+        address _sender,
         bytes1 _options
     ) external view returns (uint256[] memory bridgeFees, uint32[] memory chainIds) {
         uint256 numChains = supportedChains.length();
@@ -247,12 +249,12 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         for (uint256 i = 0; i < numChains; ++i) {
             (uint256 chainId256, uint256 supportedBridges) = supportedChains.at(i);
             uint32 chainId = uint32(chainId256);
-            bytes32 symbolId = tokenInfoMapBySymbolChainId[_symbol][chainId].symbolId;
+            XferShort memory withdrawal = XferShort(_symbol, bytes32(0), _quantity, _sender);
+            withdrawal.symbolId = tokenInfoMapBySymbolChainId[_symbol][chainId].symbolId;
 
-            if (symbolId == bytes32(0) || (supportedBridges & (1 << uint8(_bridge))) == 0) {
+            if (withdrawal.symbolId == bytes32(0) || (supportedBridges & (1 << uint8(_bridge))) == 0) {
                 continue;
             }
-            XferShort memory withdrawal = XferShort(_symbol, symbolId, _quantity, msg.sender);
             try inventoryManager.calculateWithdrawalFee(withdrawal) returns (uint256 invFee) {
                 chainIds[i] = chainId;
                 bridgeFees[i] = _calcBridgeFee(withdrawal, _bridge, chainId, invFee, _options);
@@ -400,7 +402,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
             _subnetSymbol,
             _xfer.symbol,
             _xfer.quantity,
-            _xfer.transaction == IPortfolio.Tx.WITHDRAW ? msg.sender : UtilsLibrary.bytes32ToAddress(_xfer.trader)
+            UtilsLibrary.bytes32ToAddress(_xfer.trader)
         );
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
             inventoryManager.decrement(XferShort);
@@ -534,18 +536,19 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param   _dstChainListOrgChainId  destination chain id
      * @param   _symbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
+     * @param   _sender  Address of the sender
      * @param   _options  Custom options for the withdrawal transaction
      * @return  bridgeFee  bridge fee for the destination
      */
-
     function getBridgeFee(
         BridgeProvider _bridge,
         uint32 _dstChainListOrgChainId,
         bytes32 _symbol,
         uint256 _quantity,
+        address _sender,
         bytes1 _options
     ) public view override returns (uint256 bridgeFee) {
-        XferShort memory withdrawal = XferShort(_symbol, bytes32(0), _quantity, msg.sender);
+        XferShort memory withdrawal = XferShort(_symbol, bytes32(0), _quantity, _sender);
         bridgeFee = _calcBridgeFee(withdrawal, _bridge, _dstChainListOrgChainId, 0, _options);
     }
 

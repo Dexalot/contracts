@@ -476,7 +476,7 @@ describe("Portfolio Bridge Sub", () => {
 
         // need to deposit for inventory to be initialised and withdrawal fee to be set
         await f.depositNative(portfolioMain, trader1, "0.5");
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, Utils.emptyOptions())).to.be.equal(fee2);
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions())).to.be.equal(fee2);
     });
 
     it("Should set BridgeFees correctly with bridge multipler", async () => {
@@ -501,7 +501,7 @@ describe("Portfolio Bridge Sub", () => {
 
         // need to deposit for inventory to be initialised and withdrawal fee to be set
         await f.depositNative(portfolioMain, trader1, "0.5");
-        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, Utils.emptyOptions())).to.be.equal(fee2.div(2));
+        expect(await portfolioBridgeSub.getBridgeFee(0, cChain.chainListOrgId, AVAX, 0, owner.address, Utils.emptyOptions())).to.be.equal(fee2.div(2));
     });
 
     // TESTING DEPOSIT
@@ -1131,7 +1131,7 @@ describe("Portfolio Bridge Sub", () => {
     })
 
     it("Should fail to get bridge fee to token that does not exist", async function () {
-       await expect(portfolioBridgeSub.getBridgeFee(0, 0, ALOT, 0, Utils.emptyOptions())).to.be.revertedWith("PB-ETNS-01");
+       await expect(portfolioBridgeSub.getBridgeFee(0, 0, ALOT, 0, owner.address, Utils.emptyOptions())).to.be.revertedWith("PB-ETNS-01");
     })
 
     it("Should fail to process payload for token that does not exist", async function () {
@@ -1146,6 +1146,19 @@ describe("Portfolio Bridge Sub", () => {
         await portfolioBridgeSub.unpause();
 
         await expect(portfolioBridgeSub.processPayload(0, cChain.chainListOrgId, payload)).to.be.revertedWith("PB-ETNS-01");
+     })
+
+     it("Should fail to process payload for xfer type that is not supported", async function () {
+        const {cChain} = f.getChains();
+
+        const payload = Utils.generatePayload(1, 1, 0, Utils.addressToBytes32(trader1.address), Utils.fromUtf8("AVAX"), Utils.toWei("0.5"), await f.latestTime(), Utils.emptyCustomData());
+
+        await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeSub.pause();
+        await portfolioBridgeSub.enableBridgeProvider(0, owner.address);
+        await portfolioBridgeSub.unpause();
+
+        await expect(portfolioBridgeSub.processPayload(0, cChain.chainListOrgId, payload)).to.be.revertedWith("PB-UM-01");
      })
 
      it("Should fail to send message for token that does not exist", async function () {

@@ -72,7 +72,7 @@ interface IPortfolio {
         bytes32 tokenAddress;
         uint64 quantity;
         uint32 timestamp;
-        bytes10 customdata;
+        bytes18 customdata;
     }
 
     struct TokenDetails {

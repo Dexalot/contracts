@@ -655,7 +655,7 @@ describe("Portfolio Sub", () => {
 
         await usdt.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
 
-        await f.addToken(portfolioMain, portfolioSub, usdt, gasSwapRatioUsdt, 0, true, bridgeFee); //gasSwapRatio 10
+        await f.addToken(portfolioMain, portfolioSub, usdt, gasSwapRatioUsdt, 0, true, bridgeFee, "", bridgeFee); //gasSwapRatio 10
 
         const params =await portfolioSub.bridgeParams(USDT);
         expect(params.gasSwapRatio).to.equal(Utils.parseUnits(gasSwapRatioUsdt.toString(), token_decimals));

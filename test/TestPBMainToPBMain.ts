@@ -13,7 +13,7 @@ import {
     MockToken,
     MainnetRFQ,
     ILayerZeroEndpointV2,
-    LzV2App,
+    SolPortfolioBridgeMock,
 } from "../typechain-types"
 
 import * as f from "./MakeTestSuite";
@@ -33,11 +33,8 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
     let portfolioBridgeArb: PortfolioBridgeMain;
     let portfolioBridgeGun: PortfolioBridgeMain;
     // let portfolioBridgeSub: PortfolioBridgeSub;
+    let porfolioBridgeSol: SolPortfolioBridgeMock;
 
-    let lzV2AppGun: LzV2App;
-    let lzV2AppAvax: LzV2App;
-    let lzEndpointGun: ILayerZeroEndpointV2;
-    let lzEndpointAvax: ILayerZeroEndpointV2;
     let mainnetRFQAvax: MainnetRFQ;
     let mainnetRFQArb: MainnetRFQ;
 
@@ -50,9 +47,6 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
     let gunDetails: any;
     let usdcDetails: any;
-    let avaxDetails: any;
-
-    let gunCcTrade: string;
     //let gunCcPayload: string;
 
     let usdc: MockToken;
@@ -94,23 +88,26 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         portfolioBridgeGun = portfolioContracts.portfolioBridgeGun;
         //portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
 
-        lzEndpointGun = portfolioContracts.lzEndpointGun as ILayerZeroEndpointV2;
-        lzEndpointAvax = portfolioContracts.lzEndpointAvax as ILayerZeroEndpointV2;
-        lzV2AppGun = portfolioContracts.lzAppGun;
-        lzV2AppAvax = portfolioContracts.lzAppAvax;
+        const lzEndpointAvax = portfolioContracts.lzEndpointAvax as ILayerZeroEndpointV2;
+        const lzV2AppAvax = portfolioContracts.lzAppAvax;
 
         mainnetRFQAvax = portfolioContracts.mainnetRFQAvax;
         mainnetRFQArb = portfolioContracts.mainnetRFQArb;
 
+        const { cChain, gunzillaSubnet, solChain } = f.getChains();
+
+        const solContracts = await f.deployMockSolana();
+        porfolioBridgeSol = solContracts.pBridgeSolana;
+        await f.setRemoteBridges(portfolioBridgeAvax, porfolioBridgeSol, lzEndpointAvax, solContracts.lzEndpointSolana, lzV2AppAvax, solContracts.lzV2AppSolana, cChain, solChain);
+
+
         gunDetails = { symbol: "GUN", symbolbytes32: Utils.fromUtf8("GUN"), decimals: 18 };
         usdcDetails = { symbol: "USDC", symbolbytes32: Utils.fromUtf8("USDC"), decimals: 6 };
 
-        avaxDetails = { symbol: "AVAX", symbolbytes32: Utils.fromUtf8("AVAX"), decimals: 18 };
         usdcDetails = { symbol: "USDC", symbolbytes32: Utils.fromUtf8("USDC"), decimals: 6 };
 
         usdc = await f.deployMockToken(usdcDetails.symbol, usdcDetails.decimals)
         usdcArb = await f.deployMockToken(usdcDetails.symbol, usdcDetails.decimals)
-        const { cChain, gunzillaSubnet } = f.getChains();
 
         await f.addToken(portfolioAvax, portfolioSub, usdc, 0.5, 0, true, 0);
         await f.addToken(portfolioArb, portfolioSub, usdcArb, 0.5, 0, true, 0);
@@ -123,38 +120,6 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, gunDetails.symbolbytes32);
         //Enable USDC for CCTRADE at gunzilla for destination avax
         await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(usdc.address));
-
-        const nonce = 0;
-        const tx = 11;                // TX = 1 = CCTRADE [main --> sub]
-
-        //const xChainMessageType = 0; // XChainMsgType = 0 = XFER
-
-        gunCcTrade = ethers.utils.defaultAbiCoder.encode(
-            [
-                "uint64",   // nonce,
-                "uint8",    // TX = 11
-                "address",  // trader
-                "bytes32",  // symbol
-                "uint256",  // quantity
-                "uint256",   // timestamp
-                "bytes18"  //customdata
-            ] ,
-            [
-                nonce,
-                tx,
-                trader1.address,
-                gunDetails.symbolbytes32,
-                Utils.parseUnits("10", gunDetails.decimals),
-                await f.latestTime(),
-                Utils.emptyCustomData()
-            ]
-        )
-
-        // gunCcPayload = ethers.utils.defaultAbiCoder.encode(
-        //     ["uint8", "bytes"],
-        //     [xChainMessageType, gunCcTrade]
-        // )
-        // await usdc.mint(trader1.address, (BigNumber.from(2)).mul(usdtDepositAmount));
 
     });
 
@@ -376,7 +341,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
                  customdata: Utils.emptyCustomData()
         };
 
-        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0, Utils.emptyOptions());
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, cChain.chainListOrgId, ethers.constants.HashZero, 0, traderAddress, Utils.emptyOptions());
 
         const tx = await portfolioBridgeGun.sendXChainMessage(cChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
         const receipt: any = await tx.wait();
@@ -447,7 +412,7 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
 
         //Enable USDC for CCTRADE at gunzilla for destination arb
         await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, arbitrumChain.chainListOrgId, Utils.addressToBytes32(usdcArb.address));
-        const value = await portfolioBridgeGun.getBridgeFee(bridge0, arbitrumChain.chainListOrgId, ethers.constants.HashZero, 0, Utils.emptyOptions());
+        const value = await portfolioBridgeGun.getBridgeFee(bridge0, arbitrumChain.chainListOrgId, ethers.constants.HashZero, 0, traderAddress, Utils.emptyOptions());
 
         // succeed
         const tx = await portfolioBridgeGun.sendXChainMessage(arbitrumChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
@@ -628,5 +593,61 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
         }
     });
 
+    it("Should use sendXChainMessage Cchain to Sol correctly", async () => {
+        const bridge0 = 0;  // BridgeProvider = 0 = LZ
 
+        const nonce = 0;
+        const transaction1 = 11;  // transaction = 11 = CCTRADE [main --> main]
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
+        const symbol = Utils.fromUtf8("SOL");
+        const quantity = Utils.parseUnits("0.1", 9);
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        const { solChain } = f.getChains();
+
+        await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
+        await portfolioBridgeAvax.enableSupportedNative(solChain.chainListOrgId, symbol);
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+        const value = await portfolioBridgeAvax.getBridgeFee(bridge0, solChain.chainListOrgId, ethers.constants.HashZero, 0, traderAddress, Utils.emptyOptions());
+
+        const tx = await portfolioBridgeAvax.sendXChainMessage(solChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
+        const receipt: any = await tx.wait();
+
+        for (const log of receipt.events) {
+            if (log.event !== "XChainXFerMessage") {
+                continue;
+            }
+            // console.log(log);
+            // console.log("**************");
+            // console.log(log.address);
+            expect(log.args.version).to.be.equal(3);
+            expect(log.args.bridge).to.be.equal(bridge0);
+
+            if (log.address == portfolioBridgeAvax.address) {
+                expect(log.args.remoteChainId).to.be.equal(solChain.chainListOrgId);
+                expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
+                expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
+            }
+
+            expect(log.args.xfer.nonce).to.be.equal(1);
+            expect(log.args.xfer.transaction).to.be.equal(transaction1);
+            expect(log.args.xfer.trader).to.be.equal(trader);
+            //No mapping when PBMain to PBMAIN
+            expect(log.args.xfer.symbol).to.be.equal(symbol);
+
+            expect(log.args.xfer.quantity).to.be.equal(quantity);
+            expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
+        }
+    });
 });

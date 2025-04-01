@@ -571,7 +571,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // portfolioBridgeSub.tokenInfoMapBySymbolChainId mapping as of Apr 1, 2024 CD
         uint256 bridgeFee = portfolioSubHelper.isAdminAccountForRates(_from)
             ? 0
-            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _options);
+            : portfolioBridge.getBridgeFee(_bridge, _dstChainListOrgChainId, _symbol, _quantity, _from, _options);
 
         // Truncate the quantity such that quantity - bridgeFee is accurate to destination chain decimals
         _quantity = IPortfolioBridgeSub(address(portfolioBridge)).truncateQuantity(

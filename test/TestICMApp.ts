@@ -217,17 +217,23 @@ describe("ICMApp", () => {
   it("Should successfully getAllBridgeFees", async () => {
     const { cChain } = f.getChains();
 
+    const impersonatedSigner = await ethers.getImpersonatedSigner("0x99E5B1709B7D8A6B15c5089309A0Fda7DD789Ee8");
+    await impersonatedSigner.sendTransaction({
+      to: owner.address,
+      value: ethers.utils.parseEther("1"),
+    })
+
     await icmAppSub.setPortfolioBridge(portfolioBridgeSub.address);
     const randRemoteAddress = Utils.addressToBytes32(trader1.address);
     await portfolioBridgeSub.grantRole(await portfolioBridgeSub.BRIDGE_USER_ROLE(), owner.address);
-    let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), Utils.emptyOptions());
+    let icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), owner.address, Utils.emptyOptions());
     expect(icmBridgeFees.chainIds.length).to.equal(1);
     expect(icmBridgeFees.chainIds[0]).to.equal(0);
 
     await portfolioBridgeSub.enableBridgeProvider(2, icmAppMain.address);
     await portfolioBridgeSub.setTrustedRemoteAddress(2, cChain.chainListOrgId, subnetBlockchainID, randRemoteAddress, false);
 
-    icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), Utils.emptyOptions());
+    icmBridgeFees = await portfolioBridgeSub.getAllBridgeFees(2, Utils.fromUtf8("AVAX"), Utils.toWei("0.1"), owner.address, Utils.emptyOptions());
     expect(icmBridgeFees.chainIds.length).to.equal(1);
     expect(icmBridgeFees.chainIds[0]).to.equal(cChain.chainListOrgId);
   });
