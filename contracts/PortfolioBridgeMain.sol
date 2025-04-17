@@ -106,7 +106,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.5");
+        return bytes32("4.1.6");
     }
 
     /**
@@ -493,6 +493,7 @@ contract PortfolioBridgeMain is
         );
         bytes32 slot1 = bytes32(_xfer.trader);
         bytes32 tokenAddress = xChainAllowedDestinations[_xfer.symbol][SOL_CHAIN_ID];
+        require(tokenAddress != bytes32(0) || supportedChainNative[SOL_CHAIN_ID] == _xfer.symbol, "PB-STNS-01");
         bytes32 slot2 = bytes32(tokenAddress);
         bytes8 slot3 = bytes8(uint64(_xfer.quantity));
         message = bytes.concat(slot0, slot1, slot2, slot3);
