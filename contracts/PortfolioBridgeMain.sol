@@ -476,7 +476,7 @@ contract PortfolioBridgeMain is
     /**
      * @notice  Maps symbol to symbolId and encodes XFERSolana message
      * @dev     It is packed as follows:
-     * slot0: customdata(10), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
+     * slot0: customdata(18), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
      * slot1: trader(32)
      * slot1: tokenAddress(32)
      * slot2: quantity(8)
