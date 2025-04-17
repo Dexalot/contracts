@@ -62,7 +62,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.6");
+    bytes32 public constant VERSION = bytes32("1.1.7");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -88,6 +88,8 @@ contract MainnetRFQ is
     uint8 private constant SLIP_BPS_MASK = 0x7;
     // number of bits to shift for slippage bps in slipInfo
     uint8 private constant SLIP_BPS_SHIFT = 3;
+    // max slippage bps
+    uint24 private constant MAX_SLIP_BPS = 50000;
 
     // firm order data structure sent to user for regular swap from RFQ API
     struct Order {
@@ -460,6 +462,7 @@ contract MainnetRFQ is
     ) external onlyRole(VOLATILITY_ADMIN_ROLE) {
         require(_slipBpsKeys.length == _slipBpsPoints.length, "RF-SPAM-01");
         for (uint256 i = 0; i < _slipBpsKeys.length; i++) {
+            require(_slipBpsPoints[i] <= MAX_SLIP_BPS, "RF-SPMB-01");
             slippagePoints[_slipBpsKeys[i]] = _slipBpsPoints[i];
         }
     }

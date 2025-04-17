@@ -177,6 +177,7 @@
     "RF-RAOW-01": "MainnetRFQ: rebalancer admin or wrapped token only allowed to deposit native token",
     "RF-NFUN-01": "MainnetRFQ: unknown function call",
     "RF-SPAM-01": "MainnetRFQ: slippage points array length mismatch",
+    "RF-SPMB-01": "MainnetRFQ: slippage points less than max slip bps",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",
