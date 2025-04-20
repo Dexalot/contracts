@@ -1,7 +1,7 @@
 -------------------------------|----------|----------|----------|----------|----------------|
 File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 -------------------------------|----------|----------|----------|----------|----------------|
- contracts\                    |      100 |    96.91 |      100 |      100 |                |
+ contracts\                    |      100 |    96.93 |      100 |      100 |                |
   BannedAccounts.sol           |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol         |      100 |      100 |      100 |      100 |                |
   Exchange.sol                 |      100 |      100 |      100 |      100 |                |
@@ -9,10 +9,10 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   ExchangeSub.sol              |      100 |      100 |      100 |      100 |                |
   GasStation.sol               |      100 |    93.33 |      100 |      100 |                |
   InventoryManager.sol         |      100 |      100 |      100 |      100 |                |
-  MainnetRFQ.sol               |      100 |    99.36 |      100 |      100 |                |
+  MainnetRFQ.sol               |      100 |    99.37 |      100 |      100 |                |
   OrderBooks.sol               |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                |      100 |    95.65 |      100 |      100 |                |
-  PortfolioBridgeMain.sol      |      100 |     97.5 |      100 |      100 |                |
+  PortfolioBridgeMain.sol      |      100 |    97.58 |      100 |      100 |                |
   PortfolioBridgeSub.sol       |      100 |    96.51 |      100 |      100 |                |
   PortfolioMain.sol            |      100 |    93.44 |      100 |      100 |                |
   PortfolioMinter.sol          |      100 |      100 |      100 |      100 |                |
@@ -64,5 +64,5 @@ File                           |  % Stmts | % Branch |  % Funcs |  % Lines |Unco
   TokenVestingCloneFactory.sol |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol    |      100 |    96.67 |      100 |      100 |                |
 -------------------------------|----------|----------|----------|----------|----------------|
-All files                      |    99.88 |    97.02 |      100 |    99.91 |                |
+All files                      |    99.88 |    97.03 |      100 |    99.91 |                |
 -------------------------------|----------|----------|----------|----------|----------------|

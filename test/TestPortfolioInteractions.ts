@@ -584,4 +584,17 @@ describe("Portfolio Interactions", () => {
         expect(await portfolioMain.trustedContracts(tokenVesting.address)).to.be.false;
     });
 
+    it("Should fail to withdraw to Solana if solana native not enabled on subnet", async function () {
+        const symbol = Utils.fromUtf8("SOL");
+        const quantity = ethers.utils.parseUnits("1", 9);
+        const solChainId = f.getChains().solChain.chainListOrgId
+        const depositPayload = Utils.generatePayload(0, 1, 1, Utils.addressToBytes32(trader1.address), symbol, quantity, await f.latestTime(), Utils.emptyCustomData());
+
+        await f.addTokenToPortfolioSub(portfolioSub, "SOL", "SOL", ethers.constants.AddressZero, 9, solChainId, 0);
+
+        await portfolioBridgeSub.enableBridgeProvider(1, owner.address);
+        await portfolioBridgeSub.processPayload(1, solChainId, depositPayload);
+
+        await expect(portfolioSub.connect(trader1)['withdrawToken(address,bytes32,bytes32,uint256,uint8,uint32,bytes1)'](trader1.address, Utils.addressToBytes32(trader1.address), symbol, quantity, 1, solChainId, Utils.emptyOptions())).to.be.revertedWith("PB-STNS-01");
+    });
 });
