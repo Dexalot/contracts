@@ -2243,6 +2243,14 @@ describe("Mainnet RFQ", () => {
     ).to.be.revertedWith("RF-SPAM-01");
   });
 
+  it("Should fail to set slippage points with too high slippage mismatch", async () => {
+    await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
+
+    await expect(
+      mainnetRFQ.connect(volatiltyAdmin).setSlippagePoints([0], [50001])
+    ).to.be.revertedWith("RF-SPMB-01");
+  });
+
   it("Should slip with always slip bit set", async () => {
     await mainnetRFQ.connect(owner).addVolatilityAdmin(volatiltyAdmin.address);
     // set to 1%

@@ -64,7 +64,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.1.5");
+        return bytes32("4.1.6");
     }
 
     /**
@@ -388,7 +388,8 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         super.sendXChainMessageInternal(_dstChainListOrgChainId, _bridge, _xfer, _userFeePayer);
         // overrite the _xfer.symbol with symbolId for proper inventory calculations
         _xfer.symbol = destSymbolId;
-        updateInventoryBySource(subnetSymbol, _xfer);
+        // _userFeePayer = dexalot l1 from address for withdrawals
+        updateInventoryBySource(subnetSymbol, _xfer, _userFeePayer);
     }
 
     /**
@@ -397,19 +398,14 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
      * @param  _subnetSymbol Dexalot L1(subnet) Symbol
      * @param  _xfer  Transfer Message
      */
-    function updateInventoryBySource(bytes32 _subnetSymbol, IPortfolio.XFER memory _xfer) private {
-        XferShort memory XferShort = XferShort(
-            _subnetSymbol,
-            _xfer.symbol,
-            _xfer.quantity,
-            UtilsLibrary.bytes32ToAddress(_xfer.trader)
-        );
+    function updateInventoryBySource(bytes32 _subnetSymbol, IPortfolio.XFER memory _xfer, address _from) private {
+        XferShort memory xferShort = XferShort(_subnetSymbol, _xfer.symbol, _xfer.quantity, _from);
         if (_xfer.transaction == IPortfolio.Tx.WITHDRAW) {
-            inventoryManager.decrement(XferShort);
+            inventoryManager.decrement(xferShort);
             return;
         }
         if (_xfer.transaction == IPortfolio.Tx.DEPOSIT) {
-            inventoryManager.increment(XferShort);
+            inventoryManager.increment(xferShort);
         }
     }
 
@@ -434,7 +430,8 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         // Update the totals by symbolId for multichain inventory management.
         // Add xfer.quantity to the totals by SymbolId. It will be used to see how much the user
         // can withdraw from the target chain.
-        updateInventoryBySource(subnetSymbol, xfer);
+        // xfer.trader = dexalot l1 to address for deposits
+        updateInventoryBySource(subnetSymbol, xfer, UtilsLibrary.bytes32ToAddress(xfer.trader));
         //After the inventory is updated, process the XFer with the Dexalot L1(subnet) symbol that Portfolio needs
         xfer.symbol = subnetSymbol;
 

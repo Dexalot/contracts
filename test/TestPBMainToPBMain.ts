@@ -650,4 +650,63 @@ describe("Mainnet RFQ Portfolio Bridge Main to Portfolio Bridge Main", () => {
             expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
         }
     });
+
+    it("Should use sendXChainMessage Cchain to Sol usdc correctly", async () => {
+        const bridge0 = 0;  // BridgeProvider = 0 = LZ
+
+        const nonce = 0;
+        const transaction1 = 11;  // transaction = 11 = CCTRADE [main --> main]
+        const traderAddress = trader1.address;
+        const trader = Utils.addressToBytes32(traderAddress);
+        const symbol = Utils.fromUtf8("USDC");
+        const quantity = Utils.parseUnits("0.1", 9);
+        const timestamp = BigNumber.from(await f.latestTime());
+
+        const { solChain } = f.getChains();
+
+        await portfolioBridgeAvax.grantRole(await portfolioBridgeAvax.BRIDGE_USER_ROLE(), owner.address);
+        const tokenAddress = Utils.addressToBytes32(usdc.address);
+        await portfolioBridgeAvax.enableXChainSwapDestination(symbol, solChain.chainListOrgId, tokenAddress);
+
+        let xfer1: any = {};
+        xfer1 = {nonce,
+                 transaction: transaction1,
+                 trader,
+                 symbol,
+                 quantity,
+                 timestamp,
+                 customdata: Utils.emptyCustomData()
+        };
+
+        const value = await portfolioBridgeAvax.getBridgeFee(bridge0, solChain.chainListOrgId, ethers.constants.HashZero, 0, traderAddress, Utils.emptyOptions());
+
+        const tx = await portfolioBridgeAvax.sendXChainMessage(solChain.chainListOrgId, bridge0, xfer1, traderAddress, {value: value});
+        const receipt: any = await tx.wait();
+
+        for (const log of receipt.events) {
+            if (log.event !== "XChainXFerMessage") {
+                continue;
+            }
+            // console.log(log);
+            // console.log("**************");
+            // console.log(log.address);
+            expect(log.args.version).to.be.equal(3);
+            expect(log.args.bridge).to.be.equal(bridge0);
+
+            if (log.address == portfolioBridgeAvax.address) {
+                expect(log.args.remoteChainId).to.be.equal(solChain.chainListOrgId);
+                expect(log.args.msgDirection).to.be.equal(0); // 0 SENT 1 RECEIVED
+                expect(log.args.xfer.timestamp).to.be.equal(timestamp); // Timestamp when message is created from above
+            }
+
+            expect(log.args.xfer.nonce).to.be.equal(1);
+            expect(log.args.xfer.transaction).to.be.equal(transaction1);
+            expect(log.args.xfer.trader).to.be.equal(trader);
+            //No mapping when PBMain to PBMAIN
+            expect(log.args.xfer.symbol).to.be.equal(symbol);
+
+            expect(log.args.xfer.quantity).to.be.equal(quantity);
+            expect(log.args.xfer.customdata).to.be.equal(Utils.emptyCustomData());
+        }
+    });
 });

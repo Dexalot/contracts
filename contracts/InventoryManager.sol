@@ -259,7 +259,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         // for the additional 50 ==>  _withdrawal.quantity - userLiquidity
         fee =
             InvariantMathLibrary.calcWithdrawOneChain(
-                (_withdrawal.quantity) / scaleFactor,
+                (_withdrawal.quantity - userLiquidity) / scaleFactor,
                 index,
                 inventories,
                 totalInventory,

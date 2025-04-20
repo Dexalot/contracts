@@ -102,6 +102,7 @@
     "PB-MPGT-01": "PortfolioBridge: bridge fee multipler is greater than 100%",
     "PB-OBSA-01": "PortfolioBridge: old bridge provider still active",
     "PB-GASF-01": "PortfolioBridge: gas airdrop send fails",
+    "PB-STNS-01": "PortfolioBridge: solana token address not set",
 
     "PM-ZADD-01": "PortfolioMinter: cannot initialize with 0 address",
     "PM-ZAMT-01": "PortfolioMinter: mint amount must be greater than 0",
@@ -177,6 +178,7 @@
     "RF-RAOW-01": "MainnetRFQ: rebalancer admin or wrapped token only allowed to deposit native token",
     "RF-NFUN-01": "MainnetRFQ: unknown function call",
     "RF-SPAM-01": "MainnetRFQ: slippage points array length mismatch",
+    "RF-SPMB-01": "MainnetRFQ: slippage points less than max slip bps",
 
     "S-CNSZ-01": "Staking: cannot stake 0",
     "S-SHBP-01": "Staking: staking has been paused",

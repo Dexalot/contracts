@@ -516,7 +516,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws token to the default destination chain. Keeping it for backward compatibility
+     * @notice  Withdraws token to an evm destination chain
      * @param   _to  Address of the withdrawer
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of the token
@@ -543,7 +543,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     /**
-     * @notice  Withdraws token to a destination chain
+     * @notice  Withdraws token to any destination chain including options
      * @param   _from Source address of the withdrawer
      * @param   _to  Bytes32 destination address of the withdrawer
      * @param   _symbol  Symbol of the token

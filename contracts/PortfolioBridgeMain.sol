@@ -106,7 +106,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.5");
+        return bytes32("4.1.6");
     }
 
     /**
@@ -476,7 +476,7 @@ contract PortfolioBridgeMain is
     /**
      * @notice  Maps symbol to symbolId and encodes XFERSolana message
      * @dev     It is packed as follows:
-     * slot0: customdata(10), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
+     * slot0: customdata(18), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
      * slot1: trader(32)
      * slot1: tokenAddress(32)
      * slot2: quantity(8)
@@ -493,6 +493,7 @@ contract PortfolioBridgeMain is
         );
         bytes32 slot1 = bytes32(_xfer.trader);
         bytes32 tokenAddress = xChainAllowedDestinations[_xfer.symbol][SOL_CHAIN_ID];
+        require(tokenAddress != bytes32(0) || supportedChainNative[SOL_CHAIN_ID] == _xfer.symbol, "PB-STNS-01");
         bytes32 slot2 = bytes32(tokenAddress);
         bytes8 slot3 = bytes8(uint64(_xfer.quantity));
         message = bytes.concat(slot0, slot1, slot2, slot3);
