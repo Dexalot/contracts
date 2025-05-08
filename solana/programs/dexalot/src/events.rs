@@ -33,10 +33,7 @@ pub struct PortfolioUpdatedEvent {
     pub wallet: Pubkey,
     pub token_mint: Pubkey,
     pub quantity: u64,
-    pub fee_charged: u64,
-    pub total: u64,
-    pub available: u64,
-    pub wallet_other: Pubkey,
+    pub wallet_other: [u8; 32],
 }
 
 #[event]

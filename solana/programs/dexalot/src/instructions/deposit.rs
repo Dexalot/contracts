@@ -73,10 +73,7 @@ pub fn deposit(ctx: &mut Context<Deposit>, params: &DepositParams) -> Result<()>
         wallet: from.key(),
         token_mint: token_details.token_address,
         quantity: params.amount,
-        fee_charged: 0,
-        total: 0,
-        available: 0,
-        wallet_other: Pubkey::from([0; 32]),
+        wallet_other: params.trader,
     });
 
     //Create and send cross-chain message
@@ -240,10 +237,7 @@ pub fn deposit_native(
         wallet: from.key(),
         token_mint: Pubkey::default(),
         quantity: amount,
-        fee_charged: 0,
-        total: 0,
-        available: 0,
-        wallet_other: Pubkey::from([0; 32]),
+        wallet_other: params.trader,
     });
 
     let mut native_symbol = [0; 32];

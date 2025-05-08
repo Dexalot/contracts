@@ -2,7 +2,7 @@ use super::*;
 use crate::{
     consts::{NATIVE_VAULT_MIN_THRESHOLD, SOL_USER_FUNDS_VAULT_SEED, SOL_VAULT_SEED},
     errors::DexalotError,
-    events::XChainFinalized,
+    events::{PortfolioUpdatedEvent, XChainFinalized},
     instructions::{add_to_swap_queue, PendingSwap},
     xfer::{Tx, XFERSolana},
 };
@@ -84,13 +84,24 @@ pub fn process_xfer_payload_native<'info>(
         )?;
     }
 
-    emit!(XChainFinalized {
-        nonce: xfer.nonce,
-        trader: xfer.trader,
-        token_mint: xfer.token_mint,
-        amount: xfer.quantity,
-        timestamp: xfer.timestamp
-    });
+    if xfer.transaction == Tx::Withdraw {
+        emit!(PortfolioUpdatedEvent {
+            transaction: Tx::Withdraw,
+            wallet: xfer.trader,
+            token_mint: Pubkey::default(),
+            quantity: xfer.quantity,
+            wallet_other: [0; 32],
+        });
+    } else if xfer.transaction == Tx::CCTrade {
+        emit!(XChainFinalized {
+            nonce: xfer.nonce,
+            trader: xfer.trader,
+            token_mint: xfer.token_mint,
+            amount: xfer.quantity,
+            timestamp: xfer.timestamp
+        });
+    }
+
     Ok(())
 }
 
@@ -167,13 +178,23 @@ pub fn process_xfer_payload_spl<'info>(
         )?;
     }
 
-    emit!(XChainFinalized {
-        nonce: xfer.nonce,
-        trader: xfer.trader,
-        token_mint: xfer.token_mint,
-        amount: xfer.quantity,
-        timestamp: xfer.timestamp
-    });
+    if xfer.transaction == Tx::Withdraw {
+        emit!(PortfolioUpdatedEvent {
+            transaction: Tx::Withdraw,
+            wallet: xfer.trader,
+            token_mint: xfer.token_mint,
+            quantity: xfer.quantity,
+            wallet_other: [0; 32],
+        });
+    } else if xfer.transaction == Tx::CCTrade {
+        emit!(XChainFinalized {
+            nonce: xfer.nonce,
+            trader: xfer.trader,
+            token_mint: xfer.token_mint,
+            amount: xfer.quantity,
+            timestamp: xfer.timestamp
+        });
+    }
 
     Ok(())
 }
