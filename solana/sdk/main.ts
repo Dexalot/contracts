@@ -30,12 +30,6 @@ const main = async () => {
             await Interactor.initialize();
             break;
           case 2:
-            await Interactor.initializeSplVaults();
-            break;
-          case 3:
-            await Interactor.initializeSolVaults();
-            break;
-          case 4:
             await Interactor.initializeLayerzero();
             break;
           default:

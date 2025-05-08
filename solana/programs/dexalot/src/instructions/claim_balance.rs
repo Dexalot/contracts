@@ -20,7 +20,6 @@ pub struct ClaimSplBalance<'info> {
     pub rebalancer: AccountInfo<'info>,
     /// CHECK: spl vault address
     #[account(
-        constraint = spl_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [SPL_VAULT_SEED],
         bump,
     )]

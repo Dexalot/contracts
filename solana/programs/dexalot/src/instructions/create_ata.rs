@@ -4,7 +4,7 @@ use anchor_spl::{
     token::{Mint, Token, TokenAccount},
 };
 
-use crate::{consts::SPL_VAULT_SEED, errors::DexalotError};
+use crate::consts::SPL_VAULT_SEED;
 
 pub fn create_ata(_ctx: &Context<CreateATA>) -> Result<()> {
     Ok(())
@@ -21,7 +21,6 @@ pub struct CreateATA<'info> {
     user: AccountInfo<'info>,
     /// CHECK: the spl_vault
     #[account(
-        constraint = spl_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [SPL_VAULT_SEED],
         bump,
     )]

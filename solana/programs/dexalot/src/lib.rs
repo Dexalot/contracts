@@ -37,26 +37,6 @@ pub mod dexalot {
         instructions::initialize(&mut ctx, &params)
     }
 
-    /// Initializes the program's spl vault accounts for token storage
-    /// Can be called only by admins
-    ///
-    /// Creates and initializes vaults for:
-    /// - SPL token storage
-    /// - SPL User funds storage
-    pub fn initialize_spl_vaults(ctx: Context<InitializeSplVaults>) -> Result<()> {
-        instructions::initialize_spl_vaults(&ctx)
-    }
-
-    /// Initializes the program's sol vault accounts for token storage
-    /// Can be called only by admins
-    ///
-    /// Creates and initializes vaults for:
-    /// - SOL storage
-    /// - SOL User funds storage
-    pub fn initialize_sol_vaults(ctx: Context<InitializeSolVaults>) -> Result<()> {
-        instructions::initialize_sol_vaults(&ctx)
-    }
-
     /// Create an account where the remote pair address is stored
     /// Can be called only by admins
     ///

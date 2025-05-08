@@ -140,14 +140,12 @@ pub struct AddToken<'info> {
 
     /// CHECK: Used to set the authority for the associated token account
     #[account(
-        constraint = spl_vault.owner == __program_id,
         seeds = [SPL_VAULT_SEED],
         bump,
     )]
     pub spl_vault: AccountInfo<'info>,
     /// CHECK: Used to set the authority for the associated token account
     #[account(
-        constraint = spl_user_funds_vault.owner == __program_id,
         seeds = [SPL_USER_FUNDS_VAULT_SEED],
         bump,
     )]

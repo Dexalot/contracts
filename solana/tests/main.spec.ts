@@ -12,18 +12,13 @@ import {
   PORTFOLIO_SEED,
   SOL_USER_FUNDS_VAULT_SEED,
   SOL_VAULT_SEED,
-  SOLANA_ID,
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
 } from "../sdk/consts";
 
 import { contextPromise } from "./context";
 import { loadKeypair } from "../sdk/handlers/wallet";
-import {
-  initialize,
-  initializeSolVaults,
-  initializeSplVaults,
-} from "./initalize";
+import { initialize } from "./initalize";
 import { getGlobalConfig } from "./get-global-config";
 import { fundSol, fundSpl } from "./fund";
 import { addRebalancer } from "./add-rebalancer";
@@ -110,38 +105,6 @@ describe("dexalot_tests", () => {
     ).toBe("29dfa1F0879fEF3F8E6D4419397b33c4Da8e6476".toUpperCase());
   });
 
-  test("initialize_vaults", async () => {
-    const splVaultPDA = getAccountPubKey(dexalotProgram, [
-      Buffer.from(SPL_VAULT_SEED),
-    ]);
-
-    const splUserFundsVaultPDA = getAccountPubKey(dexalotProgram, [
-      Buffer.from(SPL_USER_FUNDS_VAULT_SEED),
-    ]);
-
-    let splVault = await context.banksClient.getAccount(splVaultPDA);
-    expect(splVault).toBeNull();
-    let splUserFundsVault = await context.banksClient.getAccount(
-      splUserFundsVaultPDA
-    );
-    expect(splUserFundsVault).toBeNull();
-
-    await initializeSplVaults(dexalotProgram, authority);
-
-    await initializeSolVaults(dexalotProgram, authority);
-
-    splVault = await context.banksClient.getAccount(splVaultPDA);
-    expect(splVault?.owner.toBase58()).toBe(
-      dexalotProgram.programId.toBase58()
-    );
-    splUserFundsVault = await context.banksClient.getAccount(
-      splUserFundsVaultPDA
-    );
-    expect(splUserFundsVault?.owner.toBase58()).toBe(
-      dexalotProgram.programId.toBase58()
-    );
-  });
-
   test("fund_sol", async () => {
     // make the admin a rebalancer
     await addRebalancer(dexalotProgram, authority);
@@ -152,13 +115,13 @@ describe("dexalot_tests", () => {
 
     // check sol balance
     const balanceBefore = await context.banksClient.getBalance(solVaultPDA);
-    expect(Number(balanceBefore)).toBeLessThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balanceBefore)).toBe(0);
 
     // fund sol
     await fundSol(dexalotProgram, authority);
 
     const balanceAfter = await context.banksClient.getBalance(solVaultPDA);
-    expect(Number(balanceAfter)).toBeGreaterThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balanceAfter)).toBe(1 * LAMPORTS_PER_SOL);
   });
 
   test("pause_program", async () => {
@@ -414,12 +377,12 @@ describe("dexalot_tests", () => {
       Buffer.from(AIRDROP_VAULT_SEED),
     ]);
     let balance = await context.banksClient.getBalance(airdropVaultPDA);
-    expect(Number(balance)).toBeLessThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balance)).toBe(0);
 
     await depositAirdropVault(dexalotProgram, authority, 1);
 
     balance = await context.banksClient.getBalance(airdropVaultPDA);
-    expect(Number(balance)).toBeGreaterThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balance)).toBe(1 * LAMPORTS_PER_SOL);
   });
 
   test("sol_deposit", async () => {
@@ -427,12 +390,12 @@ describe("dexalot_tests", () => {
       Buffer.from(SOL_USER_FUNDS_VAULT_SEED),
     ]);
     let balance = await context.banksClient.getBalance(solUserFundsVaultPDA);
-    expect(Number(balance)).toBeLessThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balance)).toBe(0);
 
     await depositSol(dexalotProgram, authority, 1);
 
     balance = await context.banksClient.getBalance(solUserFundsVaultPDA);
-    expect(Number(balance)).toBeGreaterThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balance)).toBe(1 * LAMPORTS_PER_SOL);
   });
 
   test("spl_deposit", async () => {
@@ -527,7 +490,7 @@ describe("dexalot_tests", () => {
       Buffer.from(SOL_VAULT_SEED),
     ]);
     let balance = await context.banksClient.getBalance(solVaultPDA);
-    expect(Number(balance)).toBeGreaterThan(1 * LAMPORTS_PER_SOL);
+    expect(Number(balance)).toBe(1 * LAMPORTS_PER_SOL);
 
     await claimSolBalance(dexalotProgram, authority, 0.9);
 

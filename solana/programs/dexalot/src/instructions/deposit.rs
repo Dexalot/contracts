@@ -423,7 +423,6 @@ pub struct Deposit<'info> {
     pub token_details: Account<'info, TokenDetails>,
     /// CHECK: Used to set the program as authority for the associated token account
     #[account(
-        constraint = spl_user_funds_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [SPL_USER_FUNDS_VAULT_SEED],
         bump,
     )]

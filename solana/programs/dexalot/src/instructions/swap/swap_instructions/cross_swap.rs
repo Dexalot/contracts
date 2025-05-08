@@ -65,7 +65,6 @@ pub struct CrossSwap<'info> {
     pub portfolio: Account<'info, Portfolio>,
     /// CHECK: when calling instruction
     #[account(
-        constraint = spl_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [SPL_VAULT_SEED],
         bump,
     )]

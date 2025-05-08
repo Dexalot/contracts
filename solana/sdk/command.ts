@@ -1,8 +1,6 @@
 export enum Commands {
   Initialize = "1. Initialize",
-  InitializeSplVaults = "2. Initialize SPL Vaults",
-  InitializeSolVaults = "3. Initialize SOL Vaults",
-  InitializeLayerZero = "4. Initialize Layerzero",
+  InitializeLayerZero = "2. Initialize Layerzero",
 
   // Global configuration
   SetDefaultChainEid = "1.  Set Default Chain EID",
@@ -95,12 +93,7 @@ enum Sections {
 
 // First, let's create a mapping of sections to their commands
 const sectionCommands = {
-  [Sections.initialize]: [
-    Commands.Initialize,
-    Commands.InitializeSplVaults,
-    Commands.InitializeSolVaults,
-    Commands.InitializeLayerZero,
-  ],
+  [Sections.initialize]: [Commands.Initialize, Commands.InitializeLayerZero],
   [Sections.globalConfig]: [
     Commands.SetDefaultChainEid,
     Commands.SetAirdropAmount,

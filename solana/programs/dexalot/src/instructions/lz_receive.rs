@@ -32,7 +32,6 @@ pub struct LzReceive<'info> {
     pub portfolio: Account<'info, Portfolio>,
     /// CHECK: Used to set the program as authority for the associated token account
     #[account(
-        constraint = token_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [if XFERSolana::unpack_xfer_message(&params.message)?.transaction == Tx::CCTrade{SPL_VAULT_SEED}else{SPL_USER_FUNDS_VAULT_SEED}],
         bump,
     )]

@@ -24,11 +24,7 @@ import {
   setSwapSigner,
   unpauseProgram,
 } from "./handlers/globalConfig";
-import {
-  initialize,
-  initializeSolVaults,
-  initializeSplVaults,
-} from "./handlers/initialize";
+import { initialize } from "./handlers/initialize";
 import { getPortfolioPDA, getRemote, setRemote } from "./handlers/layerzero";
 import {
   getAirdropVaultBalance,
@@ -435,30 +431,6 @@ class Interactor {
       await initialize(this.program, this.keypair);
     } catch (error) {
       console.error(red(`Error initializing: ${error}\n\n`));
-    }
-  };
-
-  initializeSplVaults = async () => {
-    if (!this.program || !this.keypair) {
-      console.error(red("Program or keypair not found\n\n"));
-      return;
-    }
-    try {
-      await initializeSplVaults(this.program, this.keypair);
-    } catch (error) {
-      console.error(red(`Error initializing spl vaults: ${error}\n\n`));
-    }
-  };
-
-  initializeSolVaults = async () => {
-    if (!this.program || !this.keypair) {
-      console.error(red("Program or keypair not found\n\n"));
-      return;
-    }
-    try {
-      await initializeSolVaults(this.program, this.keypair);
-    } catch (error) {
-      console.error(red(`Error initializing sol vaults: ${error}\n\n`));
     }
   };
 

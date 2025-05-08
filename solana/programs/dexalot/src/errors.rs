@@ -21,8 +21,6 @@ pub enum DexalotError {
     UnauthorizedSigner,
     #[msg("LZ-RECEIVE-ERROR")]
     LzReceiveError,
-    #[msg("Invalid vault owner.")]
-    InvalidVaultOwner,
     #[msg("Portofolio is paused.")]
     ProgramPaused,
     #[msg("P-ZETD-01: Zero token qunatity")]

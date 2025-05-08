@@ -31,7 +31,6 @@ pub struct Swap<'info> {
 
     /// CHECK: when calling instruction
     #[account(
-        constraint = spl_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
         seeds = [SPL_VAULT_SEED],
         bump,
     )]

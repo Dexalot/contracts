@@ -6,7 +6,6 @@ use crate::{
         ANCHOR_DISCRIMINATOR, PENDING_SWAPS_SEED, SOL_VAULT_SEED,
         SPL_VAULT_SEED, AIRDROP_VAULT_SEED
     },
-    errors::DexalotError,
     events::{
         SolTransfer, SolTransferTransactions, SolTransferTypes, SwapQueueActions, SwapQueueEvent,
     },
@@ -23,7 +22,6 @@ use crate::{
 pub struct RemoveFromSwapQueue<'info> {
     /// CHECK: Used to set the program as authority for the associated token account
     #[account(
-          constraint = spl_vault.owner == __program_id @ DexalotError::InvalidVaultOwner,
           seeds = [SPL_VAULT_SEED],
           bump,
       )]
