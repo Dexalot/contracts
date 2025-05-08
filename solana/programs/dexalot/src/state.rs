@@ -4,7 +4,6 @@ use anchor_lang::prelude::*;
 #[account]
 #[derive(InitSpace, Default)]
 pub struct Portfolio {
-    pub admin: Pubkey,
     pub global_config: GlobalConfig,
     pub endpoint: Pubkey,
     pub bump: u8,
@@ -30,7 +29,6 @@ pub struct GlobalConfig {
     pub allow_deposit: bool,
     pub program_paused: bool,
     pub native_deposits_restricted: bool,
-    pub src_chain_id: u16,
     pub default_chain_id: u32, // Dexalot L1
     pub airdrop_amount: u64,
     // ETH address

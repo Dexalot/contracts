@@ -22,3 +22,5 @@ export const CROSS_SWAP_TYPE =
 
 export const DEST_ID = 40267;
 export const SOLANA_ID = 40168;
+
+export const ENDPOINT_ID = "76y77prsiCMvXMjuoZ5VRrhG5qYBrUMYTE5WgHqgjEn6";

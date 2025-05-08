@@ -343,14 +343,12 @@ mod tests {
             allow_deposit: false,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 0,
             default_chain_id: 0,
             airdrop_amount: 0,
             swap_signer: address,
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Default::default(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 0,
@@ -561,14 +559,12 @@ mod tests {
             allow_deposit: false,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 0,
             default_chain_id: 0,
             airdrop_amount: 0,
             swap_signer: address,
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Default::default(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 0,

@@ -14,19 +14,17 @@ pub fn initialize(ctx: &mut Context<Initialize>, params: &InitializeParams) -> R
     let portfolio = &mut ctx.accounts.portfolio;
 
     // init portfolio
-    portfolio.admin = ctx.accounts.authority.key();
     portfolio.bump = ctx.bumps.portfolio;
-
+    portfolio.endpoint = ctx.accounts.endpoint_program.key();
     // init global config
     portfolio.global_config.default_chain_id = params.default_chain_id;
     portfolio.global_config.allow_deposit = true;
     portfolio.global_config.program_paused = false;
     portfolio.global_config.native_deposits_restricted = false;
-    portfolio.global_config.src_chain_id = params.src_chain_id;
     portfolio.global_config.airdrop_amount = DEFAULT_AIRDROP_AMOUNT;
     portfolio.global_config.swap_signer = params.swap_signer;
     portfolio.global_config.out_nonce = 0;
-    portfolio.endpoint = ctx.accounts.endpoint_program.key();
+
 
     // prepare CPI
     let register_params = RegisterOAppParams {
@@ -65,7 +63,6 @@ pub fn initialize(ctx: &mut Context<Initialize>, params: &InitializeParams) -> R
 
 #[derive(Debug, Clone, AnchorSerialize, AnchorDeserialize)]
 pub struct InitializeParams {
-    pub src_chain_id: u16,
     pub default_chain_id: u32,
     pub swap_signer: [u8; 20],
 }
@@ -320,7 +317,6 @@ mod tests {
 
         let swap_signer: [u8; 20] = [1u8; 20];
         let params = InitializeParams {
-            src_chain_id: 1,
             default_chain_id: 2,
             swap_signer,
         };
@@ -329,7 +325,6 @@ mod tests {
         assert!(result.is_ok());
 
         let portfolio = &ctx.accounts.portfolio;
-        assert_eq!(portfolio.admin, ctx.accounts.authority.key());
         assert_eq!(portfolio.bump, 255);
         assert_eq!(
             portfolio.global_config.default_chain_id,
@@ -338,7 +333,6 @@ mod tests {
         assert!(portfolio.global_config.allow_deposit);
         assert!(!portfolio.global_config.program_paused);
         assert!(!portfolio.global_config.native_deposits_restricted);
-        assert_eq!(portfolio.global_config.src_chain_id, params.src_chain_id);
         assert_eq!(
             portfolio.global_config.airdrop_amount,
             DEFAULT_AIRDROP_AMOUNT

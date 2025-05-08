@@ -8,6 +8,8 @@ import { generateUniqueNonce, getAccountPubKey } from "../sdk/utils";
 import {
   AIRDROP_VAULT_SEED,
   DEST_ID,
+  ENDPOINT_ID,
+  PORTFOLIO_SEED,
   SOL_USER_FUNDS_VAULT_SEED,
   SOL_VAULT_SEED,
   SOLANA_ID,
@@ -85,6 +87,14 @@ describe("dexalot_tests", () => {
   test("initialize", async () => {
     // init
     await initialize(dexalotProgram, authority);
+    const portfolioPda = getAccountPubKey(dexalotProgram, [
+      Buffer.from(PORTFOLIO_SEED),
+    ]);
+    const portfolioAccount = await dexalotProgram.account.portfolio.fetch(
+      portfolioPda
+    );
+
+    expect(portfolioAccount.endpoint.toBase58()).toBe(ENDPOINT_ID);
 
     // get globalConfig
     const globalConfig = await getGlobalConfig(dexalotProgram, authority);
@@ -93,7 +103,6 @@ describe("dexalot_tests", () => {
     expect(globalConfig.allowDeposit).toBeTruthy();
     expect(globalConfig.programPaused).toBeFalsy();
     expect(globalConfig.nativeDepositsRestricted).toBeFalsy();
-    expect(globalConfig.srcChainId).toBe(SOLANA_ID);
     expect(globalConfig.defaultChainId).toBe(DEST_ID);
     expect(globalConfig.airdropAmount.toString()).toBe("10000");
     expect(

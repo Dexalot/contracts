@@ -16,7 +16,6 @@ import {
 import { endpointProgram } from "../layerzero";
 
 const spinner = createSpinner();
-const solana_eid = 40168;
 
 const signer_pubkey = "4747b7f5c40599E1C5CF5a72C535D953B64916b6";
 
@@ -43,7 +42,6 @@ export const initialize = async (program: Program<Dexalot>, admin: Keypair) => {
       );
     await program.methods
       .initialize({
-        srcChainId: solana_eid,
         defaultChainId: DEST_ID,
         swapSigner: Array.from(Buffer.from(signer_pubkey, "hex")),
       })

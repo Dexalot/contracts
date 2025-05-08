@@ -41,7 +41,6 @@ export const initialize = async (
 
   await dexalotProgram.methods
     .initialize({
-      srcChainId: 40168,
       defaultChainId: DEST_ID,
       swapSigner: Array.from(Buffer.from(signer_pubkey, "hex")),
     })

@@ -341,14 +341,12 @@ mod tests {
             allow_deposit: true,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 1,
             default_chain_id: 1,
             airdrop_amount: 0,
             swap_signer: [0; 20],
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Pubkey::new_unique(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 1,
@@ -553,14 +551,12 @@ mod tests {
             allow_deposit: true,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 1,
             default_chain_id: 1,
             airdrop_amount: 0,
             swap_signer: [0; 20],
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Pubkey::new_unique(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 1,
@@ -753,14 +749,12 @@ mod tests {
             allow_deposit: true,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 1,
             default_chain_id: 1,
             airdrop_amount: 0,
             swap_signer: [0; 20],
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Pubkey::new_unique(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 1,
@@ -965,14 +959,12 @@ mod tests {
             allow_deposit: true,
             program_paused: false,
             native_deposits_restricted: false,
-            src_chain_id: 1,
             default_chain_id: 1,
             airdrop_amount: 0,
             swap_signer: [0; 20],
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Pubkey::new_unique(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 1,
@@ -1206,14 +1198,12 @@ mod tests {
             allow_deposit: true,
             program_paused: true,
             native_deposits_restricted: false,
-            src_chain_id: 1,
             default_chain_id: 1,
             airdrop_amount: 0,
             swap_signer: [0; 20],
             out_nonce: 0,
         };
         let portfolio = Portfolio {
-            admin: Pubkey::new_unique(),
             global_config: gc,
             endpoint: Pubkey::default(),
             bump: 1,
