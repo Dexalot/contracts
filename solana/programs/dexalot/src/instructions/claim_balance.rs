@@ -5,8 +5,12 @@ use anchor_lang::{
 use anchor_spl::token::{spl_token, Mint, Token, TokenAccount};
 
 use crate::{
-    consts::{ADMIN_SEED, AIRDROP_VAULT_SEED, NATIVE_VAULT_MIN_THRESHOLD, REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
+    consts::{
+        ADMIN_SEED, AIRDROP_VAULT_SEED, NATIVE_VAULT_MIN_THRESHOLD, PORTFOLIO_SEED,
+        REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED,
+    },
     errors::DexalotError,
+    state::Portfolio,
 };
 
 #[derive(Accounts, Clone)]
@@ -42,6 +46,11 @@ pub struct ClaimSplBalance<'info> {
         ) @ DexalotError::InvalidDestinationOwner,
     )]
     pub to: Account<'info, TokenAccount>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -59,6 +68,10 @@ pub fn claim_spl_balance(
     let to = &ctx.accounts.to;
     let spl_vault = &ctx.accounts.spl_vault;
     let rebalancer = &ctx.accounts.rebalancer;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // check rebalancer
     require!(
@@ -117,6 +130,11 @@ pub struct ClaimNativeBalance<'info> {
     )]
     pub sol_vault: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -132,6 +150,10 @@ pub fn claim_native_balance(
     let sol_vault = &ctx.accounts.sol_vault;
     let rebalancer = &ctx.accounts.rebalancer;
     let system_program = &ctx.accounts.system_program;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // check rebalancer
     require!(
@@ -180,6 +202,11 @@ pub struct ClaimAirdropBalance<'info> {
     )]
     pub airdrop_vault: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -195,6 +222,10 @@ pub fn claim_airdrop_balance(
     let airdrop_vault = &ctx.accounts.airdrop_vault;
     let admin = &ctx.accounts.admin;
     let system_program = &ctx.accounts.system_program;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // check admin
     require!(
@@ -231,7 +262,10 @@ pub fn claim_airdrop_balance(
 mod tests {
     use super::*;
     use crate::test_utils::create_account_info;
-    use anchor_lang::solana_program::{program_pack::Pack, system_program};
+    use anchor_lang::{
+        solana_program::{program_pack::Pack, system_program},
+        Discriminator,
+    };
     use anchor_spl::token::{self, Mint, Token, TokenAccount};
     use spl_token::state::AccountState;
 
@@ -332,6 +366,22 @@ mod tests {
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = ClaimSplBalance {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
@@ -340,6 +390,7 @@ mod tests {
             mint: mint_account,
             from: spl_token_account.clone(),
             to: spl_token_account,
+            portfolio: portfolio_account,
         };
 
         let params = ClaimSplBalanceParams {
@@ -456,6 +507,22 @@ mod tests {
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let accounts = ClaimSplBalance {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
@@ -464,6 +531,7 @@ mod tests {
             mint: mint_account,
             from: spl_token_account.clone(),
             to: spl_token_account,
+            portfolio: portfolio_account,
         };
 
         let params = ClaimSplBalanceParams {
@@ -552,11 +620,28 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_prog_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = ClaimNativeBalance {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
             sol_vault: sol_vault_info.clone(),
             system_program,
+            portfolio: portfolio_account
         };
 
         let params = ClaimNativeBalanceParams { amount: 50 };
@@ -634,11 +719,28 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_prog_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = ClaimNativeBalance {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
             sol_vault: sol_vault_info.clone(),
             system_program,
+            portfolio: portfolio_account
         };
 
         let params = ClaimNativeBalanceParams { amount: 5000 };
@@ -719,11 +821,29 @@ mod tests {
             true,
             None,
         );
+
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = ClaimAirdropBalance {
             authority: Signer::try_from(&authority_info)?,
             admin: admin_info,
             airdrop_vault: airdrop_vault_info,
             system_program: Program::try_from(&system_info)?,
+            portfolio: portfolio_account
         };
         let params = ClaimAirdropBalanceParams { amount: 500 };
         let ctx = Context {
@@ -793,12 +913,29 @@ mod tests {
             None,
         );
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let admin_clone = admin_info.clone();
         let mut accounts = ClaimAirdropBalance {
             authority: Signer::try_from(&authority_info)?,
             admin: admin_clone,
             airdrop_vault: airdrop_vault_info,
             system_program: Program::try_from(&system_info)?,
+            portfolio: portfolio_account
         };
         let params = ClaimAirdropBalanceParams { amount: 5000 };
         let mut ctx = Context {
@@ -809,7 +946,10 @@ mod tests {
         };
 
         let result = claim_airdrop_balance(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
 
         admin_info.owner = &admin_key;
         accounts.admin = admin_info;

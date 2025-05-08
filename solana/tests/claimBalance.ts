@@ -3,10 +3,10 @@ import { Dexalot } from "../target/types/dexalot";
 import { Keypair, PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { getAccountPubKey } from "../sdk/utils";
 import {
+  PORTFOLIO_SEED,
   REBALANCER_SEED,
   SOL_VAULT_SEED,
   SPL_VAULT_SEED,
-  TOKEN_DETAILS_SEED,
 } from "../sdk/consts";
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 
@@ -23,6 +23,9 @@ export const claimSolBalance = async (
   const solVaultPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(SOL_VAULT_SEED),
   ]);
+  const portfolio = getAccountPubKey(dexalotProgram, [
+    Buffer.from(PORTFOLIO_SEED),
+  ]);
   await dexalotProgram.methods
     .claimNativeBalance({
       amount: new BN(amount * LAMPORTS_PER_SOL),
@@ -32,6 +35,7 @@ export const claimSolBalance = async (
       //@ts-ignore
       rebalancer: rebalancerPDA,
       solVault: solVaultPDA,
+      portfolio: portfolio,
       systemProgram: web3.SystemProgram.programId,
     })
     .signers([authority])
@@ -45,10 +49,6 @@ export const claimSplBalance = async (
   tokenMint: PublicKey,
   tokenDecimals: number
 ) => {
-  const tokenDetailsPDA = getAccountPubKey(dexalotProgram, [
-    Buffer.from(TOKEN_DETAILS_SEED),
-    tokenMint.toBuffer(),
-  ]);
   const rebalancerPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(REBALANCER_SEED),
     authority.publicKey.toBuffer(),
@@ -68,7 +68,9 @@ export const claimSplBalance = async (
     tokenMint,
     authority.publicKey
   );
-
+  const portfolio = getAccountPubKey(dexalotProgram, [
+    Buffer.from(PORTFOLIO_SEED),
+  ]);
   await dexalotProgram.methods
     .claimSplBalance({
       amount: new BN(amount * 10 ** tokenDecimals),
@@ -83,6 +85,7 @@ export const claimSplBalance = async (
       mint: tokenMint,
       from: vaultATA,
       to: authorityATA,
+      portfolio: portfolio,
       systemProgram: web3.SystemProgram.programId,
     })
     .signers([authority])

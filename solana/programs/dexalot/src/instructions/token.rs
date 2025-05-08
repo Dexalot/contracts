@@ -96,7 +96,7 @@ pub struct AddToken<'info> {
         seeds = [TOKEN_DETAILS_SEED, params.token_address.as_ref()],
         bump
     )]
-    pub token_details: Account<'info, TokenDetails>,
+    pub token_details: Box<Account<'info, TokenDetails>>,
     /// The token mint for the supported token
     pub token_mint: Box<Account<'info, Mint>>,
     #[account(
@@ -313,7 +313,7 @@ mod tests {
             admin: admin_account.clone(),
             spl_vault: generic_account.clone(),
             spl_user_funds_vault: generic_account.clone(),
-            token_details: Account::try_from(&token_details_account)?,
+            token_details: Box::new(Account::try_from(&token_details_account)?),
             token_mint: Box::new(Account::try_from(&mint_info)?),
             spl_token_account: Box::new(spl_token_account.clone()),
             spl_user_funds_token_account: Box::new(spl_token_account),
@@ -601,7 +601,7 @@ mod tests {
             admin: admin_account.clone(),
             spl_vault: generic_account.clone(),
             spl_user_funds_vault: generic_account.clone(),
-            token_details: Account::try_from(&token_details_account)?,
+            token_details: Box::new(Account::try_from(&token_details_account)?),
             token_mint: Box::new(Account::try_from(&mint_info)?),
             spl_token_account: Box::new(spl_token_account.clone()),
             spl_user_funds_token_account: Box::new(spl_token_account),

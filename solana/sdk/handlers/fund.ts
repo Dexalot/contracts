@@ -7,7 +7,12 @@ import {
   PublicKey,
 } from "@solana/web3.js";
 import { createSpinner, getAccountPubKey, getUserInput } from "../utils";
-import { REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED } from "../consts";
+import {
+  PORTFOLIO_SEED,
+  REBALANCER_SEED,
+  SOL_VAULT_SEED,
+  SPL_VAULT_SEED,
+} from "../consts";
 import { green } from "kleur";
 import {
   getMint,
@@ -36,6 +41,9 @@ export const fundSol = async (
     const solVaultPDA = getAccountPubKey(program, [
       Buffer.from(SOL_VAULT_SEED),
     ]);
+    const portfolioPDA = getAccountPubKey(program, [
+      Buffer.from(PORTFOLIO_SEED),
+    ]);
 
     const tx = await program.methods
       .fundSol({
@@ -46,6 +54,7 @@ export const fundSol = async (
         //@ts-ignore
         rebalancer: rebalancerPDA,
         solVault: solVaultPDA,
+        portfolio: portfolioPDA,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])
@@ -92,7 +101,9 @@ export const fundSpl = async (
     const splVaultPDA = getAccountPubKey(program, [
       Buffer.from(SPL_VAULT_SEED),
     ]);
-
+    const portfolioPDA = getAccountPubKey(program, [
+      Buffer.from(PORTFOLIO_SEED),
+    ]);
     const userATA = await getOrCreateAssociatedTokenAccount(
       connection,
       authority,
@@ -126,6 +137,7 @@ export const fundSpl = async (
         splVault: splVaultPDA,
         from: userATA.address,
         to: vaultATA.address,
+        portfolio: portfolioPDA,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .signers([authority])

@@ -1,9 +1,10 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    consts::{COMPLETED_SWAPS_SEED, REBALANCER_SEED},
+    consts::{COMPLETED_SWAPS_SEED, PORTFOLIO_SEED, REBALANCER_SEED},
     errors::DexalotError,
-    instructions::generate_map_entry_key, state::CompletedSwapsEntry,
+    instructions::generate_map_entry_key,
+    state::{CompletedSwapsEntry, Portfolio},
 };
 
 #[derive(Accounts)]
@@ -28,6 +29,11 @@ pub struct UpdateSwapExpiry<'info> {
         bump
     )]
     pub rebalancer: AccountInfo<'info>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
     pub system_program: Program<'info, System>,
 }
 
@@ -41,6 +47,10 @@ pub fn update_swap_expiry(
     ctx: &Context<UpdateSwapExpiry>,
     _params: &UpdateSwapExpiryParams,
 ) -> Result<()> {
+    let global_config = &ctx.accounts.portfolio.global_config;
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
+
     // check is rebalancer
     let rebalancer = &ctx.accounts.rebalancer;
     require!(
@@ -53,8 +63,11 @@ pub fn update_swap_expiry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::solana_program::{pubkey::Pubkey, system_program};
     use crate::test_utils::create_account_info;
+    use anchor_lang::{
+        solana_program::{pubkey::Pubkey, system_program},
+        Discriminator,
+    };
 
     #[test]
     fn test_update_swap_expiry_success() -> Result<()> {
@@ -117,11 +130,27 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
 
         let mut update_accounts = UpdateSwapExpiry {
             authority: Signer::try_from(&authority_info)?,
             completed_swap_entry: completed_swap_info,
             rebalancer: rebalancer_info,
+            portfolio: portfolio_account,
             system_program,
         };
 
@@ -204,10 +233,27 @@ mod tests {
         );
         let system_program = Program::<System>::try_from(&system_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut update_accounts = UpdateSwapExpiry {
             authority: Signer::try_from(&authority_info)?,
             completed_swap_entry: completed_swap_info,
             rebalancer: rebalancer_info,
+            portfolio: portfolio_account,
             system_program,
         };
 
@@ -228,5 +274,3 @@ mod tests {
         Ok(())
     }
 }
-
-

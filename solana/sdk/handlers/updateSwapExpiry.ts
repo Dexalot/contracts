@@ -8,7 +8,7 @@ import {
   printTransactionEvents,
 } from "../utils";
 import { green } from "kleur";
-import { REBALANCER_SEED } from "../consts";
+import { PORTFOLIO_SEED, REBALANCER_SEED } from "../consts";
 import pdaDeriver from "../pda-deriver";
 
 const spinner = createSpinner();
@@ -39,6 +39,8 @@ export const updateSwapExpiry = async (
       trader
     );
 
+    const portfolio = getAccountPubKey(program, [Buffer.from(PORTFOLIO_SEED)]);
+
     const tx = await program.methods
       .updateSwapExpiry({ nonce: Array.from(nonce), trader })
       .accounts({
@@ -46,6 +48,7 @@ export const updateSwapExpiry = async (
         completedSwapEntry: completedSwapsEntryPDA,
         //@ts-ignore
         rebalancer: rebalancerPDA,
+        portfolio,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])

@@ -11,6 +11,7 @@ import { green } from "kleur";
 import {
   ADMIN_SEED,
   AIRDROP_VAULT_SEED,
+  PORTFOLIO_SEED,
   REBALANCER_SEED,
   SOL_VAULT_SEED,
   SPL_VAULT_SEED,
@@ -78,7 +79,7 @@ export const claimSplBalance = async (
       "finalized",
       { commitment: "finalized" }
     );
-
+    const portfolio = getAccountPubKey(program, [Buffer.from(PORTFOLIO_SEED)]);
     const tx = await program.methods
       .claimSplBalance({
         amount: new BN(amount * 10 ** tokenDetails.decimals),
@@ -93,6 +94,7 @@ export const claimSplBalance = async (
         mint: tokenAddress,
         from: vaultATA.address,
         to: authorityATA.address,
+        portfolio: portfolio,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])
@@ -126,7 +128,7 @@ export const claimNativeBalance = async (
     const solVaultPDA = getAccountPubKey(program, [
       Buffer.from(SOL_VAULT_SEED),
     ]);
-
+    const portfolio = getAccountPubKey(program, [Buffer.from(PORTFOLIO_SEED)]);
     const tx = await program.methods
       .claimNativeBalance({
         amount: new BN(amount),
@@ -136,6 +138,7 @@ export const claimNativeBalance = async (
         //@ts-ignore
         rebalancer: rebalancerPDA,
         solVault: solVaultPDA,
+        portfolio: portfolio,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])
@@ -169,7 +172,7 @@ export const claimAirdropBalance = async (
     const airdropVaultPDA = getAccountPubKey(program, [
       Buffer.from(AIRDROP_VAULT_SEED),
     ]);
-
+    const portfolio = getAccountPubKey(program, [Buffer.from(PORTFOLIO_SEED)]);
     const tx = await program.methods
       .claimAirdropBalance({
         amount: new BN(amount),
@@ -179,6 +182,7 @@ export const claimAirdropBalance = async (
         //@ts-ignore
         admin: adminPDA,
         airdropVault: airdropVaultPDA,
+        portfolio: portfolio,
         systemProgram: web3.SystemProgram.programId,
       })
       .signers([authority])

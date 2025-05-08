@@ -5,8 +5,9 @@ use anchor_lang::{
 use anchor_spl::token::{self, Token, TokenAccount, Transfer as SplTransfer};
 
 use crate::{
-    consts::{REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
+    consts::{PORTFOLIO_SEED, REBALANCER_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED},
     errors::DexalotError,
+    state::Portfolio,
 };
 
 #[derive(Accounts, Clone)]
@@ -25,6 +26,11 @@ pub struct FundSol<'info> {
             bump,
         )]
     pub sol_vault: AccountInfo<'info>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
     pub system_program: Program<'info, System>,
 }
 
@@ -38,6 +44,10 @@ pub fn fund_sol(ctx: &Context<FundSol>, params: &FundSolParams) -> Result<()> {
     let sol_vault = &ctx.accounts.sol_vault;
     let rebalancer = &ctx.accounts.rebalancer;
     let system_program = &ctx.accounts.system_program;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // check rebalancer
     require!(
@@ -103,6 +113,11 @@ pub struct FundSpl<'info> {
         constraint = to.mint == params.token_mint @ DexalotError::InvalidMint
     )]
     pub to: Account<'info, TokenAccount>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -118,6 +133,10 @@ pub fn fund_spl(ctx: &Context<FundSpl>, params: &FundSplParams) -> Result<()> {
     let token_program = &ctx.accounts.token_program;
     let from = &ctx.accounts.from;
     let to = &ctx.accounts.to;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // check rebalancer
     require!(
@@ -146,10 +165,13 @@ pub fn fund_spl(ctx: &Context<FundSpl>, params: &FundSplParams) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::solana_program::{program_pack::Pack, system_program};
-    use anchor_spl::token::spl_token;
     use crate::errors::DexalotError;
     use crate::test_utils::create_account_info;
+    use anchor_lang::{
+        solana_program::{program_pack::Pack, system_program},
+        Discriminator,
+    };
+    use anchor_spl::token::spl_token;
 
     #[test]
     fn test_fund_sol_success() -> Result<()> {
@@ -212,10 +234,27 @@ mod tests {
         );
         let system_program_account = Program::<System>::try_from(&system_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = FundSol {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info,
             sol_vault: sol_vault_info,
+            portfolio: portfolio_account,
             system_program: system_program_account,
         };
 
@@ -293,10 +332,27 @@ mod tests {
         );
         let system_program_account = Program::<System>::try_from(&system_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = FundSol {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
             sol_vault: sol_vault_info,
+            portfolio: portfolio_account,
             system_program: system_program_account,
         };
 
@@ -309,7 +365,10 @@ mod tests {
 
         let params = FundSolParams { amount: 5000 };
         let result = fund_sol(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
 
         rebalancer_info.owner = &authority_key;
         accounts.rebalancer = rebalancer_info;
@@ -368,7 +427,8 @@ mod tests {
             None,
         );
 
-        let from_key = anchor_spl::associated_token::get_associated_token_address(&authority_key, &token_mint);
+        let from_key =
+            anchor_spl::associated_token::get_associated_token_address(&authority_key, &token_mint);
         let mut from_lamports = 100;
         let mut from_data = vec![0u8; spl_token::state::Account::LEN];
         let mut from_token = spl_token::state::Account::default();
@@ -387,7 +447,8 @@ mod tests {
         );
         let from_account = Account::<TokenAccount>::try_from(&from_info)?;
 
-        let to_key = anchor_spl::associated_token::get_associated_token_address(&spl_vault_key, &token_mint);
+        let to_key =
+            anchor_spl::associated_token::get_associated_token_address(&spl_vault_key, &token_mint);
         let mut to_lamports = 100;
         let mut to_data = vec![0u8; spl_token::state::Account::LEN];
         let mut to_token = spl_token::state::Account::default();
@@ -420,12 +481,29 @@ mod tests {
         );
         let token_program_account = Program::<Token>::try_from(&token_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = FundSpl {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info,
             spl_vault: spl_vault_info,
             from: from_account,
             to: to_account,
+            portfolio: portfolio_account,
             token_program: token_program_account,
         };
 
@@ -436,7 +514,10 @@ mod tests {
             bumps: FundSplBumps::default(),
         };
 
-        let params = FundSplParams { token_mint, amount: 500 };
+        let params = FundSplParams {
+            token_mint,
+            amount: 500,
+        };
         let result = fund_spl(&ctx, &params);
         assert!(result.is_ok());
         Ok(())
@@ -490,7 +571,8 @@ mod tests {
             None,
         );
 
-        let from_key = anchor_spl::associated_token::get_associated_token_address(&authority_key, &token_mint);
+        let from_key =
+            anchor_spl::associated_token::get_associated_token_address(&authority_key, &token_mint);
         let mut from_lamports = 100;
         let mut from_data = vec![0u8; spl_token::state::Account::LEN];
         let mut from_token = spl_token::state::Account::default();
@@ -509,7 +591,8 @@ mod tests {
         );
         let from_account = Account::<TokenAccount>::try_from(&from_info)?;
 
-        let to_key = anchor_spl::associated_token::get_associated_token_address(&spl_vault_key, &token_mint);
+        let to_key =
+            anchor_spl::associated_token::get_associated_token_address(&spl_vault_key, &token_mint);
         let mut to_lamports = 100;
         let mut to_data = vec![0u8; spl_token::state::Account::LEN];
         let mut to_token = spl_token::state::Account::default();
@@ -542,12 +625,29 @@ mod tests {
         );
         let token_program_account = Program::<Token>::try_from(&token_program_info)?;
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let mut accounts = FundSpl {
             authority: Signer::try_from(&authority_info)?,
             rebalancer: rebalancer_info.clone(),
             spl_vault: spl_vault_info,
             from: from_account,
             to: to_account,
+            portfolio: portfolio_account,
             token_program: token_program_account,
         };
 
@@ -558,9 +658,15 @@ mod tests {
             bumps: FundSplBumps::default(),
         };
 
-        let params = FundSplParams { token_mint, amount: 5000 };
+        let params = FundSplParams {
+            token_mint,
+            amount: 5000,
+        };
         let result = fund_spl(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughSplTokenBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughSplTokenBalance.into()
+        );
 
         rebalancer_info.owner = &authority_key;
         accounts.rebalancer = rebalancer_info;

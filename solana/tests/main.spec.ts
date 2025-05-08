@@ -319,7 +319,8 @@ describe("dexalot_tests", () => {
     const token = await dexalotProgram.account.tokenDetails.fetch(
       tokenDetailsPDA
     );
-    expect(token).toBeDefined();
+    expect(token.decimals).toBe(tokenDecimals);
+    expect(token.tokenAddress.toBase58()).toBe(mint.toBase58());
   });
 
   test("remove_token", async () => {

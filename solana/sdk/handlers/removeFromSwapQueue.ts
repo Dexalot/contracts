@@ -8,7 +8,12 @@ import {
 } from "../utils";
 import { Dexalot } from "../../target/types/dexalot";
 import { Program, web3 } from "@coral-xyz/anchor";
-import { AIRDROP_VAULT_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED } from "../consts";
+import {
+  AIRDROP_VAULT_SEED,
+  PORTFOLIO_SEED,
+  SOL_VAULT_SEED,
+  SPL_VAULT_SEED,
+} from "../consts";
 import pdaDeriver from "../pda-deriver";
 import { green } from "kleur";
 import {
@@ -42,6 +47,10 @@ export const removeFromSwapQueue = async (
 
     const airdropVaultPDA = getAccountPubKey(program, [
       Buffer.from(AIRDROP_VAULT_SEED),
+    ]);
+
+    const portfolioPDA = getAccountPubKey(program, [
+      Buffer.from(PORTFOLIO_SEED),
     ]);
 
     const [pendingSwapPDA] = pdaDeriver.pendingSwapsEntry(nonce, trader);
@@ -90,6 +99,7 @@ export const removeFromSwapQueue = async (
         systemProgram: web3.SystemProgram.programId,
         swapQueueEntry: pendingSwapPDA,
         airdropVault: airdropVaultPDA,
+        portfolio: portfolioPDA,
       })
       .signers([authority])
       .rpc({ commitment: "finalized" });

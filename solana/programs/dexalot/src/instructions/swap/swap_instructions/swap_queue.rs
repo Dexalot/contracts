@@ -3,9 +3,10 @@ use anchor_spl::token::Token;
 
 use crate::{
     consts::{
-        ANCHOR_DISCRIMINATOR, PENDING_SWAPS_SEED, SOL_VAULT_SEED,
-        SPL_VAULT_SEED, AIRDROP_VAULT_SEED
+        AIRDROP_VAULT_SEED, ANCHOR_DISCRIMINATOR, PENDING_SWAPS_SEED, PORTFOLIO_SEED,
+        SOL_VAULT_SEED, SPL_VAULT_SEED,
     },
+    errors::DexalotError,
     events::{
         SolTransfer, SolTransferTransactions, SolTransferTypes, SwapQueueActions, SwapQueueEvent,
     },
@@ -14,6 +15,7 @@ use crate::{
         process_xfer_payload_spl,
     },
     map_utils::create_entry,
+    state::Portfolio,
     xfer::{Tx, XFERSolana},
 };
 
@@ -60,6 +62,11 @@ pub struct RemoveFromSwapQueue<'info> {
             bump,
         )]
     pub airdrop_vault: AccountInfo<'info>,
+    #[account(
+        seeds = [PORTFOLIO_SEED],
+        bump = portfolio.bump
+    )]
+    pub portfolio: Account<'info, Portfolio>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -77,6 +84,10 @@ pub fn remove_from_swap_queue(
     let system_program = &ctx.accounts.system_program;
     let airdrop_vault = &ctx.accounts.airdrop_vault;
     let swap_queue_entry = &ctx.accounts.swap_queue_entry;
+    let global_config = &ctx.accounts.portfolio.global_config;
+
+    // Check the program is not paused
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     let xfer = XFERSolana::new(
         Tx::CCTrade,
@@ -196,11 +207,11 @@ impl PendingSwap {
 
 #[cfg(test)]
 mod tests {
-    use anchor_lang::Discriminator;
     use super::*;
-    use anchor_lang::solana_program::system_program;
     use crate::consts::{NATIVE_VAULT_MIN_THRESHOLD, PENDING_SWAPS_SEED};
     use crate::test_utils::{create_account_info, create_packed_token_account};
+    use anchor_lang::solana_program::system_program;
+    use anchor_lang::Discriminator;
 
     #[test]
     fn test_remove_from_swap_queue_native_success() -> Result<()> {
@@ -215,9 +226,13 @@ mod tests {
             token_mint: Pubkey::default(),
         };
         let swap_queue_key = Pubkey::find_program_address(
-            &[PENDING_SWAPS_SEED, &generate_map_entry_key(nonce, dest_trader)?],
+            &[
+                PENDING_SWAPS_SEED,
+                &generate_map_entry_key(nonce, dest_trader)?,
+            ],
             &program_id,
-        ).0;
+        )
+        .0;
         let mut swap_queue_lamports = 100;
         let mut swap_queue_data = pending_swap.try_to_vec()?;
         let swap_queue_account = create_account_info(
@@ -228,7 +243,7 @@ mod tests {
             &mut swap_queue_data,
             &program_id,
             false,
-            Some(PendingSwap::discriminator())
+            Some(PendingSwap::discriminator()),
         );
         let swap_queue_entry: Account<PendingSwap> = Account::try_from(&swap_queue_account)?;
 
@@ -242,7 +257,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut airdrop_vault_lamports = 1000;
@@ -255,7 +270,7 @@ mod tests {
             &mut airdrop_vault_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut token_lamports = 1000;
@@ -268,7 +283,7 @@ mod tests {
             &mut token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_info)?;
 
@@ -282,9 +297,25 @@ mod tests {
             &mut system_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_info)?;
+
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
 
         let params = RemoveFromSwapQueueParams { nonce, dest_trader };
         let mut accounts = RemoveFromSwapQueue {
@@ -297,12 +328,13 @@ mod tests {
             system_program,
             swap_queue_entry,
             airdrop_vault,
+            portfolio: portfolio_account,
         };
         let ctx = Context {
             accounts: &mut accounts,
             remaining_accounts: &[],
             program_id: &program_id,
-            bumps: RemoveFromSwapQueueBumps::default()
+            bumps: RemoveFromSwapQueueBumps::default(),
         };
         let res = remove_from_swap_queue(&ctx, &params);
         assert!(res.is_ok());
@@ -324,9 +356,13 @@ mod tests {
             token_mint: token_mint_address,
         };
         let swap_queue_key = Pubkey::find_program_address(
-            &[PENDING_SWAPS_SEED, &generate_map_entry_key(nonce, dest_trader)?],
+            &[
+                PENDING_SWAPS_SEED,
+                &generate_map_entry_key(nonce, dest_trader)?,
+            ],
             &program_id,
-        ).0;
+        )
+        .0;
         let mut swap_queue_lamports = 100;
         let mut swap_queue_data = pending_swap.try_to_vec()?;
         let swap_queue_account = create_account_info(
@@ -337,7 +373,7 @@ mod tests {
             &mut swap_queue_data,
             &program_id,
             false,
-            Some(PendingSwap::discriminator())
+            Some(PendingSwap::discriminator()),
         );
         let swap_queue_entry: Account<PendingSwap> = Account::try_from(&swap_queue_account)?;
 
@@ -351,7 +387,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut airdrop_vault_lamports = 1000;
@@ -364,7 +400,7 @@ mod tests {
             &mut airdrop_vault_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut token_lamports = 1000;
@@ -377,7 +413,7 @@ mod tests {
             &mut token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_info)?;
 
@@ -391,11 +427,12 @@ mod tests {
             &mut system_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_info)?;
 
-        let mut from_token_data = create_packed_token_account(token_mint_address, trader_key, 15000)?;
+        let mut from_token_data =
+            create_packed_token_account(token_mint_address, trader_key, 15000)?;
         let from_key = Pubkey::new_unique();
         let mut from_lamports = 15000;
         let from = create_account_info(
@@ -409,6 +446,22 @@ mod tests {
             None,
         );
 
+        let portfolio_key = Pubkey::new_unique();
+        let mut portfolio_lamports = 100;
+        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+
+        let portfolio = create_account_info(
+            &portfolio_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+        let portfolio_account = Account::<Portfolio>::try_from(&portfolio).unwrap();
+
         let params = RemoveFromSwapQueueParams { nonce, dest_trader };
         let mut accounts = RemoveFromSwapQueue {
             spl_vault: generic_info.clone(),
@@ -420,12 +473,13 @@ mod tests {
             system_program,
             swap_queue_entry,
             airdrop_vault,
+            portfolio: portfolio_account,
         };
         let ctx = Context {
             accounts: &mut accounts,
             remaining_accounts: &[],
             program_id: &program_id,
-            bumps: RemoveFromSwapQueueBumps::default()
+            bumps: RemoveFromSwapQueueBumps::default(),
         };
         let res = remove_from_swap_queue(&ctx, &params);
         assert!(res.is_ok());

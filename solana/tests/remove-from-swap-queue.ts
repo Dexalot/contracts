@@ -4,6 +4,7 @@ import { Keypair } from "@solana/web3.js";
 import { getAccountPubKey } from "../sdk/utils";
 import {
   AIRDROP_VAULT_SEED,
+  PORTFOLIO_SEED,
   SOL_VAULT_SEED,
   SPL_VAULT_SEED,
 } from "../sdk/consts";
@@ -25,6 +26,10 @@ export const removeFromSwapQueue = async (
 
   const airdropVaultPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(AIRDROP_VAULT_SEED),
+  ]);
+
+  const portfolioPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(PORTFOLIO_SEED),
   ]);
 
   const [pendingSwapPDA] = pdaDeriver.pendingSwapsEntry(
@@ -58,6 +63,7 @@ export const removeFromSwapQueue = async (
       systemProgram: web3.SystemProgram.programId,
       swapQueueEntry: pendingSwapPDA,
       airdropVault: airdropVaultPDA,
+      portfolio: portfolioPDA,
     })
     .signers([authority])
     .rpc();
