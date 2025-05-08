@@ -212,7 +212,7 @@ class Interactor {
     try {
       await checkIsTokenSupproted(this.program, this.connection);
     } catch (error) {
-      console.error(red("Error getting token list\n\n"));
+      console.error(red("Error checking token\n\n"));
     }
   };
 

@@ -217,15 +217,6 @@ export const crossSwap = async (
       endpointProgram.program,
       destinationEntryPDA,
     ]);
-    // console.log(`Remote: ${remotePDA.toBase58()}`);
-    // console.log(`Completed: ${completedSwapsEntryPDA.toBase58()}`);
-    // console.log(`DestEntry: ${destinationEntryPDA.toBase58()}`);
-    // console.log(`splVault: ${splVaultPDA.toBase58()}`);
-    // console.log(`solVault: ${solVaultPDA.toBase58()}`);
-    // console.log(`takerSrcAssetATA: ${takerSrcAssetATA.address.toBase58()}`);
-    // console.log(`vaultSrcAssetATA: ${vaultSrcAssetATA.address.toBase58()}`);
-    // console.log(`srcAssetMintPublicKey: ${srcAssetMintPublicKey.toBase58()}`);
-    // console.log(`portfolioPDA: ${portfolioPDA.toBase58()}`);
 
     const lookupTableAccount = await connection
       .getAddressLookupTable(lookupTableAddress)
