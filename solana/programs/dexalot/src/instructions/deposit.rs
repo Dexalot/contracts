@@ -33,6 +33,13 @@ pub fn deposit(ctx: &mut Context<Deposit>, params: &DepositParams) -> Result<()>
     let remote = &ctx.accounts.remote;
     let global_config = &ctx.accounts.portfolio.global_config;
     let token_details = &ctx.accounts.token_details;
+    let portfolio = &ctx.accounts.portfolio;
+
+    require_keys_eq!(
+        ctx.accounts.endpoint_program.key(),
+        portfolio.endpoint,
+        DexalotError::InvalidLZProgram
+    );
 
     require!(
         banned_account.owner != *program_id,
@@ -40,16 +47,10 @@ pub fn deposit(ctx: &mut Context<Deposit>, params: &DepositParams) -> Result<()>
     );
 
     // Check the program is not paused
-    require!(
-        !global_config.program_paused,
-        DexalotError::ProgramPaused
-    );
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     // Check if deposits are allowed
-    require!(
-        global_config.allow_deposit,
-        DexalotError::DepositsPaused
-    );
+    require!(global_config.allow_deposit, DexalotError::DepositsPaused);
 
     // Validate the amount is not greater than the user's balance
     require!(
@@ -84,7 +85,11 @@ pub fn deposit(ctx: &mut Context<Deposit>, params: &DepositParams) -> Result<()>
         params.trader,
         token_details.symbol,
         params.amount,
-        if cfg!(not(test)) {Clock::get()?.unix_timestamp as u32} else {123},
+        if cfg!(not(test)) {
+            Clock::get()?.unix_timestamp as u32
+        } else {
+            123
+        },
         [0; 18],
         global_config.out_nonce,
     );
@@ -185,20 +190,21 @@ pub fn deposit_native(
     let global_config = &ctx.accounts.portfolio.global_config;
     let remote = &ctx.accounts.remote;
     let amount = params.amount;
+    let portfolio = &ctx.accounts.portfolio;
+    
+    require_keys_eq!(
+        ctx.accounts.endpoint_program.key(),
+        portfolio.endpoint,
+        DexalotError::InvalidLZProgram
+    );
     require!(
         banned_account.owner != *program_id,
         DexalotError::AccountBanned
     );
     // Check the program is not paused
-    require!(
-        !global_config.program_paused,
-        DexalotError::ProgramPaused
-    );
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
     // Check if deposits are allowed
-    require!(
-        global_config.allow_deposit,
-        DexalotError::DepositsPaused
-    );
+    require!(global_config.allow_deposit, DexalotError::DepositsPaused);
     // Check if native deposit is allowed
     require!(
         !global_config.native_deposits_restricted,
@@ -248,7 +254,11 @@ pub fn deposit_native(
         params.trader,
         native_symbol,
         amount,
-        if cfg!(not(test)) {Clock::get()?.unix_timestamp as u32} else {123},
+        if cfg!(not(test)) {
+            Clock::get()?.unix_timestamp as u32
+        } else {
+            123
+        },
         [0; 18],
         global_config.out_nonce,
     );
@@ -352,10 +362,7 @@ pub fn deposit_airdrop(
     let global_config = &mut ctx.accounts.portfolio.global_config;
 
     // Check the program is not paused
-    require!(
-        !global_config.program_paused,
-        DexalotError::ProgramPaused
-    );
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
     // Check if native deposit is allowed
     require!(
         !global_config.native_deposits_restricted,
@@ -542,13 +549,13 @@ pub struct DepositAirdropParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::{system_program, Discriminator};
-    use anchor_lang::solana_program::program_pack::Pack;
-    use anchor_spl::token::spl_token::state::AccountState;
-    use anchor_spl::token::{spl_token, TokenAccount};
     use crate::consts::UNUSED_ADDRESS_PUBLIC_KEY;
     use crate::state::{GlobalConfig, Portfolio, Remote, TokenDetails};
     use crate::test_utils::{create_account_info, create_dummy_account};
+    use anchor_lang::solana_program::program_pack::Pack;
+    use anchor_lang::{system_program, Discriminator};
+    use anchor_spl::token::spl_token::state::AccountState;
+    use anchor_spl::token::{spl_token, TokenAccount};
 
     #[test]
     fn test_deposit_success() -> Result<()> {
@@ -571,7 +578,7 @@ mod tests {
             &mut user_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut generic_lamports = 100;
@@ -584,7 +591,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let hex_str = UNUSED_ADDRESS_PUBLIC_KEY;
@@ -603,6 +610,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -615,7 +623,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -629,7 +637,7 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote_account = Account::<Remote>::try_from(&remote_info)?;
 
@@ -644,7 +652,7 @@ mod tests {
             &mut banned_data,
             &banned_owner,
             false,
-            None
+            None,
         );
 
         let mut ep_lamports = 100;
@@ -657,7 +665,7 @@ mod tests {
             &mut ep_data,
             &endpoint_program_key,
             true,
-            None
+            None,
         );
 
         let mut token_program_lamports = 100;
@@ -670,7 +678,7 @@ mod tests {
             &mut token_program_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::<Token>::try_from(&token_program_info)?;
 
@@ -702,7 +710,7 @@ mod tests {
             &mut default_token_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -719,7 +727,11 @@ mod tests {
             token_program,
         };
 
-        let deposit_params = DepositParams { token_mint: Default::default(), amount: 50, trader: [0u8; 32] };
+        let deposit_params = DepositParams {
+            token_mint: Default::default(),
+            amount: 50,
+            trader: [0u8; 32],
+        };
 
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -759,7 +771,7 @@ mod tests {
             &mut user_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut generic_lamports = 100;
@@ -772,7 +784,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let hex_str = UNUSED_ADDRESS_PUBLIC_KEY;
@@ -791,6 +803,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -803,7 +816,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -817,7 +830,7 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote_account = Account::<Remote>::try_from(&remote_info)?;
 
@@ -832,7 +845,7 @@ mod tests {
             &mut banned_data,
             &banned_owner,
             false,
-            None
+            None,
         );
 
         let mut ep_lamports = 100;
@@ -845,7 +858,7 @@ mod tests {
             &mut ep_data,
             &endpoint_program_key,
             true,
-            None
+            None,
         );
 
         let mut token_program_lamports = 100;
@@ -858,7 +871,7 @@ mod tests {
             &mut token_program_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::<Token>::try_from(&token_program_info)?;
 
@@ -889,7 +902,7 @@ mod tests {
             &mut default_token_data,
             &token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -906,7 +919,11 @@ mod tests {
             token_program,
         };
 
-        let deposit_params = DepositParams { token_mint: Default::default(), amount: 50, trader: [0u8; 32] };
+        let deposit_params = DepositParams {
+            token_mint: Default::default(),
+            amount: 50,
+            trader: [0u8; 32],
+        };
 
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -921,12 +938,16 @@ mod tests {
         };
 
         let result = deposit(&mut ctx, &deposit_params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughSplTokenBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughSplTokenBalance.into()
+        );
 
         gc.allow_deposit = false;
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -939,7 +960,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -954,6 +975,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -966,7 +988,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1008,7 +1030,7 @@ mod tests {
             &mut user_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let hex_str = UNUSED_ADDRESS_PUBLIC_KEY;
@@ -1027,6 +1049,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1039,7 +1062,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1053,7 +1076,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault = SystemAccount::try_from(&sol_vault_info)?;
 
@@ -1067,7 +1090,7 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote_account = Account::<Remote>::try_from(&remote_info)?;
 
@@ -1082,7 +1105,7 @@ mod tests {
             &mut banned_data,
             &banned_owner,
             false,
-            None
+            None,
         );
 
         let mut ep_lamports = 100;
@@ -1095,7 +1118,7 @@ mod tests {
             &mut ep_data,
             &endpoint_program_key,
             true,
-            None
+            None,
         );
 
         let mut sp_lamports = 100;
@@ -1108,7 +1131,7 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_info)?;
 
@@ -1122,7 +1145,10 @@ mod tests {
             endpoint_program: endpoint_program_info,
         };
 
-        let deposit_native_params = DepositNativeParams { amount: 50, trader: [0u8; 32] };
+        let deposit_native_params = DepositNativeParams {
+            amount: 50,
+            trader: [0u8; 32],
+        };
 
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -1162,7 +1188,7 @@ mod tests {
             &mut user_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let hex_str = UNUSED_ADDRESS_PUBLIC_KEY;
@@ -1181,6 +1207,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1193,7 +1220,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1207,7 +1234,7 @@ mod tests {
             &mut sol_vault_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let sol_vault = SystemAccount::try_from(&sol_vault_info)?;
 
@@ -1221,7 +1248,7 @@ mod tests {
             &mut remote_data,
             &program_id,
             false,
-            Some(Remote::discriminator())
+            Some(Remote::discriminator()),
         );
         let remote_account = Account::<Remote>::try_from(&remote_info)?;
 
@@ -1236,7 +1263,7 @@ mod tests {
             &mut banned_data,
             &banned_owner,
             false,
-            None
+            None,
         );
 
         let mut ep_lamports = 100;
@@ -1249,7 +1276,7 @@ mod tests {
             &mut ep_data,
             &endpoint_program_key,
             true,
-            None
+            None,
         );
 
         let mut sp_lamports = 100;
@@ -1262,7 +1289,7 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_info)?;
 
@@ -1276,10 +1303,13 @@ mod tests {
             endpoint_program: endpoint_program_info,
         };
 
-        let deposit_native_params = DepositNativeParams { amount: 5000, trader: [0u8; 32] };
+        let deposit_native_params = DepositNativeParams {
+            amount: 5000,
+            trader: [0u8; 32],
+        };
 
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
-        let remaining_accounts: Vec<AccountInfo<>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
+        let remaining_accounts: Vec<AccountInfo> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
             .map(|_| create_dummy_account(&program_id_static))
             .collect();
 
@@ -1291,12 +1321,16 @@ mod tests {
         };
 
         let result = deposit_native(&mut ctx, &deposit_native_params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
 
         gc.native_deposits_restricted = true;
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1309,7 +1343,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1318,12 +1352,16 @@ mod tests {
         ctx.accounts = &mut new_accounts;
 
         let result = deposit_native(&mut ctx, &deposit_native_params);
-        assert_eq!(result.unwrap_err(), DexalotError::NativeDepositNotAllowed.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NativeDepositNotAllowed.into()
+        );
 
         gc.allow_deposit = false;
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1336,7 +1374,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1351,6 +1389,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: endpoint_program_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1363,7 +1402,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1401,7 +1440,7 @@ mod tests {
             &mut authority_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut portfolio_lamports = 100;
@@ -1414,7 +1453,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1428,7 +1467,7 @@ mod tests {
             &mut av_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let airdrop_vault = SystemAccount::try_from(&airdrop_vault_info)?;
 
@@ -1442,11 +1481,12 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_info)?;
 
-        let admin_pda = Pubkey::find_program_address(&[ADMIN_SEED, authority_key.as_ref()], &program_id).0;
+        let admin_pda =
+            Pubkey::find_program_address(&[ADMIN_SEED, authority_key.as_ref()], &program_id).0;
         let mut admin_lamports = 100;
         let mut admin_data = vec![0u8; 10];
         let admin_info = create_account_info(
@@ -1457,7 +1497,7 @@ mod tests {
             &mut admin_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut deposit_airdrop_accounts = DepositAirdrop {
@@ -1499,7 +1539,7 @@ mod tests {
             &mut authority_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let hex_str = UNUSED_ADDRESS_PUBLIC_KEY;
@@ -1518,6 +1558,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1530,7 +1571,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1544,7 +1585,7 @@ mod tests {
             &mut av_data,
             &system_program::ID,
             false,
-            None
+            None,
         );
         let airdrop_vault = SystemAccount::try_from(&airdrop_vault_info)?;
 
@@ -1558,11 +1599,12 @@ mod tests {
             &mut sp_data,
             &system_program::ID,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_info)?;
 
-        let admin_pda = Pubkey::find_program_address(&[ADMIN_SEED, authority_key.as_ref()], &program_id).0;
+        let admin_pda =
+            Pubkey::find_program_address(&[ADMIN_SEED, authority_key.as_ref()], &program_id).0;
         let mut admin_lamports = 100;
         let mut admin_data = vec![0u8; 10];
         let admin_info = create_account_info(
@@ -1573,7 +1615,7 @@ mod tests {
             &mut admin_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let mut deposit_airdrop_accounts = DepositAirdrop {
@@ -1594,12 +1636,16 @@ mod tests {
         };
 
         let result = deposit_airdrop(&mut ctx, &deposit_airdrop_params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
+        );
 
         gc.native_deposits_restricted = true;
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc.clone(),
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1612,7 +1658,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
@@ -1621,12 +1667,16 @@ mod tests {
         ctx.accounts = &mut new_accounts;
 
         let result = deposit_airdrop(&mut ctx, &deposit_airdrop_params);
-        assert_eq!(result.unwrap_err(), DexalotError::NativeDepositNotAllowed.into());
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NativeDepositNotAllowed.into()
+        );
 
         gc.program_paused = true;
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -1639,7 +1689,7 @@ mod tests {
             &mut portfolio_data,
             &program_id,
             false,
-            Some(Portfolio::discriminator())
+            Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 

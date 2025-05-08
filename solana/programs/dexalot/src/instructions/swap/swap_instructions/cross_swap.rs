@@ -13,6 +13,13 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::Token;
 
 pub fn cross_swap(ctx: &mut Context<CrossSwap>, params: &CrossSwapParams) -> Result<()> {
+    let portfolio = &ctx.accounts.portfolio;
+    require_keys_eq!(
+        ctx.accounts.endpoint_program.key(),
+        portfolio.endpoint,
+        DexalotError::InvalidLZProgram
+    );
+
     let global_config = &ctx.accounts.portfolio.global_config;
     require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
@@ -166,23 +173,6 @@ mod tests {
             swap_signer: address,
             out_nonce: 0,
         };
-        let portfolio = Portfolio {
-            admin: Pubkey::default(),
-            global_config: gc,
-            bump: 0,
-        };
-        let mut portfolio_data = portfolio.try_to_vec().unwrap();
-        let mut portfolio_lamports = 100;
-        let portfolio_account = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut portfolio_lamports,
-            &mut portfolio_data,
-            &program_id,
-            false,
-            Some(Portfolio::discriminator()),
-        );
 
         let mut clock = Clock::default();
         clock.unix_timestamp = 1000;
@@ -334,6 +324,25 @@ mod tests {
             true,
             None,
         );
+        let portfolio = Portfolio {
+            admin: Pubkey::default(),
+            global_config: gc,
+            endpoint: generic_key,
+            bump: 0,
+        };
+        let mut portfolio_data = portfolio.try_to_vec().unwrap();
+        let mut portfolio_lamports = 100;
+        let portfolio_account = create_account_info(
+            &generic_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
+        );
+
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
             .map(|_| create_dummy_account(program_id_static))
@@ -403,23 +412,6 @@ mod tests {
             swap_signer: address,
             out_nonce: 0,
         };
-        let portfolio = Portfolio {
-            admin: Pubkey::default(),
-            global_config: gc.clone(),
-            bump: 0,
-        };
-        let mut portfolio_data = portfolio.try_to_vec().unwrap();
-        let mut portfolio_lamports = 100;
-        let portfolio_account = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut portfolio_lamports,
-            &mut portfolio_data,
-            &program_id,
-            false,
-            Some(Portfolio::discriminator()),
-        );
 
         let mut clock = Clock::default();
         clock.unix_timestamp = 1000;
@@ -561,8 +553,10 @@ mod tests {
 
         let mut ep_lamports = 100;
         let mut ep_data = vec![0u8; 10];
+
+        let endpoint_key = Pubkey::new_unique();
         let endpoint_program_account = create_account_info(
-            &generic_key,
+            &endpoint_key,
             false,
             false,
             &mut ep_lamports,
@@ -570,6 +564,26 @@ mod tests {
             &program_id,
             true,
             None,
+        );
+
+        let portfolio = Portfolio {
+            admin: Pubkey::default(),
+            global_config: gc.clone(),
+            endpoint: endpoint_key,
+            bump: 0,
+        };
+
+        let mut portfolio_data = portfolio.try_to_vec().unwrap();
+        let mut portfolio_lamports = 100;
+        let portfolio_account = create_account_info(
+            &generic_key,
+            false,
+            true,
+            &mut portfolio_lamports,
+            &mut portfolio_data,
+            &program_id,
+            false,
+            Some(Portfolio::discriminator()),
         );
         let program_id_static: &'static Pubkey = Box::leak(Box::new(crate::id()));
         let remaining_accounts: Vec<AccountInfo<'static>> = (0..QUOTE_REMAINING_ACCOUNTS_COUNT)
@@ -614,6 +628,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Pubkey::default(),
             global_config: gc,
+            endpoint: endpoint_key,
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;

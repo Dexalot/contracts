@@ -26,6 +26,7 @@ pub fn initialize(ctx: &mut Context<Initialize>, params: &InitializeParams) -> R
     portfolio.global_config.airdrop_amount = DEFAULT_AIRDROP_AMOUNT;
     portfolio.global_config.swap_signer = params.swap_signer;
     portfolio.global_config.out_nonce = 0;
+    portfolio.endpoint = ctx.accounts.endpoint_program.key();
 
     // prepare CPI
     let register_params = RegisterOAppParams {

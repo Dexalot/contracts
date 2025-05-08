@@ -352,6 +352,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -569,6 +570,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Default::default(),
             global_config: gc,
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;

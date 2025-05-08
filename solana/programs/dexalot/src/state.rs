@@ -6,6 +6,7 @@ use anchor_lang::prelude::*;
 pub struct Portfolio {
     pub admin: Pubkey,
     pub global_config: GlobalConfig,
+    pub endpoint: Pubkey,
     pub bump: u8,
 }
 

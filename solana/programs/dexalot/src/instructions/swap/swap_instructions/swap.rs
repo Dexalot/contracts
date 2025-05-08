@@ -202,6 +202,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Pubkey::default(),
             global_config: gc,
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec().unwrap();
@@ -403,6 +404,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Pubkey::default(),
             global_config: gc.clone(),
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;
@@ -558,6 +560,7 @@ mod tests {
         let portfolio = Portfolio {
             admin: Pubkey::default(),
             global_config: gc,
+            endpoint: Pubkey::default(),
             bump: 0,
         };
         let mut portfolio_data = portfolio.try_to_vec()?;

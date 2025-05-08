@@ -73,4 +73,6 @@ pub enum DexalotError {
     XFERError,
     #[msg("Destination not allowed")]
     DestinationNotAllowed,
+    #[msg("Invalid LZ endpoint program")]
+    InvalidLZProgram,
 }
