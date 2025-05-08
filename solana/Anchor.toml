@@ -1,6 +1,7 @@
 [toolchain]
 anchor_version = "0.30.1"
 solana_version = "2.1.14"
+channel = "1.86.0"
 
 [features]
 resolution = true
