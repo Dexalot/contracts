@@ -191,7 +191,7 @@ pub fn deposit_native(
     let remote = &ctx.accounts.remote;
     let amount = params.amount;
     let portfolio = &ctx.accounts.portfolio;
-    
+
     require_keys_eq!(
         ctx.accounts.endpoint_program.key(),
         portfolio.endpoint,
@@ -368,6 +368,7 @@ pub fn deposit_airdrop(
         !global_config.native_deposits_restricted,
         DexalotError::NativeDepositNotAllowed
     );
+    require!(global_config.allow_deposit, DexalotError::DepositsPaused);
 
     // Transfer amount from user to program
     let from = &ctx.accounts.authority;
@@ -1415,6 +1416,7 @@ mod tests {
         let authority_key = Pubkey::new_unique();
         let portfolio_key = Pubkey::new_unique();
         let airdrop_vault_key = Pubkey::new_unique();
+        let endpoint_key = Pubkey::new_unique();
 
         let mut authority_lamports = 1000;
         let mut authority_data = vec![0u8; 10];
@@ -1429,8 +1431,24 @@ mod tests {
             None,
         );
 
+        let gc = GlobalConfig {
+            allow_deposit: true,
+            program_paused: false,
+            native_deposits_restricted: false,
+            default_chain_id: 0,
+            airdrop_amount: 0,
+            swap_signer: [0_u8;20],
+            out_nonce: 0,
+        };
+        let portfolio = Portfolio {
+            global_config: gc,
+            endpoint: endpoint_key,
+            bump: 0,
+        };
+        let mut portfolio_data = portfolio.try_to_vec()?;
+
         let mut portfolio_lamports = 100;
-        let mut portfolio_data = vec![0u8; Portfolio::LEN];
+        
         let portfolio_info = create_account_info(
             &portfolio_key,
             false,
