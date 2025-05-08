@@ -9,7 +9,7 @@ pub struct GetGlobalConfig<'info> {
     pub authority: Signer<'info>,
     #[account(
         seeds = [PORTFOLIO_SEED],
-        bump,
+        bump = portfolio.bump,
     )]
     pub portfolio: Account<'info, Portfolio>,
     /// CHECK: the admin pda
@@ -132,7 +132,7 @@ pub struct WriteConfig<'info> {
     #[account(
         mut,
         seeds = [PORTFOLIO_SEED],
-        bump
+        bump = portfolio.bump
     )]
     pub portfolio: Account<'info, Portfolio>,
 
@@ -147,8 +147,8 @@ pub struct WriteConfig<'info> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::Discriminator;
     use crate::test_utils::create_account_info;
+    use anchor_lang::Discriminator;
 
     #[test]
     fn test_set_allow_deposit_success() {
@@ -345,7 +345,12 @@ mod tests {
         let result = set_native_deposits_restricted(&mut ctx, true);
 
         assert!(result.is_ok());
-        assert!(ctx.accounts.portfolio.global_config.native_deposits_restricted);
+        assert!(
+            ctx.accounts
+                .portfolio
+                .global_config
+                .native_deposits_restricted
+        );
     }
 
     #[test]
@@ -547,8 +552,14 @@ mod tests {
         let result = get_global_config(&ctx);
         assert!(result.is_ok());
         let global_config = result.unwrap();
-        assert_eq!(global_config.allow_deposit, portfolio_account.global_config.allow_deposit);
-        assert_eq!(global_config.program_paused, portfolio_account.global_config.program_paused);
+        assert_eq!(
+            global_config.allow_deposit,
+            portfolio_account.global_config.allow_deposit
+        );
+        assert_eq!(
+            global_config.program_paused,
+            portfolio_account.global_config.program_paused
+        );
     }
 
     #[test]
@@ -677,11 +688,16 @@ mod tests {
         };
 
         let new_swap_signer: [u8; 20] = [1; 20];
-        let params = SetSlapSignerParams { swap_signer: new_swap_signer };
+        let params = SetSlapSignerParams {
+            swap_signer: new_swap_signer,
+        };
 
         let result = set_swap_signer(&mut ctx, &params);
         assert!(result.is_ok());
-        assert_eq!(ctx.accounts.portfolio.global_config.swap_signer, new_swap_signer);
+        assert_eq!(
+            ctx.accounts.portfolio.global_config.swap_signer,
+            new_swap_signer
+        );
     }
 
     #[test]
@@ -746,7 +762,9 @@ mod tests {
         };
 
         let new_swap_signer: [u8; 20] = [1; 20];
-        let params = SetSlapSignerParams { swap_signer: new_swap_signer };
+        let params = SetSlapSignerParams {
+            swap_signer: new_swap_signer,
+        };
 
         let result = set_swap_signer(&mut ctx, &params);
         assert_eq!(result.unwrap_err(), DexalotError::UnauthorizedSigner.into());

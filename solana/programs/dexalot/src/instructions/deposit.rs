@@ -408,7 +408,7 @@ pub struct Deposit<'info> {
     #[account(
         mut,
         seeds = [PORTFOLIO_SEED],
-        bump,
+        bump= portfolio.bump,
     )]
     pub portfolio: Account<'info, Portfolio>,
 
@@ -483,7 +483,7 @@ pub struct DepositNative<'info> {
     #[account(
         mut,
         seeds = [PORTFOLIO_SEED],
-        bump,
+        bump= portfolio.bump,
     )]
     pub portfolio: Account<'info, Portfolio>,
 
@@ -521,7 +521,7 @@ pub struct DepositAirdrop<'info> {
     #[account(
         mut,
         seeds = [PORTFOLIO_SEED],
-        bump,
+        bump= portfolio.bump,
     )]
     pub portfolio: Account<'info, Portfolio>,
 

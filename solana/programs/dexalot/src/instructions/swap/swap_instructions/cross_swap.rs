@@ -60,7 +60,7 @@ pub struct CrossSwap<'info> {
     pub clock: Sysvar<'info, Clock>,
     #[account(
         mut,
-        seeds = [PORTFOLIO_SEED], bump
+        seeds = [PORTFOLIO_SEED], bump = portfolio.bump
     )]
     pub portfolio: Account<'info, Portfolio>,
     /// CHECK: when calling instruction

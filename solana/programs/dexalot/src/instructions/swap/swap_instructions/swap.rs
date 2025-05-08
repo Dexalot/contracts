@@ -25,7 +25,7 @@ pub struct Swap<'info> {
     /// Sysvar for accessing block time
     pub clock: Sysvar<'info, Clock>,
     #[account(
-        seeds = [PORTFOLIO_SEED], bump
+        seeds = [PORTFOLIO_SEED], bump = portfolio.bump
     )]
     pub portfolio: Account<'info, Portfolio>,
 

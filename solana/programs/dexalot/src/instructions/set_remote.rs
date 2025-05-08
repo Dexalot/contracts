@@ -18,7 +18,7 @@ pub struct SetRemote<'info> {
         bump
     )]
     pub remote: Account<'info, Remote>,
-    #[account(seeds = [PORTFOLIO_SEED], bump)]
+    #[account(seeds = [PORTFOLIO_SEED], bump = portfolio.bump)]
     pub portfolio: Account<'info, Portfolio>,
     /// CHECK: Verify that user is an admin by checking their PDA.
     #[account(

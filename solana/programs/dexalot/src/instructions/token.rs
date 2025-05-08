@@ -209,7 +209,7 @@ pub struct RemoveToken<'info> {
 
     #[account(
         seeds = [PORTFOLIO_SEED],
-        bump
+        bump = portfolio.bump
     )]
     pub portfolio: Account<'info, Portfolio>,
 
