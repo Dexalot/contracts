@@ -1,8 +1,6 @@
-use crate::consts::{
-    ADMIN_SEED, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP, TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED
-};
+use crate::consts::{ADMIN_SEED, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP};
 use crate::cpi_utils::{create_instruction_data, RegisterOAppParams};
-use crate::state::{Admin, Portfolio, TokenList};
+use crate::state::{Admin, Portfolio};
 use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::{
@@ -23,7 +21,6 @@ pub fn initialize(ctx: &mut Context<Initialize>, params: &InitializeParams) -> R
     portfolio.global_config.airdrop_amount = DEFAULT_AIRDROP_AMOUNT;
     portfolio.global_config.swap_signer = params.swap_signer;
     portfolio.global_config.out_nonce = 0;
-
 
     // prepare CPI
     let register_params = RegisterOAppParams {
@@ -79,14 +76,6 @@ pub struct Initialize<'info> {
     #[account(
         init,
         payer = authority,
-        space = TokenList::LEN,
-        seeds = [TOKEN_LIST_SEED, TOKEN_LIST_PAGE_1_SEED.as_ref()],
-        bump
-    )]
-    pub token_list: Box<Account<'info, TokenList>>,
-    #[account(
-        init,
-        payer = authority,
         space = Admin::LEN,
         seeds = [ADMIN_SEED, authority.key().as_ref()],
         bump
@@ -112,7 +101,6 @@ mod tests {
         let program_id = crate::id();
         let authority_key = Pubkey::new_unique();
         let portfolio_key = Pubkey::new_unique();
-        let token_list_key = Pubkey::new_unique();
         let admin_key = Pubkey::new_unique();
         let endpoint_program_key = Pubkey::new_unique();
 
@@ -143,20 +131,6 @@ mod tests {
             Some(Portfolio::discriminator()),
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
-
-        let mut token_list_data = vec![0u8; TokenList::LEN];
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &token_list_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-        let token_list_account = Box::new(Account::<TokenList>::try_from(&token_list_info)?);
 
         let mut admin_data = vec![0u8; Admin::LEN];
         let mut admin_lamports = 100;
@@ -201,7 +175,6 @@ mod tests {
 
         let mut init_accounts = Initialize {
             portfolio: Box::new(portfolio_account),
-            token_list: token_list_account,
             admin: admin_account,
             authority: Signer::try_from(&authority_info)?,
             system_program: system_program.clone(),

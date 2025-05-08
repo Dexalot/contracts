@@ -8,12 +8,7 @@ import {
 } from "../utils";
 import { Dexalot } from "../../target/types/dexalot";
 import { Program, web3 } from "@coral-xyz/anchor";
-import {
-  AIRDROP_VAULT_SEED,
-  SOL_VAULT_SEED,
-  SPL_VAULT_SEED,
-  TOKEN_LIST_SEED,
-} from "../consts";
+import { AIRDROP_VAULT_SEED, SOL_VAULT_SEED, SPL_VAULT_SEED } from "../consts";
 import pdaDeriver from "../pda-deriver";
 import { green } from "kleur";
 import {
@@ -80,10 +75,7 @@ export const removeFromSwapQueue = async (
         )
       : createDefaultAccount();
 
-    const tokenListPDA = getAccountPubKey(program, [
-      Buffer.from(TOKEN_LIST_SEED),
-      Buffer.from("0"),
-    ]);
+
 
     const tx = await program.methods
       .removeFromSwapQueue({ nonce: Array.from(nonce), destTrader: trader })
@@ -94,7 +86,6 @@ export const removeFromSwapQueue = async (
         from: fromATA.address,
         to: toATA.address,
         tokenProgram: TOKEN_PROGRAM_ID,
-        tokenList: tokenListPDA,
         trader: pendingSwap.trader,
         systemProgram: web3.SystemProgram.programId,
         swapQueueEntry: pendingSwapPDA,

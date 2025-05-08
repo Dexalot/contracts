@@ -174,7 +174,7 @@ const main = async () => {
             await Interactor.createNewToken();
             break;
           case 2:
-            await Interactor.getTokenList();
+            await Interactor.checkIsTokenSupproted();
             break;
           case 3:
             await Interactor.addToken();

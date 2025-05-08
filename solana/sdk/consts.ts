@@ -9,7 +9,6 @@ export const SPL_VAULT_SEED = "Splv";
 export const SPL_USER_FUNDS_VAULT_SEED = "Sufv";
 export const AIRDROP_VAULT_SEED = "Adv";
 export const TOKEN_DETAILS_SEED = "TokenDetails";
-export const TOKEN_LIST_SEED = "TokenList";
 export const COMPLETED_SWAPS_SEED = "CompletedSwaps";
 export const EXPIRED_SWAPS_SEED = "ExpiredSwaps";
 export const PENDING_SWAPS_SEED = "PendingSwaps";

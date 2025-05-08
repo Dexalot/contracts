@@ -1,4 +1,4 @@
-use crate::consts::{ANCHOR_DISCRIMINATOR, MAX_TOKENS};
+use crate::consts::ANCHOR_DISCRIMINATOR;
 use anchor_lang::prelude::*;
 
 #[account]
@@ -68,25 +68,15 @@ impl BannedAccount {
         BanReason::INIT_SPACE; // reason (BanReason)
 }
 
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Eq, PartialEq, InitSpace, Default)]
+#[derive(
+    AnchorSerialize, AnchorDeserialize, Clone, Copy, Debug, Eq, PartialEq, InitSpace, Default,
+)]
 pub enum BanReason {
     #[default]
     NotBanned,
     Ofac,
     Abuse,
     Terms,
-}
-
-#[account]
-#[derive(InitSpace)]
-pub struct TokenList {
-    pub next_page: Option<Pubkey>,
-    #[max_len(MAX_TOKENS)]
-    pub tokens: Vec<Pubkey>,
-}
-
-impl TokenList {
-    pub const LEN: usize = ANCHOR_DISCRIMINATOR + TokenList::INIT_SPACE;
 }
 
 #[account]

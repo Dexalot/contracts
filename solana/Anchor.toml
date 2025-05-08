@@ -8,11 +8,11 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-dexalot = "2wF7VoXvkMwvMpN1GYETaUvaWth3CqyTyiYQqTFYhgx7"
+dexalot = "9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ"
 
 [programs.localnet]
-caller_mock = "8F8sMLA7as3v2KQvQruDWvZtvaz8bXvv6iUCNYTdQv3H"
-dexalot = "2wF7VoXvkMwvMpN1GYETaUvaWth3CqyTyiYQqTFYhgx7"
+caller_mock = "6sNWBXA71gWnCPidBB6uSoGoEnmFQdAqiWEJ5f71CuUn"
+dexalot = "9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ"
 lz_mock = "76y77prsiCMvXMjuoZ5VRrhG5qYBrUMYTE5WgHqgjEn6"
 
 [registry]

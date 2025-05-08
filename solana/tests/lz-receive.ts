@@ -7,8 +7,7 @@ import {
   AIRDROP_VAULT_SEED,
   DEST_ID,
   PORTFOLIO_SEED,
-  SOL_VAULT_SEED,
-  TOKEN_LIST_SEED,
+  TOKEN_DETAILS_SEED,
 } from "../sdk/consts";
 import pdaDeriver from "../sdk/pda-deriver";
 import {
@@ -39,12 +38,13 @@ export const callDexalot = async (
   const from = await getAssociatedTokenAddress(tokenMint, tokenVaultPDA, true);
 
   const to = await getAssociatedTokenAddress(tokenMint, authority.publicKey);
-  const tokenListPDA = getAccountPubKey(dexalotProgram, [
-    Buffer.from(TOKEN_LIST_SEED),
-    Buffer.from("0"),
-  ]);
   const airdropVaultPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(AIRDROP_VAULT_SEED),
+  ]);
+
+  const tokenDetailsPDA = getAccountPubKey(dexalotProgram, [
+    Buffer.from(TOKEN_DETAILS_SEED),
+    tokenMint.toBuffer(),
   ]);
 
   const [pendingSwapsEntryPDA] = pdaDeriver.pendingSwapsEntry(
@@ -79,13 +79,13 @@ export const callDexalot = async (
     .accounts({
       dexalotProgram: DEXALOT_PROGRAM_ID,
       portfolio: portfolioPDA,
+      tokenDetails: tokenDetailsPDA,
       tokenVault: tokenVaultPDA,
       solVault: nativeVaultPDA,
       from: from,
       to: to,
       tokenProgram: TOKEN_PROGRAM_ID,
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
-      tokenList: tokenListPDA,
       trader: authority.publicKey,
       airdropVault: airdropVaultPDA,
       //@ts-ignore

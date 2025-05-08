@@ -35,14 +35,8 @@ pub enum DexalotError {
     MapEntryNonExistent,
     #[msg("Accounts not provided.")]
     AccountsNotProvided,
-    #[msg("P-TAEX-01: Token is already added.")]
-    TokenAlreadyAdded,
-    #[msg("TokenList is full.")]
-    TokenListFull,
     #[msg("Portfolio must be paused.")]
     ProgramNotPaused,
-    #[msg("P-ETNS-01: Token is not found.")]
-    TokenNotFound,
     #[msg("P-BANA-01: Banned account.")]
     AccountBanned,
     #[msg("P-NTDP-01")]

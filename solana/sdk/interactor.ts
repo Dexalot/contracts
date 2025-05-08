@@ -33,13 +33,13 @@ import {
 } from "./handlers/solVaults";
 import {
   addToken,
+  checkIsTokenSupproted,
   createNewToken,
   getSPLTokenBalanceOfActiveWallet,
   getSPLTokenBalanceOfPubkey,
   getSPLTokenUserFundsVaultBalance,
   getSPLTokenVaultBalance,
   getTokenDetails,
-  getTokenList,
   mintSPLToken,
   removeToken,
 } from "./handlers/token";
@@ -53,7 +53,7 @@ import {
   showBalance,
 } from "./handlers/wallet";
 
-import { clusterApiUrl, Connection, Keypair } from "@solana/web3.js";
+import { clusterApiUrl, Connection, Keypair, PublicKey } from "@solana/web3.js";
 import IDL from "../target/idl/dexalot.json";
 import { red } from "kleur";
 import * as fs from "fs";
@@ -204,13 +204,13 @@ class Interactor {
     }
   };
 
-  getTokenList = async () => {
+  checkIsTokenSupproted = async () => {
     if (!this.program || !this.connection) {
       console.error(red("Program not found\n\n"));
       return;
     }
     try {
-      await getTokenList(this.program);
+      await checkIsTokenSupproted(this.program, this.connection);
     } catch (error) {
       console.error(red("Error getting token list\n\n"));
     }

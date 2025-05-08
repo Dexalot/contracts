@@ -12,12 +12,10 @@ import {
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
   TOKEN_DETAILS_SEED,
-  TOKEN_LIST_SEED,
 } from "../consts";
 import { green } from "kleur";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import {
-  approve,
   ASSOCIATED_TOKEN_PROGRAM_ID,
   createMint,
   getAccount,
@@ -30,27 +28,6 @@ import {
 import * as fs from "fs";
 
 const spinner = createSpinner();
-
-export const getTokenList = async (program: Program<Dexalot>) => {
-  try {
-    spinner.start();
-    const tokenListPDA = getAccountPubKey(program, [
-      Buffer.from(TOKEN_LIST_SEED),
-      Buffer.from("0"),
-    ]);
-    let tokenListAccount = await program.account.tokenList.fetch(tokenListPDA);
-
-    const tokens = tokenListAccount.tokens.map((tokenMintAddress) => {
-      return tokenMintAddress.toBase58().replace(/\0/g, "");
-    });
-    spinner.stop();
-    console.clear();
-    console.log(green(`Supported tokens: ${tokens.join(", ")}\n\n`));
-  } catch (err) {
-    spinner.stop(true);
-    throw err;
-  }
-};
 
 export const getTokenDetails = async (program: Program<Dexalot>) => {
   const tokenMint = new PublicKey(
@@ -81,6 +58,43 @@ export const getTokenDetails = async (program: Program<Dexalot>) => {
   } catch (err) {
     spinner.stop(true);
     throw err;
+  }
+};
+
+export const checkIsTokenSupproted = async (
+  program: Program<Dexalot>,
+  connection: Connection
+) => {
+  const tokenMintString = await getUserInput(
+    "Enter the token mint address of the token: "
+  );
+  const tokenMint = new PublicKey(tokenMintString);
+
+  try {
+    spinner.start();
+
+    const tokenDetailsPDA = getAccountPubKey(program, [
+      Buffer.from(TOKEN_DETAILS_SEED),
+      tokenMint.toBuffer(),
+    ]);
+    const tokenAccount = await program.account.tokenDetails.fetch(
+      tokenDetailsPDA
+    );
+    const tokenSymbol = String.fromCharCode(...tokenAccount.symbol);
+
+    spinner.stop();
+    console.clear();
+    console.log(
+      green(
+        `Token ${tokenSymbol} with Mint address ${tokenMint} is supported\n\n`
+      )
+    );
+  } catch (err) {
+    console.clear();
+    console.log(
+      green(`Token with Mint address ${tokenMint} is NOT supported\n\n`)
+    );
+    spinner.stop(true);
   }
 };
 
@@ -119,11 +133,6 @@ export const addToken = async (
     const tokenDetailsPDA = getAccountPubKey(program, [
       Buffer.from(TOKEN_DETAILS_SEED),
       tokenMint.toBuffer(),
-    ]);
-
-    const tokenListPDA = getAccountPubKey(program, [
-      Buffer.from(TOKEN_LIST_SEED),
-      Buffer.from("0"),
     ]);
 
     const splVaultPDA = getAccountPubKey(program, [
@@ -165,9 +174,6 @@ export const addToken = async (
         associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
-      .remainingAccounts([
-        { pubkey: tokenListPDA, isSigner: false, isWritable: true },
-      ])
       .signers([authority])
       .rpc({ commitment: "finalized" });
 
@@ -208,11 +214,6 @@ export const removeToken = async (
         program.programId
       );
 
-    const [tokenList, tokenListBump] = web3.PublicKey.findProgramAddressSync(
-      [Buffer.from(TOKEN_LIST_SEED), Buffer.from("0")],
-      program.programId
-    );
-
     const tx = await program.methods
 
       .removeToken({ tokenAddress: tokenMint })
@@ -224,13 +225,6 @@ export const removeToken = async (
         receiver: authority.publicKey,
         systemProgram: web3.SystemProgram.programId,
       })
-      .remainingAccounts([
-        {
-          pubkey: tokenList,
-          isWritable: true,
-          isSigner: false,
-        },
-      ])
       .signers([authority])
       .rpc({ commitment: "finalized" });
 

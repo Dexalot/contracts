@@ -42,7 +42,7 @@ export enum Commands {
 
   // Token operations
   CreateNewToken = "1.  Create New Token",
-  ListSupported = "2.  List Supported Tokens",
+  CheckSupported = "2.  Check is token supported",
   AddToken = "3.  Add Token (only admin)",
   TokenDetails = "4.  Get Token Details",
   RemoveToken = "5.  Remove Token (only admin and paused)",
@@ -134,7 +134,7 @@ const sectionCommands = {
   ],
   [Sections.tokenOptions]: [
     Commands.CreateNewToken,
-    Commands.ListSupported,
+    Commands.CheckSupported,
     Commands.AddToken,
     Commands.TokenDetails,
     Commands.RemoveToken,

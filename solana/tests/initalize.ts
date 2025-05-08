@@ -1,14 +1,8 @@
 import { Program, web3 } from "@coral-xyz/anchor";
 import {
   ADMIN_SEED,
-  AIRDROP_VAULT_SEED,
   DEST_ID,
   PORTFOLIO_SEED,
-  SOL_USER_FUNDS_VAULT_SEED,
-  SOL_VAULT_SEED,
-  SPL_USER_FUNDS_VAULT_SEED,
-  SPL_VAULT_SEED,
-  TOKEN_LIST_SEED,
 } from "../sdk/consts";
 import { endpointProgram } from "../sdk/layerzero";
 import { getAccountPubKey } from "../sdk/utils";
@@ -27,10 +21,6 @@ export const initialize = async (
   const portfolioPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(PORTFOLIO_SEED),
   ]);
-  const tokenListPDA = getAccountPubKey(dexalotProgram, [
-    Buffer.from(TOKEN_LIST_SEED),
-    Buffer.from("0"),
-  ]);
 
   const register_remaining_accounts =
     endpointProgram.getRegisterOappIxAccountMetaForCPI(
@@ -47,7 +37,6 @@ export const initialize = async (
     .accounts({
       //@ts-ignore
       portfolio: portfolioPDA,
-      tokenList: tokenListPDA,
       admin: adminPDA,
       authority: admin.publicKey,
       systemProgram: web3.SystemProgram.programId,

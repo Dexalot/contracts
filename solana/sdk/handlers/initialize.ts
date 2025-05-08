@@ -2,17 +2,7 @@ import { Keypair } from "@solana/web3.js";
 import { Dexalot } from "../../target/types/dexalot";
 import { createSpinner, getAccountPubKey } from "../utils";
 import { Program, web3 } from "@coral-xyz/anchor";
-import {
-  ADMIN_SEED,
-  AIRDROP_VAULT_SEED,
-  DEST_ID,
-  PORTFOLIO_SEED,
-  SOL_USER_FUNDS_VAULT_SEED,
-  SOL_VAULT_SEED,
-  SPL_USER_FUNDS_VAULT_SEED,
-  SPL_VAULT_SEED,
-  TOKEN_LIST_SEED,
-} from "../consts";
+import { ADMIN_SEED, DEST_ID, PORTFOLIO_SEED } from "../consts";
 import { endpointProgram } from "../layerzero";
 
 const spinner = createSpinner();
@@ -30,10 +20,6 @@ export const initialize = async (program: Program<Dexalot>, admin: Keypair) => {
     const portfolioPDA = getAccountPubKey(program, [
       Buffer.from(PORTFOLIO_SEED),
     ]);
-    const tokenListPDA = getAccountPubKey(program, [
-      Buffer.from(TOKEN_LIST_SEED),
-      Buffer.from("0"),
-    ]);
 
     const register_remaining_accounts =
       endpointProgram.getRegisterOappIxAccountMetaForCPI(
@@ -48,7 +34,7 @@ export const initialize = async (program: Program<Dexalot>, admin: Keypair) => {
       .accounts({
         //@ts-ignore
         portfolio: portfolioPDA,
-        tokenList: tokenListPDA,
+
         admin: adminPDA,
         authority: admin.publicKey,
         systemProgram: web3.SystemProgram.programId,

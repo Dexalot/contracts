@@ -14,6 +14,7 @@ import {
   SOL_VAULT_SEED,
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
+  TOKEN_DETAILS_SEED,
 } from "../sdk/consts";
 
 import { contextPromise } from "./context";
@@ -43,7 +44,6 @@ import {
   //@ts-ignore
 } from "spl-token-bankrun";
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { getTokenList } from "./token-list";
 import { createAta } from "./create";
 import { depositAirdropVault, depositSol, depositSpl } from "./deposit";
 import { claimSolBalance, claimSplBalance } from "./claimBalance";
@@ -310,14 +310,16 @@ describe("dexalot_tests", () => {
       mintKeypair
     );
 
-    let tokens = await getTokenList(dexalotProgram);
-    expect(tokens).not.toContain(mintKeypair.publicKey.toBase58());
-
     // add token
     await addToken(dexalotProgram, authority, mint, "A", tokenDecimals);
-
-    tokens = await getTokenList(dexalotProgram);
-    expect(tokens).toContain(mintKeypair.publicKey.toBase58());
+    const tokenDetailsPDA = getAccountPubKey(dexalotProgram, [
+      Buffer.from(TOKEN_DETAILS_SEED),
+      mint.toBuffer(),
+    ]);
+    const token = await dexalotProgram.account.tokenDetails.fetch(
+      tokenDetailsPDA
+    );
+    expect(token).toBeDefined();
   });
 
   test("remove_token", async () => {
@@ -326,13 +328,20 @@ describe("dexalot_tests", () => {
 
     const mintKeypair = tokenA;
 
-    let tokens = await getTokenList(dexalotProgram);
-    expect(tokens).toContain(mintKeypair.publicKey.toBase58());
+    const tokenDetailsPDA = getAccountPubKey(dexalotProgram, [
+      Buffer.from(TOKEN_DETAILS_SEED),
+      mintKeypair.publicKey.toBuffer(),
+    ]);
+    let token = await dexalotProgram.account.tokenDetails.fetch(
+      tokenDetailsPDA
+    );
+    expect(token).toBeDefined();
 
     await removeToken(dexalotProgram, authority, mintKeypair.publicKey);
 
-    tokens = await getTokenList(dexalotProgram);
-    expect(tokens).not.toContain(mintKeypair.publicKey.toBase58());
+    await expect(
+      dexalotProgram.account.tokenDetails.fetch(tokenDetailsPDA)
+    ).rejects.toThrow();
 
     // unpause program
     await setPause(dexalotProgram, authority, false);

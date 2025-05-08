@@ -1,16 +1,12 @@
-use std::collections::HashSet;
-
-use anchor_lang::prelude::*;
-use anchor_spl::associated_token::AssociatedToken;
-use anchor_spl::token::{Mint, Token, TokenAccount};
-
 use crate::consts::{
-    ADMIN_SEED, MAX_TOKENS, PORTFOLIO_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED,
-    TOKEN_DETAILS_SEED,
+    ADMIN_SEED, PORTFOLIO_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_DETAILS_SEED,
 };
 use crate::errors::DexalotError;
 use crate::events::ParameterUpdatedEvent;
-use crate::state::{Admin, Portfolio, TokenDetails, TokenList};
+use crate::state::{Admin, Portfolio, TokenDetails};
+use anchor_lang::prelude::*;
+use anchor_spl::associated_token::AssociatedToken;
+use anchor_spl::token::{Mint, Token, TokenAccount};
 
 pub fn add_token<'info>(
     ctx: &mut Context<'_, '_, 'info, 'info, AddToken<'info>>,
@@ -24,40 +20,12 @@ pub fn add_token<'info>(
         DexalotError::UnauthorizedSigner
     );
 
-    // require that remaining accounts are not empty
-    require!(
-        !ctx.remaining_accounts.is_empty(),
-        DexalotError::AccountsNotProvided
-    );
-
     // Populate the token details account.
     let token_details = &mut ctx.accounts.token_details;
+
     token_details.decimals = params.decimals;
     token_details.token_address = params.token_address;
     token_details.symbol = params.symbol;
-
-    let mut iter = ctx.remaining_accounts.iter().peekable();
-
-    while let Some(token_list_info) = iter.next() {
-        let mut token_list = Account::<TokenList>::try_from(token_list_info)?;
-        let token_mint = params.token_address;
-
-        require!(
-            !token_list.tokens.contains(&token_mint),
-            DexalotError::TokenAlreadyAdded
-        );
-
-        if token_list.tokens.len() < MAX_TOKENS {
-            token_list.tokens.push(token_mint);
-            token_list.exit(&crate::ID)?;
-            break;
-        } else if token_list.next_page.is_some() && iter.peek().is_some() {
-            continue;
-        } else {
-            return Err(DexalotError::TokenListFull.into());
-        }
-    }
-
 
     emit!(ParameterUpdatedEvent {
         pair: params.symbol,
@@ -79,40 +47,11 @@ pub fn remove_token<'info>(
     ctx: &Context<'_, '_, 'info, 'info, RemoveToken<'info>>,
     params: &RemoveTokenParams,
 ) -> Result<()> {
-    // Validate remaining accounts are not empty
-    require!(
-        !ctx.remaining_accounts.is_empty(),
-        DexalotError::AccountsNotProvided
-    );
-
     // Check the program is paused
     let global_config = &ctx.accounts.portfolio.global_config;
     require!(global_config.program_paused, DexalotError::ProgramNotPaused);
+
     let token_mint = params.token_address;
-
-    let mut iter = ctx.remaining_accounts.iter().peekable();
-
-    while let Some(token_list_info) = iter.next() {
-        let mut token_list = Account::<TokenList>::try_from(token_list_info)?;
-
-        // deserialize the token list into a hashset
-        let mut tokens_map = token_list
-            .tokens
-            .iter()
-            .copied()
-            .collect::<HashSet<Pubkey>>();
-
-        if !tokens_map.contains(&token_mint) && token_list.next_page.is_none() {
-            return Err(DexalotError::TokenNotFound.into());
-        } else if !tokens_map.contains(&token_mint) && token_list.next_page.is_some() && iter.peek().is_some() {
-            continue;
-        } else {
-            tokens_map.remove(&token_mint);
-            token_list.tokens = tokens_map.into_iter().collect();
-            // Serialize the updated data back into the account
-            token_list.exit(&crate::ID)?;
-        }
-    }
 
     emit!(ParameterUpdatedEvent {
         pair: token_mint.to_bytes(),
@@ -157,7 +96,7 @@ pub struct AddToken<'info> {
         seeds = [TOKEN_DETAILS_SEED, params.token_address.as_ref()],
         bump
     )]
-    pub token_details: Box<Account<'info, TokenDetails>>,
+    pub token_details: Account<'info, TokenDetails>,
     /// The token mint for the supported token
     pub token_mint: Box<Account<'info, Mint>>,
     #[account(
@@ -231,11 +170,11 @@ pub struct RemoveToken<'info> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anchor_lang::{system_program, Discriminator};
-    use anchor_lang::solana_program::program_pack::Pack;
-    use anchor_spl::token::spl_token;
-    use crate::state::{TokenDetails, TokenList, Admin, Portfolio};
+    use crate::state::{Admin, Portfolio, TokenDetails};
     use crate::test_utils::create_account_info;
+    use anchor_lang::solana_program::program_pack::Pack;
+    use anchor_lang::{system_program, Discriminator};
+    use anchor_spl::token::spl_token;
     use spl_token::state::{Account as SplTokenAccount, AccountState};
 
     #[test]
@@ -271,42 +210,6 @@ mod tests {
             Some(TokenDetails::discriminator()),
         );
 
-        let mut generic_token_list_lamports = 100;
-        let mut generic_token_list_data = vec![0u8; 677];
-        let generic_token_list = TokenList {
-            next_page: Some(Pubkey::new_unique()),
-            tokens: vec![Pubkey::new_unique(); 20],
-        };
-        generic_token_list_data.copy_from_slice(&generic_token_list.try_to_vec()?);
-        let generic_token_list_account = create_account_info(
-            &generic_pubkey,
-            false,
-            true,
-            &mut generic_token_list_lamports,
-            &mut generic_token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
-        let mut token_list_lamports = 100;
-        let mut token_list_data = vec![0u8; 100];
-        let token_list = TokenList {
-            next_page: None,
-            tokens: vec![Pubkey::new_unique()],
-        };
-        token_list.try_serialize(&mut token_list_data)?;
-        let token_list_account = create_account_info(
-            &generic_pubkey,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
         let mut generic_lamports = 100;
         let mut generic_data = vec![0u8; 100];
         let generic_account = create_account_info(
@@ -317,7 +220,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let sys_key = system_program::ID;
@@ -331,7 +234,7 @@ mod tests {
             &mut sys_data,
             &sys_key,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_ai)?;
 
@@ -345,7 +248,7 @@ mod tests {
             &mut tp_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_program_info)?;
 
@@ -360,7 +263,7 @@ mod tests {
             &mut a_tp_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut mint_lamports = 100;
@@ -377,7 +280,7 @@ mod tests {
             &mut mint_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let associated_token_program = Program::try_from(&a_token_program_info)?;
@@ -401,7 +304,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -410,7 +313,7 @@ mod tests {
             admin: admin_account.clone(),
             spl_vault: generic_account.clone(),
             spl_user_funds_vault: generic_account.clone(),
-            token_details: Box::new(Account::try_from(&token_details_account)?),
+            token_details: Account::try_from(&token_details_account)?,
             token_mint: Box::new(Account::try_from(&mint_info)?),
             spl_token_account: Box::new(spl_token_account.clone()),
             spl_user_funds_token_account: Box::new(spl_token_account),
@@ -432,7 +335,7 @@ mod tests {
         let mut ctx = Context {
             program_id: &program_id,
             accounts: &mut add_token_accounts,
-            remaining_accounts: &[generic_token_list_account, token_list_account],
+            remaining_accounts: &[],
             bumps: AddTokenBumps::default(),
         };
 
@@ -446,7 +349,6 @@ mod tests {
         let program_id = crate::id();
         let sys_key = system_program::ID;
         let token_mint = Pubkey::new_unique();
-        let generic_pubkey = Pubkey::new_unique();
 
         let authority_key = Pubkey::new_unique();
         let mut authority_lamports = 100;
@@ -537,42 +439,6 @@ mod tests {
         );
         let system_program = Program::try_from(&system_program_info)?;
 
-        let mut generic_token_list_lamports = 100;
-        let mut generic_token_list_data = vec![0u8; 677];
-        let generic_token_list_instance = TokenList {
-            tokens: vec![Pubkey::new_unique(); 20],
-            next_page: Some(Pubkey::new_unique()),
-        };
-        generic_token_list_data[..].copy_from_slice(&generic_token_list_instance.try_to_vec()?);
-        let generic_token_list_account = create_account_info(
-            &generic_pubkey,
-            false,
-            true,
-            &mut generic_token_list_lamports,
-            &mut generic_token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
-        let mut token_list_lamports = 100;
-        let mut token_list_data = vec![0u8; 37];
-        let token_list_instance = TokenList {
-            tokens: vec![token_mint],
-            next_page: None,
-        };
-        token_list_data[..].copy_from_slice(&token_list_instance.try_to_vec()?);
-        let token_list_account = create_account_info(
-            &generic_pubkey,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
         let mut remove_token_accounts = RemoveToken {
             authority,
             admin: Account::try_from(&admin_account)?,
@@ -585,7 +451,7 @@ mod tests {
         let ctx = Context {
             program_id: &program_id,
             accounts: &mut remove_token_accounts,
-            remaining_accounts: &[generic_token_list_account, token_list_account],
+            remaining_accounts: &[],
             bumps: Default::default(),
         };
 
@@ -595,9 +461,6 @@ mod tests {
 
         let result = remove_token(&ctx, &params);
         assert!(result.is_ok());
-
-        let updated_token_list = Account::<TokenList>::try_from(&ctx.remaining_accounts[0])?;
-        assert!(!updated_token_list.tokens.contains(&token_mint));
 
         Ok(())
     }
@@ -635,25 +498,6 @@ mod tests {
             Some(TokenDetails::discriminator()),
         );
 
-        let mut token_list_lamports = 100;
-        let mut token_list_data = vec![0u8; 645];
-        let mut token_list = TokenList {
-            next_page: None,
-            tokens: vec![Pubkey::new_unique(); 20],
-        };
-        token_list_data.copy_from_slice(&token_list.try_to_vec()?);
-        let token_list_key = Pubkey::new_unique();
-        let mut token_list_account = create_account_info(
-            &token_list_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
         let mut generic_lamports = 100;
         let mut generic_data = vec![0u8; 100];
         let generic_account = create_account_info(
@@ -664,7 +508,7 @@ mod tests {
             &mut generic_data,
             &program_id,
             false,
-            None
+            None,
         );
 
         let sys_key = system_program::ID;
@@ -678,7 +522,7 @@ mod tests {
             &mut sys_data,
             &sys_key,
             true,
-            None
+            None,
         );
         let system_program = Program::try_from(&system_program_ai)?;
 
@@ -692,7 +536,7 @@ mod tests {
             &mut tp_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let token_program = Program::try_from(&token_program_info)?;
 
@@ -707,7 +551,7 @@ mod tests {
             &mut a_tp_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut mint_lamports = 100;
@@ -724,7 +568,7 @@ mod tests {
             &mut mint_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let associated_token_program = Program::try_from(&a_token_program_info)?;
@@ -748,7 +592,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
@@ -757,7 +601,7 @@ mod tests {
             admin: admin_account.clone(),
             spl_vault: generic_account.clone(),
             spl_user_funds_vault: generic_account.clone(),
-            token_details: Box::new(Account::try_from(&token_details_account)?),
+            token_details: Account::try_from(&token_details_account)?,
             token_mint: Box::new(Account::try_from(&mint_info)?),
             spl_token_account: Box::new(spl_token_account.clone()),
             spl_user_funds_token_account: Box::new(spl_token_account),
@@ -770,60 +614,12 @@ mod tests {
         let mut dummy_symbol = [0u8; 32];
         let symbol_bytes = b"TEST";
         dummy_symbol[..symbol_bytes.len()].copy_from_slice(symbol_bytes);
+
         let params = AddTokenParams {
             decimals: 6,
             token_address: dummy_token_address,
             symbol: dummy_symbol,
         };
-
-        let mut ctx = Context {
-            program_id: &program_id,
-            accounts: &mut add_token_accounts,
-            remaining_accounts: &[token_list_account],
-            bumps: AddTokenBumps::default(),
-        };
-
-        let mut result = add_token(&mut ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::TokenListFull.into());
-
-        token_list = TokenList {
-            next_page: Some(generic_pubkey),
-            tokens: vec![Pubkey::new_unique(); 19],
-        };
-        token_list.tokens.push(params.token_address);
-        let mut token_list_data = vec![0u8; 677];
-        let mut token_list_lamports = 100;
-        token_list_data.copy_from_slice(&token_list.try_to_vec()?);
-        token_list_account = create_account_info(
-            &token_list_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
-        let mut ctx = Context {
-            program_id: &program_id,
-            accounts: &mut add_token_accounts,
-            remaining_accounts: &[token_list_account],
-            bumps: AddTokenBumps::default(),
-        };
-
-        result = add_token(&mut ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::TokenAlreadyAdded.into());
-
-        let mut ctx = Context {
-            program_id: &program_id,
-            accounts: &mut add_token_accounts,
-            remaining_accounts: &[],
-            bumps: AddTokenBumps::default(),
-        };
-
-        result = add_token(&mut ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::AccountsNotProvided.into());
 
         let not_admin = Pubkey::new_unique();
         let mut ctx = Context {
@@ -833,152 +629,8 @@ mod tests {
             bumps: AddTokenBumps::default(),
         };
 
-        result = add_token(&mut ctx, &params);
+        let result = add_token(&mut ctx, &params);
         assert_eq!(result.unwrap_err(), DexalotError::UnauthorizedSigner.into());
-        Ok(())
-    }
-
-    #[test]
-    fn test_remove_token_negative_cases() -> Result<()> {
-        let program_id = crate::id();
-        let sys_key = system_program::ID;
-        let token_mint = Pubkey::new_unique();
-        let generic_pubkey = Pubkey::new_unique();
-
-        let authority_key = Pubkey::new_unique();
-        let mut authority_lamports = 100;
-        let mut authority_data = vec![0u8; Admin::LEN];
-        let authority_account_info = create_account_info(
-            &authority_key,
-            true,
-            true,
-            &mut authority_lamports,
-            &mut authority_data,
-            &program_id,
-            false,
-            Some(Admin::discriminator()),
-        );
-        let authority = Signer::try_from(&authority_account_info)?;
-
-        let admin_key = Pubkey::new_unique();
-        let mut admin_lamports = 100;
-        let mut admin_data = vec![0u8; Admin::LEN];
-        let admin_account = create_account_info(
-            &admin_key,
-            false,
-            true,
-            &mut admin_lamports,
-            &mut admin_data,
-            &program_id,
-            false,
-            Some(Admin::discriminator()),
-        );
-
-        let portfolio_key = Pubkey::new_unique();
-        let mut portfolio_lamports = 100;
-        let mut portfolio_data = vec![0u8; Portfolio::LEN];
-        let mut portfolio_instance = Portfolio::default();
-        portfolio_instance.global_config.program_paused = true;
-        let portfolio_serialized = portfolio_instance.try_to_vec()?;
-        portfolio_data[..portfolio_serialized.len()].copy_from_slice(&portfolio_serialized);
-        let portfolio_account = create_account_info(
-            &portfolio_key,
-            false,
-            true,
-            &mut portfolio_lamports,
-            &mut portfolio_data,
-            &program_id,
-            false,
-            Some(Portfolio::discriminator()),
-        );
-
-        let token_details_key = Pubkey::new_unique();
-        let mut token_details_lamports = 100;
-        let mut token_details_data = vec![0u8; TokenDetails::LEN];
-        let token_details_account = create_account_info(
-            &token_details_key,
-            false,
-            true,
-            &mut token_details_lamports,
-            &mut token_details_data,
-            &program_id,
-            false,
-            Some(TokenDetails::discriminator()),
-        );
-
-        let receiver_key = Pubkey::new_unique();
-        let mut receiver_lamports = 0;
-        let mut receiver_data = vec![];
-        let receiver_account = create_account_info(
-            &receiver_key,
-            false,
-            true,
-            &mut receiver_lamports,
-            &mut receiver_data,
-            &sys_key,
-            false,
-            None,
-        );
-
-        let mut sys_lamports = 0;
-        let mut sys_data = vec![];
-        let system_program_info = create_account_info(
-            &sys_key,
-            false,
-            false,
-            &mut sys_lamports,
-            &mut sys_data,
-            &sys_key,
-            true,
-            None,
-        );
-        let system_program = Program::try_from(&system_program_info)?;
-
-        let mut token_list_lamports = 100;
-        let mut token_list_data = vec![0u8; 37];
-        let token_list_account = create_account_info(
-            &generic_pubkey,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-
-        let mut remove_token_accounts = RemoveToken {
-            authority,
-            admin: Account::try_from(&admin_account)?,
-            portfolio: Account::try_from(&portfolio_account)?,
-            token_details: Account::try_from(&token_details_account)?,
-            receiver: SystemAccount::try_from(&receiver_account)?,
-            system_program,
-        };
-
-        let params = RemoveTokenParams {
-            token_address: token_mint,
-        };
-
-        let ctx = Context {
-            program_id: &program_id,
-            accounts: &mut remove_token_accounts,
-            remaining_accounts: &[token_list_account],
-            bumps: Default::default(),
-        };
-
-        let result = remove_token(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::TokenNotFound.into());
-
-        let ctx = Context {
-            program_id: &program_id,
-            accounts: &mut remove_token_accounts,
-            remaining_accounts: &[],
-            bumps: Default::default(),
-        };
-
-        let result = remove_token(&ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::AccountsNotProvided.into());
 
         Ok(())
     }

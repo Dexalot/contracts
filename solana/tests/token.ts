@@ -7,7 +7,6 @@ import {
   SPL_USER_FUNDS_VAULT_SEED,
   SPL_VAULT_SEED,
   TOKEN_DETAILS_SEED,
-  TOKEN_LIST_SEED,
 } from "../sdk/consts";
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -30,11 +29,6 @@ export const addToken = async (
   const tokenDetailsPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(TOKEN_DETAILS_SEED),
     tokenMint.toBuffer(),
-  ]);
-
-  const tokenListPDA = getAccountPubKey(dexalotProgram, [
-    Buffer.from(TOKEN_LIST_SEED),
-    Buffer.from("0"),
   ]);
 
   const splVaultPDA = getAccountPubKey(dexalotProgram, [
@@ -74,9 +68,6 @@ export const addToken = async (
       associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
-    .remainingAccounts([
-      { pubkey: tokenListPDA, isSigner: false, isWritable: true },
-    ])
     .signers([authority])
     .rpc();
 };
@@ -97,12 +88,7 @@ export const removeToken = async (
     dexalotProgram.programId
   );
 
-  const [tokenList, tokenListBump] = web3.PublicKey.findProgramAddressSync(
-    [Buffer.from(TOKEN_LIST_SEED), Buffer.from("0")],
-    dexalotProgram.programId
-  );
-
-  const tx = await dexalotProgram.methods
+  await dexalotProgram.methods
     .removeToken({ tokenAddress: tokenMint })
     .accounts({
       authority: authority.publicKey,
@@ -112,13 +98,6 @@ export const removeToken = async (
       receiver: authority.publicKey,
       systemProgram: web3.SystemProgram.programId,
     })
-    .remainingAccounts([
-      {
-        pubkey: tokenList,
-        isWritable: true,
-        isSigner: false,
-      },
-    ])
     .signers([authority])
     .rpc();
 };

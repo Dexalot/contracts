@@ -18,9 +18,8 @@ use crate::xfer::XFERSolana;
 use anchor_lang::prelude::*;
 use anchor_lang::{declare_id, program};
 use instructions::*;
-use state::GlobalConfig;
 
-declare_id!("2wF7VoXvkMwvMpN1GYETaUvaWth3CqyTyiYQqTFYhgx7");
+declare_id!("9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ");
 
 #[program]
 pub mod dexalot {

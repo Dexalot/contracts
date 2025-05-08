@@ -7,7 +7,7 @@ use anchor_lang::{
     solana_program::{instruction::Instruction, program::invoke},
 };
 use uitls::*;
-declare_id!("8F8sMLA7as3v2KQvQruDWvZtvaz8bXvv6iUCNYTdQv3H");
+declare_id!("6sNWBXA71gWnCPidBB6uSoGoEnmFQdAqiWEJ5f71CuUn");
 
 #[program]
 pub mod caller_mock {
@@ -28,6 +28,9 @@ pub struct CallDexalot<'info> {
     /// CHECK:
     #[account(mut)]
     pub portfolio: UncheckedAccount<'info>,
+    /// CHECK:
+    #[account()]
+    pub token_details: UncheckedAccount<'info>,
     /// CHECK: Used to set the program as authority for the associated token account
     #[account()]
     pub token_vault: UncheckedAccount<'info>,
@@ -46,9 +49,6 @@ pub struct CallDexalot<'info> {
     /// CHECK:
     #[account()]
     pub associated_token_program: UncheckedAccount<'info>,
-    /// CHECK:
-    #[account()]
-    pub token_list: UncheckedAccount<'info>,
     /// CHECK: the trader account
     #[account(mut)]
     pub trader: UncheckedAccount<'info>,

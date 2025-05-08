@@ -1,10 +1,10 @@
+use crate::consts::TOKEN_DETAILS_SEED;
 use crate::errors::DexalotError;
 use crate::xfer::Tx;
 use crate::{
     consts::{
         AIRDROP_VAULT_SEED, ENDPOINT_ID, PENDING_SWAPS_SEED, PORTFOLIO_SEED,
         SOL_USER_FUNDS_VAULT_SEED, SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED,
-        TOKEN_LIST_PAGE_1_SEED, TOKEN_LIST_SEED,
     },
     cpi_utils::get_accounts_for_clear,
     *,
@@ -46,12 +46,12 @@ pub fn lz_receive_types(
     let (sol_user_funds_vault, _) =
         Pubkey::find_program_address(&sol_user_funds_vault_seeds, ctx.program_id);
 
-    let token_list_seeds = [TOKEN_LIST_SEED, TOKEN_LIST_PAGE_1_SEED.as_ref()];
-    let (token_list, _) = Pubkey::find_program_address(&token_list_seeds, ctx.program_id);
-
     let xfer_message = XFERSolana::unpack_xfer_message(&params.message)?;
 
     let token_mint_address = xfer_message.token_mint;
+
+    let token_details_seeds = [TOKEN_DETAILS_SEED, token_mint_address.as_ref()];
+    let (token_details, _) = Pubkey::find_program_address(&token_details_seeds, ctx.program_id);
 
     let trader = xfer_message.trader;
     // we only accept CCTRADE and WITHDRAW
@@ -112,6 +112,11 @@ pub fn lz_receive_types(
             is_writable: false,
         },
         LzAccount {
+            pubkey: token_details,
+            is_signer: false,
+            is_writable: false,
+        },
+        LzAccount {
             pubkey: token_vault,
             is_signer: false,
             is_writable: false,
@@ -138,11 +143,6 @@ pub fn lz_receive_types(
         },
         LzAccount {
             pubkey: ASSOCIATED_TOKEN_PROGRAM_ID,
-            is_signer: false,
-            is_writable: false,
-        },
-        LzAccount {
-            pubkey: token_list,
             is_signer: false,
             is_writable: false,
         },
@@ -227,12 +227,15 @@ mod tests {
         let (expected_portfolio, _) = Pubkey::find_program_address(&[PORTFOLIO_SEED], &program_id);
         let (expected_spl_vault, _) = Pubkey::find_program_address(&[SPL_VAULT_SEED], &program_id);
         let (expected_sol_vault, _) = Pubkey::find_program_address(&[SOL_VAULT_SEED], &program_id);
+        let (expected_token_details, _) =
+            Pubkey::find_program_address(&[TOKEN_DETAILS_SEED, token_mint.as_ref()], &program_id);
 
         assert_eq!(accounts[0].pubkey, expected_portfolio);
-        assert_eq!(accounts[1].pubkey, expected_spl_vault);
-        assert_eq!(accounts[2].pubkey, expected_sol_vault);
+        assert_eq!(accounts[1].pubkey, expected_token_details);
+        assert_eq!(accounts[2].pubkey, expected_spl_vault);
         assert_eq!(accounts[3].pubkey, expected_sol_vault);
-        assert_eq!(accounts[4].pubkey, trader);
+        assert_eq!(accounts[4].pubkey, expected_sol_vault);
+        assert_eq!(accounts[5].pubkey, trader);
         assert_eq!(accounts[11].pubkey, Pubkey::default());
         Ok(())
     }
@@ -258,14 +261,17 @@ mod tests {
         let (expected_portfolio, _) = Pubkey::find_program_address(&[PORTFOLIO_SEED], &program_id);
         let (expected_spl_vault, _) = Pubkey::find_program_address(&[SPL_VAULT_SEED], &program_id);
         let (expected_sol_vault, _) = Pubkey::find_program_address(&[SOL_VAULT_SEED], &program_id);
+        let (expected_token_details, _) =
+            Pubkey::find_program_address(&[TOKEN_DETAILS_SEED, token_mint.as_ref()], &program_id);
 
         let expected_from = get_associated_token_address(&expected_spl_vault, &token_mint);
         let expected_to = get_associated_token_address(&trader, &token_mint);
         assert_eq!(accounts[0].pubkey, expected_portfolio);
-        assert_eq!(accounts[1].pubkey, expected_spl_vault);
-        assert_eq!(accounts[2].pubkey, expected_sol_vault);
-        assert_eq!(accounts[3].pubkey, expected_from);
-        assert_eq!(accounts[4].pubkey, expected_to);
+        assert_eq!(accounts[1].pubkey, expected_token_details);
+        assert_eq!(accounts[2].pubkey, expected_spl_vault);
+        assert_eq!(accounts[3].pubkey, expected_sol_vault);
+        assert_eq!(accounts[4].pubkey, expected_from);
+        assert_eq!(accounts[5].pubkey, expected_to);
         assert_eq!(accounts[11].pubkey, token_mint);
         Ok(())
     }
@@ -293,12 +299,15 @@ mod tests {
             Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
         let (expected_spl_user_vault, _) =
             Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_token_details, _) =
+            Pubkey::find_program_address(&[TOKEN_DETAILS_SEED, token_mint.as_ref()], &program_id);
 
         assert_eq!(accounts[0].pubkey, expected_portfolio);
-        assert_eq!(accounts[1].pubkey, expected_spl_user_vault);
-        assert_eq!(accounts[2].pubkey, expected_sol_user_vault);
+        assert_eq!(accounts[1].pubkey, expected_token_details);
+        assert_eq!(accounts[2].pubkey, expected_spl_user_vault);
         assert_eq!(accounts[3].pubkey, expected_sol_user_vault);
-        assert_eq!(accounts[4].pubkey, trader);
+        assert_eq!(accounts[4].pubkey, expected_sol_user_vault);
+        assert_eq!(accounts[5].pubkey, trader);
         assert_eq!(accounts[11].pubkey, Pubkey::default());
         Ok(())
     }
@@ -326,14 +335,17 @@ mod tests {
             Pubkey::find_program_address(&[SOL_USER_FUNDS_VAULT_SEED], &program_id);
         let (expected_spl_user_vault, _) =
             Pubkey::find_program_address(&[SPL_USER_FUNDS_VAULT_SEED], &program_id);
+        let (expected_token_details, _) =
+            Pubkey::find_program_address(&[TOKEN_DETAILS_SEED, token_mint.as_ref()], &program_id);
 
         let expected_from = get_associated_token_address(&expected_spl_user_vault, &token_mint);
         let expected_to = get_associated_token_address(&trader, &token_mint);
         assert_eq!(accounts[0].pubkey, expected_portfolio);
-        assert_eq!(accounts[1].pubkey, expected_spl_user_vault);
-        assert_eq!(accounts[2].pubkey, expected_sol_user_vault);
-        assert_eq!(accounts[3].pubkey, expected_from);
-        assert_eq!(accounts[4].pubkey, expected_to);
+        assert_eq!(accounts[1].pubkey, expected_token_details);
+        assert_eq!(accounts[2].pubkey, expected_spl_user_vault);
+        assert_eq!(accounts[3].pubkey, expected_sol_user_vault);
+        assert_eq!(accounts[4].pubkey, expected_from);
+        assert_eq!(accounts[5].pubkey, expected_to);
         assert_eq!(accounts[11].pubkey, token_mint);
         Ok(())
     }

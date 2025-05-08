@@ -15,11 +15,8 @@ pub const ADMIN_SEED: &[u8] = b"Admin";
 pub const REBALANCER_SEED: &[u8] = b"Rebalancer";
 pub const BANNED_ACCOUNT_SEED: &[u8] = b"Banned";
 pub const TOKEN_DETAILS_SEED: &[u8] = b"TokenDetails";
-pub const TOKEN_LIST_SEED: &[u8] = b"TokenList";
-pub const TOKEN_LIST_PAGE_1_SEED: &[u8] = b"0";
 pub const CCTRADE_ALLOWED_DEST_SEED: &[u8] = b"Cads";
 // Portfolio
-pub const MAX_TOKENS: usize = 20;
 pub const DEFAULT_AIRDROP_AMOUNT: u64 = 10000; // two spl tranfers in lamports
 pub const SOL_NATIVE_SYMBOL: &[u8; 3] = b"SOL";
 // XFER

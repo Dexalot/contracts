@@ -4,13 +4,12 @@ use crate::{
     consts::{
         AIRDROP_VAULT_SEED, CLEAR_MIN_ACCOUNTS_LEN, ENDPOINT_CLEAR, ENDPOINT_ID,
         NATIVE_VAULT_MIN_THRESHOLD, PENDING_SWAPS_SEED, PORTFOLIO_SEED, SOL_USER_FUNDS_VAULT_SEED,
-        SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_LIST_PAGE_1_SEED,
-        TOKEN_LIST_SEED,
+        SOL_VAULT_SEED, SPL_USER_FUNDS_VAULT_SEED, SPL_VAULT_SEED, TOKEN_DETAILS_SEED,
     },
     cpi_utils::{create_instruction_data, ClearParams},
     errors::DexalotError,
     events::{SolTransfer, SolTransferTransactions},
-    state::{Portfolio, TokenList},
+    state::{Portfolio, TokenDetails},
     xfer::Tx,
     *,
 };
@@ -25,11 +24,21 @@ use anchor_spl::{
     token::Token,
 };
 
+/// Used only to bypass anchor check
+fn lzreceive_wrapper_helper(message: &XFERSolana) -> &[u8] {
+    return message.token_mint.as_ref();
+}
+
 #[derive(Accounts, Clone)]
 #[instruction(params: LzReceiveParams)]
 pub struct LzReceive<'info> {
     #[account(seeds = [PORTFOLIO_SEED], bump = portfolio.bump)]
     pub portfolio: Account<'info, Portfolio>,
+    #[account(
+        seeds = [TOKEN_DETAILS_SEED, lzreceive_wrapper_helper(&XFERSolana::unpack_xfer_message(&params.message)?)  ],
+        bump
+    )]
+    pub token_details: Account<'info, TokenDetails>,
     /// CHECK: Used to set the program as authority for the associated token account
     #[account(
         seeds = [if XFERSolana::unpack_xfer_message(&params.message)?.transaction == Tx::CCTrade{SPL_VAULT_SEED}else{SPL_USER_FUNDS_VAULT_SEED}],
@@ -51,11 +60,6 @@ pub struct LzReceive<'info> {
     pub to: AccountInfo<'info>,
     pub token_program: Program<'info, Token>,
     pub associated_token_program: Program<'info, AssociatedToken>,
-    #[account(
-        seeds = [TOKEN_LIST_SEED, TOKEN_LIST_PAGE_1_SEED.as_ref()],
-        bump
-    )]
-    pub token_list: Account<'info, TokenList>,
     /// CHECK: the trader account
     #[account(mut)]
     pub trader: AccountInfo<'info>,
@@ -83,10 +87,7 @@ pub fn lz_receive(ctx: &mut Context<LzReceive>, params: &LzReceiveParams) -> Res
     let native_vault = &ctx.accounts.native_vault;
 
     // check if program is paused
-    require!(
-        !global_config.program_paused,
-        DexalotError::ProgramPaused
-    );
+    require!(!global_config.program_paused, DexalotError::ProgramPaused);
 
     let accounts_metas: Vec<AccountMeta> = ctx.remaining_accounts[0..CLEAR_MIN_ACCOUNTS_LEN]
         .iter()
@@ -127,14 +128,15 @@ pub fn lz_receive(ctx: &mut Context<LzReceive>, params: &LzReceiveParams) -> Res
     let xfer = XFERSolana::unpack_xfer_message(params.message.as_slice())?;
 
     // check if token is supported
-    let token_list = &ctx.accounts.token_list;
+    let token_details = &ctx.accounts.token_details;
 
     let is_native_withdraw = xfer.token_mint == Pubkey::default();
 
     // Check if token is supported
     if !is_native_withdraw {
-        require!(
-            token_list.tokens.contains(&xfer.token_mint),
+        require_eq!(
+            token_details.to_account_info().owner,
+            ctx.program_id,
             DexalotError::TokenNotSupported
         );
     }
@@ -175,10 +177,7 @@ pub fn lz_receive(ctx: &mut Context<LzReceive>, params: &LzReceiveParams) -> Res
     }
 
     // xfer checks
-    require!(
-        xfer.quantity > 0u64,
-        DexalotError::ZeroTokenQuantity
-    );
+    require!(xfer.quantity > 0u64, DexalotError::ZeroTokenQuantity);
     require!(
         xfer.trader != Pubkey::default(),
         DexalotError::InvalidTrader
@@ -320,16 +319,16 @@ impl<'info> CreateATA<'info> {
 
 #[cfg(test)]
 mod tests {
-    use anchor_lang::Discriminator;
     use super::*;
-    use anchor_lang::solana_program::{system_program, pubkey::Pubkey};
-    use anchor_lang::solana_program::program_pack::Pack;
-    use anchor_spl::token::{spl_token, Token};
-    use anchor_spl::associated_token::AssociatedToken;
-    use anchor_spl::token::spl_token::state::AccountState;
-    use crate::state::{GlobalConfig, Portfolio, TokenList};
+    use crate::state::{GlobalConfig, Portfolio};
     use crate::test_utils::{create_account_info, create_dummy_account};
     use crate::xfer::XChainMsgType;
+    use anchor_lang::solana_program::program_pack::Pack;
+    use anchor_lang::solana_program::{pubkey::Pubkey, system_program};
+    use anchor_lang::Discriminator;
+    use anchor_spl::associated_token::AssociatedToken;
+    use anchor_spl::token::spl_token::state::AccountState;
+    use anchor_spl::token::{spl_token, Token};
 
     #[test]
     fn test_lz_receive_success() -> Result<()> {
@@ -364,21 +363,6 @@ mod tests {
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
-        let token_list = TokenList { next_page: None, tokens: vec![generic_key] };
-        let mut token_list_data = token_list.try_to_vec()?;
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-        let token_list_account = Account::<TokenList>::try_from(&token_list_info)?;
-
         let mut default_token_account = spl_token::state::Account::default();
         default_token_account.state = AccountState::Initialized;
         let mut default_token_data = vec![0u8; spl_token::state::Account::LEN];
@@ -392,7 +376,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut to_data = vec![];
@@ -513,6 +497,21 @@ mod tests {
             .map(|_| create_dummy_account(&program_id_static))
             .collect();
 
+        let token_details_key = Pubkey::new_unique();
+        let mut token_details_lamports = 100;
+        let mut token_details_data = vec![0u8; TokenDetails::LEN];
+        let token_details_account = create_account_info(
+            &token_details_key,
+            false,
+            true,
+            &mut token_details_lamports,
+            &mut token_details_data,
+            &program_id,
+            false,
+            Some(TokenDetails::discriminator()),
+        );
+        let token_details = Account::<TokenDetails>::try_from(&token_details_account).unwrap();
+
         let mut lz_receive_accounts = LzReceive {
             portfolio: portfolio_account,
             token_vault: generic_info.clone(),
@@ -521,7 +520,7 @@ mod tests {
             to: to_info,
             token_program,
             associated_token_program,
-            token_list: token_list_account,
+            token_details: token_details,
             trader: generic_info.clone(),
             airdrop_vault,
             system_program,
@@ -574,21 +573,6 @@ mod tests {
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
-        let token_list = TokenList { next_page: None, tokens: vec![generic_key] };
-        let mut token_list_data = token_list.try_to_vec()?;
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-        let token_list_account = Account::<TokenList>::try_from(&token_list_info)?;
-
         let mut default_token_account = spl_token::state::Account::default();
         default_token_account.state = AccountState::Initialized;
         default_token_account.amount = 2;
@@ -603,7 +587,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut generic_data = vec![0u8; 100];
@@ -711,6 +695,21 @@ mod tests {
             .map(|_| create_dummy_account(&program_id_static))
             .collect();
 
+        let token_details_key = Pubkey::new_unique();
+        let mut token_details_lamports = 100;
+        let mut token_details_data = vec![0u8; TokenDetails::LEN];
+        let token_details_account = create_account_info(
+            &token_details_key,
+            false,
+            true,
+            &mut token_details_lamports,
+            &mut token_details_data,
+            &program_id,
+            false,
+            Some(TokenDetails::discriminator()),
+        );
+        let token_details = Account::<TokenDetails>::try_from(&token_details_account).unwrap();
+
         let mut lz_receive_accounts = LzReceive {
             portfolio: portfolio_account,
             token_vault: generic_info.clone(),
@@ -719,7 +718,7 @@ mod tests {
             to: generic_info.clone(),
             token_program,
             associated_token_program,
-            token_list: token_list_account,
+            token_details: token_details,
             trader: generic_info.clone(),
             airdrop_vault,
             system_program,
@@ -772,21 +771,6 @@ mod tests {
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
-        let token_list = TokenList { next_page: None, tokens: vec![generic_key] };
-        let mut token_list_data = token_list.try_to_vec()?;
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-        let token_list_account = Account::<TokenList>::try_from(&token_list_info)?;
-
         let mut default_token_account = spl_token::state::Account::default();
         default_token_account.state = AccountState::Initialized;
         let mut default_token_data = vec![0u8; spl_token::state::Account::LEN];
@@ -800,7 +784,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut to_data = vec![];
@@ -921,6 +905,21 @@ mod tests {
             .map(|_| create_dummy_account(&program_id_static))
             .collect();
 
+        let token_details_key = Pubkey::new_unique();
+        let mut token_details_lamports = 100;
+        let mut token_details_data = vec![0u8; TokenDetails::LEN];
+        let token_details_account = create_account_info(
+            &token_details_key,
+            false,
+            true,
+            &mut token_details_lamports,
+            &mut token_details_data,
+            &program_id,
+            false,
+            Some(TokenDetails::discriminator()),
+        );
+        let token_details = Account::<TokenDetails>::try_from(&token_details_account).unwrap();
+
         let mut lz_receive_accounts = LzReceive {
             portfolio: portfolio_account,
             token_vault: generic_info.clone(),
@@ -929,7 +928,7 @@ mod tests {
             to: to_info,
             token_program,
             associated_token_program,
-            token_list: token_list_account,
+            token_details: token_details,
             trader: generic_info.clone(),
             airdrop_vault,
             system_program,
@@ -982,21 +981,6 @@ mod tests {
         );
         let portfolio_account = Account::<Portfolio>::try_from(&portfolio_info)?;
 
-        let token_list = TokenList { next_page: None, tokens: vec![generic_key] };
-        let mut token_list_data = token_list.try_to_vec()?;
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
-        );
-        let token_list_account = Account::<TokenList>::try_from(&token_list_info)?;
-
         let mut default_token_account = spl_token::state::Account::default();
         default_token_account.state = AccountState::Initialized;
         default_token_account.amount = 2;
@@ -1011,7 +995,7 @@ mod tests {
             &mut default_token_data,
             &anchor_spl::token::ID,
             true,
-            None
+            None,
         );
 
         let mut generic_data = vec![0u8; 100];
@@ -1119,6 +1103,21 @@ mod tests {
             .map(|_| create_dummy_account(&program_id_static))
             .collect();
 
+        let token_details_key = Pubkey::new_unique();
+        let mut token_details_lamports = 100;
+        let mut token_details_data = vec![0u8; TokenDetails::LEN];
+        let token_details_account = create_account_info(
+            &token_details_key,
+            false,
+            true,
+            &mut token_details_lamports,
+            &mut token_details_data,
+            &program_id,
+            false,
+            Some(TokenDetails::discriminator()),
+        );
+        let token_details = Account::<TokenDetails>::try_from(&token_details_account).unwrap();
+
         let mut lz_receive_accounts = LzReceive {
             portfolio: portfolio_account,
             token_vault: generic_info.clone(),
@@ -1127,7 +1126,7 @@ mod tests {
             to: generic_info.clone(),
             token_program,
             associated_token_program,
-            token_list: token_list_account,
+            token_details: token_details,
             trader: generic_info.clone(),
             airdrop_vault,
             system_program,
@@ -1170,28 +1169,10 @@ mod tests {
         ctx.accounts = &mut lz_receive_accounts2;
 
         let result = lz_receive(&mut ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::NotEnoughNativeBalance.into());
-
-        let token_list = TokenList { next_page: None, tokens: vec![] };
-        let mut token_list_data = token_list.try_to_vec()?;
-        let mut token_list_lamports = 100;
-        let token_list_info = create_account_info(
-            &generic_key,
-            false,
-            true,
-            &mut token_list_lamports,
-            &mut token_list_data,
-            &program_id,
-            false,
-            Some(TokenList::discriminator()),
+        assert_eq!(
+            result.unwrap_err(),
+            DexalotError::NotEnoughNativeBalance.into()
         );
-        let token_list_account = Account::<TokenList>::try_from(&token_list_info)?;
-        lz_receive_accounts.token_list = token_list_account;
-        let mut lz_receive_accounts3 = lz_receive_accounts.clone();
-        ctx.accounts = &mut lz_receive_accounts3;
-
-        let result = lz_receive(&mut ctx, &params);
-        assert_eq!(result.unwrap_err(), DexalotError::TokenNotSupported.into());
 
         let gc = GlobalConfig {
             allow_deposit: true,

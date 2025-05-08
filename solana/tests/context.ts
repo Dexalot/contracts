@@ -4,12 +4,12 @@ import { endpointProgram } from "../sdk/layerzero";
 import { web3 } from "@coral-xyz/anchor";
 
 export const DEXALOT_PROGRAM_ID = new PublicKey(
-  "2wF7VoXvkMwvMpN1GYETaUvaWth3CqyTyiYQqTFYhgx7"
+  "9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ"
 );
 export const LZ_MOCK_PROGRAM_ID = endpointProgram.program;
 
 export const MOCK_CALLER_PROGRAM_ID = new PublicKey(
-  "8F8sMLA7as3v2KQvQruDWvZtvaz8bXvv6iUCNYTdQv3H"
+  "6sNWBXA71gWnCPidBB6uSoGoEnmFQdAqiWEJ5f71CuUn"
 );
 
 export const contextPromise = startAnchor(
