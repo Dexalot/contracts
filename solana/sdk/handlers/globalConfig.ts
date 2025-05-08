@@ -308,20 +308,7 @@ export const getGlobalConfig = async (
     spinner.start();
 
     const [portfolioPDA] = pdaDeriver.portfolio();
-    const adminPDA = getAccountPubKey(program, [
-      Buffer.from(ADMIN_SEED),
-      admin.publicKey.toBuffer(),
-    ]);
-
-    const globalConfig = await program.methods
-      .getGlobalConfig()
-      .accounts({
-        authority: admin.publicKey,
-        //@ts-ignore
-        portfolio: portfolioPDA,
-        admin: adminPDA,
-      })
-      .view({ commitment: "finalized" });
+    const globalConfig = (await program.account.portfolio.fetch(portfolioPDA)).globalConfig;
 
     spinner.stop();
     console.clear();
@@ -332,7 +319,6 @@ export const getGlobalConfig = async (
     console.log(
       `  Native Deposits Restricted: ${globalConfig.nativeDepositsRestricted}`
     );
-    console.log(`  Source Chain ID: ${globalConfig.srcChainId}`);
     console.log(`  Default Chain ID: ${globalConfig.defaultChainId}`);
     console.log(
       `  Airdrop Amount: ${globalConfig.airdropAmount.toString()} lamports`

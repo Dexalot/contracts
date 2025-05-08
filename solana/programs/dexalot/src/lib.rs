@@ -357,18 +357,6 @@ pub mod dexalot {
         instructions::claim_native_balance(&ctx, &params)
     }
 
-    /// Retrieves the global configuration of the program
-    /// Can be called only by admins
-    ///
-    /// # Arguments
-    /// * `ctx` - Context containing the accounts
-    ///
-    /// # Returns
-    /// The global configuration state
-    pub fn get_global_config(ctx: Context<GetGlobalConfig>) -> Result<GlobalConfig> {
-        instructions::get_global_config(&ctx)
-    }
-
     /// Funds the SOL vault
     /// Can be called only by rebalancers
     ///

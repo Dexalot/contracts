@@ -8,22 +8,13 @@ export const getGlobalConfig = async (
   dexalotProgram: Program<Dexalot>,
   admin: Keypair
 ) => {
-  const adminPDA = getAccountPubKey(dexalotProgram, [
-    Buffer.from(ADMIN_SEED),
-    admin.publicKey.toBuffer(),
-  ]);
   const portfolioPDA = getAccountPubKey(dexalotProgram, [
     Buffer.from(PORTFOLIO_SEED),
   ]);
-  const globalConfig = await dexalotProgram.methods
-    .getGlobalConfig()
-    .accounts({
-      authority: admin.publicKey,
-      //@ts-ignore
-      portfolio: portfolioPDA,
-      admin: adminPDA,
-    })
-    .signers([admin])
-    .view();
+
+  const globalConfig = (
+    await dexalotProgram.account.portfolio.fetch(portfolioPDA)
+  ).globalConfig;
+
   return globalConfig;
 };
