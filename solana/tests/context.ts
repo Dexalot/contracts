@@ -4,7 +4,7 @@ import { endpointProgram } from "../sdk/layerzero";
 import { web3 } from "@coral-xyz/anchor";
 
 export const DEXALOT_PROGRAM_ID = new PublicKey(
-  "9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ"
+  "FjeZc5LaarB3Bsr2ibVXLogqRSv9Ky95Ln6bWRE7KgdL"
 );
 export const LZ_MOCK_PROGRAM_ID = endpointProgram.program;
 

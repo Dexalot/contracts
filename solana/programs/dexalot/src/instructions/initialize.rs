@@ -1,6 +1,6 @@
-use crate::consts::{ADMIN_SEED, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP};
+use crate::consts::{ADMIN_SEED, DEFAULT_AIRDROP_AMOUNT, PORTFOLIO_SEED, REGISTER_OAPP, TOKEN_DETAILS_SEED};
 use crate::cpi_utils::{create_instruction_data, RegisterOAppParams};
-use crate::state::{Admin, Portfolio};
+use crate::state::{Admin, Portfolio, TokenDetails};
 use anchor_lang::solana_program::instruction::Instruction;
 use anchor_lang::solana_program::program::invoke_signed;
 use anchor_lang::{
@@ -81,6 +81,14 @@ pub struct Initialize<'info> {
         bump
     )]
     pub admin: Box<Account<'info, Admin>>,
+    #[account(
+        init,
+        payer = authority,
+        space = TokenDetails::LEN,
+        seeds = [TOKEN_DETAILS_SEED, Pubkey::default().as_ref()],
+        bump
+    )]
+    pub native_token_details: Box<Account<'info, TokenDetails>>,
     #[account(mut)]
     pub authority: Signer<'info>,
     pub system_program: Program<'info, System>,
@@ -173,9 +181,24 @@ mod tests {
             None,
         );
 
+        let token_details_key = Pubkey::new_unique();
+        let mut token_details_lamports = 100;
+        let mut token_details_data = vec![0u8; TokenDetails::LEN];
+        let token_details_account = create_account_info(
+            &token_details_key,
+            false,
+            true,
+            &mut token_details_lamports,
+            &mut token_details_data,
+            &program_id,
+            false,
+            Some(TokenDetails::discriminator()),
+        );
+
         let mut init_accounts = Initialize {
             portfolio: Box::new(portfolio_account),
             admin: admin_account,
+            native_token_details: Box::new(Account::try_from(&token_details_account)?),
             authority: Signer::try_from(&authority_info)?,
             system_program: system_program.clone(),
             endpoint_program: endpoint_program_info,

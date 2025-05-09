@@ -19,7 +19,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::{declare_id, program};
 use instructions::*;
 
-declare_id!("9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ");
+declare_id!("FjeZc5LaarB3Bsr2ibVXLogqRSv9Ky95Ln6bWRE7KgdL");
 
 #[program]
 pub mod dexalot {

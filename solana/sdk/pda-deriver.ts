@@ -11,7 +11,7 @@ import {
 import { keccak256 } from "@layerzerolabs/lz-v2-utilities";
 
 const PORTFOLIO_PROGRAM_ID = new PublicKey(
-  "9vTWrLsodcrUCnqFJmWMEbf4bA1dDar7gVVCoy8vGcQZ"
+  "FjeZc5LaarB3Bsr2ibVXLogqRSv9Ky95Ln6bWRE7KgdL"
 );
 class PortfolioPDADeriver {
   constructor(public readonly program: PublicKey) {}
