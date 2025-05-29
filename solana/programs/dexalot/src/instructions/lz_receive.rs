@@ -124,6 +124,38 @@ pub fn lz_receive(ctx: &mut Context<LzReceive>, params: &LzReceiveParams) -> Res
             seeds,
         )?;
     }
+
+    // Check if correct accounts are provided
+    if cfg!(not(test)) {
+        let required_accounts_pubkeys: Vec<Pubkey> = (instructions::lz_receive_types(
+            &Context {
+                program_id: ctx.program_id,
+                accounts: &mut LzReceiveTypes {},
+                remaining_accounts: &[],
+                bumps: LzReceiveTypesBumps::default(),
+            },
+            &params,
+        )?)
+        .iter()
+        .map(|lz_acc| lz_acc.pubkey)
+        .collect();
+
+        let provided_accounts_pubkeys: Vec<Pubkey> = ctx
+            .accounts
+            .to_account_infos()
+            .iter()
+            .map(|acc_info| acc_info.key())
+            .collect();
+
+        for i in 0..provided_accounts_pubkeys.len() {
+            require_keys_eq!(
+                required_accounts_pubkeys[i],
+                provided_accounts_pubkeys[i],
+                DexalotError::InvalidLzReceiveCall
+            );
+        }
+    }
+
     // Decode xfer
     let xfer = XFERSolana::unpack_xfer_message(params.message.as_slice())?;
 

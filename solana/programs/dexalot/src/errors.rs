@@ -67,4 +67,6 @@ pub enum DexalotError {
     DestinationNotAllowed,
     #[msg("Invalid LZ endpoint program")]
     InvalidLZProgram,
+    #[msg("Invalid LZ receive call")]
+    InvalidLzReceiveCall
 }
