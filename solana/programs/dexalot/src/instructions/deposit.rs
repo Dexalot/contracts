@@ -132,6 +132,27 @@ pub fn deposit(ctx: &mut Context<Deposit>, params: &DepositParams) -> Result<()>
 
     require!(fee.lz_token_fee == 0, DexalotError::PositiveLzTokenFee);
 
+    // Validate the user has enough LZ bridge fee
+    require!(
+        user.lamports() >= fee.native_fee,
+        DexalotError::NotEnoughNativeBalance
+    );
+
+    let system_program = &ctx.accounts.system_program;
+
+    // Transfer the SOL from the user to the native vault
+    let ix = system_instruction::transfer(&user.key(), &portfolio.key(), fee.native_fee);
+    if cfg!(not(test)) {
+        invoke(
+            &ix,
+            &[
+                user.to_account_info(),
+                portfolio.to_account_info(),
+                system_program.to_account_info(),
+            ],
+        )?;
+    }
+
     // Call Send
     let send_remaining_accounts = &ctx.remaining_accounts[QUOTE_REMAINING_ACCOUNTS_COUNT..];
     let send_params = EndpointSendParams {
@@ -299,6 +320,25 @@ pub fn deposit_native(
 
     require!(fee.lz_token_fee == 0, DexalotError::PositiveLzTokenFee);
 
+    // Validate the user has enough LZ bridge fee
+    require!(
+        from.lamports() >= fee.native_fee,
+        DexalotError::NotEnoughNativeBalance
+    );
+
+    // Transfer the SOL from the user to the native vault
+    let ix = system_instruction::transfer(&from.key(), &portfolio.key(), fee.native_fee);
+    if cfg!(not(test)) {
+        invoke(
+            &ix,
+            &[
+                from.to_account_info(),
+                portfolio.to_account_info(),
+                system_program.to_account_info(),
+            ],
+        )?;
+    }
+
     // Call Send
     let send_remaining_accounts = &ctx.remaining_accounts[QUOTE_REMAINING_ACCOUNTS_COUNT..];
     let send_params = EndpointSendParams {
@@ -459,6 +499,8 @@ pub struct Deposit<'info> {
     pub remote: Account<'info, Remote>,
     /// CHECK: the endpoint program
     pub endpoint_program: AccountInfo<'info>,
+    /// The program that can transfer lamports.
+    pub system_program: Program<'info, System>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -706,6 +748,20 @@ mod tests {
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
+        let mut sp_lamports = 100;
+        let mut sp_data = vec![0u8; 10];
+        let system_program_info = create_account_info(
+            &system_program::ID,
+            false,
+            false,
+            &mut sp_lamports,
+            &mut sp_data,
+            &system_program::ID,
+            true,
+            None,
+        );
+        let system_program = Program::try_from(&system_program_info)?;
+
         let mut deposit_accounts = Deposit {
             user: Signer::try_from(&user_info)?,
             portfolio: portfolio_account,
@@ -717,6 +773,7 @@ mod tests {
             banned_account: banned_info,
             endpoint_program: endpoint_program_info,
             token_program,
+            system_program: system_program.clone(),
         };
 
         let deposit_params = DepositParams {
@@ -896,6 +953,20 @@ mod tests {
         );
         let spl_token_account: Account<TokenAccount> = Account::try_from(&spl_token_info)?;
 
+        let mut sp_lamports = 100;
+        let mut sp_data = vec![0u8; 10];
+        let system_program_info = create_account_info(
+            &system_program::ID,
+            false,
+            false,
+            &mut sp_lamports,
+            &mut sp_data,
+            &system_program::ID,
+            true,
+            None,
+        );
+        let system_program = Program::try_from(&system_program_info)?;
+
         let mut deposit_accounts = Deposit {
             user: Signer::try_from(&user_info)?,
             portfolio: portfolio_account,
@@ -907,6 +978,7 @@ mod tests {
             banned_account: banned_info.clone(),
             endpoint_program: endpoint_program_info,
             token_program,
+            system_program: system_program.clone(),
         };
 
         let deposit_params = DepositParams {
@@ -1442,7 +1514,7 @@ mod tests {
         let mut portfolio_data = portfolio.try_to_vec()?;
 
         let mut portfolio_lamports = 100;
-        
+
         let portfolio_info = create_account_info(
             &portfolio_key,
             false,

@@ -159,6 +159,7 @@ export const depositSpl = async (
       bannedAccount: bannedAccountPDA,
       remote: remotePDA,
       endpointProgram: endpointProgram.program,
+      systemProgram: web3.SystemProgram.programId,
     })
     .remainingAccounts(remainingAccounts)
     .signers([authority])
