@@ -79,11 +79,6 @@ export const simpleSwap = async (
     Buffer.from(SOL_VAULT_SEED),
   ]);
 
-  const takerDestAssetATA = await getAssociatedTokenAddress(
-    destAssetMintPublicKey,
-    authority.publicKey
-  );
-
   const takerSrcAssetATA = await getAssociatedTokenAddress(
     srcAssetMintPublicKey,
     authority.publicKey
@@ -91,11 +86,6 @@ export const simpleSwap = async (
 
   const destTraderDestAssetATA = await getAssociatedTokenAddress(
     destAssetMintPublicKey,
-    account2.publicKey
-  );
-
-  const destTraderSrcAssetATA = await getAssociatedTokenAddress(
-    srcAssetMintPublicKey,
     account2.publicKey
   );
 
@@ -129,10 +119,8 @@ export const simpleSwap = async (
       solVault: solVaultPDA,
       srcTokenMint: srcAssetMintPublicKey,
       destTokenMint: destAssetMintPublicKey,
-      takerDestAssetAta: takerDestAssetATA,
-      takerSrcAssetAta: takerSrcAssetATA,
-      destTraderDestAssetAta: destTraderDestAssetATA,
-      destTraderSrcAssetAta: destTraderSrcAssetATA,
+      traderSrcAssetAta: takerSrcAssetATA,
+      traderDestAssetAta: destTraderDestAssetATA,
       splVaultDestAssetAta: vaultDestAssetATA,
       splVaultSrcAssetAta: vaultSrcAssetATA,
       tokenProgram: TOKEN_PROGRAM_ID,

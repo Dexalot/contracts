@@ -295,10 +295,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
@@ -476,10 +474,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
@@ -687,10 +683,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
@@ -708,4 +702,3 @@ mod tests {
         Ok(())
     }
 }
-

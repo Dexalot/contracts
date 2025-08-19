@@ -40,8 +40,7 @@ pub struct TakeFunds<'info> {
     pub dest_trader: AccountInfo<'info>,
     pub taker: AccountInfo<'info>,
     pub sol_vault: SystemAccount<'info>,
-    pub dest_trader_src_asset_ata: AccountInfo<'info>,
-    pub taker_src_asset_ata: AccountInfo<'info>,
+    pub trader_src_asset_ata: AccountInfo<'info>,
     pub spl_vault_src_asset_ata: AccountInfo<'info>,
 }
 impl<'info> TakeFunds<'info> {
@@ -52,8 +51,7 @@ impl<'info> TakeFunds<'info> {
             dest_trader: ctx.accounts.dest_trader.clone(),
             taker: ctx.accounts.taker.clone(),
             sol_vault: ctx.accounts.sol_vault.clone(),
-            dest_trader_src_asset_ata: ctx.accounts.dest_trader_src_asset_ata.clone(),
-            taker_src_asset_ata: ctx.accounts.taker_src_asset_ata.clone(),
+            trader_src_asset_ata: ctx.accounts.trader_src_asset_ata.clone(),
             spl_vault_src_asset_ata: ctx.accounts.spl_vault_src_asset_ata.clone(),
         }
     }
@@ -65,8 +63,7 @@ impl<'info> TakeFunds<'info> {
             dest_trader: ctx.accounts.dest_trader.clone(),
             taker: ctx.accounts.taker.clone(),
             sol_vault: ctx.accounts.sol_vault.clone(),
-            dest_trader_src_asset_ata: ctx.accounts.taker_src_asset_ata.clone(), // this value is not used so I just pass taker_src_asset_ata
-            taker_src_asset_ata: ctx.accounts.taker_src_asset_ata.clone(),
+            trader_src_asset_ata: ctx.accounts.taker_src_asset_ata.clone(),
             spl_vault_src_asset_ata: ctx.accounts.spl_vault_src_asset_ata.clone(),
         }
     }
@@ -114,11 +111,7 @@ pub fn take_funds<'info>(
             )?;
         }
     } else {
-        let from = if is_aggregator {
-            &take_funds_accounts.dest_trader_src_asset_ata
-        } else {
-            &take_funds_accounts.taker_src_asset_ata
-        };
+        let from = &take_funds_accounts.trader_src_asset_ata;
         let to = &take_funds_accounts.spl_vault_src_asset_ata;
 
         let authority = if is_aggregator {
@@ -189,7 +182,7 @@ pub fn release_funds(ctx: &Context<Swap>, swap_data: &SwapData) -> Result<()> {
     } else {
         // transfer destAsset from spl_vault to destTrader for destAmount
         let from = &ctx.accounts.spl_vault_dest_asset_ata;
-        let to = &ctx.accounts.dest_trader_dest_asset_ata;
+        let to = &ctx.accounts.trader_dest_asset_ata;
         let spl_vault = &ctx.accounts.spl_vault;
 
         let ix = spl_token::instruction::transfer(
@@ -574,10 +567,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
@@ -772,10 +763,8 @@ mod tests {
             sol_vault: sol_vault.clone(),
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,

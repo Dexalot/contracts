@@ -12,13 +12,13 @@ use anchor_spl::token::Token;
 pub struct Swap<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
-    /// CHECK: when calling the instruction
-    #[account(mut)]
+    /// CHECK: it corresponds to the order
+    #[account(mut, constraint = taker.key() == params.order.taker)]
     pub taker: AccountInfo<'info>,
-    #[account(mut)]
-    /// CHECK: when calling the instruction
+    /// CHECK: it corresponds to the order
+    #[account(mut, constraint = dest_trader.key() == params.order.dest_trader)]
     pub dest_trader: AccountInfo<'info>,
-    /// CHECK: when calling the instruction
+    /// CHECK: it corresponds to the order
     #[account(mut, seeds = [COMPLETED_SWAPS_SEED, &generate_map_entry_key(params.order.nonce, params.order.dest_trader)?], bump)]
     pub completed_swaps_entry: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
@@ -37,23 +37,19 @@ pub struct Swap<'info> {
     pub spl_vault: AccountInfo<'info>,
     #[account(mut, seeds = [SOL_VAULT_SEED], bump)]
     pub sol_vault: SystemAccount<'info>,
-    /// CHECK: token mint or Zero PublicKey
+    /// CHECK: token mint against order
+    #[account(constraint = src_token_mint.key() == params.order.taker_asset)]
     pub src_token_mint: AccountInfo<'info>,
-    /// CHECK: token mint or Zero PublicKey
+    /// CHECK: token mint against order
+    #[account(constraint = dest_token_mint.key() == params.order.maker_asset)]
     pub dest_token_mint: AccountInfo<'info>,
-    /// CHECK: ATA or Zero PublicKey
-    #[account(mut)]
-    pub taker_dest_asset_ata: AccountInfo<'info>,
-    /// CHECK: ATA or Zero PublicKey
-    #[account(mut)]
-    pub taker_src_asset_ata: AccountInfo<'info>,
 
     /// CHECK: ATA or Zero PublicKey
     #[account(mut)]
-    pub dest_trader_dest_asset_ata: AccountInfo<'info>,
+    pub trader_src_asset_ata: AccountInfo<'info>,
     /// CHECK: ATA or Zero PublicKey
     #[account(mut)]
-    pub dest_trader_src_asset_ata: AccountInfo<'info>,
+    pub trader_dest_asset_ata: AccountInfo<'info>,
 
     /// CHECK: ATA or Zero PublicKey
     #[account(mut)]
@@ -77,11 +73,11 @@ pub fn swap(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
         DexalotError::ProgramPaused
     );
 
-    check_atas(&ctx, &params)?;
+    let order = params.order.clone();
 
-    let mut order = params.order.clone();
+    let is_aggregator = ctx.accounts.sender.key() != order.taker;
 
-    let is_aggregator = ctx.accounts.sender.key() == order.dest_trader;
+    check_atas(&ctx, is_aggregator)?;
 
     order.validate_order(&ctx, &params.signature, is_aggregator)?;
     order.execute_order(&ctx, is_aggregator)?;
@@ -89,16 +85,20 @@ pub fn swap(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
     Ok(())
 }
 
-fn check_atas(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
+fn check_atas(ctx: &Context<Swap>, is_aggregator: bool) -> Result<()> {
     let taker = &ctx.accounts.taker;
+    let sender = &ctx.accounts.sender;
     let spl_vault = &ctx.accounts.spl_vault;
     let dest_trader = &ctx.accounts.dest_trader;
+    let mut src_trader = taker;
 
-    let taker_dest_asset_ata = &ctx.accounts.taker_dest_asset_ata;
-    let taker_src_asset_ata = &ctx.accounts.taker_src_asset_ata;
+    if is_aggregator {
+        require_keys_eq!(sender.key(), dest_trader.key());
+        src_trader = sender;
+    }
 
-    let dest_trader_dest_asset_ata = &ctx.accounts.dest_trader_dest_asset_ata;
-    let dest_trader_src_asset_ata = &ctx.accounts.dest_trader_src_asset_ata;
+    let trader_src_asset_ata = &ctx.accounts.trader_src_asset_ata;
+    let trader_dest_asset_ata = &ctx.accounts.trader_dest_asset_ata;
 
     let spl_vault_dest_asset_ata = &ctx.accounts.spl_vault_dest_asset_ata;
     let spl_vault_src_asset_ata = &ctx.accounts.spl_vault_src_asset_ata;
@@ -106,28 +106,14 @@ fn check_atas(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
     let dest_token_mint = &ctx.accounts.dest_token_mint;
     let src_token_mint = &ctx.accounts.src_token_mint;
 
-    // check if taker is correct
-    require_keys_eq!(
-        taker.key(),
-        params.order.taker,
-        DexalotError::InvalidTaker
-    );
+    // Check ATAs for source
+    check_ata_account(trader_src_asset_ata, src_trader.key, src_token_mint.key, false)?;
 
-    // Check ATAs for taker
-    check_ata_account(taker_dest_asset_ata, taker.key, dest_token_mint.key, false)?;
-    check_ata_account(taker_src_asset_ata, taker.key, src_token_mint.key, false)?;
-
-    // Check ATAs for dest trader
+    // Check ATAs for destination
     check_ata_account(
-        dest_trader_dest_asset_ata,
+        trader_dest_asset_ata,
         dest_trader.key,
         dest_token_mint.key,
-        false,
-    )?;
-    check_ata_account(
-        dest_trader_src_asset_ata,
-        dest_trader.key,
-        src_token_mint.key,
         false,
     )?;
 
@@ -327,10 +313,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
@@ -513,10 +497,8 @@ mod tests {
             sol_vault,
             src_token_mint: generic_info.clone(),
             dest_token_mint: generic_info.clone(),
-            taker_dest_asset_ata: generic_info.clone(),
-            taker_src_asset_ata: generic_info.clone(),
-            dest_trader_dest_asset_ata: generic_info.clone(),
-            dest_trader_src_asset_ata: generic_info.clone(),
+            trader_src_asset_ata: generic_info.clone(),
+            trader_dest_asset_ata: generic_info.clone(),
             spl_vault_dest_asset_ata: generic_info.clone(),
             spl_vault_src_asset_ata: generic_info.clone(),
             token_program,
