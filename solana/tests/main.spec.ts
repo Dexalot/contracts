@@ -696,11 +696,12 @@ describe("dexalot_tests", () => {
       Buffer.from(SOL_USER_FUNDS_VAULT_SEED),
     ]);
 
+
     let userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(88 * 10 ** tokenDecimals);
+    const userABalance = Number(userAtaAccount.amount)
 
     let vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(11 * 10 ** tokenDecimals);
+    const vaultABalance = Number(vaultAta.amount);
 
     let nonce = generateUniqueNonce();
 
@@ -718,10 +719,10 @@ describe("dexalot_tests", () => {
     );
 
     userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(89 * 10 ** tokenDecimals);
+    expect(Number(userAtaAccount.amount)).toBe(userABalance + 10 ** tokenDecimals);
 
     vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(10 * 10 ** tokenDecimals);
+    expect(Number(vaultAta.amount)).toBe(vaultABalance - 10 ** tokenDecimals);
 
     let vaultUserFundsAta = await getAccount(
       context.banksClient,
@@ -748,7 +749,7 @@ describe("dexalot_tests", () => {
     expect(Number(vaultUserFundsAta.amount)).toBe(0);
 
     userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(90 * 10 ** tokenDecimals);
+    expect(Number(userAtaAccount.amount)).toBe(userABalance + 2 * 10 ** tokenDecimals);
   });
 
   test("remove_from_swap_queue", async () => {
@@ -773,10 +774,10 @@ describe("dexalot_tests", () => {
     );
 
     let userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(90 * 10 ** tokenDecimals);
+    const userABalance = Number(userAtaAccount.amount);
 
     let vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(10 * 10 ** tokenDecimals);
+    const vaultABalance = Number(vaultAta.amount);
 
     await callDexalot(
       dexalotProgram,
@@ -792,63 +793,36 @@ describe("dexalot_tests", () => {
     );
 
     userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(90 * 10 ** tokenDecimals);
+    expect(Number(userAtaAccount.amount)).toBe(userABalance);
 
     vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(10 * 10 ** tokenDecimals);
+    expect(Number(vaultAta.amount)).toBe(vaultABalance);
 
     await fundSpl(
       dexalotProgram,
       authority,
-      1,
+      5,
       tokenA.publicKey,
       tokenDecimals
     );
 
     vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(11 * 10 ** tokenDecimals);
+    expect(Number(vaultAta.amount)).toBe(vaultABalance + 5 * 10 ** tokenDecimals);
 
     await removeFromSwapQueue(dexalotProgram, authority, nonce);
 
     userAtaAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaAccount.amount)).toBe(100 * 10 ** tokenDecimals);
+    expect(Number(userAtaAccount.amount)).toBe(userABalance + 6 * 10 ** tokenDecimals);
 
     vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultAta.amount)).toBe(0);
+    expect(Number(vaultAta.amount)).toBe(vaultABalance - 6 * 10 ** tokenDecimals);
   });
 
   it("claim_admin", async () => {
     expect(addAdmin(dexalotProgram, authority, authority.publicKey)).rejects.toThrow()
   });
 
-  it("Attacker can't steal tokens from queued swaps", async () => {
-    ///////////////////////////////////
-    /////      STEP 1: SETUP      /////
-    ///////////////////////////////////
-
-    // Initialize all required accounts for the protocol
-    await initialize(dexalotProgram, authority);
-    await addRebalancer(dexalotProgram, authority);
-
-    // Create tokenA mint and register it in the app
-    await createMint(
-      context.banksClient,
-      authority,
-      authority.publicKey,
-      null,
-      tokenDecimals,
-      tokenA
-    );
-
-    await addToken(
-      dexalotProgram,
-      authority,
-      tokenA.publicKey,
-      "A",
-      tokenDecimals
-    );
-    await depositAirdropVault(dexalotProgram, authority, 1);
-
+  it("fail to attack pending_swap", async () => {
     // setup the attacker and the victim (who should receive the tokens)
     const attacker = await loadKeypair("./tests/account3.json");
     const victim = account2;
@@ -893,14 +867,6 @@ describe("dexalot_tests", () => {
       authority, // Use authority to create it
       tokenA.publicKey,
       attacker.publicKey // But owned by attacker
-    );
-
-    // Create victim's token account (so we can check it has 0 tokens)
-    await createAssociatedTokenAccount(
-      context.banksClient,
-      authority, // Use authority to create it
-      tokenA.publicKey,
-      victim.publicKey // But owned by victim
     );
 
     /////////////////////////////////////////////////
@@ -970,9 +936,6 @@ describe("dexalot_tests", () => {
       await getAccount(context.banksClient, victimTokenAta)
     ).amount;
 
-    console.log("Attacker token balance:", Number(attackerBalanceBefore));
-    console.log("Victim token balance:", Number(victimBalanceBefore));
-
     expect(Number(attackerBalanceBefore)).toBe(0);
     expect(Number(victimBalanceBefore)).toBe(0);
 
@@ -1003,9 +966,8 @@ describe("dexalot_tests", () => {
         swapQueueEntry: pendingSwapPDA,
         airdropVault: airdropVaultPDA,
         portfolio: portfolioPDA,
-        tokenMint: tokenA.publicKey
       })
       .rpc()
-    ).rejects.toThrow("AnchorError caused by account: to");
+    ).rejects.toThrow("P-OODT-01: Invalid token owner");
   });
 });
