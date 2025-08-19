@@ -333,7 +333,7 @@ describe("dexalot_tests", () => {
       Buffer.from(TOKEN_DETAILS_SEED),
       mintKeypair.publicKey.toBuffer(),
     ]);
-    let token = await dexalotProgram.account.tokenDetails.fetch(
+    const token = await dexalotProgram.account.tokenDetails.fetch(
       tokenDetailsPDA
     );
     expect(token).toBeDefined();
@@ -893,5 +893,9 @@ describe("dexalot_tests", () => {
 
     vaultAta = await getAccount(context.banksClient, vaultAtaTokenA);
     expect(Number(vaultAta.amount)).toBe(0);
+  });
+
+  it("claim_admin", async () => {
+    expect(addAdmin(dexalotProgram, authority, authority.publicKey)).rejects.toThrow("AnchorError caused by account: admin. Error Code: AccountNotInitialized. Error Number: 3012. Error Message: The program expected this account to be already initialized.")
   });
 });

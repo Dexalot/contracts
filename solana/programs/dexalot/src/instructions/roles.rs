@@ -5,17 +5,10 @@ use crate::errors::DexalotError;
 use crate::events::{RoleGrantedEvent, RoleRevokedEvent};
 use crate::state::{Admin, Rebalancer};
 
-pub fn add_admin(ctx: &Context<AddAdmin>, params: &AdminParams) -> Result<()> {
+pub fn add_admin(_ctx: &Context<AddAdmin>, params: &AdminParams) -> Result<()> {
     require!(
         params.account != Pubkey::default(),
         DexalotError::ZeroAccount
-    );
-
-    let admin = &ctx.accounts.admin;
-    // Verify that user is an admin by checking their PDA.
-    require!(
-        admin.owner == ctx.program_id,
-        DexalotError::UnauthorizedSigner
     );
 
     emit!(RoleGrantedEvent {
@@ -63,7 +56,7 @@ pub struct AddAdmin<'info> {
         seeds = [ADMIN_SEED, authority.key().as_ref()],
         bump
     )]
-    pub admin: AccountInfo<'info>,
+    pub admin: Account<'info, Admin>,
 
     #[account(
         init,
@@ -271,7 +264,7 @@ mod tests {
 
         let mut add_admin_accounts = AddAdmin {
             authority: Signer::try_from(&authority_info)?,
-            admin: admin_info,
+            admin: Account::try_from(&admin_info)?,
             new_admin: Account::try_from(&new_admin_info)?,
             system_program: Program::try_from(&system_program_info)?,
         };
@@ -355,7 +348,7 @@ mod tests {
 
         let mut add_admin_accounts = AddAdmin {
             authority: Signer::try_from(&authority_info)?,
-            admin: admin_info,
+            admin:  Account::try_from(&admin_info)?,
             new_admin: Account::try_from(&new_admin_info)?,
             system_program: Program::try_from(&system_program_info)?,
         };
