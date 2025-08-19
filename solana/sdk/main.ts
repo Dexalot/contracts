@@ -234,18 +234,15 @@ const main = async () => {
             await Interactor.simpleSwap();
             break;
           case 2:
-            await Interactor.partialSwap();
-            break;
-          case 3:
             await Interactor.crossSwap();
             break;
-          case 4:
+          case 3:
             await Interactor.removeFromSwapQueue();
             break;
-          case 5:
+          case 4:
             await Interactor.updateSwapExpiry();
             break;
-          case 6:
+          case 5:
             await Interactor.addDestination();
             break;
           default:

@@ -59,11 +59,10 @@ export enum Commands {
   DepositAirdrop = "3. Deposit Airdrop (only unpaused)",
 
   SimpleSwap = "1. Simple swap",
-  PartialSwap = "2. Partial swap",
-  CrossSwap = "3. Cross swap",
-  RemoveFromSwapQueue = "4. Remove from swap queue",
-  UpdateSwapExpiry = "5. Update swap expiry (only rebalancer)",
-  AddAllowedDestination = "6. Add allowed destination",
+  CrossSwap = "2. Cross swap",
+  RemoveFromSwapQueue = "3. Remove from swap queue",
+  UpdateSwapExpiry = "4. Update swap expiry (only rebalancer)",
+  AddAllowedDestination = "5. Add allowed destination",
 
   ClaimSplBalance = "1. Claim SPL balance",
   ClaimNativeBalance = "2. Claim native balance",
@@ -152,7 +151,6 @@ const sectionCommands = {
   ],
   [Sections.swaps]: [
     Commands.SimpleSwap,
-    Commands.PartialSwap,
     Commands.CrossSwap,
     Commands.RemoveFromSwapQueue,
     Commands.UpdateSwapExpiry,

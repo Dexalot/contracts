@@ -68,7 +68,7 @@ import {
   setSendLibrary,
 } from "./layerzero";
 import { arrayify, hexZeroPad } from "@ethersproject/bytes";
-import { partialSwap, simpleSwap } from "./handlers/swap";
+import { simpleSwap } from "./handlers/swap";
 import { crossSwap } from "./handlers/crossSwap";
 import { removeFromSwapQueue } from "./handlers/removeFromSwapQueue";
 import { addRebalancer, removeRebalancer } from "./handlers/rebalancer";
@@ -645,18 +645,6 @@ class Interactor {
       await simpleSwap(this.connection, this.program, this.keypair);
     } catch (error) {
       console.error(red(`Error executing simple swap: ${error}\n\n`));
-    }
-  };
-
-  partialSwap = async () => {
-    if (!this.connection || !this.program || !this.keypair) {
-      console.error(red("Connection, program, or keypair not found\n\n"));
-      return;
-    }
-    try {
-      await partialSwap(this.connection, this.program, this.keypair);
-    } catch (error) {
-      console.error(red(`Error executing partial swap: ${error}\n\n`));
     }
   };
 

@@ -47,7 +47,7 @@ import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import { createAta } from "./create";
 import { depositAirdropVault, depositSol, depositSpl } from "./deposit";
 import { claimSolBalance, claimSplBalance } from "./claimBalance";
-import { partialSwap, simpleSwap } from "./swap";
+import { simpleSwap } from "./swap";
 import { callDexalot } from "./lz-receive";
 import { CallerMock } from "../target/types/caller_mock";
 import { removeFromSwapQueue } from "./remove-from-swap-queue";
@@ -660,84 +660,6 @@ describe("dexalot_tests", () => {
 
     userAtaTokenAAccount = await getAccount(context.banksClient, userAtaTokenA);
     expect(Number(userAtaTokenAAccount.amount)).toBe(89 * 10 ** tokenDecimals);
-  });
-
-  test("partial_swap", async () => {
-    const splVaultPDA = getAccountPubKey(dexalotProgram, [
-      Buffer.from(SPL_VAULT_SEED),
-    ]);
-
-    const vaultAtaTokenB = await getAssociatedTokenAddress(
-      tokenB.publicKey,
-      splVaultPDA,
-      true
-    );
-
-    const userAtaTokenA = await getAssociatedTokenAddress(
-      tokenA.publicKey,
-      authority.publicKey
-    );
-
-    const vaultAtaTokenA = await getAssociatedTokenAddress(
-      tokenA.publicKey,
-      splVaultPDA,
-      true
-    );
-
-    const user2AtaTokenB = await getAssociatedTokenAddress(
-      tokenB.publicKey,
-      account2.publicKey
-    );
-
-    let user2AtaTokenBAccount = await getAccount(
-      context.banksClient,
-      user2AtaTokenB
-    );
-    expect(Number(user2AtaTokenBAccount.amount)).toBe(1 * 10 ** tokenDecimals);
-
-    let vaultsAtaAAccount = await getAccount(
-      context.banksClient,
-      vaultAtaTokenA
-    );
-    expect(Number(vaultsAtaAAccount.amount)).toBe(10 * 10 ** tokenDecimals);
-
-    let vaultsAtaBAccount = await getAccount(
-      context.banksClient,
-      vaultAtaTokenB
-    );
-    expect(Number(vaultsAtaBAccount.amount)).toBe(4 * 10 ** tokenDecimals);
-
-    let userAtaTokenAAccount = await getAccount(
-      context.banksClient,
-      userAtaTokenA
-    );
-    expect(Number(userAtaTokenAAccount.amount)).toBe(89 * 10 ** tokenDecimals);
-
-    await partialSwap(
-      dexalotProgram,
-      authority,
-      account2,
-      tokenB.publicKey,
-      tokenA.publicKey,
-      500 // half a token with 3 decimals
-    );
-
-    user2AtaTokenBAccount = await getAccount(
-      context.banksClient,
-      user2AtaTokenB
-    );
-    expect(Number(user2AtaTokenBAccount.amount)).toBe(
-      1.5 * 10 ** tokenDecimals
-    );
-
-    vaultsAtaAAccount = await getAccount(context.banksClient, vaultAtaTokenA);
-    expect(Number(vaultsAtaAAccount.amount)).toBe(11 * 10 ** tokenDecimals);
-
-    vaultsAtaBAccount = await getAccount(context.banksClient, vaultAtaTokenB);
-    expect(Number(vaultsAtaBAccount.amount)).toBe(3.5 * 10 ** tokenDecimals);
-
-    userAtaTokenAAccount = await getAccount(context.banksClient, userAtaTokenA);
-    expect(Number(userAtaTokenAAccount.amount)).toBe(88 * 10 ** tokenDecimals);
   });
 
   test("lz_receive", async () => {

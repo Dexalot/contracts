@@ -68,8 +68,6 @@ pub struct Swap<'info> {
 pub struct SwapParams {
     pub order: Order,
     pub signature: Vec<u8>,
-    pub is_partial: bool,
-    pub taker_amount: u64,
 }
 
 pub fn swap(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
@@ -82,15 +80,6 @@ pub fn swap(ctx: &Context<Swap>, params: &SwapParams) -> Result<()> {
     check_atas(&ctx, &params)?;
 
     let mut order = params.order.clone();
-
-    // modify maker amount if it's partial swap
-    if params.is_partial {
-        if params.taker_amount < order.taker_amount {
-            // here we have rounding down
-            // logic and code is as provided in: https://github.com/Dexalot/contracts/blob/d75dbce21bce6277929ee22f972e78d3ab546531/contracts/MainnetRFQ.sol#L248
-            order.maker_amount = (order.maker_amount * params.taker_amount) / order.taker_amount;
-        }
-    }
 
     let is_aggregator = ctx.accounts.sender.key() == order.dest_trader;
 
@@ -360,8 +349,6 @@ mod tests {
         let params = SwapParams {
             order: order.clone(),
             signature: generate_valid_signature(&order_clone.to_bytes()).into(),
-            is_partial: true,
-            taker_amount: 200,
         };
 
         let res = swap(&ctx, &params);
@@ -543,8 +530,6 @@ mod tests {
         let params = SwapParams {
             order: order.clone(),
             signature: generate_valid_signature(&order.to_bytes()).into(),
-            is_partial: true,
-            taker_amount: 200,
         };
 
         let res = swap(&ctx, &params);
@@ -577,4 +562,3 @@ mod tests {
         Ok(())
     }
 }
-
