@@ -2,6 +2,7 @@
 .anchor
 .DS_Store
 target
+sdk/target
 **/*.rs.bk
 node_modules
 test-ledger
@@ -16,5 +17,7 @@ test-ledger
 !tsconfig.json
 !account1.json
 !account2.json
+!account3.json
 !tokenA.json
 !tokenB.json
+sdk/admin.json

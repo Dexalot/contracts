@@ -1,5 +1,5 @@
 import { BankrunProvider } from "anchor-bankrun";
-import { LAMPORTS_PER_SOL, Keypair } from "@solana/web3.js";
+import { LAMPORTS_PER_SOL, Keypair, SystemProgram } from "@solana/web3.js";
 import { Program, Wallet } from "@coral-xyz/anchor";
 import { Dexalot } from "../target/types/dexalot";
 import DEXALOT_IDL from "../target/idl/dexalot.json";
@@ -897,5 +897,193 @@ describe("dexalot_tests", () => {
 
   it("claim_admin", async () => {
     expect(addAdmin(dexalotProgram, authority, authority.publicKey)).rejects.toThrow("AnchorError caused by account: admin. Error Code: AccountNotInitialized. Error Number: 3012. Error Message: The program expected this account to be already initialized.")
+  });
+
+  it("Attacker can't steal tokens from queued swaps", async () => {
+    ///////////////////////////////////
+    /////      STEP 1: SETUP      /////
+    ///////////////////////////////////
+
+    // Initialize all required accounts for the protocol
+    await initialize(dexalotProgram, authority);
+    await addRebalancer(dexalotProgram, authority);
+
+    // Create tokenA mint and register it in the app
+    await createMint(
+      context.banksClient,
+      authority,
+      authority.publicKey,
+      null,
+      tokenDecimals,
+      tokenA
+    );
+
+    await addToken(
+      dexalotProgram,
+      authority,
+      tokenA.publicKey,
+      "A",
+      tokenDecimals
+    );
+    await depositAirdropVault(dexalotProgram, authority, 1);
+
+    // setup the attacker and the victim (who should receive the tokens)
+    const attacker = await loadKeypair("./tests/account3.json");
+    const victim = account2;
+
+    // Setup attacker account with SOL for transaction fees
+    context.setAccount(attacker.publicKey, {
+      lamports: 2000000000,
+      data: Buffer.alloc(0),
+      owner: SystemProgram.programId,
+      executable: false,
+    });
+
+    // Get required PDAs and accounts
+    const splVaultPDA = getAccountPubKey(dexalotProgram, [
+      Buffer.from(SPL_VAULT_SEED),
+    ]);
+    const airdropVaultPDA = getAccountPubKey(dexalotProgram, [
+      Buffer.from(AIRDROP_VAULT_SEED),
+    ]);
+    const portfolioPDA = getAccountPubKey(dexalotProgram, [
+      Buffer.from(PORTFOLIO_SEED),
+    ]);
+
+    const vaultAtaTokenA = await getAssociatedTokenAddress(
+      tokenA.publicKey,
+      splVaultPDA,
+      true
+    );
+    const attackerTokenAta = await getAssociatedTokenAddress(
+      tokenA.publicKey,
+      attacker.publicKey,
+      true
+    );
+    const victimTokenAta = await getAssociatedTokenAddress(
+      tokenA.publicKey,
+      victim.publicKey
+    );
+
+    // Create attacker's token account (this is where stolen tokens will go)
+    await createAssociatedTokenAccount(
+      context.banksClient,
+      authority, // Use authority to create it
+      tokenA.publicKey,
+      attacker.publicKey // But owned by attacker
+    );
+
+    // Create victim's token account (so we can check it has 0 tokens)
+    await createAssociatedTokenAccount(
+      context.banksClient,
+      authority, // Use authority to create it
+      tokenA.publicKey,
+      victim.publicKey // But owned by victim
+    );
+
+    /////////////////////////////////////////////////
+    /////      STEP 2: SIMULATE lz_receive      /////
+    /////////////////////////////////////////////////
+
+    // Fund the vault with tokens that will be stolen - just mint directly to vault
+    await mintTo(
+      context.banksClient,
+      authority,
+      tokenA.publicKey,
+      vaultAtaTokenA,
+      authority,
+      5000
+    );
+
+    // Manually create the PendingSwap account (simulating what lz_receive would do)
+    const nonce = generateUniqueNonce();
+    const [pendingSwapPDA] = pdaDeriver.pendingSwapsEntry(
+      nonce,
+      victim.publicKey
+    );
+
+    const pendingSwapAccountSize = 8 + 32 + 8 + 32;
+    const rent = await context.banksClient.getRent();
+    const lamports = Number(
+      rent.minimumBalance(BigInt(pendingSwapAccountSize))
+    );
+
+    // PendingSwap discriminator
+    const discriminator = Buffer.from([21, 123, 168, 49, 126, 169, 137, 168]);
+    // victim is the trader
+    const traderBytes = victim.publicKey.toBuffer();
+    // victim should receive 5000 tokens
+    const quantityBytes = Buffer.alloc(8);
+    quantityBytes.writeBigUInt64LE(5000n, 0);
+    // receiving tokens of token A
+    const tokenMintBytes = tokenA.publicKey.toBuffer();
+
+    // serialize the PDA account data with discriminator
+    const accountData = Buffer.concat([
+      discriminator,
+      traderBytes,
+      quantityBytes,
+      tokenMintBytes,
+    ]);
+
+    // Write the PendingSwap data to the PDA account
+    context.setAccount(pendingSwapPDA, {
+      lamports,
+      data: accountData,
+      owner: dexalotProgram.programId,
+      executable: false,
+    });
+
+
+    /////////////////////////////////////////
+    /////      STEP 3: THE EXPLOIT      /////
+    /////////////////////////////////////////
+
+    // In the beginning both the victim and the attacker have ZERO tokens
+
+    const attackerBalanceBefore = (
+      await getAccount(context.banksClient, attackerTokenAta)
+    ).amount;
+    const victimBalanceBefore = (
+      await getAccount(context.banksClient, victimTokenAta)
+    ).amount;
+
+    console.log("Attacker token balance:", Number(attackerBalanceBefore));
+    console.log("Victim token balance:", Number(victimBalanceBefore));
+
+    expect(Number(attackerBalanceBefore)).toBe(0);
+    expect(Number(victimBalanceBefore)).toBe(0);
+
+    // setup provider for attacker so attacker can sign the transaction
+    const attackerProvider = new BankrunProvider(context, new Wallet(attacker));
+    const attackerDexalotProgram = new Program<Dexalot>(
+      DEXALOT_IDL as any,
+      attackerProvider
+    );
+
+    // Execute the exploit
+    expect(attackerDexalotProgram.methods
+      .removeFromSwapQueue({
+        nonce: Array.from(nonce),
+        destTrader: victim.publicKey,
+      })
+      .accounts({
+        // @ts-ignore
+        splVault: splVaultPDA,
+        solVault: getAccountPubKey(dexalotProgram, [
+          Buffer.from(SOL_VAULT_SEED),
+        ]),
+        from: vaultAtaTokenA, // Legitimate from account (vault's ATA)
+        to: attackerTokenAta, // EXPLOIT: Attacker provides their own token account
+        tokenProgram: TOKEN_PROGRAM_ID,
+        trader: victim.publicKey, // Victim should be the trader
+        systemProgram: SystemProgram.programId,
+        swapQueueEntry: pendingSwapPDA,
+        airdropVault: airdropVaultPDA,
+        portfolio: portfolioPDA,
+        tokenMint: tokenA.publicKey
+      })
+      .rpc()
+    ).rejects.toThrow("AnchorError caused by account: to");
   });
 });

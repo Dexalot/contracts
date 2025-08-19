@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::Token;
+use anchor_spl::token::{Token, TokenAccount, Mint};
+use anchor_spl::associated_token::get_associated_token_address;
 
 use crate::{
     consts::{
@@ -36,24 +37,29 @@ pub struct RemoveFromSwapQueue<'info> {
       )]
     pub sol_vault: AccountInfo<'info>,
     /// CHECK: ata or solvault
-    #[account(mut)]
     pub from: AccountInfo<'info>,
     /// CHECK: ata or trader
-    #[account(mut)]
-    pub to: AccountInfo<'info>,
+   #[account(
+        mut,
+        associated_token::mint = swap_queue_entry.token_mint,
+        associated_token::authority = swap_queue_entry.trader
+    )]
+    pub to: Account<'info, TokenAccount>,
     pub token_program: Program<'info, Token>,
     /// CHECK: the trader account
-    #[account(mut)]
+    #[account(mut, constraint = trader.key() == swap_queue_entry.trader)]
     pub trader: AccountInfo<'info>,
     pub system_program: Program<'info, System>,
     /// CHECK: when calling the instruction
     #[account(mut,
         close = sol_vault,
-          seeds = [
-              PENDING_SWAPS_SEED,
-              &generate_map_entry_key(params.nonce,
-              params.dest_trader)?], bump
-          )]
+        seeds = [
+            PENDING_SWAPS_SEED,
+            &generate_map_entry_key(params.nonce,
+            params.dest_trader)?],
+        bump,
+        constraint = swap_queue_entry.token_mint == token_mint.key()
+    )]
     pub swap_queue_entry: Account<'info, PendingSwap>,
     /// CHECK: the airdrop vault
     #[account(
@@ -67,6 +73,7 @@ pub struct RemoveFromSwapQueue<'info> {
         bump = portfolio.bump
     )]
     pub portfolio: Account<'info, Portfolio>,
+    pub token_mint: Account<'info, Mint>,
 }
 
 #[derive(Clone, AnchorDeserialize, AnchorSerialize)]
@@ -102,8 +109,14 @@ pub fn remove_from_swap_queue(
     let is_native_withdraw = xfer.token_mint == Pubkey::default();
 
     if is_native_withdraw {
-        // Start native withdraw
+        // Validate `from` for a native SOL transfer
+        require_eq!(
+            ctx.accounts.from.key(),
+            ctx.accounts.sol_vault.key(),
+            DexalotError::InvalidTokenOwner
+        );
 
+        // Start native withdraw
         process_xfer_payload_native(
             &xfer,
             ctx.bumps.sol_vault,
@@ -121,6 +134,17 @@ pub fn remove_from_swap_queue(
         let token_program = &ctx.accounts.token_program;
         let spl_vault = &ctx.accounts.spl_vault;
 
+        // Validate `from` for an SPL token transfer
+        let expected_spl_vault_ata = get_associated_token_address(
+            &spl_vault.key(),
+            &xfer.token_mint,
+        );
+        require_eq!(
+            from.key(),
+            expected_spl_vault_ata,
+            DexalotError::InvalidTokenOwner
+        );
+
         process_xfer_payload_spl(
             &xfer,
             ctx.bumps.spl_vault,
@@ -129,7 +153,7 @@ pub fn remove_from_swap_queue(
             ctx.bumps.sol_vault,
             sol_vault,
             from,
-            to,
+            &to.to_account_info(),
             token_program,
             &swap_queue_entry.to_account_info(),
             system_program,
@@ -322,13 +346,14 @@ mod tests {
             spl_vault: generic_info.clone(),
             sol_vault: generic_info.clone(),
             from: generic_info.clone(),
-            to: generic_info.clone(),
+            to: Account::try_from(&generic_info)?,
             token_program,
             trader: generic_info.clone(),
             system_program,
             swap_queue_entry,
             airdrop_vault,
             portfolio: portfolio_account,
+            token_mint: Account::try_from(&token_info)?
         };
         let ctx = Context {
             accounts: &mut accounts,
@@ -467,13 +492,14 @@ mod tests {
             spl_vault: generic_info.clone(),
             sol_vault: generic_info.clone(),
             from,
-            to: generic_info.clone(),
+            to: Account::try_from(&generic_info)?,
             token_program,
             trader: generic_info.clone(),
             system_program,
             swap_queue_entry,
             airdrop_vault,
             portfolio: portfolio_account,
+            token_mint: Account::try_from(&token_info)?
         };
         let ctx = Context {
             accounts: &mut accounts,
