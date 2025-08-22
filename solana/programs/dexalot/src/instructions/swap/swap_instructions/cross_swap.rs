@@ -29,7 +29,7 @@ pub fn cross_swap(ctx: &mut Context<CrossSwap>, params: &CrossSwapParams) -> Res
         DexalotError::DestinationNotAllowed
     );
 
-    check_atas(&ctx, &params)?;
+    check_atas(&ctx)?;
     let order = params.order.clone();
 
     order.validate_cross_swap(ctx, &params.signature)?;
@@ -46,11 +46,11 @@ pub fn cross_swap(ctx: &mut Context<CrossSwap>, params: &CrossSwapParams) -> Res
 pub struct CrossSwap<'info> {
     #[account(mut)]
     pub sender: Signer<'info>,
-    /// CHECK: when calling the instruction
-    #[account(mut)]
+    /// CHECK: it corresponds to the order
+    #[account(mut, constraint = taker.key() == params.order.taker @ DexalotError::InvalidTaker)]
     pub taker: AccountInfo<'info>,
-    #[account(mut)]
-    /// CHECK: when calling the instruction
+    /// CHECK: it corresponds to the order
+    #[account(mut, constraint = dest_trader.key() == params.order.dest_trader)]
     pub dest_trader: AccountInfo<'info>,
     /// CHECK: when calling the instruction
     #[account(mut, seeds = [COMPLETED_SWAPS_SEED, &generate_map_entry_key(params.order.nonce, params.order.dest_trader)?], bump)]
@@ -71,7 +71,8 @@ pub struct CrossSwap<'info> {
     pub spl_vault: AccountInfo<'info>,
     #[account(mut, seeds = [SOL_VAULT_SEED], bump)]
     pub sol_vault: SystemAccount<'info>,
-    /// CHECK: token mint or Zero PublicKey
+    /// CHECK: token mint against order
+    #[account(constraint = src_token_mint.key() == params.order.taker_asset)]
     pub src_token_mint: AccountInfo<'info>,
     /// CHECK: ATA or Zero PublicKey
     #[account(mut)]
@@ -104,15 +105,12 @@ pub struct CrossSwapParams {
     pub signature: Vec<u8>,
 }
 
-fn check_atas(ctx: &Context<CrossSwap>, params: &CrossSwapParams) -> Result<()> {
+fn check_atas(ctx: &Context<CrossSwap>) -> Result<()> {
     let taker = &ctx.accounts.taker;
     let spl_vault = &ctx.accounts.spl_vault;
     let taker_src_asset_ata = &ctx.accounts.taker_src_asset_ata;
     let spl_vault_src_asset_ata = &ctx.accounts.spl_vault_src_asset_ata;
     let src_token_mint = &ctx.accounts.src_token_mint;
-
-    // check if taker is correct
-    require_keys_eq!(taker.key(), params.order.taker, DexalotError::InvalidTaker);
 
     // Check ATAs for taker
     check_ata_account(taker_src_asset_ata, taker.key, src_token_mint.key, false)?;
