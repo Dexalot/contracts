@@ -110,6 +110,18 @@ yarn hh-coverage
 
 Please note the full coverage run will take 10-20 minutes depending on the speed of your computer.
 
+### Supported Chains
+
+Dexalot is a CLOB exchange which operates fully on-chain on its' own L1. Deposits to Dexalot L1 can be done using the Portfolio contracts deployed on multiple chains.
+Currently supported chains:
+* Arbitrum
+* Avalanche C-Chain
+* Base
+* BNB Smart Chain (BSC)
+* Ethereum
+* Gunzilla
+
+
 ### Documentation
 
 Dexalot team built a documentation site to serve the developer community.  Please visit at
