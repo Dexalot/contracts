@@ -40,7 +40,7 @@ const tokenList: string[] = ["LFG", "SER"];
 
 const tokenPairs: string[] = ["LFG/SER"];
 
-const minTradeAmountMap: any = {"LFG/SER": 10}
+const minTradeAmountMap: any = {"LFG/SER": 1}
 
 const maxTradeAmountMap: any = {"LFG/SER": 10000}
 
@@ -182,14 +182,14 @@ before(async () => {
       // deposit native coin for account to portfolio
       const _nativeBytes32 = Utils.fromUtf8(native);
       let _bal = await portfolio.getBalance(account, _nativeBytes32);
-      Utils.printBalances(account, _bal, 18);
+      Utils.printBalances(account, _bal, native, 18);
       if ((parseFloat(Utils.fromWei(_bal.total)) + parseFloat(Utils.fromWei(_bal.available))) < initial_portfolio_deposits[native]) {
         const _deposit_amount = initial_portfolio_deposits[native] - Utils.fromWei(_bal.total) - Utils.fromWei(_bal.available);
           await wallet.sendTransaction({to: portfolioMain.address,
                                         value: Utils.toWei(_deposit_amount.toString())});
           //console.log("Deposited for", account, _deposit_amount, native, "to portfolio.");
           _bal = await portfolio.getBalance(account, _nativeBytes32);
-          Utils.printBalances(account, _bal, 18);
+          Utils.printBalances(account, _bal, native, 18);
       }
       console.log();
 
@@ -202,7 +202,7 @@ before(async () => {
           _token = MockToken.attach(_tokenAddr) as MockToken;
           _tokenDecimals = await _token.decimals();
           _bal = await portfolio.getBalance(account, _tokenBytes32);
-          Utils.printBalances(account, _bal, _tokenDecimals);
+          Utils.printBalances(account, _bal,_tokenStr, _tokenDecimals);
           if ((parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) + parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals))) < initial_portfolio_deposits[_tokenStr]) {
             const _deposit_amount = initial_portfolio_deposits[_tokenStr] - parseFloat(Utils.formatUnits(_bal.total, _tokenDecimals)) - parseFloat(Utils.formatUnits(_bal.available, _tokenDecimals));
             const _deposit_amount_bn = Utils.parseUnits(_deposit_amount.toString(), _tokenDecimals);
@@ -275,7 +275,7 @@ before(async () => {
       for (const element of tokens) {
           const token = element;
           const res = await portfolio.getBalance(account, Utils.fromUtf8(token));
-          Utils.printBalances(account, res, decimalsMap[token]);
+          Utils.printBalances(account, res, token, decimalsMap[token]);
       }
   }
   console.log();

@@ -17,6 +17,12 @@ import "./IPortfolio.sol";
 interface IPortfolioSub {
     function adjustAvailable(IPortfolio.Tx _transaction, address _trader, bytes32 _symbol, uint256 _amount) external;
 
+    function checkAvailable(
+        address _trader,
+        bytes32 _symbol,
+        uint256 _amount
+    ) external returns (bytes32 code);
+
     function addExecution(
         bytes32 _tradePairId,
         ITradePairs.TradePair calldata _tradePair,

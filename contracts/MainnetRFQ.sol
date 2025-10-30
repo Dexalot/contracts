@@ -62,7 +62,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.7");
+    bytes32 public constant VERSION = bytes32("1.2.2");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -90,6 +90,14 @@ contract MainnetRFQ is
     uint8 private constant SLIP_BPS_SHIFT = 3;
     // max slippage bps
     uint24 private constant MAX_SLIP_BPS = 50000;
+    // bytes length of an address
+    uint256 private constant ADDRESS_LENGTH = 20;
+    // bytes of the order structure + signature in calldata
+    uint256 private constant ORDER_SIG_LENGTH = 256 + 65;
+    // name hash for EIP712 domain
+    bytes32 private constant EIP712_NAME_HASH = keccak256("Dexalot");
+    // version hash for EIP712 domain
+    bytes32 private constant EIP712_VERSION_HASH = keccak256("1");
 
     // firm order data structure sent to user for regular swap from RFQ API
     struct Order {
@@ -129,6 +137,8 @@ contract MainnetRFQ is
         bytes32 destAsset;
         uint256 srcAmount;
         uint256 destAmount;
+        address msgSender;
+        bool isDirect;
     }
 
     // data structure for swaps unable to release funds on destination chain due to lack of inventory
@@ -159,8 +169,8 @@ contract MainnetRFQ is
     mapping(address => bool) private trustedContracts;
     // uses a bitmap to keep track of nonces used in executed swaps
     mapping(uint256 => uint256) public completedSwaps;
-    // uses a bitmap to keep track of nonces of swaps that have been set to expire prior to execution
-    mapping(uint256 => uint256) public expiredSwaps;
+    // (no longer in use, kept for upgradeability)
+    mapping(uint256 => uint256) private expiredSwaps;
     // keeps track of swaps that have been queued on the destination chain due to lack of inventory
     mapping(uint256 => PendingSwap) public swapQueue;
 
@@ -175,9 +185,11 @@ contract MainnetRFQ is
     // number of bps to slip quote by to 2 decimal places
     // key = [ slipBpsEnum ] or [ expiryTime | slipBpsEnum ]
     mapping(uint256 => uint24) public slippagePoints;
+    // rfq forwarder contract address for eip-2771 support
+    address public trustedForwarder;
 
     // storage gap for upgradeability
-    uint256[41] __gap;
+    uint256[40] __gap;
 
     event SwapSignerUpdated(address newSwapSigner);
     event RoleUpdated(string indexed name, string actionName, bytes32 updatedRole, address updatedAddress);
@@ -200,7 +212,6 @@ contract MainnetRFQ is
         uint256 timestamp
     );
     event RebalancerWithdraw(address asset, uint256 amount);
-    event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
 
     /**
@@ -244,10 +255,11 @@ contract MainnetRFQ is
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
-    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable whenNotPaused nonReentrant {
-        address destTrader = _verifyOrder(_order, _signature);
+    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable nonReentrant {
+        address sender = _msgSender();
+        address destTrader = _verifyOrder(_order, _signature, sender);
 
-        _executeOrder(_order, _order.makerAmount, _order.takerAmount, destTrader);
+        _executeOrder(_order, _order.makerAmount, _order.takerAmount, destTrader, sender);
     }
 
     /**
@@ -264,15 +276,16 @@ contract MainnetRFQ is
         Order calldata _order,
         bytes calldata _signature,
         uint256 _takerAmount
-    ) external payable whenNotPaused nonReentrant {
-        address destTrader = _verifyOrder(_order, _signature);
+    ) external payable nonReentrant {
+        address sender = _msgSender();
+        address destTrader = _verifyOrder(_order, _signature, sender);
 
         uint256 makerAmount = _order.makerAmount;
         if (_takerAmount < _order.takerAmount) {
             makerAmount = (makerAmount * _takerAmount) / _order.takerAmount;
         }
 
-        _executeOrder(_order, makerAmount, _takerAmount, destTrader);
+        _executeOrder(_order, makerAmount, _takerAmount, destTrader, sender);
     }
 
     /**
@@ -350,17 +363,6 @@ contract MainnetRFQ is
     }
 
     /**
-     * @notice Updates the expiry of a order. The new expiry
-     * is the deadline a trader has to execute the swap.
-     * @dev Only rebalancer can call this function.
-     * @param _nonceAndMeta nonce of order
-     **/
-    function updateSwapExpiry(uint256 _nonceAndMeta) external onlyRole(REBALANCER_ADMIN_ROLE) {
-        expiredSwaps[_nonceAndMeta >> 8] |= 1 << (_nonceAndMeta & 0xff);
-        emit SwapExpired(_nonceAndMeta, block.timestamp);
-    }
-
-    /**
      * @notice Updates the signer address.
      * @dev Only DEFAULT_ADMIN can call this function.
      * @param _swapSigner Address of new swap signer
@@ -369,6 +371,17 @@ contract MainnetRFQ is
         require(_swapSigner != address(0), "RF-SAZ-01");
         swapSigner = _swapSigner;
         emit SwapSignerUpdated(_swapSigner);
+    }
+
+    /**
+     * @notice  Sets the trusted forwarder address for routed txs
+     * @dev     Only callable by admin
+     * @param   _trustedForwarder  New trusted forwarder address
+     */
+    function setTrustedForwarder(address _trustedForwarder) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_trustedForwarder != address(0), "RF-SAZ-01");
+        trustedForwarder = _trustedForwarder;
+        emit AddressSet("MAINNETRFQ", "SET-TRUSTEDFORWARDER", _trustedForwarder);
     }
 
     /**
@@ -563,6 +576,37 @@ contract MainnetRFQ is
     }
 
     /**
+     * @dev Returns the sender of the message. If the message was sent through the trusted forwarder,
+     * returns the original sender.
+     * @return address The address of the sender
+     */
+    function _msgSender() internal view virtual override returns (address) {
+        if (msg.data.length >= ORDER_SIG_LENGTH && msg.sender == trustedForwarder) {
+            return address(bytes20(msg.data[msg.data.length - ADDRESS_LENGTH:]));
+        } else {
+            return msg.sender;
+        }
+    }
+
+    /**
+     * @dev Returns the hash of the name parameter for the EIP712 domain.
+     * Overriding this function to return a constant value to save gas.
+     * @return bytes32 The hash of the name parameter
+     */
+    function _EIP712NameHash() internal view virtual override returns (bytes32) {
+        return EIP712_NAME_HASH;
+    }
+
+    /**
+     * @dev Returns the hash of the version parameter for the EIP712 domain.
+     * Overriding this function to return a constant value to save gas.
+     * @return bytes32 The hash of the version parameter
+     */
+    function _EIP712VersionHash() internal view virtual override returns (bytes32) {
+        return EIP712_VERSION_HASH;
+    }
+
+    /**
      * @notice Verifies that a XChainSwap order is valid and has not been executed already.
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
@@ -593,6 +637,7 @@ contract MainnetRFQ is
             nonceAndMeta,
             _order.expiry,
             UtilsLibrary.bytes32ToAddress(_order.from),
+            msg.sender,
             false,
             hashedStruct,
             _signature
@@ -615,7 +660,9 @@ contract MainnetRFQ is
             srcAsset: UtilsLibrary.bytes32ToAddress(_order.takerAsset),
             destAsset: _order.makerAsset,
             srcAmount: _order.takerAmount,
-            destAmount: _order.makerAmount
+            destAmount: _order.makerAmount,
+            msgSender: msg.sender,
+            isDirect: true
         });
         _executeSwapInternal(swapData, false);
     }
@@ -627,7 +674,7 @@ contract MainnetRFQ is
      * @return address The address where the funds will be transferred. It is an Aggregator address if
      * the address in the nonceAndMeta matches the msg.sender
      **/
-    function _verifyOrder(Order calldata _order, bytes calldata _signature) private returns (address) {
+    function _verifyOrder(Order calldata _order, bytes calldata _signature, address _sender) private returns (address) {
         address destTrader = address(uint160(_order.nonceAndMeta >> 96));
 
         bytes32 hashedStruct = keccak256(
@@ -647,7 +694,8 @@ contract MainnetRFQ is
             _order.nonceAndMeta,
             uint32(_order.expiry),
             _order.taker,
-            destTrader == msg.sender,
+            _sender,
+            destTrader == _sender,
             hashedStruct,
             _signature
         );
@@ -666,7 +714,8 @@ contract MainnetRFQ is
         Order calldata _order,
         uint256 _makerAmount,
         uint256 _takerAmount,
-        address _destTrader
+        address _destTrader,
+        address _sender
     ) private {
         uint8 slipInfo = uint8(_order.nonceAndMeta >> 88);
         if (slipInfo > SLIP_BPS_MASK) {
@@ -680,7 +729,9 @@ contract MainnetRFQ is
             srcAsset: _order.takerAsset,
             destAsset: UtilsLibrary.addressToBytes32(_order.makerAsset),
             srcAmount: _takerAmount,
-            destAmount: _makerAmount
+            destAmount: _makerAmount,
+            msgSender: _sender,
+            isDirect: _sender == msg.sender
         });
         _executeSwapInternal(swapData, true);
     }
@@ -699,18 +750,19 @@ contract MainnetRFQ is
         uint256 _nonceAndMeta,
         uint256 _expiry,
         address _taker,
+        address _sender,
         bool _isAggregator,
         bytes32 _hashedStruct,
         bytes calldata _signature
     ) private {
+        require(block.timestamp <= _expiry, "RF-QE-02");
+        require(_taker == _sender || _isAggregator, "RF-IMS-01");
+
         uint256 bucket = _nonceAndMeta >> 8;
         uint256 mask = 1 << (_nonceAndMeta & 0xff);
         uint256 bitmap = completedSwaps[bucket];
 
         require(bitmap & mask == 0, "RF-IN-01");
-        require(expiredSwaps[bucket] & mask == 0, "RF-QE-01");
-        require(block.timestamp <= _expiry, "RF-QE-02");
-        require(_taker == msg.sender || _isAggregator, "RF-IMS-01");
         require(isValidSignature(_hashTypedDataV4(_hashedStruct), _signature) == 0x1626ba7e, "RF-IS-01");
 
         completedSwaps[bucket] = bitmap | mask;
@@ -719,39 +771,47 @@ contract MainnetRFQ is
     /**
      * @notice Pulls funds for a swap from the msg.sender
      * @param _swapData Struct containing all information for executing a swap
+     * @param _wrappedInfo Struct containing wrapped token info
      */
-    function _takeFunds(SwapData memory _swapData) private {
+    function _takeFunds(SwapData memory _swapData, WrappedInfo memory _wrappedInfo) private {
         if (_swapData.srcAsset == address(0)) {
             require(msg.value >= _swapData.srcAmount, "RF-IMV-01");
-            if (wrappedInfo.keepWrapped) {
-                wrappedInfo.wrappedNative.deposit{value: _swapData.srcAmount}();
+            if (_wrappedInfo.keepWrapped) {
+                _wrappedInfo.wrappedNative.deposit{value: _swapData.srcAmount}();
             }
             return;
         }
 
-        IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(msg.sender, address(this), _swapData.srcAmount);
-        if (!wrappedInfo.keepWrapped && _swapData.srcAsset == address(wrappedInfo.wrappedNative)) {
-            wrappedInfo.wrappedNative.withdraw(_swapData.srcAmount);
+        if (_swapData.isDirect) {
+            IERC20Upgradeable(_swapData.srcAsset).safeTransferFrom(
+                _swapData.msgSender,
+                address(this),
+                _swapData.srcAmount
+            );
+        }
+        if (!_wrappedInfo.keepWrapped && _swapData.srcAsset == address(_wrappedInfo.wrappedNative)) {
+            _wrappedInfo.wrappedNative.withdraw(_swapData.srcAmount);
         }
     }
 
     /**
      * @notice Release funds for a swap to the destTrader
      * @param _swapData Struct containing all information for executing a swap
+     * @param _wrappedInfo Struct containing wrapped token info
      */
-    function _releaseFunds(SwapData memory _swapData) private {
+    function _releaseFunds(SwapData memory _swapData, WrappedInfo memory _wrappedInfo) private {
         address destAsset = UtilsLibrary.bytes32ToAddress(_swapData.destAsset);
         address destTrader = UtilsLibrary.bytes32ToAddress(_swapData.destTrader);
 
         if (destAsset == address(0)) {
-            if (wrappedInfo.keepWrapped) {
-                wrappedInfo.wrappedNative.withdraw(_swapData.destAmount);
+            if (_wrappedInfo.keepWrapped) {
+                _wrappedInfo.wrappedNative.withdraw(_swapData.destAmount);
             }
             (bool success, ) = payable(destTrader).call{value: _swapData.destAmount}("");
             require(success, "RF-TF-01");
         } else {
-            if (!wrappedInfo.keepWrapped && destAsset == address(wrappedInfo.wrappedNative)) {
-                wrappedInfo.wrappedNative.deposit{value: _swapData.destAmount}();
+            if (!_wrappedInfo.keepWrapped && destAsset == address(_wrappedInfo.wrappedNative)) {
+                _wrappedInfo.wrappedNative.deposit{value: _swapData.destAmount}();
             }
             IERC20Upgradeable(destAsset).safeTransfer(destTrader, _swapData.destAmount);
         }
@@ -763,7 +823,7 @@ contract MainnetRFQ is
      */
     function _refundNative(SwapData memory _swapData) private {
         if (_swapData.srcAsset == address(0) && msg.value > _swapData.srcAmount) {
-            (bool success, ) = payable(msg.sender).call{value: msg.value - _swapData.srcAmount}("");
+            (bool success, ) = payable(_swapData.msgSender).call{value: msg.value - _swapData.srcAmount}("");
             require(success, "RF-TF-02");
         }
     }
@@ -772,11 +832,17 @@ contract MainnetRFQ is
      * @notice Executes a swap by taking funds from the msg.sender and if the swap is not cross chain
      * funds are released to the destTrader. Emits SwapExecuted event upon completion.
      * @param _swapData Struct containing all information for executing a swap
+     * @param isNotXChain True if the swap is not cross chain
      */
     function _executeSwapInternal(SwapData memory _swapData, bool isNotXChain) private {
-        _takeFunds(_swapData);
+        WrappedInfo memory _wrappedInfo;
+        if (_swapData.isDirect) {
+            _wrappedInfo = wrappedInfo;
+        }
+
+        _takeFunds(_swapData, _wrappedInfo);
         if (isNotXChain) {
-            _releaseFunds(_swapData);
+            _releaseFunds(_swapData, _wrappedInfo);
             _refundNative(_swapData);
         }
 

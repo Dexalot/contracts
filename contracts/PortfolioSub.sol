@@ -73,7 +73,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.6.0");
+    bytes32 public constant VERSION = bytes32("2.6.4");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -296,11 +296,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _makerSide  Side of the maker
      * @param   _makerAddr  Address of the maker
      * @param   _takerAddr  Address of the taker
-
-     * @param   _baseAmount  Amount of the base token
-     * @param   _quoteAmount  Amount of the quote token
-     * @return  makerfee Maker fee
-     * @return  takerfee Taker fee
+     * @param   _baseAmount  execution base amount
+     * @param   _quoteAmount  execution quote amount
+     * @return  makerFee Maker fee
+     * @return  takerFee Taker fee
      */
     function addExecution(
         bytes32 _tradePairId,
@@ -310,10 +309,54 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         address _takerAddr,
         uint256 _baseAmount,
         uint256 _quoteAmount
-    ) external override returns (uint256 makerfee, uint256 takerfee) {
+    ) external override onlyRole(EXECUTOR_ROLE) returns (uint256 makerFee, uint256 takerFee) {
         // Only TradePairs can call PORTFOLIO addExecution
-        require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
 
+        (makerFee, takerFee) = calculateFees(
+            _tradePairId,
+            _tradePair,
+            _makerSide,
+            _makerAddr,
+            _takerAddr,
+            _baseAmount,
+            _quoteAmount
+        );
+        // if _maker.side = BUY then _taker.side = SELL
+        if (_makerSide == ITradePairs.Side.BUY) {
+            // decrease maker quote and incrase taker quote
+            transferToken(_makerAddr, _takerAddr, _tradePair.quoteSymbol, _quoteAmount, takerFee, Tx.EXECUTION, true);
+            // increase maker base and decrase taker base
+            transferToken(_takerAddr, _makerAddr, _tradePair.baseSymbol, _baseAmount, makerFee, Tx.EXECUTION, false);
+        } else {
+            // increase maker quote and decrease taker quote
+            transferToken(_takerAddr, _makerAddr, _tradePair.quoteSymbol, _quoteAmount, makerFee, Tx.EXECUTION, false);
+            // decrease maker base and incrase taker base
+            transferToken(_makerAddr, _takerAddr, _tradePair.baseSymbol, _baseAmount, takerFee, Tx.EXECUTION, true);
+        }
+    }
+
+    /**
+     * @notice  Calculates the commission charged from the taker and the maker
+     * @dev     Commissions are rounded down based on evm and display decimals to avoid DUST
+     * @param   _tradePair  TradePair struct
+     * @param   _makerSide  maker order side
+     * @param   _makerAddr  Address of the maker
+     * @param   _takerAddr  Address of the taker
+     * @param   _baseAmount  execution base amount
+     * @param   _quoteAmount  execution quote amount
+     * @return  makerFee maker fee
+     * @return  takerFee taker fee
+     */
+
+    function calculateFees(
+        bytes32 _tradePairId,
+        ITradePairs.TradePair calldata _tradePair,
+        ITradePairs.Side _makerSide,
+        address _makerAddr,
+        address _takerAddr,
+        uint256 _baseAmount,
+        uint256 _quoteAmount
+    ) private view returns (uint256 makerFee, uint256 takerFee) {
         (uint256 makerRate, uint256 takerRate) = portfolioSubHelper.getRates(
             _makerAddr,
             _takerAddr,
@@ -321,52 +364,35 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             uint256(_tradePair.makerRate),
             uint256(_tradePair.takerRate)
         );
-        makerfee = calculateFee(_tradePair, _makerSide, _baseAmount, _quoteAmount, makerRate);
-        takerfee = calculateFee(
-            _tradePair,
-            _makerSide == ITradePairs.Side.BUY ? ITradePairs.Side.SELL : ITradePairs.Side.BUY,
-            _baseAmount,
-            _quoteAmount,
-            takerRate
-        );
 
-        // if _maker.side = BUY then _taker.side = SELL
+        // if maker or taker feeRate is 0 don't need to calculate
         if (_makerSide == ITradePairs.Side.BUY) {
-            // decrease maker quote and incrase taker quote
-            transferToken(_makerAddr, _takerAddr, _tradePair.quoteSymbol, _quoteAmount, takerfee, Tx.EXECUTION, true);
-            // increase maker base and decrase taker base
-            transferToken(_takerAddr, _makerAddr, _tradePair.baseSymbol, _baseAmount, makerfee, Tx.EXECUTION, false);
+            makerFee = makerRate == 0
+                ? 0
+                : UtilsLibrary.floor(
+                    (_baseAmount * makerRate) / TENK,
+                    _tradePair.baseDecimals - _tradePair.baseDisplayDecimals
+                );
+            takerFee = takerRate == 0
+                ? 0
+                : UtilsLibrary.floor(
+                    (_quoteAmount * takerRate) / TENK,
+                    _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
+                );
         } else {
-            // increase maker quote and decrease taker quote
-            transferToken(_takerAddr, _makerAddr, _tradePair.quoteSymbol, _quoteAmount, makerfee, Tx.EXECUTION, false);
-            // decrease maker base and incrase taker base
-            transferToken(_makerAddr, _takerAddr, _tradePair.baseSymbol, _baseAmount, takerfee, Tx.EXECUTION, true);
+            makerFee = makerRate == 0
+                ? 0
+                : UtilsLibrary.floor(
+                    (_quoteAmount * makerRate) / TENK,
+                    _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
+                );
+            takerFee = takerRate == 0
+                ? 0
+                : UtilsLibrary.floor(
+                    (_baseAmount * takerRate) / TENK,
+                    _tradePair.baseDecimals - _tradePair.baseDisplayDecimals
+                );
         }
-    }
-
-    /**
-     * @notice  Calculates the commission
-     * @dev     Commissions are rounded down based on evm and display decimals to avoid DUST
-     * @param   _tradePair  TradePair struct
-     * @param   _side  order side
-     * @param   _quantity  execution quantity
-     * @param   _quoteAmount  quote amount
-     * @param   _rate  taker or maker rate
-     */
-
-    function calculateFee(
-        ITradePairs.TradePair calldata _tradePair,
-        ITradePairs.Side _side,
-        uint256 _quantity,
-        uint256 _quoteAmount,
-        uint256 _rate
-    ) private pure returns (uint256 lastFeeRounded) {
-        lastFeeRounded = _side == ITradePairs.Side.BUY
-            ? UtilsLibrary.floor((_quantity * _rate) / TENK, _tradePair.baseDecimals - _tradePair.baseDisplayDecimals)
-            : UtilsLibrary.floor(
-                (_quoteAmount * _rate) / TENK,
-                _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
-            );
     }
 
     /**
@@ -404,8 +430,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol to be used in exchange of Gas Token. ALOT or any other
      */
-    function autoFill(address _trader, bytes32 _symbol) external override whenNotPaused {
-        require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
+    function autoFill(address _trader, bytes32 _symbol) external override whenNotPaused onlyRole(EXECUTOR_ROLE) {
         // Trade pairs listed in TradePairs are guaranteed to be synched with Portfolio tokens at
         // when adding exchange.addTradePair. No need for a require check here.
         autoFillPrivate(_trader, _symbol, Tx.AUTOFILL);
@@ -460,7 +485,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                     // We don't want the user to through the hassle of acquiring our Dexalot L1(subnet) gas token ALOT first in
                     // order to initiate a transaction. This is equivalent of an airdrop
                     // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
-                    // for this DEPOSIT transaction (AVAX) is well above the airdrop they get.
+                    // for this DEPOSIT transaction (AVAX) is well above the airdrop. The user is charged for the layerzero/icm
+                    // bridge fee on source chain which costs more $ than the airdrop
                 } else if (_transaction == Tx.DEPOSIT && _trader.balance == 0) {
                     gasStation.requestGas(_trader, gasAmount);
                     tankFull = true;
@@ -654,13 +680,18 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) private {
         AssetEntry storage asset = assets[_trader][_symbol];
         require(_amount > 0 && _amount > _feeCharged, "P-WUTH-01");
-        require(_amount <= asset.total, "P-TFNE-01");
+        // Using assert here because safeDecreaseTotal is only called directly(without calling SafeDecrease) when
+        // a maker order is filled. its available amount had already been reserved(decreased). When filled, we only
+        // need to decrease the total by the same amount. Hence this scenario is not possible.
+        assert(_amount <= asset.total);
         // decrease the total quantity from the user balances.
         asset.total = asset.total - _amount;
         // This is bridge fee going to treasury. Commissions go to feeAddress
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
-            require(_amount <= tokenTotals[_symbol], "P-AMVL-01");
+            // Using assert here because the sum of trader's holdings should equal
+            // to tokenTotals for the symbol at all times, no exceptions.
+            assert(_amount <= tokenTotals[_symbol]);
             // _feeCharged is still left in the Dexalot L1(subnet)
             tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged);
         }
@@ -696,19 +727,42 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _symbol  Symbol of the token
      * @param   _amount  Amount of the token
      */
-    function adjustAvailable(Tx _transaction, address _trader, bytes32 _symbol, uint256 _amount) external override {
+    function adjustAvailable(
+        Tx _transaction,
+        address _trader,
+        bytes32 _symbol,
+        uint256 _amount
+    ) external override onlyRole(EXECUTOR_ROLE) {
         // Only TradePairs can call PORTFOLIO adjustAvailable
-        require(hasRole(EXECUTOR_ROLE, msg.sender), "P-OACC-03");
         AssetEntry storage asset = assets[_trader][_symbol];
         if (_transaction == Tx.INCREASEAVAIL) {
             asset.available = asset.available + _amount;
         } else if (_transaction == Tx.DECREASEAVAIL) {
-            require(_amount <= asset.available, "P-AFNE-01");
+            //using assert here because it should not happen as checkAvailable ensures the funding at the time of order entry
+            assert(_amount <= asset.available);
             asset.available = asset.available - _amount;
         } else {
             revert("P-WRTT-02");
         }
+
         emitPortfolioEvent(_trader, _symbol, _amount, 0, _transaction, _trader);
+    }
+
+    /**
+     * @notice  Function to check the available funds when entering orders.
+     * @param   _trader  Address of the trader
+     * @param   _symbol  Symbol of the token
+     * @param   _amount  Amount of the token
+     */
+
+    function checkAvailable(
+        address _trader,
+        bytes32 _symbol,
+        uint256 _amount
+    ) external view override returns (bytes32 code) {
+        if (_amount > assets[_trader][_symbol].available) {
+            code = "P-AFNE-01";
+        }
     }
 
     /**

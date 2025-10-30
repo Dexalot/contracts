@@ -20,6 +20,8 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     mapping(bytes32 blockchainId => address[]) public allowedRelayers;
     // Maximum gas limit for each message type
     mapping(CrossChainMessageType => uint256) public gasLimits;
+    // Native bridge fee to charge for messages sent to dest chain
+    mapping(uint32 => uint256) public nativeBridgeFees;
 
     event SetRelayers(bytes32 blockchainId, address[] relayers);
     event AddRelayer(bytes32 blockchainId, address relayer);
@@ -28,7 +30,7 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual returns (bytes32) {
-        return bytes32("1.1.0");
+        return bytes32("1.1.1");
     }
 
     function initialize(
@@ -46,6 +48,25 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
      */
     function setPortfolioBridge(address _portfolioBridgeAddr) external override onlyOwner {
         _setPortfolioBridge(_portfolioBridgeAddr);
+    }
+
+    /**
+     * @notice Get the bridge fee for a given chain ID in terms of the native token
+     * @dev Defaults to the DEPOSIT message type
+     * @param _chainID The chainlist chain ID to get a bridge fee for
+     * @return The bridge fee in terms of the native token
+     */
+    function getBridgeFee(uint32 _chainID) external view override returns (uint256) {
+        return nativeBridgeFees[_chainID];
+    }
+
+    /**
+     * @notice Get the bridge fee for a given chain ID and message type in terms of the native token
+     * @param _chainID The chainlist chain ID to get a bridge fee for
+     * @return The bridge fee in terms of the native token
+     */
+    function getBridgeFee(uint32 _chainID, CrossChainMessageType) public view override returns (uint256) {
+        return nativeBridgeFees[_chainID];
     }
 
     /**
@@ -87,6 +108,15 @@ contract ICMApp is TeleporterRegistryOwnableAppUpgradeable, DefaultBridgeApp {
     function setGasLimit(CrossChainMessageType _msgType, uint256 _gasLimit) external onlyOwner {
         gasLimits[_msgType] = _gasLimit;
         emit SetGasLimit(_msgType, _gasLimit);
+    }
+
+    /**
+     * @notice Set the native bridge fee for a given chain ID
+     * @param _chainID The chainlist chain ID to set the fee for
+     * @param _nativeBridgeFee The native token fee in wei
+     */
+    function setNativeBridgeFee(uint32 _chainID, uint256 _nativeBridgeFee) external onlyOwner {
+        nativeBridgeFees[_chainID] = _nativeBridgeFee;
     }
 
     /**

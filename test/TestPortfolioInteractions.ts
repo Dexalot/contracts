@@ -444,7 +444,7 @@ describe("Portfolio Interactions", () => {
         // set up bridge links for celer then disable bridge provider
         await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
         await portfolioBridgeSub.enableBridgeProvider(bridge, celerMockSub.address)
-        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, 400000, bridge);
+        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, false, false, 400000, bridge);
         await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
 

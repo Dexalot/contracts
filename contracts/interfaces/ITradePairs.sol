@@ -85,7 +85,7 @@ interface ITradePairs {
      * @param   quoteSymbol  symbol of the quote asset
      * @param   buyBookId  buy book id for the trading pair
      * @param   sellBookId  sell book id for the trading pair
-     * @param   minTradeAmount  minimum trade amount
+     * @param   minTradeAmount  minimum trade amount as a taker. Less than or equal to the minPostAmount
      * @param   maxTradeAmount  maximum trade amount
      * @param   auctionPrice  price during an auction
      * @param   auctionMode  current auction mode of the trading pair
@@ -99,6 +99,7 @@ interface ITradePairs {
      * @param   addOrderPaused true/false pause state for adding orders on the trading pair
      * @param   pairPaused true/false pause state of the trading pair as a whole
      * @param   postOnly true/false  Post Only orders type2 = PO allowed when true
+     * @param   minPostAmount minimum Trade Amount that can be posted to the orderbook
      */
     struct TradePair {
         bytes32 baseSymbol;
@@ -119,6 +120,7 @@ interface ITradePairs {
         bool addOrderPaused;
         bool pairPaused;
         bool postOnly;
+        uint256 minPostAmount;
     }
 
     function pause() external;
@@ -145,6 +147,8 @@ interface ITradePairs {
     function removeTradePair(bytes32 _tradePairId) external;
 
     function getTradePairs() external view returns (bytes32[] memory);
+
+    function setMinPostAmount(bytes32 _tradePairId, uint256 _minPostAmount) external;
 
     function setMinTradeAmount(bytes32 _tradePairId, uint256 _minTradeAmount) external;
 
@@ -180,6 +184,12 @@ interface ITradePairs {
     function addOrderList(NewOrder[] calldata _orders) external;
 
     function cancelAddList(bytes32[] calldata _orderIdsToCancel, NewOrder[] calldata _orders) external;
+
+    function cancelAddListByClientIds(bytes32[] calldata _clientIdsToCancel, NewOrder[] calldata _orders) external;
+
+    function cancelOrderByClientId(bytes32 _clientOrderId) external;
+
+    function cancelOrderListByClientIds(bytes32[] calldata _clientOrderIds) external;
 
     function cancelOrder(bytes32 _orderId) external;
 

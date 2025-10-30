@@ -289,19 +289,20 @@ describe("Portfolio Sub", () => {
             allowedSlippagePercent:3,
             addOrderPaused:false,
             pairPaused:false,
-            postOnly: false
+            postOnly: false,
+            minPostAmount:50
         };
 
         // fail from non TradePairs addresses
         await expect(portfolioSub.connect(trader1)
             .addExecution(Utils.fromUtf8("AVAX/USDC"), tradePairs , 0, trader1.address, takerAddr, baseAmount, quoteAmount))
-            .to.revertedWith("P-OACC-03");
+            .to.revertedWith("AccessControl:");
     });
 
     it("Should fail adjustAvailable()", async function () {
         await portfolioSub.addToken(USDT, usdt.address, srcChainListOrgId, 6, 6, auctionMode, '0', ethers.utils.parseUnits('0.5',token_decimals),USDT); //Auction mode off
         // fail if caller is not tradePairs
-        await expect(portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("P-OACC-03");
+        await expect(portfolioSub.adjustAvailable(3, trader1.address, USDT, Utils.toWei('10'))).to.revertedWith("AccessControl:");
 
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), owner.address)
         //Send with invalid Tx  Only Tx 3 or 4 allowed
@@ -716,7 +717,7 @@ describe("Portfolio Sub", () => {
         await portfolioSub.unpause()
 
         // fail due to missing EXECUTOR_ROLE
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas })).to.revertedWith("P-OACC-03");
+        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas })).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 
@@ -820,7 +821,7 @@ describe("Portfolio Sub", () => {
 
         const alotSwappedAmnt = (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
 
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("P-OACC-03");
+        await expect(portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 
@@ -965,7 +966,7 @@ describe("Portfolio Sub", () => {
         newBalance = ethers.utils.parseEther('0.35');
         await f.setHardhatBalance(other2, newBalance);
 
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("P-OACC-03");
+        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 

@@ -28,12 +28,11 @@
     "P-GSRO-01": "Portfolio: gasSwapRatio needs to be > 0",
     "P-ETNS-01": "Portfolio: token is not supported in the subnet",
     "P-ETNS-02": "Portfolio: token is not supported in the host chain",
-    "P-DOTS-01": "Portfolio: origin and destination adressess should be different",
+    "P-DOTS-01": "Portfolio: origin and destination addresses should be different",
     "P-NETD-01": "Portfolio: not enough ERC20 token balance to deposit",
     "P-OOWT-01": "Portfolio: only owner can withdraw ERC20 tokens",
-    "P-AFNE-01": "Portfolio: available funds not enough",
-    "P-AFNE-02": "Portfolio: available funds not enough",
-    "P-TFNE-01": "Portfolio: total funds not enough",
+    "P-AFNE-01": "Portfolio: available funds not enough while entering order",
+    "P-AFNE-02": "Portfolio: available funds not enough while attempting to transfer tokens between accounts",
     "P-TNEF-01": "Portfolio: transaction amount not enough to cover fees",
     "P-TAEX-01": "Portfolio: token already exists",
     "P-SCEM-01": "Portfolio: source Chain Id should be the same as specified in Portfolio Main",
@@ -53,7 +52,6 @@
     "P-PTNS-02": "Portfolio: sub processXFerPayload transaction not supported",
     "P-TTNZ-01": "Portfolio: tokanTotals needs to be 0",
     "T-POOA-01": "Portfolio: Only PO(PostOnly) Orders allowed for this pair",
-    "P-AMVL-01": "Portfolio: amount cannot be more than total value locked",
     "P-BANA-01": "Portfolio: account banned",
     "P-MDML-01": "Portfolio: minimum deposit multipler can not be less than 10 (10/10)",
     "P-NFUN-01": "Portfolio: unknown function call",
@@ -63,6 +61,7 @@
     "P-NDNS-01": "Portfolio: native deposits not supported",
     "P-NQTR-01": "Portfolio: native token quantity truncated but refund failed",
     "P-SBPD-01": "Portfolio: set bridge param incorrect decimals, must be truncated",
+    "P-VLBF-01": "Portfolio: msg.value is less than the native bridge fee for deposit",
 
     "PB-OACC-01": "PortfolioBridge: admin account or PORTFOLIO_ROLE needed for this function",
     "PB-RBNE-01": "PortfolioBridge: requested bridge not enabled",
@@ -99,7 +98,7 @@
     "PB-VTNS-01": "PortfolioBridge: virtual tokens can not be withdrawn",
     "PB-IUMF-01": "PortfolioBridge: insufficient user message fee received",
     "PB-BCNE-01": "PortfolioBridge: bridge contract not enabled",
-    "PB-MPGT-01": "PortfolioBridge: bridge fee multipler is greater than 100%",
+    "PB-MPGT-01": "PortfolioBridge: bridge fee multiplier is greater than 100%",
     "PB-OBSA-01": "PortfolioBridge: old bridge provider still active",
     "PB-GASF-01": "PortfolioBridge: gas airdrop send fails",
     "PB-STNS-01": "PortfolioBridge: solana token address not set",
@@ -117,6 +116,7 @@
     "T-IVOT-01": "TradePairs: invalid order type",
     "T-LTMT-01": "TradePairs: trade amount is less than minTradeAmount for the tradePair",
     "T-MTMT-01": "TradePairs: trade amount is more than maxTradeAmount for the tradePair",
+    "T-LTPA-01": "TradePairs: trade amount is less than minPostAmount. It can not be posted in the orderbook",
     "T-OOCC-01": "TradePairs: only owner of the order can cancel",
     "T-OOCC-02": "TradePairs: only owner of the order can cancel",
     "T-OAEX-01": "TradePairs: order is already executed and cannot be canceled",
@@ -277,9 +277,9 @@
     "IM-SIAE-01": "InventoryManager: symbolId and inventory already exist",
     "IM-ZADDR-01":"InventoryManager: portfolio bridge sub cannot be the zero address",
     "IM-SMEB-01": "InventoryManager: symbols cannot be empty bytes",
-    "IM-AVNP-01": "InventoryManager: new value for A is not permitted",
-    "IM-ATNP-01": "InventoryManager: new time for future A is not permitted",
-    "IM-BTNE-01": "InventoryManager: block time not elapsed for future A time and A to be updated",
+    "IM-KVNP-01": "InventoryManager: new value for K is not permitted",
+    "IM-KTNP-01": "InventoryManager: new time for future K is not permitted",
+    "IM-BTNE-01": "InventoryManager: block time not elapsed for future K time and K to be updated",
     "IM-NVSI-01": "InventoryManager: not valid symbolId, symbolId does not exist in portfolio bridge",
     "IM-NVSI-02": "InventoryManager: not valid symbolId, symbolId still exists in portfolio bridge",
 
@@ -293,5 +293,10 @@
 
     "IC-ARNZ-01": "ICMApp: add relayer address must be non-zero",
     "IC-GLNS-01": "ICMApp: gas limit not set for msgType",
-    "IC-SRNZ-01": "ICMApp: set relayer addresses must be non-zero"
+    "IC-SRNZ-01": "ICMApp: set relayer addresses must be non-zero",
+
+    "DR-SAZ-01": "DexalotRouter: set address to zero",
+    "DR-TF-01": "DexalotRouter: transfer failed",
+    "DR-FSNW-01": "DexalotRouter: function selector not whitelisted",
+    "DR-IRMA-01": "DexalotRouter: invalid RFQ Maker address"
 }

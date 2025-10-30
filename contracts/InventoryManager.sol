@@ -5,7 +5,7 @@ pragma solidity 0.8.17;
 import "@openzeppelin/contracts/utils/structs/EnumerableMap.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlEnumerableUpgradeable.sol";
 
-import "./library/InvariantMathLibrary.sol";
+import "./library/InventoryFeeCalculatorLibrary.sol";
 
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IInventoryManager.sol";
@@ -16,25 +16,24 @@ import "./library/UtilsLibrary.sol";
  * @notice  Manages the inventory of tokens on the subnet and calculates withdrawal fees
  * @dev     The inventory is stored by subnet symbol and symbolId. The inventory is
  *          updated by the PortfolioBridgeSub contract. The withdrawal fee is calculated
- *          using the InvariantMathLibrary which use the stableswap invariant to calculate
- *          the fee. The fee is based on the quantity requested, the current inventory in
- *          the requested chain and the total inventory across all chains.
+ *          using the InventoryFeeCalculatorLibrary which uses the quantity requested,
+ *          the current inventory in the requested chain and the total inventory across all chains.
  */
 contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManager {
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.2.0");
-    uint256 private constant STARTING_A = 50;
-    uint256 private constant MIN_A = 10;
-    uint256 private constant MAX_A = 10 ** 8;
-    uint256 private constant MIN_A_UPDATE_TIME = 1 hours;
-    // A value for the invariant calculations
-    uint256 public A;
-    // Future A value for the invariant calculations
-    uint256 public futureA;
-    // Time at which futureA can take effect
-    uint256 public futureATime;
+    bytes32 public constant VERSION = bytes32("3.2.1");
+    uint256 private constant STARTING_K = 24;
+    uint256 private constant MIN_K = 8;
+    uint256 private constant MAX_K = 32;
+    uint256 private constant MIN_K_UPDATE_TIME = 1 hours;
+    // K value for the invariant calculations
+    uint256 public K;
+    // Future K value for the invariant calculations
+    uint256 public futureK;
+    // Time at which futureK can take effect
+    uint256 public futureKTime;
 
     // subnetSymbol => [symbolId => quantity]
     mapping(bytes32 => EnumerableMap.Bytes32ToUintMap) private inventoryBySubnetSymbol;
@@ -46,9 +45,9 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     // symbolId => [account => liqprovided] map
     mapping(bytes32 => mapping(address => uint256)) public userProvidedLiquidity;
 
-    event ScalingFactorUpdated(bytes32 indexed symbolId, uint8 scalingFactor, uint256 timestamp);
-    event FutureAUpdated(uint256 futureA, uint256 futureATime, uint256 timestamp);
-    event AUpdated(uint256 A, uint256 timestamp);
+    event ScalingFactorUpdated(bytes32 indexed symbolId, uint16 scalingFactor, uint256 timestamp);
+    event FutureKUpdated(uint256 futureK, uint256 futureKTime, uint256 timestamp);
+    event KUpdated(uint256 K, uint256 timestamp);
     event PortfolioBridgeSubUpdated(address portfolioBridgeSub);
 
     /**
@@ -60,8 +59,8 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         portfolioBridgeSub = IPortfolioBridgeSub(_portfolioBridgeSub);
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(PORTFOLIO_BRIDGE_ROLE, _portfolioBridgeSub);
-        A = STARTING_A;
-        futureA = STARTING_A;
+        K = STARTING_K;
+        futureK = STARTING_K;
     }
 
     function getInventoryBySubnetSymbol(bytes32 _symbol) external view returns (bytes32[] memory, uint256[] memory) {
@@ -133,6 +132,49 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     }
 
     /**
+     * @notice  Calculates the withdrawal fee for a token
+     * @dev     The fee is calculated using the InventoryFeeCalculatorLibrary which uses the quantity requested,
+     *          the current inventory in the requested chain and the total inventory across all chains.
+     * @param   _withdrawal  Withdrawal transaction
+     * @return  fee  Withdrawal fee, 0 if no fee
+     */
+    function calculateWithdrawalFee(
+        IPortfolioBridgeSub.XferShort calldata _withdrawal
+    ) external view returns (uint256 fee) {
+        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_withdrawal.symbol];
+        uint256 numChains = map.length();
+        uint256 currentInventory = get(_withdrawal.symbol, _withdrawal.symbolId);
+
+        if (numChains == 1 || currentInventory == 0) {
+            return 0;
+        }
+        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
+
+        uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
+        // If the user already provided liquidity to the chain it is trying to withdraw, no additional fee required
+        if (_withdrawal.quantity <= userLiquidity) {
+            return 0;
+        }
+
+        uint256 totalInventory = 0;
+        uint256 targetRatio = scalingFactor[_withdrawal.symbolId];
+
+        for (uint256 i = 0; i < numChains; ++i) {
+            (, uint256 inventory) = map.at(i);
+            totalInventory += inventory;
+        }
+
+        fee = InventoryFeeCalculatorLibrary.calculateFee(
+            K,
+            _withdrawal.quantity - userLiquidity,
+            currentInventory,
+            totalInventory,
+            // if targetRatio not set, assume equal target ratio
+            targetRatio == 0 ? InventoryFeeCalculatorLibrary.BPS / numChains : targetRatio
+        );
+    }
+
+    /**
      * @notice  Updates the PortfolioBridgeSub contract address
      * @dev     Only admin can call this function
      * @param   _portfolioBridgeSub  Address of PortfolioBridgeSub contract
@@ -153,11 +195,11 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
      */
     function setScalingFactors(
         bytes32[] memory _symbolIds,
-        uint8[] memory _scalingFactors
+        uint16[] memory _scalingFactors
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         for (uint256 i = 0; i < _symbolIds.length; ++i) {
             bytes32 symbolId = _symbolIds[i];
-            uint8 sf = _scalingFactors[i];
+            uint16 sf = _scalingFactors[i];
             IPortfolio.TokenDetails memory td = portfolioBridgeSub.getTokenDetails(symbolId);
             require(td.symbolId == symbolId, "IM-NVSI-01");
             scalingFactor[symbolId] = sf;
@@ -181,92 +223,27 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     }
 
     /**
-     * @notice  Updates the Future A value for the invariant
+     * @notice  Updates the Future K value for the invariant
      * @dev     Only admin can call this function
-     * @param   _A  New A value for the invariant
-     * @param   _timePeriod  Time period for the new A value to take effect
+     * @param   _K  New K value for the invariant
+     * @param   _timePeriod  Time period for the new K value to take effect
      */
-    function updateFutureA(uint256 _A, uint256 _timePeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_A > MIN_A && _A < MAX_A, "IM-AVNP-01");
-        require(_timePeriod >= MIN_A_UPDATE_TIME, "IM-ATNP-01");
-        futureA = _A;
-        futureATime = block.timestamp + _timePeriod;
-        emit FutureAUpdated(_A, futureATime, block.timestamp);
+    function updateFutureK(uint256 _K, uint256 _timePeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_K >= MIN_K && _K <= MAX_K, "IM-KVNP-01");
+        require(_timePeriod >= MIN_K_UPDATE_TIME, "IM-KTNP-01");
+        futureK = _K;
+        futureKTime = block.timestamp + _timePeriod;
+        emit FutureKUpdated(_K, futureKTime, block.timestamp);
     }
 
     /**
-     * @notice  Updates the A value for the invariant using futureA
+     * @notice  Updates the K value for the invariant using futureK
      * @dev     Only admin can call this function
      */
-    function updateA() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(futureATime > 0 && block.timestamp >= futureATime, "IM-BTNE-01");
-        A = futureA;
-        emit AUpdated(A, block.timestamp);
-    }
-
-    /**
-     * @notice  Calculates the withdrawal fee for a token
-     * @dev     Uses the InvariantMathLibrary to provide exponential fees if
-     * inventory is spread across multiple chains, unbalanced and quantity is large
-     * if the user provided liquidity from that chain already, he gets lower fees up to the
-     * inventory supplied
-     * @param   _withdrawal  withdrawal transaction
-     * @return  fee  Withdrawal fee
-     */
-    function calculateWithdrawalFee(
-        IPortfolioBridgeSub.XferShort calldata _withdrawal
-    ) external view returns (uint256 fee) {
-        EnumerableMap.Bytes32ToUintMap storage map = inventoryBySubnetSymbol[_withdrawal.symbol];
-        uint256 numChains = map.length();
-        uint256 currentInventory = get(_withdrawal.symbol, _withdrawal.symbolId);
-
-        if (numChains == 1 || currentInventory == 0) {
-            return 0;
-        }
-        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
-
-        uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
-        // If the user already provided liquidity to the chain it is trying to withdraw, no additional fee required
-        if (_withdrawal.quantity <= userLiquidity) {
-            return 0;
-        }
-
-        uint256[] memory inventories = new uint256[](numChains);
-        uint256 totalInventory = 0;
-        uint256 index = numChains;
-
-        // Generates all non-zero inventories and calculates total inventory
-        uint256 j = 0;
-        uint256 scaleFactor;
-
-        for (uint256 i = 0; i < numChains; ++i) {
-            (bytes32 symbolId, uint256 inventory) = map.at(i);
-            if (inventory == 0) {
-                continue;
-            }
-
-            (uint256 scaledInventory, uint256 sf) = scaleInventory(symbolId, inventory);
-            inventories[j] = scaledInventory;
-            totalInventory += scaledInventory;
-            if (symbolId == _withdrawal.symbolId) {
-                index = j;
-                scaleFactor = sf;
-            }
-            j++;
-        }
-
-        // Charge fee for the partial. If 100 USDC provided and trying to withraw 150 USDC, he pays only
-        // for the additional 50 ==>  _withdrawal.quantity - userLiquidity
-        fee =
-            InvariantMathLibrary.calcWithdrawOneChain(
-                (_withdrawal.quantity - userLiquidity) / scaleFactor,
-                index,
-                inventories,
-                totalInventory,
-                A,
-                j
-            ) *
-            scaleFactor;
+    function updateK() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(futureKTime > 0 && block.timestamp >= futureKTime, "IM-BTNE-01");
+        K = futureK;
+        emit KUpdated(K, block.timestamp);
     }
 
     /**
@@ -277,20 +254,5 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
      */
     function get(bytes32 _symbol, bytes32 _symbolId) public view returns (uint256 inventory) {
         (, inventory) = inventoryBySubnetSymbol[_symbol].tryGet(_symbolId);
-    }
-
-    /**
-     * @notice  Scales the inventory of a token using its scaling factor
-     * @param   _symbolId  SymbolId of the token
-     * @param   _inventory  Inventory to scale
-     * @return  scaledInventory  Scaled inventory
-     * @return  sf  Scaling factor
-     */
-    function scaleInventory(bytes32 _symbolId, uint256 _inventory) private view returns (uint256, uint256) {
-        uint256 sf = scalingFactor[_symbolId];
-        if (sf == 0) {
-            return (_inventory, 1);
-        }
-        return (_inventory / sf, sf);
     }
 }
