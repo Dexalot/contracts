@@ -26,12 +26,15 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
     mapping(address => mapping(bytes32 => Rates)) public rateOverrides;
     mapping(bytes32 => bytes32) private convertableTokens; // obsolete
     // version
-    bytes32 public constant VERSION = bytes32("2.5.4");
+    bytes32 public constant VERSION = bytes32("2.6.0");
     uint256 public minTakerRate;
     // Holds volume based rebates for everyone
     mapping(address => Rebates) public rebates;
+    // Taker fee collector mapping for each tradepair, address(0) means default behavior (fee goes to feeTreasury)
+    mapping(bytes32 => address) public takerFeeCollectors;
+
     // storage gap for upgradeability
-    uint256[48] __gap; //unnecessary
+    uint256[47] __gap; //unnecessary
 
     event RateChanged(
         string indexed name,
@@ -186,6 +189,26 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
     }
 
     /**
+     * @notice  Sets the taker fee collector for a tradepair
+     * @dev     Only callable by admin. If address(0) is passed, it removes the taker fee collector
+     * for the tradepair
+     * @param   _tradePairId  TradePair Id
+     * @param   _takerFeeCollector  Address of the taker fee collector
+     */
+    function setTakerFeeCollector(
+        bytes32 _tradePairId,
+        address _takerFeeCollector
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_takerFeeCollector == address(0)) {
+            delete takerFeeCollectors[_tradePairId];
+            emit RateChanged("TAKER_FEE_COLLECTOR", "REMOVE", address(0), _tradePairId, 0, 0);
+            return;
+        }
+        takerFeeCollectors[_tradePairId] = _takerFeeCollector;
+        emit RateChanged("TAKER_FEE_COLLECTOR", "SET", _takerFeeCollector, _tradePairId, 0, 0);
+    }
+
+    /**
      * @notice  Gets the preferential rates of maker and the taker if any
      * @dev     255 is used for logical deletion of one leg of preferential rates pair.
      * Priority 1- check admin rates, 2- preferential rates, 3- Volume Rebates 4- Default rate
@@ -207,7 +230,7 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
         bytes32 _tradePairId,
         uint256 _makerRate,
         uint256 _takerRate
-    ) external view override returns (uint256 maker, uint256 taker) {
+    ) external view override returns (uint256 maker, uint256 taker, address takerFeeCollector) {
         if (adminAccountsForRates[_makerAddr] || _makerRate == 0) {
             maker = 0;
         } else {
@@ -241,6 +264,28 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
                     taker = _takerRate * 10;
                 }
             }
+        }
+
+        takerFeeCollector = _updateTakerFeeCollector(_tradePairId, _makerAddr);
+    }
+
+    /**
+     * @notice  Updates the taker fee collector based on the tradepair and maker address
+     * @dev     If the maker address is same as the taker fee collector address for the tradepair,
+     * then return address(0) to indicate default behavior (fee goes to feeTreasury)
+     * @param   _tradePairId  TradePair Id
+     * @param   _makerAddr  Maker address of the trade
+     * @return   takerFeeCollector address of the taker fee collector or address(0) for default behavior
+     */
+    function _updateTakerFeeCollector(
+        bytes32 _tradePairId,
+        address _makerAddr
+    ) internal view returns (address takerFeeCollector) {
+        address collector = takerFeeCollectors[_tradePairId];
+        if (collector != _makerAddr) {
+            takerFeeCollector = address(0);
+        } else {
+            takerFeeCollector = collector;
         }
     }
 }

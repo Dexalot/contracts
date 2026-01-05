@@ -106,7 +106,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.6");
+        return bytes32("4.1.7");
     }
 
     /**
@@ -562,6 +562,10 @@ contract PortfolioBridgeMain is
                 require(address(this).balance > fee, "PB-CBIZ-01");
             }
             _userFeePayer = address(this);
+        }
+        // If the bridge is ICM, funds remain in PortfolioBridge contract
+        if (_bridge == BridgeProvider.ICM) {
+            fee = 0;
         }
         bridgeContract.sendMessage{value: fee}(_dstChainListOrgChainId, _payload, msgType, _userFeePayer);
         emit XChainXFerMessage(

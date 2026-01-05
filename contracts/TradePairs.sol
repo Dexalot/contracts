@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.5.3");
+    bytes32 public constant VERSION = bytes32("3.6.1");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
@@ -119,14 +119,7 @@ contract TradePairs is
             enumSet.add(uint256(Type1.LIMIT)); // LIMIT orders always allowed
             //enumSet.add(uint(Type1.MARKET));  // trade pairs are added without MARKET orders
 
-            bytes32 buyBookId = UtilsLibrary.stringToBytes32(
-                string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-BUYBOOK"))
-            );
-            bytes32 sellBookId = UtilsLibrary.stringToBytes32(
-                string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-SELLBOOK"))
-            );
-            orderBooks.addToOrderbooks(buyBookId, Side.BUY);
-            orderBooks.addToOrderbooks(sellBookId, Side.SELL);
+            (tradePair.buyBookId, tradePair.sellBookId) = orderBooks.addToOrderbooks(_tradePairId);
             tradePair.baseSymbol = _baseTokenDetails.symbol;
             tradePair.baseDecimals = _baseTokenDetails.decimals;
             tradePair.baseDisplayDecimals = _baseDisplayDecimals;
@@ -135,13 +128,13 @@ contract TradePairs is
             tradePair.quoteDisplayDecimals = _quoteDisplayDecimals;
             tradePair.minTradeAmount = _minTradeAmount;
             tradePair.maxTradeAmount = _maxTradeAmount;
-            tradePair.buyBookId = buyBookId;
-            tradePair.sellBookId = sellBookId;
+            //minTradeAmount = minPostAmount by default
+            tradePair.minPostAmount = _minTradeAmount;
             tradePair.makerRate = 20; // (0.20% = 20/10000)
             tradePair.takerRate = 30; // (0.30% = 30/10000)
             // with default allowedSlippagePercent of 20, the market orders cannot be filled
             // worst than 80% of the bestBid and 120% of bestAsk
-            tradePair.allowedSlippagePercent = 20; // (20% = 20/100)
+            tradePair.allowedSlippagePercent = 3; // (3% = 3/100)
             // tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
             // tradePair.postOnly = false;         // evm initialized
@@ -328,11 +321,28 @@ contract TradePairs is
     }
 
     /**
+     * @notice  Sets the minimum post amount allowed to the orderbook of the given Trade Pair
+     * @dev     Can only be called by DEFAULT_ADMIN. The min trade amount needs to satisfy
+     * `getQuoteAmount(_price, _quantity, _tradePairId) >= _minTradeAmount`
+     * @param   _tradePairId  id of the trading pair
+     * @param   _minPostAmount  minimum trade amount in terms of quote asset that can be posted in the orderbook
+     */
+    function setMinPostAmount(
+        bytes32 _tradePairId,
+        uint256 _minPostAmount
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        uint256 oldValue = tradePair.minPostAmount;
+        tradePair.minPostAmount = _minPostAmount;
+        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MINPOAMT", oldValue, _minPostAmount);
+    }
+
+    /**
      * @notice  Sets the minimum trade amount allowed for a specific Trade Pair
      * @dev     Can only be called by DEFAULT_ADMIN. The min trade amount needs to satisfy
      * `getQuoteAmount(_price, _quantity, _tradePairId) >= _minTradeAmount`
      * @param   _tradePairId  id of the trading pair
-     * @param   _minTradeAmount  minimum trade amount in terms of quote asset
+     * @param   _minTradeAmount  minimum trade amount in terms of quote asset that can be traded as taker
      */
     function setMinTradeAmount(
         bytes32 _tradePairId,
@@ -787,7 +797,7 @@ contract TradePairs is
     /**
      * @notice  To send multiple Orders of any type in a single transaction designed for Market Making operations
      * @dev     if a single order in the new list REVERTS, the entire transaction is reverted.
-     * No orders nor cancels will go through.
+     * No orders will go through.
      * If any of the orders/cancels is rejected, it will continue to process the rest of the orders without any issues.
      * See #addNewOrder for `REVERT` and `REJECT` conditions. \
      * ```typescript:no-line-numbers
@@ -849,8 +859,9 @@ contract TradePairs is
      * without disruption. \
      *
      * `REVERT conditions:`
-     *
-     * - `P-AFNE-01` or `P-AFNE-02` available funds not enough
+     * - `P-AFNE-02` available funds not enough while attempting to transfer tokens between accounts.
+     * This revert condition is included for completeness sake, but an order should never revert with this
+     * code because the order should have been already rejected with `P-AFNE-01` at the time of order entry as below.
      * - `T-OOCA-01` only msg.sender can add orders
      * - `T-FOKF-01` if type2=FOK and the order can't be fully filled. (Use `type2=IOC` instead for smoother list orders)
      * - `T-PPAU-01` tradePair.pairPaused (Exchange Level state set by the admins)
@@ -860,6 +871,7 @@ contract TradePairs is
      *
      * For all the order level check failures, the order will be `REJECTED` by emitting
      * OrderStatusChanged event with `status = REJECTED` and `code = errorCode`.
+     * - `P-AFNE-01` : available funds not enough while entering order
      * - `T-IVOT-01` : invalid order type / order type not enabled
      * - `T-TMDQ-01` : too many decimals in the quantity
      * - `T-TMDP-01` : too many decimals in the price
@@ -870,9 +882,19 @@ contract TradePairs is
      * - `T-POOA-01` : Only PO(PostOnly) Orders allowed for this pair
      * - `T-AUCT-04` : market orders not allowed in auction mode
      *
+     * `KILLED (CANCELED) conditions:`
+     *
+     * if a taker order remaining quantity is less then minPostAmount, the remaining quantity of the order
+     * will be canceled by emitting OrderStatusChanged event with `status = CANCELED` and `code = T-LTPA-01`.
+     * - `T-LTPA-01` : trade amount is less than minPostAmount. It can not be posted in the orderbook"
+     *
      * The `OrderStatusChanged` event always will return an `id` (orderId) assigned by the blockchain along
      * with your `clientOrderId` when trying to enter a new order even if 'REJECTED'. \
      * `clientOrderId` is user generated and must be unique per traderaddress. \
+     * Uniqueness of the `clientOrderId` is not checked for neither `MARKET` nor fully closed taker `LIMIT` orders
+     * as their scope is only in the block they are being processed and they are never stored in the blockchain.
+     * In other words, the uniqueness is only enforced against `LIMIT` orders that are already posted to the orderbook,
+     * and `clientOrderId` can be used to cancel them without waiting to receive the orderId back from the blockchain. \
      * For MARKET orders, values sent by the user in the `price` and `type2` fields will be ignored and
      * defaulted to `0` and `Type2.GTC` respectively. \
      * Similarly for auction orders, values sent by the user in the `stp` and `type2` fields will be ignored
@@ -969,7 +991,20 @@ contract TradePairs is
         // OR _price unchanged for Type1=LIMIT
         // OR 0 price along with an errorCode
         (uint256 price, bytes32 code) = addOrderChecks(_msSender, _order);
-        if (price == 0) {
+        (bytes32 outSymbol, uint256 outAmount) = UtilsLibrary.getOutgoingDetails(
+            _order.side,
+            tradePair.quoteSymbol,
+            tradePair.baseSymbol,
+            tradePair.baseDecimals,
+            _order.price,
+            _order.quantity
+        );
+        // check funds available for the outgoing symbol of the outgoing amount if no error code present
+        if (code == bytes32(0)) {
+            code = portfolio.checkAvailable(_order.traderaddress, outSymbol, outAmount);
+        }
+
+        if (code != bytes32(0)) {
             takerOrder.status = Status.REJECTED;
             // previous update block is the same as updateBlock
             emitStatusUpdateMemory(takerOrder, code);
@@ -978,31 +1013,61 @@ contract TradePairs is
         // Use the price returned by addOrderCheck as it returns applicable price for Type1=MARKET
         takerOrder.price = price;
 
-        // Add to clientOrderIDMap quickly to be able to check potential dups
-        clientOrderIDMap[_order.traderaddress][_order.clientOrderId] = orderId;
-
         //Skip matching if in Auction Mode
         if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
             (takerOrder, code) = matchOrder(takerOrder, maxNbrOfFills, _order.stp);
         }
         uint256 quantityRemaining = UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled);
-        bytes32 adjSymbol = takerOrder.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
 
         if (_order.type1 == Type1.MARKET) {
             takerOrder.price = 0; // Reset the market takerOrder price back to 0
         } else {
-            if (takerOrder.type2 == Type2.FOK) {
-                // need to revert here because takerOrder may match with multiple maker orders and yet not get
-                // fully filled. revert ensures that all the maker orders that were matching against this
-                // taker order remain intact
-                require(quantityRemaining == 0, "T-FOKF-01");
+            if (quantityRemaining > 0) {
+                if (takerOrder.type2 == Type2.FOK) {
+                    // need to revert here because takerOrder may match with multiple maker orders and yet not get
+                    // fully filled. revert ensures that all the maker orders that were matching against this
+                    // taker order remain intact
+                    revert("T-FOKF-01");
+                }
+                if (takerOrder.type2 == Type2.IOC) {
+                    // IOC order with remaining qty needs to be canceled
+                    takerOrder.status = Status.CANCELED;
+                }
+                // Any remaining trade qty < minPostAmount will be automatically canceled instead of
+                // getting posted into the orderbook
+                if (
+                    UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, takerOrder.price, quantityRemaining) <
+                    tradePair.minPostAmount
+                ) {
+                    code = UtilsLibrary.stringToBytes32("T-LTPA-01");
+                    takerOrder.status = Status.CANCELED;
+                }
+
+                if (
+                    (takerOrder.status == Status.PARTIAL || takerOrder.status == Status.NEW) &&
+                    (takerOrder.type2 == Type2.GTC || takerOrder.type2 == Type2.PO)
+                ) {
+                    // get the outgoing amount for quantityRemaining
+                    (, outAmount) = UtilsLibrary.getOutgoingDetails(
+                        takerOrder.side,
+                        tradePair.quoteSymbol,
+                        tradePair.baseSymbol,
+                        tradePair.baseDecimals,
+                        takerOrder.price,
+                        quantityRemaining
+                    );
+                    //reserve the outgoing amount be decreasing the available quantity of the outgoing symbol
+                    portfolio.adjustAvailable(
+                        IPortfolio.Tx.DECREASEAVAIL,
+                        takerOrder.traderaddress,
+                        outSymbol,
+                        outAmount
+                    );
+
+                    // Unfilled Limit Orders go in the Orderbook (Including Auction Orders)
+                    addTakerToOrderBook(takerOrder.tradePairId, takerOrder);
+                }
             }
-            if (quantityRemaining > 0 && takerOrder.type2 == Type2.IOC) {
-                // IOC order with remaining qty needs to be canceled
-                takerOrder.status = Status.CANCELED;
-            }
-            // Unfilled Limit Orders Go in the Orderbook (Including Auction Orders)
-            addTakerToOrderBook(takerOrder.tradePairId, quantityRemaining, takerOrder);
         }
 
         // EMIT order status. if no fills, the status will be NEW, if any fills status will be either PARTIAL or FILLED
@@ -1010,8 +1075,8 @@ contract TradePairs is
         emitStatusUpdateMemory(takerOrder, code);
         if (_fillGasTank) {
             // Only called if it is a single order or the very last order in an order list.
-            // if any funds available for ALOT or adjSymbol in the portfolio then use it to fill the GasTank.
-            portfolio.autoFill(takerOrder.traderaddress, adjSymbol);
+            // if any funds available for ALOT or outgoing Symbol in the portfolio then use it to fill the GasTank.
+            portfolio.autoFill(takerOrder.traderaddress, outSymbol);
         }
     }
 
@@ -1020,57 +1085,47 @@ contract TradePairs is
      * @dev     memory taker order is cast to storage prospective maker order before being added
      * to the orderbook  (Including Auction Orders)
      * */
-    function addTakerToOrderBook(bytes32 _tradePairId, uint256 _quantityRemaining, Order memory _takerOrder) private {
-        if (
-            _quantityRemaining > 0 &&
-            (_takerOrder.status == Status.PARTIAL || _takerOrder.status == Status.NEW) &&
-            (_takerOrder.type2 == Type2.GTC || _takerOrder.type2 == Type2.PO)
-        ) {
-            TradePair storage tradePair = tradePairMap[_tradePairId];
-            (Side side, bytes32 id) = (_takerOrder.side, _takerOrder.id);
-            bytes32 bookIdSameSide = side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
-            //the remaining of the taker order is entered in the orderbook as a maker order
-            Order storage makerOrder = orderMap[id];
+    function addTakerToOrderBook(bytes32 _tradePairId, Order memory _takerOrder) private {
+        TradePair storage tradePair = tradePairMap[_tradePairId];
+        (Side side, bytes32 id) = (_takerOrder.side, _takerOrder.id);
 
-            makerOrder.id = id;
-            makerOrder.clientOrderId = _takerOrder.clientOrderId;
-            makerOrder.traderaddress = _takerOrder.traderaddress;
-            makerOrder.tradePairId = _tradePairId;
-            makerOrder.price = _takerOrder.price;
-            makerOrder.quantity = _takerOrder.quantity;
-            //makerOrder.totalAmount= 0;         // evm initialized
-            //makerOrder.quantityFilled= 0;      // evm initialized
-            //makerOrder.status= Status.NEW;     // evm initialized
-            //makerOrder.totalFee= 0;            // evm initialized
-            if (_takerOrder.quantityFilled > 0) {
-                // save gas
-                makerOrder.totalAmount = _takerOrder.totalAmount;
-                makerOrder.quantityFilled = _takerOrder.quantityFilled;
-                makerOrder.totalFee = _takerOrder.totalFee;
-                makerOrder.status = _takerOrder.status;
-            }
-            if (side != Side.BUY) {
-                // save gas
-                makerOrder.side = side;
-            }
-            makerOrder.type1 = Type1.LIMIT; //_takerOrder.type1; takerOrder has to be LIMIT to go in the orderbook - Save gas
-            if (_takerOrder.type2 != Type2.GTC) {
-                // save gas
-                makerOrder.type2 = _takerOrder.type2;
-            }
-            // makerOrder.updateBlock = _takerOrder.updateBlock = block.number commented out for gas savings
-            makerOrder.updateBlock = uint32(block.number);
-            makerOrder.createBlock = uint32(block.number);
+        // Add to clientOrderIDMap to be able to check potential dups & also facilitate cancelByCLientId
+        clientOrderIDMap[_takerOrder.traderaddress][_takerOrder.clientOrderId] = id;
+        bytes32 bookIdSameSide = side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
+        //the remaining of the taker order is entered in the orderbook as a maker order
+        Order storage makerOrder = orderMap[id];
 
-            orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
-            bytes32 adjSymbol = side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
-            uint256 adjAmount = side == Side.BUY
-                ? UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, makerOrder.price, _quantityRemaining)
-                : _quantityRemaining;
-            portfolio.adjustAvailable(IPortfolio.Tx.DECREASEAVAIL, makerOrder.traderaddress, adjSymbol, adjAmount);
-        } else {
-            delete clientOrderIDMap[_takerOrder.traderaddress][_takerOrder.clientOrderId];
+        makerOrder.id = id;
+        makerOrder.clientOrderId = _takerOrder.clientOrderId;
+        makerOrder.traderaddress = _takerOrder.traderaddress;
+        makerOrder.tradePairId = _tradePairId;
+        makerOrder.price = _takerOrder.price;
+        makerOrder.quantity = _takerOrder.quantity;
+        //makerOrder.totalAmount= 0;         // evm initialized
+        //makerOrder.quantityFilled= 0;      // evm initialized
+        //makerOrder.status= Status.NEW;     // evm initialized
+        //makerOrder.totalFee= 0;            // evm initialized
+        if (_takerOrder.quantityFilled > 0) {
+            // save gas
+            makerOrder.totalAmount = _takerOrder.totalAmount;
+            makerOrder.quantityFilled = _takerOrder.quantityFilled;
+            makerOrder.totalFee = _takerOrder.totalFee;
+            makerOrder.status = _takerOrder.status;
         }
+        if (side != Side.BUY) {
+            // save gas
+            makerOrder.side = side;
+        }
+        makerOrder.type1 = Type1.LIMIT; //_takerOrder.type1; takerOrder has to be LIMIT to go in the orderbook - Save gas
+        if (_takerOrder.type2 != Type2.GTC) {
+            // save gas
+            makerOrder.type2 = _takerOrder.type2;
+        }
+        // makerOrder.updateBlock = _takerOrder.updateBlock = block.number commented out for gas savings
+        makerOrder.updateBlock = uint32(block.number);
+        makerOrder.createBlock = uint32(block.number);
+
+        orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
     }
 
     /**
@@ -1086,10 +1141,15 @@ contract TradePairs is
         uint256 _maxNbrOfFills
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256 quantityRemaining) {
         TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
-        require(tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
-        require(tradePair.auctionPrice > 0, "T-AUCT-03");
-        (_takerOrder, ) = matchOrder(_takerOrder, _maxNbrOfFills, STP.NONE);
-        quantityRemaining = UtilsLibrary.getRemainingQuantity(_takerOrder.quantity, _takerOrder.quantityFilled);
+        // Commented out require statements to save room in contract size CD 2025-07-01. Auction functionality will
+        // not be used for the foreseeable future. Even after removal of the require statements, the integrity of
+        // the logic is still there due to the following if statement.
+        // require(tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
+        // require(tradePair.auctionPrice > 0, "T-AUCT-03");
+        if (tradePair.auctionMode == AuctionMode.MATCHING && tradePair.auctionPrice > 0) {
+            (_takerOrder, ) = matchOrder(_takerOrder, _maxNbrOfFills, STP.NONE);
+            quantityRemaining = UtilsLibrary.getRemainingQuantity(_takerOrder.quantity, _takerOrder.quantityFilled);
+        }
     }
 
     /**
@@ -1257,7 +1317,9 @@ contract TradePairs is
      * @dev     Only the quantity and the price of the order can be changed. All the other order
      * fields are copied from the to-be canceled order to the new order.
      * The time priority of the original order is lost.
-     * Canceled order's locked quantity is made available for the new order within this tx
+     * Canceled order's locked quantity is made available for the new order within this tx.
+     * The new order will get status= `REJECTED` code = `P-AFNE-01` if there is not enough available funds
+     * in the contract. The cancel order is still processed even if the new order is `REJECTED`
      * This function will technically accept the same clientOrderId as the previous because previous clientOrderId
      * is made vailable when the previous order is cancelled as  it is removed from the mapping.
      * !!Not recommended! \
@@ -1304,6 +1366,15 @@ contract TradePairs is
      */
     function cancelOrder(bytes32 _orderId) external override nonReentrant {
         cancelOrderPrivate(msg.sender, _orderId, true); // Single Cancel, default fillGasTank to true
+    }
+
+    /**
+     * @notice  Cancels an order given the clientOrder id supplied
+     * @dev    See cancelOrder
+     * @param   _clientOrderId  clientOrderId to cancel
+     */
+    function cancelOrderByClientId(bytes32 _clientOrderId) external override nonReentrant {
+        cancelOrderPrivate(msg.sender, clientOrderIDMap[msg.sender][_clientOrderId], true); // Single Cancel, default fillGasTank to true
     }
 
     /**
@@ -1392,12 +1463,25 @@ contract TradePairs is
      * ```
      * @param   _orderIdsToCancel  array of order ids to be canceled
      * @param   _orders  array of newOrder struct to be sent out. See ITradePairs.NewOrder
+     *
      */
     function cancelAddList(
         bytes32[] calldata _orderIdsToCancel,
         NewOrder[] calldata _orders
     ) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIdsToCancel, false); // Don't fillGasTank while processing the cancels list
+        cancelOrderListPrivate(msg.sender, _orderIdsToCancel, false, false); // Don't fillGasTank while processing the cancels list
+        addOrderListPrivate(msg.sender, _orders); // will fillGasTank when processing the last order in the add list
+    }
+
+    /**
+     * @param   _clientIdsToCancel  Array of clientOrderIds to be canceled
+     * @param   _orders  array of newOrder struct to be sent out. See ITradePairs.NewOrder
+     */
+    function cancelAddListByClientIds(
+        bytes32[] calldata _clientIdsToCancel,
+        NewOrder[] calldata _orders
+    ) external override nonReentrant {
+        cancelOrderListPrivate(msg.sender, _clientIdsToCancel, false, true); // Don't fillGasTank while processing the cancels list
         addOrderListPrivate(msg.sender, _orders); // will fillGasTank when processing the last order in the add list
     }
 
@@ -1412,22 +1496,39 @@ contract TradePairs is
      * indexed field `pair` which you may use as filters for your event listeners. Hence you should process the
      * transaction log rather than relying on your event listeners if you need to capture `CANCEL_REJECT` messages and
      * filtering your events using the `pair` field.
-     * @param   _orderIds  array of order ids
+     * @param   _orderIds  array of orderIds
      */
     function cancelOrderList(bytes32[] calldata _orderIds) external override nonReentrant {
-        cancelOrderListPrivate(msg.sender, _orderIds, true); // will fillGasTank with the last cancel in the cancel list
+        cancelOrderListPrivate(msg.sender, _orderIds, true, false); // will fillGasTank with the last cancel in the cancel list
+    }
+
+    /**
+     * @notice  Cancels all the orders in the array of _clientOrderIds supplied
+     * @dev    See cancelOrderList
+     * @param   _clientOrderIds  array of clientOrderIds
+     */
+    function cancelOrderListByClientIds(bytes32[] calldata _clientOrderIds) external override nonReentrant {
+        cancelOrderListPrivate(msg.sender, _clientOrderIds, true, true); // will fillGasTank with the last cancel in the cancel list
     }
 
     /**
      * @notice  Cancels all the orders in the array of order ids supplied
      * @dev     See #cancelOrderList
-     * @param   _msSender  array of order ids to be canceled
-     * @param   _orderIds   array of order ids
+     * @param   _msSender  message sender
+     * @param   _orderIds   array of orderIds OR clientOrderIDs to be canceled based on _isClientOrderIdList
      * @param   _fillGasTank  fill GasTank if true and only when processing the last cancel in the cancel list
+     * @param   _isClientOrderIdList  true if the list is clientOrderIDs, false if the list is orderIds
      */
-    function cancelOrderListPrivate(address _msSender, bytes32[] calldata _orderIds, bool _fillGasTank) private {
+    function cancelOrderListPrivate(
+        address _msSender,
+        bytes32[] calldata _orderIds,
+        bool _fillGasTank,
+        bool _isClientOrderIdList
+    ) private {
+        bytes32 orderId;
         for (uint256 i = 0; i < _orderIds.length; ++i) {
-            cancelOrderPrivate(_msSender, _orderIds[i], i == _orderIds.length - 1 && _fillGasTank);
+            orderId = _isClientOrderIdList ? clientOrderIDMap[_msSender][_orderIds[i]] : _orderIds[i];
+            cancelOrderPrivate(_msSender, orderId, i == _orderIds.length - 1 && _fillGasTank);
         }
     }
 
@@ -1444,24 +1545,25 @@ contract TradePairs is
         order.status = Status.CANCELED;
 
         bytes32 bookId = order.side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
-        bytes32 adjSymbol = order.side == Side.BUY ? tradePair.quoteSymbol : tradePair.baseSymbol;
-        uint256 adjAmount = order.side == Side.BUY
-            ? UtilsLibrary.getQuoteAmount(
-                tradePair.baseDecimals,
-                order.price,
-                UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled)
-            )
-            : UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled);
+        (bytes32 outSymbol, uint256 outAmount) = UtilsLibrary.getOutgoingDetails(
+            order.side,
+            tradePair.quoteSymbol,
+            tradePair.baseSymbol,
+            tradePair.baseDecimals,
+            order.price,
+            UtilsLibrary.getRemainingQuantity(order.quantity, order.quantityFilled)
+        );
 
         orderBooks.removeOrder(bookId, _orderId, order.price);
-        portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, order.traderaddress, adjSymbol, adjAmount);
+        //fee up the previously reserved outgoing amount of the cancled order's outgoing symbol
+        portfolio.adjustAvailable(IPortfolio.Tx.INCREASEAVAIL, order.traderaddress, outSymbol, outAmount);
 
         emitStatusUpdate(order.id, _code);
 
         if (_fillGasTank) {
-            // we just made some funds available for the adjSymbol, so we can fillGasTank without worrying about
+            // we just made some funds available for the outgoing Symbol, so we can fillGasTank without worrying about
             // funds availability
-            portfolio.autoFill(order.traderaddress, adjSymbol);
+            portfolio.autoFill(order.traderaddress, outSymbol);
         }
         removeClosedOrder(order.id);
     }

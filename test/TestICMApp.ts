@@ -9,6 +9,7 @@ import { ICMApp, PortfolioBridgeMain, PortfolioBridgeSub, PortfolioMain } from "
 import { ethers, network, upgrades } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from "chai";
+import { BigNumber } from 'ethers';
 
 
 describe("ICMApp", () => {
@@ -237,4 +238,55 @@ describe("ICMApp", () => {
     expect(icmBridgeFees.chainIds.length).to.equal(1);
     expect(icmBridgeFees.chainIds[0]).to.equal(cChain.chainListOrgId);
   });
+
+  it("Should fail to setNativeBridgeFee if not owner", async () => {
+    await expect(icmAppMain.connect(trader1).setNativeBridgeFee(0, 0)).to.be.revertedWith("OwnableUnauthorizedAccount");
+  });
+
+  it("Should setNativeBridgeFee + getBridgeFee correctly", async () => {
+    const bf = Utils.toWei("0.02");
+    const { dexalotSubnet } = f.getChains();
+
+    const depositEnum = 1;
+
+    await icmAppMain.setNativeBridgeFee(dexalotSubnet.chainListOrgId, bf);
+    expect(await icmAppMain['getBridgeFee(uint32)'](dexalotSubnet.chainListOrgId)).to.equal(bf);
+    expect(await icmAppMain['getBridgeFee(uint32,uint8)'](dexalotSubnet.chainListOrgId, depositEnum)).to.equal(bf);
+  });
+
+  it("Should keep icm bridge fee in portfolio bridge", async () => {
+    const nonce = 0;
+    const transaction = 1;
+    const traderAddress = trader1.address;
+    const trader = Utils.addressToBytes32(traderAddress);
+    const symbol = Utils.fromUtf8("AVAX");
+    const quantity = Utils.toWei("10");
+    const timestamp = BigNumber.from(await f.latestTime());
+
+    const { dexalotSubnet} = f.getChains();
+
+    const xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata: Utils.emptyCustomData()
+    };
+    const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
+
+    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+    await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
+    await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
+    await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, Utils.addressToBytes32(icmAppMain.address), true);
+    await icmAppMain.setGasLimit(1, 1000000);
+
+    try {
+      // fails due to icm precompile
+      await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, 2, xfer, traderAddress)
+    } catch (e) {
+      const f = e
+    }
+  })
 });

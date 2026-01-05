@@ -38,6 +38,35 @@ library UtilsLibrary {
     }
 
     /**
+     * @notice  Returns the outgoing token symbol & amount based on the side of the order
+     * @param   _orderSide  order Side
+     * @param   _quoteSymbol  quote Symbol
+     * @param   _baseSymbol  base Symbol
+     * @param   _baseDecimals  base Token decimals of the trading pair
+     * @param   _price  price
+     * @param   _quantity  quantity
+     * @return  outSymbol  outgoing token symbol
+     * @return  outAmount outgoing Amount
+     */
+
+    function getOutgoingDetails(
+        ITradePairs.Side _orderSide,
+        bytes32 _quoteSymbol,
+        bytes32 _baseSymbol,
+        uint8 _baseDecimals,
+        uint256 _price,
+        uint256 _quantity
+    ) internal pure returns (bytes32 outSymbol, uint256 outAmount) {
+        if (_orderSide == ITradePairs.Side.BUY) {
+            outSymbol = _quoteSymbol;
+            outAmount = getQuoteAmount(_baseDecimals, _price, _quantity);
+        } else {
+            outSymbol = _baseSymbol;
+            outAmount = _quantity;
+        }
+    }
+
+    /**
      * @notice  Checks if a tradePair is in auction and if matching is not allowed in the orderbook.
      * @param   _mode  Auction Mode
      * @return  bool  true/false
@@ -75,13 +104,22 @@ library UtilsLibrary {
 
     /**
      * @notice  Round down a unit256 value.  Used for the fees to avoid dust.
-     * @dev     example: a = 1245, m: 2 ==> 1200
+     * @dev     example: a = 1245, m: 2 ==> 1200. But always take a min fee
+     * a = 1, m : 2 ==> 100 instead of flooring to 0
      * @param   _a  number to round down
      * @param   _m  number of digits from the right to round down
      * @return  uint256  .
      */
     function floor(uint256 _a, uint256 _m) internal pure returns (uint256) {
         return (_a / 10 ** _m) * 10 ** _m;
+        // if (_a == 0) {
+        //     return 0;
+        // }
+        // uint256 n = (_a / 10 ** _m) * 10 ** _m;
+        // if (n == 0) {
+        //     return 10 ** _m;
+        // }
+        // return n;
     }
 
     /**
@@ -92,6 +130,10 @@ library UtilsLibrary {
      */
     function min(uint256 _a, uint256 _b) internal pure returns (uint256) {
         return (_a <= _b ? _a : _b);
+    }
+
+    function max(uint256 _a, uint256 _b) internal pure returns (uint256) {
+        return (_a >= _b ? _a : _b);
     }
 
     /**
@@ -168,7 +210,7 @@ library UtilsLibrary {
     // get quote amount
     /**
      * @notice  Returns the quote amount for a given price and quantity
-     * @param   _baseDecimals  id of the trading pair
+     * @param   _baseDecimals  base Token decimals of the trading pair
      * @param   _price  price
      * @param   _quantity  quantity
      * @return  quoteAmount quote amount

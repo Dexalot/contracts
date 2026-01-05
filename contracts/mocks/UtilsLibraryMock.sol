@@ -45,6 +45,10 @@ contract UtilsLibraryMock {
         return UtilsLibrary.min(_a, _b);
     }
 
+    function max(uint256 _a, uint256 _b) external pure returns (uint256) {
+        return UtilsLibrary.max(_a, _b);
+    }
+
     function bytes32ToString(bytes32 _bytes32) external pure returns (string memory) {
         return UtilsLibrary.bytes32ToString(_bytes32);
     }

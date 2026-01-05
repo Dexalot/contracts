@@ -9,15 +9,14 @@ import { DefaultBridgeAppMock, DefaultBridgeAppMock__factory, LzV2App, Portfolio
 import { Contract, ethers } from "ethers";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from "chai";
-import { MockContract } from '@defi-wonderland/smock';
 
 describe("LzV2App", () => {
   let portfolioBridgeMain: PortfolioBridgeMain;
   let lzAppMain: LzV2App;
   let lzAppSub: LzV2App;
   let defaultBridgeAppMock: DefaultBridgeAppMock;
-  let lzEndpointMain: Contract | MockContract<Contract>;
-  let lzEndpointSub: Contract | MockContract<Contract>;
+  let lzEndpointMain: Contract;
+  let lzEndpointSub: Contract;
 
   let owner: SignerWithAddress;
   let trader1: SignerWithAddress;

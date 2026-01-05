@@ -28,7 +28,7 @@ interface IPortfolioSubHelper {
         bytes32 _tradePairId,
         uint256 _makerRate,
         uint256 _takerRate
-    ) external view returns (uint256 maker, uint256 taker);
+    ) external view returns (uint256 maker, uint256 taker, address takerFeeCollector);
 
     function isAdminAccountForRates(address _account) external view returns (bool);
 

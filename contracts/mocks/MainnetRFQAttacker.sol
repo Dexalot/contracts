@@ -16,27 +16,29 @@ contract MainnetRFQAttacker {
         REMOVE_FROM_SWAP_QUEUE
     }
     MainnetRFQ private mainnetRFQ;
+    MainnetRFQ private forwarderAsMainnetRFQ;
     Function private functionToAttack;
     bytes private params;
 
-    constructor(address payable _address) {
+    constructor(address payable _address, address payable _forwarder) {
         mainnetRFQ = MainnetRFQ(_address);
+        forwarderAsMainnetRFQ = MainnetRFQ(_forwarder);
     }
 
     function attackSimpleSwap(MainnetRFQ.Order calldata order, bytes calldata signature) external payable {
         functionToAttack = Function.SIMPLE_SWAP;
         params = abi.encode(order, signature);
         IERC20(order.takerAsset).transferFrom(msg.sender, address(this), order.takerAmount);
-        IERC20(order.takerAsset).approve(address(mainnetRFQ), order.takerAmount);
-        mainnetRFQ.simpleSwap(order, signature);
+        IERC20(order.takerAsset).approve(address(forwarderAsMainnetRFQ), order.takerAmount);
+        forwarderAsMainnetRFQ.simpleSwap(order, signature);
     }
 
     function attackPartialSwap(MainnetRFQ.Order calldata order, bytes calldata signature) external payable {
         functionToAttack = Function.MULTI_SWAP;
         params = abi.encode(order, signature);
         IERC20(order.takerAsset).transferFrom(msg.sender, address(this), order.takerAmount);
-        IERC20(order.takerAsset).approve(address(mainnetRFQ), order.takerAmount);
-        mainnetRFQ.partialSwap(order, signature, order.takerAmount);
+        IERC20(order.takerAsset).approve(address(forwarderAsMainnetRFQ), order.takerAmount);
+        forwarderAsMainnetRFQ.partialSwap(order, signature, order.takerAmount);
     }
 
     function attackClaimBalance(address _asset, uint256 _amount) external payable {
@@ -73,10 +75,10 @@ contract MainnetRFQAttacker {
     receive() external payable {
         if (functionToAttack == Function.SIMPLE_SWAP) {
             (MainnetRFQ.Order memory order, bytes memory signature) = abi.decode(params, (MainnetRFQ.Order, bytes));
-            mainnetRFQ.simpleSwap(order, signature);
+            forwarderAsMainnetRFQ.simpleSwap(order, signature);
         } else if (functionToAttack == Function.MULTI_SWAP) {
             (MainnetRFQ.Order memory order, bytes memory signature) = abi.decode(params, (MainnetRFQ.Order, bytes));
-            mainnetRFQ.partialSwap(order, signature, order.takerAmount);
+            forwarderAsMainnetRFQ.partialSwap(order, signature, order.takerAmount);
         } else if (functionToAttack == Function.CLAIM) {
             (address _asset, uint256 _amount) = abi.decode(params, (address, uint256));
             mainnetRFQ.claimBalance(_asset, _amount);

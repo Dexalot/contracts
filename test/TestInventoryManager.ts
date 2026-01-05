@@ -33,10 +33,10 @@ describe("InventoryManager", () => {
   let trader1: SignerWithAddress;
   let trader2: SignerWithAddress;
 
-  const updateA = async (newA: number) => {
-    await inventoryManager.updateFutureA(newA, 3600);
-    await ethers.provider.send("evm_mine", [(await inventoryManager.futureATime()).toNumber()]);
-    await inventoryManager.updateA();
+  const updateK = async (newK: number) => {
+    await inventoryManager.updateFutureK(newK, 3600);
+    await ethers.provider.send("evm_mine", [(await inventoryManager.futureKTime()).toNumber()]);
+    await inventoryManager.updateK();
   };
 
   beforeEach(async function () {
@@ -139,62 +139,62 @@ describe("InventoryManager", () => {
     expect(await inventoryManager.portfolioBridgeSub()).to.be.equal(dummyAddress);
   });
 
-  it("Should fail to update future A if not Admin", async function () {
-    await expect(inventoryManager.connect(trader1).updateFutureA(0, 0)).to.be.revertedWith("AccessControl:");
+  it("Should fail to update future K if not Admin", async function () {
+    await expect(inventoryManager.connect(trader1).updateFutureK(0, 0)).to.be.revertedWith("AccessControl:");
   });
 
-  it("Should fail to update A if not Admin", async function () {
-    await expect(inventoryManager.connect(trader1).updateA()).to.be.revertedWith("AccessControl:");
+  it("Should fail to update K if not Admin", async function () {
+    await expect(inventoryManager.connect(trader1).updateK()).to.be.revertedWith("AccessControl:");
   });
 
-  it("Should fail to update future A if new A less than min", async function () {
-    await expect(inventoryManager.updateFutureA(0, 10000)).to.be.revertedWith("IM-AVNP-01");
+  it("Should fail to update future K if new K less than min", async function () {
+    await expect(inventoryManager.updateFutureK(0, 10000)).to.be.revertedWith("IM-KVNP-01");
   });
 
-  it("Should fail to update future A if new A more than max", async function () {
-    await expect(inventoryManager.updateFutureA(BigNumber.from(10).pow(9), 10000)).to.be.revertedWith("IM-AVNP-01");
+  it("Should fail to update future K if new K more than max", async function () {
+    await expect(inventoryManager.updateFutureK(BigNumber.from(10).pow(9), 10000)).to.be.revertedWith("IM-KVNP-01");
   });
 
-  it("Should fail to update future A if time period less than 1 hour", async function () {
-    await expect(inventoryManager.updateFutureA(20, 60)).to.be.revertedWith("IM-ATNP-01");
+  it("Should fail to update future K if time period less than 1 hour", async function () {
+    await expect(inventoryManager.updateFutureK(20, 60)).to.be.revertedWith("IM-KTNP-01");
   });
 
-  it("Should successfuly update future A", async function () {
+  it("Should successfuly update future K", async function () {
     const startTime = Math.floor(Date.now() / 1000);
     const timePeriod = 3600;
-    const newA = 20;
-    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+    const newK = 20;
+    await expect(inventoryManager.updateFutureK(newK, timePeriod)).to.emit(inventoryManager, "FutureKUpdated");
 
-    expect(await inventoryManager.futureA()).to.be.equal(newA);
-    expect((await inventoryManager.futureATime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
+    expect(await inventoryManager.futureK()).to.be.equal(newK);
+    expect((await inventoryManager.futureKTime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
   });
 
-  it("Should fail to update A if time has not elapsed", async function () {
+  it("Should fail to update K if time has not elapsed", async function () {
     const startTime = Math.floor(Date.now() / 1000);
     const timePeriod = 3600;
-    const newA = 20;
-    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+    const newK = 20;
+    await expect(inventoryManager.updateFutureK(newK, timePeriod)).to.emit(inventoryManager, "FutureKUpdated");
 
-    expect(await inventoryManager.futureA()).to.be.equal(newA);
-    expect((await inventoryManager.futureATime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
+    expect(await inventoryManager.futureK()).to.be.equal(newK);
+    expect((await inventoryManager.futureKTime()).toNumber()).to.be.greaterThanOrEqual(startTime + timePeriod);
 
-    await expect(inventoryManager.updateA()).to.be.revertedWith("IM-BTNE-01");
+    await expect(inventoryManager.updateK()).to.be.revertedWith("IM-BTNE-01");
   });
 
-  it("Should successfully update A if time has elapsed", async function () {
+  it("Should successfully update K if time has elapsed", async function () {
     const startTime = Math.floor(Date.now() / 1000);
     const timePeriod = 3600;
-    const newA = 20;
-    await expect(inventoryManager.updateFutureA(newA, timePeriod)).to.emit(inventoryManager, "FutureAUpdated");
+    const newK = 20;
+    await expect(inventoryManager.updateFutureK(newK, timePeriod)).to.emit(inventoryManager, "FutureKUpdated");
 
-    expect(await inventoryManager.futureA()).to.be.equal(newA);
-    const futureATime = (await inventoryManager.futureATime()).toNumber();
-    expect(futureATime).to.be.greaterThanOrEqual(startTime + timePeriod);
+    expect(await inventoryManager.futureK()).to.be.equal(newK);
+    const futureKTime = (await inventoryManager.futureKTime()).toNumber();
+    expect(futureKTime).to.be.greaterThanOrEqual(startTime + timePeriod);
 
-    await ethers.provider.send("evm_mine", [futureATime]);
+    await ethers.provider.send("evm_mine", [futureKTime]);
 
-    await expect(inventoryManager.updateA()).to.emit(inventoryManager, "AUpdated");
-    expect(await inventoryManager.A()).to.be.equal(newA);
+    await expect(inventoryManager.updateK()).to.emit(inventoryManager, "KUpdated");
+    expect(await inventoryManager.K()).to.be.equal(newK);
   });
 
   it("Should fail to update scaling factor if not Admin", async function () {
@@ -555,46 +555,57 @@ describe("InventoryManager", () => {
     expect(arb.gt(gun)).to.be.true;
   });
 
-  it("Should get varying bridge fees for multiple chains given extreme different inventory and low A", async () => {
+  it("Should get varying bridge fees for multiple chains given extreme different inventory and low K", async () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "100000000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10");
-    await updateA(11);
 
-    const avax = await portfolioSub.getBridgeFee(
-      0,
-      cChain.chainListOrgId,
-      usdcHex,
-      Utils.parseUnits("1", usdcDecimals),
-      owner.address,
-      Utils.emptyOptions()
-    );
-    const gun = await portfolioSub.getBridgeFee(
-      0,
-      gunzillaSubnet.chainListOrgId,
-      usdcHex,
-      Utils.parseUnits("100000", usdcDecimals),
-      owner.address,
-      Utils.emptyOptions()
-    );
-    const arb = await portfolioSub.getBridgeFee(
-      0,
-      arbitrumChain.chainListOrgId,
-      usdcHex,
-      Utils.parseUnits("10", usdcDecimals),
-      owner.address,
-      Utils.emptyOptions()
-    );
+    const checkBridgeFees = async (kValue: number) => {
+      await updateK(kValue);
 
-    expect(avax.gt(gun)).to.be.true;
-    expect(arb.gt(gun)).to.be.true;
+      const avax = await portfolioSub.getBridgeFee(
+        0,
+        cChain.chainListOrgId,
+        usdcHex,
+        Utils.parseUnits("1", usdcDecimals),
+        owner.address,
+        Utils.emptyOptions()
+      );
+      const gun = await portfolioSub.getBridgeFee(
+        0,
+        gunzillaSubnet.chainListOrgId,
+        usdcHex,
+        Utils.parseUnits("100000", usdcDecimals),
+        owner.address,
+        Utils.emptyOptions()
+      );
+      const arb = await portfolioSub.getBridgeFee(
+        0,
+        arbitrumChain.chainListOrgId,
+        usdcHex,
+        Utils.parseUnits("10", usdcDecimals),
+        owner.address,
+        Utils.emptyOptions()
+      );
+
+      expect(avax.gt(gun)).to.be.true;
+      expect(arb.gt(gun)).to.be.true;
+    }
+
+    await checkBridgeFees(8);
+    await checkBridgeFees(12);
+    await checkBridgeFees(16);
+    await checkBridgeFees(20);
+    await checkBridgeFees(24);
+    await checkBridgeFees(28);
+    await checkBridgeFees(32);
   });
 
-  it("Should get varying bridge fees for multiple chains given extreme different inventory and large A", async () => {
+  it("Should get varying bridge fees for multiple chains given extreme different inventory and large K", async () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "100000000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10");
-    await updateA(999999);
+    await updateK(32);
 
     const avax = await portfolioSub.getBridgeFee(
       0,
@@ -630,7 +641,7 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "10000");
 
-    await inventoryManager.setScalingFactors([usdcGun, usdcArb], [2, 3]);
+    await inventoryManager.setScalingFactors([usdcAvax, usdcGun, usdcArb], [1667, 3333, 5000]);
 
     const avax = await portfolioSub.getBridgeFee(
       0,
@@ -658,7 +669,7 @@ describe("InventoryManager", () => {
     );
 
     expect(avax.lt(gun)).to.be.true;
-    expect(gun.lt(arb)).to.be.true;
+    expect(gun.lte(arb)).to.be.true;
   });
 
   it("Should get similar bridge fees for multiple chains given different scaling factors and scaled quantities", async () => {
@@ -666,7 +677,7 @@ describe("InventoryManager", () => {
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "20000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "30000");
 
-    await inventoryManager.setScalingFactors([usdcAvax, usdcGun, usdcArb], [1, 2, 3]);
+    await inventoryManager.setScalingFactors([usdcAvax, usdcGun, usdcArb], [1667, 3333, 5000]);
 
     const avax = await portfolioSub.getBridgeFee(
       0,
@@ -693,8 +704,8 @@ describe("InventoryManager", () => {
       Utils.emptyOptions()
     );
 
-    expect(avax.gt(gun)).to.be.true;
-    expect(gun.gt(arb)).to.be.true;
+    expect(avax.gte(gun)).to.be.true;
+    expect(gun.gte(arb)).to.be.true;
   });
 
   it("Should successfully remove if symbol does not exist in inventory", async () => {

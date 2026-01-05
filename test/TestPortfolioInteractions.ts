@@ -23,7 +23,6 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
-import { MockContract } from '@defi-wonderland/smock';
 import { Contract } from 'ethers';
 
 describe("Portfolio Interactions", () => {
@@ -31,8 +30,8 @@ describe("Portfolio Interactions", () => {
     let portfolioMain: PortfolioMain;
     let portfolioBridgeMain: PortfolioBridgeMain;
     let portfolioBridgeSub: PortfolioBridgeSub;
-    let lzEndpointMain: Contract | MockContract<Contract>;
-    let lzEndpointSub: Contract | MockContract<Contract>;
+    let lzEndpointMain: Contract;
+    let lzEndpointSub: Contract;
 
 
     let TokenVestingCloneable: TokenVestingCloneable__factory;
@@ -444,7 +443,7 @@ describe("Portfolio Interactions", () => {
         // set up bridge links for celer then disable bridge provider
         await portfolioBridgeMain.enableBridgeProvider(bridge, celerMockMain.address)
         await portfolioBridgeSub.enableBridgeProvider(bridge, celerMockSub.address)
-        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, 400000, bridge);
+        await f.setRemoteBridges(portfolioBridgeMain, portfolioBridgeSub, lzEndpointMain, lzEndpointSub, celerMockMain, celerMockSub, cChain, dexalotSubnet, false, false, 400000, bridge);
         await portfolioBridgeMain.enableBridgeProvider(bridge, ethers.constants.AddressZero)
         await portfolioBridgeSub.enableBridgeProvider(bridge, ethers.constants.AddressZero)
 

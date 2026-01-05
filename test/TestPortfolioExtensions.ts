@@ -279,17 +279,29 @@ describe("Portfolio Unwrap/Wrap", () => {
     expect(await wavax.balanceOf(trader1.address)).to.equal(wavaxBalBefore);
   });
 
+  it("should fail to wrap token if native provided for arb is less than bridge fee", async () => {
+    await setWrappedNativeArb();
+
+    const bf = await portfolioArb.getNativeBridgeFee(0);
+    const value = bf.sub(1); // less than bridge fee
+
+    await expect(portfolioArb.connect(trader1).depositNative(trader1.address, 0, {value})).to.be.revertedWith("P-VLBF-01");
+  });
+
   it("should wrap token if native provided for arb", async () => {
     await setWrappedNativeArb();
 
     const balBefore = await trader1.getBalance();
     const wethBalBefore = await weth.balanceOf(portfolioArb.address);
 
-    await portfolioArb.connect(trader1).depositNative(trader1.address, 0, {value: dummyQty});
+    const bf = await portfolioArb.getNativeBridgeFee(0);
+    const value = dummyQty.add(bf);
+
+    await portfolioArb.connect(trader1).depositNative(trader1.address, 0, {value});
 
     const balanceAfter = await trader1.getBalance();
 
-    expect(balanceAfter.sub(dummyQty).lte(balBefore));
+    expect(balanceAfter.sub(value).lte(balBefore));
     expect(await weth.balanceOf(portfolioArb.address)).to.equal(wethBalBefore.add(dummyQty));
   });
 });
