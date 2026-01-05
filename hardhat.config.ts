@@ -5,7 +5,6 @@ import '@openzeppelin/hardhat-upgrades'
 import '@typechain/hardhat'
 import 'solidity-coverage'
 import "hardhat-deploy";
-import '@layerzerolabs/toolbox-hardhat'
 import '@nomicfoundation/hardhat-foundry'
 import "./tasks/print_accounts";
 
@@ -15,7 +14,25 @@ import "./tasks/print_accounts";
 
 const config = {
   solidity: {
-    compilers: [{
+    compilers: [
+      {
+        version: "0.8.30",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200
+          },
+
+          outputSelection: {
+            "*": {
+              "*": ["abi", "devdoc", "userdoc", "metadata", "storageLayout", "evm.bytecode"],
+              "": ["*"]
+            }
+          },
+          evmVersion: "cancun"
+        }
+      },
+      {
       version: "0.8.17",
       settings: {
         optimizer: {

@@ -6,7 +6,8 @@ test = 'test'
 cache_path  = 'cache_forge'
 remappings = [
     "@teleporter/=lib/teleporter/contracts/teleporter/",
+    "@openzeppelin-upgradeable-v5/=lib/openzeppelin-v5/contracts/",
+    "@openzeppelin-v5/=lib/openzeppelin-upgradeable-v5/contracts/"
 ]
 [profile.dependencies]
-# For version locking, you can specify the GitHub repository and commit hash
 teleporter = { git = "https://github.com/ava-labs/teleporter", tag = "v1.0.7" }
