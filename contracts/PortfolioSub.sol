@@ -858,6 +858,17 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         autoFillPrivate(_to, _symbol, Tx.AUTOFILL);
     }
 
+    // TODO: only vault
+    function transferTokenFrom(
+        address _from,
+        address _to,
+        bytes32 _symbol,
+        uint256 _quantity
+    ) external whenNotPaused nonReentrant {
+        // TODO: only vault role
+        transferToken(_from, _to, _symbol, _quantity, 0, Tx.IXFERSENT, false, address(0));
+    }
+
     /**
      * @notice  Transfers the fees collected to the fee or treasury address
      * @param   _to  fee or treasury address

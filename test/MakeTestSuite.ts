@@ -37,7 +37,14 @@ import {
     DexalotTokenOFT,
     DexalotTokenOFTMinter,
     SolPortfolioBridgeMock,
-    DexalotRouter
+    DexalotRouter,
+    OmniVaultRegistry,
+    OmniVaultCreator,
+    OmniVaultShare,
+    OmniVaultExecutor,
+    OmniVaultExecutorMain,
+    DexalotRFQ,
+    OmniVault
 } from '../typechain-types'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 // import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -124,6 +131,16 @@ interface MultiPortfolioContracts {
     alot: MockToken | undefined
 }
 
+interface VaultContracts {
+    omniVaultRegistry: OmniVaultRegistry,
+    omniVaultCreator: OmniVaultCreator,
+    omniVaultShare: OmniVaultShare,
+    omniVaultExecutor: OmniVaultExecutor,
+    omniVaultExecutorMain: OmniVaultExecutorMain,
+    omniVault: OmniVault,
+    dexalotRFQ: DexalotRFQ
+}
+
 /*
     Dexalot global test deployments
     Please load this fixtures when necessary
@@ -143,6 +160,62 @@ export const getAccounts = async (): Promise<Signers> => {
     const [owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2] = await ethers.getSigners();
     return { owner, admin, auctionAdmin, trader1, trader2, treasurySafe, feeSafe, other1, other2 };
 }
+
+export const deployVaultConfigContracts = async (): Promise<{omniVaultRegistry: OmniVaultRegistry, omniVaultCreator: OmniVaultCreator}> => {
+    const {owner} = await getAccounts();
+
+    const OmniVaultRegistry = await ethers.getContractFactory("OmniVaultRegistry");
+    const omniVaultRegistry: OmniVaultRegistry = await upgrades.deployProxy(OmniVaultRegistry, [owner.address]) as OmniVaultRegistry;
+
+    const OmniVaultCreator = await ethers.getContractFactory("OmniVaultCreator");
+    const omniVaultCreator: OmniVaultCreator = await upgrades.deployProxy(OmniVaultCreator, [owner.address]) as OmniVaultCreator;
+
+    return { omniVaultRegistry, omniVaultCreator }
+};
+
+export const deployVault = async (lzEndpoint: string, omniVaultRegistry: OmniVaultRegistry, omniVaultCreator: OmniVaultCreator, dexalotRouter: DexalotRouter, portfolio: PortfolioSub, name: string = "ZRO Vault", symbol: string = "dZRO"): Promise<VaultContracts> => {
+    const {owner, other1, other2} = await getAccounts();
+    const { cChain } = getChains();
+
+
+    const OmniVaultShare = await ethers.getContractFactory("OmniVaultShare");
+    const omniVaultShare: OmniVaultShare = await OmniVaultShare.deploy(lzEndpoint) as OmniVaultShare;
+    await omniVaultShare.initialize(name, symbol, owner.address);
+    console.log("Deployed OmniVaultShare at ", omniVaultShare.address);
+    // const omniVaultShare = await upgrades.deployProxy(OmniVaultShare, [name, symbol, owner.address]) as OmniVaultShare;
+
+    const OmniVaultExecutor = await ethers.getContractFactory("OmniVaultExecutor");
+    const omniVaultExecutor: OmniVaultExecutor = await upgrades.deployProxy(OmniVaultExecutor, [owner.address, other1.address]) as OmniVaultExecutor;
+    console.log("Deployed OmniVaultExecutor at ", omniVaultExecutor.address);
+
+
+    const OmniVaultExecutorMain = await ethers.getContractFactory("OmniVaultExecutorMain");
+    const omniVaultExecutorMain: OmniVaultExecutorMain = await upgrades.deployProxy(OmniVaultExecutorMain, [owner.address, other1.address]) as OmniVaultExecutorMain;
+    console.log("Deployed OmniVaultExecutorMain at ", omniVaultExecutorMain.address);
+
+    const OmniVault = await ethers.getContractFactory("OmniVault");
+    const omniVault: OmniVault = await upgrades.deployProxy(OmniVault, [owner.address, other2.address, 0, name]) as OmniVault;
+    console.log("Deployed OmniVault at ", omniVault.address);
+
+    const DexalotRFQ = await ethers.getContractFactory("DexalotRFQ");
+    // TODO: router
+    const dexalotRFQ: DexalotRFQ = await DexalotRFQ.deploy(other2.address, owner.address, ethers.constants.AddressZero, false, dexalotRouter.address) as DexalotRFQ;
+    console.log("Deployed DexalotRFQ at ", dexalotRFQ.address);
+
+    await omniVaultShare.setOmniVaultAddress(omniVault.address);
+    console.log("Set OmniVault address in OmniVaultShare");
+
+    await omniVault.setOmniVaultExecutor(omniVaultExecutor.address);
+    await omniVault.setOmniVaultShareToken(omniVaultShare.address);
+    await omniVault.setPortfolio(portfolio.address);
+
+    await omniVaultRegistry.registerVault(name, other2.address, omniVault.address, omniVaultExecutorMain.address, omniVaultShare.address, dexalotRFQ.address, [cChain.chainListOrgId]);
+    console.log("Registered vault in OmniVaultRegistry");
+    // await omniVaultExecutor.setOmniVault(omniVault.address);
+
+    return { omniVaultRegistry, omniVaultCreator, omniVaultShare, omniVaultExecutor, omniVaultExecutorMain, omniVault, dexalotRFQ }
+
+};
 
 export const deployDexalotToken = async (): Promise<DexalotToken> => {
     const DexalotToken = await ethers.getContractFactory("DexalotToken");

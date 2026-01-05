@@ -31,6 +31,8 @@ interface IPortfolioSub {
 
     function transferToken(address _to, bytes32 _symbol, uint256 _quantity) external;
 
+    function transferTokenFrom(address _to, address _from, bytes32 _symbol, uint256 _quantity) external;
+
     enum AssetType {
         NATIVE,
         ERC20,
