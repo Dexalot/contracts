@@ -29,7 +29,7 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
     using RBTLibrary for RBTLibrary.Tree;
     using Bytes32LinkedListLibrary for Bytes32LinkedListLibrary.LinkedList;
     // version
-    bytes32 public constant VERSION = bytes32("2.2.1");
+    bytes32 public constant VERSION = bytes32("2.2.2");
 
     // orderbook structure defining one sell or buy book
     struct OrderBook {
@@ -73,12 +73,24 @@ contract OrderBooks is Initializable, AccessControlEnumerableUpgradeable {
 
     /**
      * @notice  Adds OrderBook with its side
-     * @param   _orderBookID  Order Book ID assigned by the tradePairs based on the tradepair symbol
-     * @param   _side  BuyBook or SellBook
+     * @param   _tradePairId  Order Book ID assigned by the tradePairs based on the tradepair symbol
      */
-    function addToOrderbooks(bytes32 _orderBookID, ITradePairs.Side _side) external onlyRole(EXECUTOR_ROLE) {
-        OrderBook storage orderBook = orderBookMap[_orderBookID];
-        orderBook.side = _side;
+    function addToOrderbooks(
+        bytes32 _tradePairId
+    ) external onlyRole(EXECUTOR_ROLE) returns (bytes32 buyBookId, bytes32 sellBookId) {
+        buyBookId = UtilsLibrary.stringToBytes32(
+            string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-BUYBOOK"))
+        );
+
+        sellBookId = UtilsLibrary.stringToBytes32(
+            string(abi.encodePacked(UtilsLibrary.bytes32ToString(_tradePairId), "-SELLBOOK"))
+        );
+
+        OrderBook storage buyOrderBook = orderBookMap[buyBookId];
+        buyOrderBook.side = ITradePairs.Side.BUY;
+
+        OrderBook storage sellOrderBook = orderBookMap[sellBookId];
+        sellOrderBook.side = ITradePairs.Side.SELL;
     }
 
     /**

@@ -15,6 +15,7 @@ describe("OrderBooks", () => {
 
   let orderBooks: OrderBooks;
   let pair: string;
+  let tradePairId: string;
   let buyBook: string;
   let sellBook: string;
 
@@ -24,8 +25,6 @@ describe("OrderBooks", () => {
   let other1: SignerWithAddress;
   let other2: SignerWithAddress;
 
-  const buySide = 0;
-  const sellSide = 1;
   const buyIDs: Array<string> = [];
   const buyPrices: Array<number> = [];
   const sellIDs: Array<string> = [];
@@ -48,12 +47,13 @@ describe("OrderBooks", () => {
     orderBooks = await f.deployOrderBooks();
     await orderBooks.grantRole(await orderBooks.EXECUTOR_ROLE(), owner.address)
 
-    pair = "ALOT/AVAX";
+    pair = "ALOT/AVAX"
     buyBook = Utils.fromUtf8(`${pair}-BUYBOOK`)
     sellBook = Utils.fromUtf8(`${pair}-SELLBOOK`)
 
-    orderBooks.addToOrderbooks(buyBook, 0);
-    orderBooks.addToOrderbooks(sellBook, 1);
+    tradePairId = Utils.fromUtf8(pair);
+
+    orderBooks.addToOrderbooks(tradePairId);
 
     // reading orders from csv file and populate the a buy and a sell book
     const buyOrders = await Utils.loadOrders('./test/data/05_TestBuyOrderBook.csv');
@@ -283,11 +283,10 @@ describe("OrderBooks", () => {
 
   it("Should use addToOrderbooks() correctly", async function () {
     // fail for non-owner
-    await expect(orderBooks.connect(other1).addToOrderbooks(buyBook, buySide)).to.be.revertedWith("AccessControl:");
-    await expect(orderBooks.connect(other1).addToOrderbooks(sellBook, sellSide)).to.be.revertedWith("AccessControl:");
+    await expect(orderBooks.connect(other1).addToOrderbooks(tradePairId)).to.be.revertedWith("AccessControl:");
     // succeed for owner
-    await orderBooks.addToOrderbooks(buyBook, buySide);
-    await orderBooks.addToOrderbooks(sellBook, sellSide);
+    await orderBooks.addToOrderbooks(tradePairId);
+
   });
 
   it("Should use setTradePairs() correctly", async function () {
@@ -310,9 +309,9 @@ describe("OrderBooks", () => {
   it("Should use isNotCrossedBook correctly", async function () {
     const bBook = Utils.fromUtf8(`LFG/SER-BUYBOOK`)
     const sBook = Utils.fromUtf8(`LFG/SER-SELLBOOK`)
+    const tradePairId = Utils.fromUtf8(`LFG/SER`)
+    await orderBooks.addToOrderbooks(tradePairId);
 
-    await orderBooks.addToOrderbooks(bBook, buySide);
-    await orderBooks.addToOrderbooks(sBook, sellSide);
 
     // true - sBook = 0
     expect(await orderBooks.isNotCrossedBook(sBook, bBook)).to.be.true;

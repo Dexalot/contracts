@@ -23,7 +23,6 @@ import * as f from "./MakeTestSuite";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { BigNumber, Event } from "ethers";
-import { createBlock } from 'typescript';
 
 let MockToken: MockToken__factory;
 
@@ -522,11 +521,13 @@ it("Should fail matchAuctionOrder() for incorrect mode", async () => {
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 4)
   await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0', pair.quoteDecimals));
 
-  // fail to use matchAuctionOrders() while not in matching mode (5)
-  await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-01");
-  // set auction mode to MATCHING
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5);  // auction is MATCHING
-  await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-03");
+  // Commented out require statements and moved them into if to save room in contract size
+
+  // // fail to use matchAuctionOrders() while not in matching mode (5)
+  // await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-01");
+  // // set auction mode to MATCHING
+  // await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5);  // auction is MATCHING
+  // await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-03");
 })
 
 it("Should do the actual matching", async () => {

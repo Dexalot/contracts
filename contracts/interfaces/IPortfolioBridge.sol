@@ -42,6 +42,8 @@ interface IPortfolioBridge {
 
     function getTokenList() external view returns (bytes32[] memory);
 
+    function userPaysFee(uint32 _dstChainListOrgChainId, BridgeProvider _bridge) external view returns (bool);
+
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() external returns (bytes32);
 

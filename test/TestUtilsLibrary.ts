@@ -128,15 +128,15 @@ describe("UtilsLibrary via UtilsLibraryMock", function () {
 		).to.be.equal(Utils.parseUnits("10", 18));
 	});
 
-	it('Should return min() correctly', async () => {
+	it('Should return max() correctly', async () => {
 		// a > b
-		expect(await utilsLibraryMock.min(
+		expect(await utilsLibraryMock.max(
 			Utils.parseUnits("100", 18), Utils.parseUnits("10", 18))
-		).to.be.equal(Utils.parseUnits("10", 18));
+		).to.be.equal(Utils.parseUnits("100", 18));
 		// a < b
-		expect(await utilsLibraryMock.min(
+		expect(await utilsLibraryMock.max(
 			Utils.parseUnits("10", 18), Utils.parseUnits("100", 18))
-		).to.be.equal(Utils.parseUnits("10", 18));
+		).to.be.equal(Utils.parseUnits("100", 18));
 	});
 
 	it('Should return bytes32ToString() correctly', async () => {

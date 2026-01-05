@@ -28,7 +28,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.6.0");
+    bytes32 public constant VERSION = bytes32("2.6.2");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -194,7 +194,14 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     ) external payable override whenNotPaused nonReentrant {
         require(_from == msg.sender || msg.sender == address(this), "P-OOWN-02"); // calls made by super.receive()
         TokenDetails memory tokenDetails = tokenDetailsMap[nativeDepositsRestricted ? wrappedNative : native];
-        uint256 quantity = UtilsLibrary.truncateQuantity(msg.value, tokenDetails.decimals, tokenDetails.l1Decimals);
+        uint256 nativeBridgeFee = this.getNativeBridgeFee(_bridge);
+        require(msg.value >= nativeBridgeFee, "P-VLBF-01");
+
+        uint256 quantity = UtilsLibrary.truncateQuantity(
+            msg.value - nativeBridgeFee,
+            tokenDetails.decimals,
+            tokenDetails.l1Decimals
+        );
 
         if (nativeDepositsRestricted) {
             if (wrappedNative == bytes32(0)) {
@@ -205,12 +212,20 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         }
 
         // refund the extra amount
-        if (msg.value - quantity > 0) {
+        if (msg.value - quantity - nativeBridgeFee > 0) {
             // solhint-disable-next-line avoid-low-level-calls
-            (bool success, ) = _from.call{value: msg.value - quantity}("");
+            (bool success, ) = _from.call{value: msg.value - quantity - nativeBridgeFee}("");
             require(success, "P-NQTR-01");
         }
-        deposit(_from, tokenDetails.symbol, quantity, _bridge, tokenDetails.decimals, tokenDetails.l1Decimals);
+        deposit(
+            _from,
+            tokenDetails.symbol,
+            quantity,
+            _bridge,
+            tokenDetails.decimals,
+            tokenDetails.l1Decimals,
+            nativeBridgeFee
+        );
     }
 
     /**
@@ -224,7 +239,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         bytes32 _symbol,
         uint256 _quantity,
         IPortfolioBridge.BridgeProvider _bridge
-    ) external whenNotPaused nonReentrant {
+    ) external payable whenNotPaused nonReentrant {
         require(
             _from == msg.sender ||
                 msg.sender == address(this) || // allow calls made by depositTokenFromContract
@@ -239,7 +254,21 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         _quantity = UtilsLibrary.truncateQuantity(_quantity, tokenDetails.decimals, tokenDetails.l1Decimals);
 
         tokenMap[_symbol].safeTransferFrom(_from, address(this), _quantity);
-        deposit(_from, _symbol, _quantity, _bridge, tokenDetails.decimals, tokenDetails.l1Decimals);
+        deposit(_from, _symbol, _quantity, _bridge, tokenDetails.decimals, tokenDetails.l1Decimals, msg.value);
+    }
+
+    /**
+     * @notice  Returns the native bridge fee for the given bridge and default destination chain (Dexalot L1)
+     * @dev     If the user pays the fee, it returns the fee, otherwise returns 0
+     * @param   _bridge  Enum for bridge type
+     * @return  uint256  Bridge fee
+     */
+    function getNativeBridgeFee(IPortfolioBridge.BridgeProvider _bridge) public view returns (uint256) {
+        uint32 defaultChain = portfolioBridge.getDefaultDestinationChain();
+        if (portfolioBridge.userPaysFee(defaultChain, _bridge)) {
+            return this.getBridgeFee(_bridge, defaultChain, bytes32(0), 0, address(0), bytes1(0));
+        }
+        return 0;
     }
 
     function deposit(
@@ -248,7 +277,8 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         uint256 _quantity,
         IPortfolioBridge.BridgeProvider _bridge,
         uint8 _fromDecimals,
-        uint8 _toDecimals
+        uint8 _toDecimals,
+        uint256 _nativeBridgeFee
     ) private {
         require(allowDeposit, "P-NTDP-01");
         require(_quantity > this.getMinDepositAmount(_symbol), "P-DUTH-01");
@@ -260,7 +290,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         emitPortfolioEvent(_from, _symbol, _quantity, bridgeParam.fee, Tx.DEPOSIT);
 
         // Nonce to be assigned in PBridge
-        portfolioBridge.sendXChainMessage(
+        portfolioBridge.sendXChainMessage{value: _nativeBridgeFee}(
             portfolioBridge.getDefaultDestinationChain(),
             _bridge,
             XFER(
