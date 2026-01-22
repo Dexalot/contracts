@@ -28,7 +28,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.6.2");
+    bytes32 public constant VERSION = bytes32("2.6.3");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -449,7 +449,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             TokenDetails memory tokenDetails = tokenDetailsMap[_xfer.symbol];
             uint256 quantity = scaleQuantity(_xfer.quantity, tokenDetails.l1Decimals, tokenDetails.decimals);
 
-            bool unwrapToken = processOptions(_xfer);
+            bool unwrapToken = processOptions(_xfer, quantity);
 
             if (_xfer.symbol == native || unwrapToken) {
                 //Withdraw native
@@ -468,7 +468,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         }
     }
 
-    function processOptions(IPortfolio.XFER calldata _xfer) private returns (bool unwrapToken) {
+    function processOptions(IPortfolio.XFER calldata _xfer, uint256 quantity) private returns (bool unwrapToken) {
         if (_xfer.customdata[0] == 0) {
             return false;
         }
@@ -479,7 +479,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
 
         if (unwrapToken) {
             IWrappedToken wrappedToken = IWrappedToken(address(tokenMap[wrappedNative]));
-            wrappedToken.withdraw(_xfer.quantity);
+            wrappedToken.withdraw(quantity);
         }
     }
 

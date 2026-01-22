@@ -2,9 +2,9 @@
 pragma solidity 0.8.30;
 
 import "forge-std/Test.sol";
-import "../contracts/DexalotRouter.sol";
-import "../contracts/interfaces/IMainnetRFQ.sol";
-import "../contracts/mocks/MockToken.sol";
+import "contracts/DexalotRouter.sol";
+import "contracts/interfaces/IMainnetRFQ.sol";
+import "contracts/mocks/MockToken.sol";
 
 interface IMockMainnetRFQ is IMainnetRFQ {
     function initialize(address _swapSigner) external;

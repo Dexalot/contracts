@@ -4,30 +4,36 @@ pragma solidity 0.8.30;
 import "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
+import "../interfaces/IOmniVaultShare.sol";
+
 /**
  * @title OmniVaultShare
  * @notice This contract represents the share tokens of an OmniVault, allowing for minting and burning
  *         of shares in response to deposits and withdrawals from the vault. It extends the OFTUpgradeable
  *         contract to enable cross-chain functionality.
  */
-contract OmniVaultShare is Initializable, OFTUpgradeable {
+contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
     bytes32 public constant VERSION = bytes32("1.0.0");
-
-    address public omniVaultAddress;
+    uint256 public immutable vaultId;
+    address public omniVaultManager;
 
     /**
-     * @notice Modifier to restrict functions to be called only by the OmniVault contract.
+     * @notice Modifier to restrict functions to be called only by the OmniVaultManager contract.
      */
-    modifier onlyOmniVault() {
-        require(msg.sender == omniVaultAddress, "OVS-OOV-01");
+    modifier onlyOVManager(uint256 _vaultId) {
+        require(msg.sender == omniVaultManager, "OVS-OOV-01");
+        require(_vaultId == vaultId, "OVS-IVD-01");
         _;
     }
 
     /**
      * @notice Constructor for the OmniVaultShare contract.
      * @param _lzEndpoint The LayerZero endpoint address.
+     * @param _vaultId The ID of the vault.
      */
-    constructor(address _lzEndpoint) OFTUpgradeable(_lzEndpoint) {}
+    constructor(address _lzEndpoint, uint256 _vaultId) OFTUpgradeable(_lzEndpoint) {
+        vaultId = _vaultId;
+    }
 
     /**
      * @notice Initializes the OmniVaultShare contract.
@@ -44,28 +50,29 @@ contract OmniVaultShare is Initializable, OFTUpgradeable {
 
     /**
      * @notice Mints new vault shares to a specified address.
-     * @dev Can only be called by the OmniVault contract upon deposits.
+     * @dev Can only be called by the OmniVaultManager contract upon deposits.
      * @param _to The address to mint vault shares to.
      * @param _amount The amount of vault shares to mint.
      */
-    function mint(address _to, uint256 _amount) external onlyOmniVault {
+    function mint(uint256 _vaultId, address _to, uint256 _amount) external onlyOVManager(_vaultId) {
         _mint(_to, _amount);
     }
 
     /**
-     * @notice Burns vault shares from the OmniVault.
-     * @dev Can only be called by the OmniVault contract when shares are locked upon withdrawals.
+     * @notice Burns vault shares from the OmniVaultManager contract.
+     * @dev Can only be called by the OmniVaultManager contract when shares are locked upon withdrawals.
+     * @param _vaultId The ID of the vault.
      * @param _amount The amount of vault shares to burn.
      */
-    function burn(uint256 _amount) external onlyOmniVault {
+    function burn(uint256 _vaultId, uint256 _amount) external onlyOVManager(_vaultId) {
         _burn(msg.sender, _amount);
     }
 
     /**
-     * @notice Sets the OmniVault contract address.
-     * @param _omniVault The address of the OmniVault contract.
+     * @notice Sets the OmniVaultManager contract address.
+     * @param _omniVaultManager The address of the OmniVaultManager contract.
      */
-    function setOmniVaultAddress(address _omniVault) external onlyOwner {
-        omniVaultAddress = _omniVault;
+    function setOmniVaultManager(address _omniVaultManager) external onlyOwner {
+        omniVaultManager = _omniVaultManager;
     }
 }

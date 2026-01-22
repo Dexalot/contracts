@@ -66,6 +66,7 @@ contract TokenVestingCloneable is OwnableUpgradeable {
      * @param __period length of claim period that allows one to withdraw in discrete periods.
      * i.e. (60 x 60 x 24) x 30 will allow the beneficiary to claim every 30 days, 0 for no restrictions
      * @param __portfolio address of portfolio
+     * @param __owner address that will become the vesting contract owner with onlyOwner rights
      */
 
     function initialize(

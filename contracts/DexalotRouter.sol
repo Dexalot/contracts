@@ -7,6 +7,8 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 
+import "./interfaces/IDexalotRFQ.sol";
+
 /**
  * @title DexalotRouter
  * @notice A router contract to facilitate aggregator swaps via RFQ order execution. It forwards calls to allowed MainnetRFQ contracts,
@@ -33,7 +35,7 @@ contract DexalotRouter is AccessControlEnumerable {
     uint256 private constant TAKER_PARTIAL_AMOUNT_OFFSET = 4 + 32 * 8 + 32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.0.2");
     // addresses of allowed MainnetRFQ contracts
     EnumerableSet.AddressSet private allowedRFQs;
 
@@ -47,6 +49,59 @@ contract DexalotRouter is AccessControlEnumerable {
         require(_owner != address(0), "DR-SAZ-01");
 
         _grantRole(DEFAULT_ADMIN_ROLE, _owner);
+    }
+
+    /**
+     * @notice Executes two partial swaps in sequence between two allowed DexalotRFQ contracts
+     * @param _orderA The first RFQ order
+     * @param _signatureA The signature for the first RFQ order
+     * @param _takerAmountA The taker amount for the first RFQ order
+     * @param _orderB The second RFQ order
+     * @param _signatureB The signature for the second RFQ order
+     */
+    function multiPartialSwap(
+        IDexalotRFQ.Order calldata _orderA,
+        bytes calldata _signatureA,
+        uint256 _takerAmountA,
+        IDexalotRFQ.Order calldata _orderB,
+        bytes calldata _signatureB
+    ) external payable {
+        require(_orderA.maker != address(0) && allowedRFQs.contains(_orderA.maker), "DR-IRMA-01");
+        require(_orderB.maker != address(0) && allowedRFQs.contains(_orderB.maker), "DR-IRMB-01");
+        require(_orderA.makerAsset == _orderB.takerAsset, "DR-ASMTA-01");
+        address destTraderA = address(uint160(_orderA.nonceAndMeta >> 96));
+        require(destTraderA == address(this), "DR-DTIT-01");
+        uint256 preBal = _orderA.makerAsset == address(0)
+            ? address(this).balance
+            : IERC20(_orderA.makerAsset).balanceOf(address(this));
+
+        if (_orderA.takerAsset != address(0)) {
+            IERC20(_orderA.takerAsset).safeTransferFrom(msg.sender, _orderA.maker, _takerAmountA);
+        }
+
+        // Append the original sender's address to the calldata
+        bytes memory callDataA = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderA, _signatureA, _takerAmountA);
+        callDataA = abi.encodePacked(callDataA, msg.sender);
+        // Execute the call on the child DexalotRFQ contract
+        (bool success, ) = payable(_orderA.maker).call{value: msg.value}(callDataA);
+        require(success, "DR-PSA-01");
+
+        uint256 takerAmountB;
+        bool isHopNative = (_orderA.makerAsset == address(0));
+
+        if (!isHopNative) {
+            IERC20 bInputAsset = IERC20(_orderA.makerAsset);
+            takerAmountB = bInputAsset.balanceOf(address(this)) - preBal;
+            bInputAsset.safeTransfer(_orderB.maker, takerAmountB);
+        } else {
+            takerAmountB = address(this).balance + msg.value - preBal;
+        }
+
+        bytes memory callDataB = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderB, _signatureB, takerAmountB);
+        callDataB = abi.encodePacked(callDataB, msg.sender);
+        // Execute the call on the child DexalotRFQ contract
+        (success, ) = payable(_orderB.maker).call{value: isHopNative ? takerAmountB : 0}(callDataB);
+        require(success, "DR-PSB-01");
     }
 
     /**
@@ -135,12 +190,7 @@ contract DexalotRouter is AccessControlEnumerable {
      * If the call involves token transfer, the tokens are transferred from the original sender to the target contract before forwarding the call.
      */
     fallback() external payable {
-        bytes4 selector;
-        assembly {
-            // Read the first 4 bytes of calldata
-            selector := calldataload(0)
-        }
-
+        bytes4 selector = msg.sig;
         // If the selector is NOT partialSwap AND NOT simpleSwap, revert.
         if (selector != PARTIAL_SWAP_SELECTOR && selector != SIMPLE_SWAP_SELECTOR) {
             revert("DR-FSNW-01"); // function selector not whitelisted

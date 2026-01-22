@@ -300,7 +300,7 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
     const mainnetRFQ: MainnetRFQ = await upgrades.deployProxy(MainnetRFQ, [signer.address]) as MainnetRFQ;
     await mainnetRFQ.setPortfolioBridge(portfolioBridgeMain.address);
     await mainnetRFQ.setPortfolioMain();
-    await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
+    // await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
     return mainnetRFQ;
 }
 

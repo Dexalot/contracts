@@ -1,0 +1,516 @@
+// SPDX-License-Identifier: BUSL-1.1
+pragma solidity 0.8.30;
+
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin-v5/utils/structs/EnumerableSet.sol";
+
+import "../interfaces/IOmniVaultShare.sol";
+import "../interfaces/IOmniVaultExecutorSub.sol";
+import "../interfaces/IOmniVaultManager.sol";
+import "../interfaces/IPortfolioSub.sol";
+import "../interfaces/IPortfolio.sol";
+
+/**
+ * @title OmniVaultManager
+ * @notice The OmniVaultManager contract manages multiple OmniVaults, allowing users to request deposits and withdrawals
+ *         of various tokens. It handles the registration of new vaults, processes deposit and withdrawal requests in batches,
+ *         and maintains the state of each vault. The contract also supports pausing and unpausing operations for security and maintenance.
+ *         It interacts with the PortfolioSub contract for token transfers and with OmniVaultExecutor contracts for executing
+ *         asset dispatches.
+ */
+contract OmniVaultManager is
+    IOmniVaultManager,
+    Initializable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    PausableUpgradeable
+{
+    using SafeERC20Upgradeable for IERC20Upgradeable;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
+
+    bytes32 public constant VERSION = bytes32("1.0.2");
+    uint256 public constant RECLAIM_DELAY = 24 hours;
+    bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
+    uint256 public constant MAX_PENDING_REQUESTS = 1000;
+
+    uint256 public vaultIndex;
+    mapping(uint256 => VaultDetails) public vaultDetails;
+
+    // Connected Contracts
+    IPortfolioSub public portfolio;
+
+    // bytes32 array of all ERC20 tokens traded on DEXALOT
+    EnumerableSet.Bytes32Set internal tokenList;
+    uint16 public tokenIndex;
+    mapping(uint16 => AssetInfo) public assetInfo;
+
+    // No. transfer requests made per user (max 2^80)
+    mapping(address => uint80) public userNonce;
+    // Pending/claimable transfer requests
+    mapping(bytes32 => TransferRequest) public transferRequests;
+
+    bytes32 public rollingDepositHash;
+    bytes32 public rollingWithdrawalHash;
+    uint256 public currentBatchId;
+    uint256 public batchStartTime;
+    uint256 public pendingRequestCount;
+
+    // Emitted on deposit/withdrawal requests
+    event TransferRequestUpdate(
+        bytes32 indexed requestId,
+        uint256 indexed batchId,
+        address indexed user,
+        RequestStatus status,
+        uint16[] tokenIds,
+        uint256[] amounts
+    );
+
+    event TransferBatchUpdate(
+        uint256 indexed batchId,
+        bool success,
+        DepositFufillment[] _deposits,
+        WithdrawalFufillment[] _withdrawals
+    );
+
+    modifier onlyUser(bytes32 _requestId) {
+        (, address user, ) = _decodeRequestId(_requestId);
+        require(user == msg.sender, "OV-OUCI-01");
+        _;
+    }
+
+    /**
+     * @notice Initializer for the OmniVaultManager contract
+     * @param _admin The admin address with DEFAULT_ADMIN_ROLE
+     */
+    function initialize(address _admin, address _settler) public initializer {
+        require(_admin != address(0), "OV-SAZ-01");
+
+        __AccessControl_init();
+        __ReentrancyGuard_init();
+        __Pausable_init();
+
+        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _setupRole(SETTLER_ROLE, _settler);
+    }
+
+    /**
+     * @notice Bulk settle deposit and withdrawal requests
+     */
+    function bulkSettleState(
+        DepositFufillment[] calldata _deposits,
+        WithdrawalFufillment[] calldata _withdrawals
+    ) external nonReentrant whenNotPaused onlyRole(SETTLER_ROLE) {
+        uint256 curBatch = currentBatchId;
+        _bulkSettleDeposits(_deposits);
+        _bulkSettleWithdrawals(_withdrawals);
+        _resetBatch();
+        emit TransferBatchUpdate(curBatch, true, _deposits, _withdrawals);
+    }
+
+    /**
+     * @notice Request a deposit for one to multiple tokens
+     * @param _tokens The token IDs to deposit
+     * @param _amounts The amounts to deposit
+     * @return requestId The generated deposit request ID
+     */
+    function requestDeposit(
+        uint256 _vaultId,
+        uint16[] calldata _tokens,
+        uint256[] calldata _amounts
+    ) external nonReentrant whenNotPaused returns (bytes32 requestId) {
+        address executor = vaultDetails[_vaultId].executor;
+        VaultStatus status = vaultDetails[_vaultId].status;
+        require(status == VaultStatus.ACTIVE, "OV-RDPR-01");
+        require(pendingRequestCount < MAX_PENDING_REQUESTS, "OV-MPRC-01");
+        _depositTokens(_tokens, _amounts, vaultDetails[_vaultId].tokens, executor);
+
+        requestId = _generateRequestId(_vaultId, msg.sender, userNonce[msg.sender]++);
+        pendingRequestCount++;
+
+        transferRequests[requestId] = TransferRequest({
+            status: RequestStatus.DEPOSIT_REQUESTED,
+            timestamp: uint32(block.timestamp),
+            shares: uint208(0)
+        });
+        rollingDepositHash = keccak256(abi.encode(rollingDepositHash, requestId, _tokens, _amounts));
+        emit TransferRequestUpdate(
+            requestId,
+            currentBatchId,
+            msg.sender,
+            RequestStatus.DEPOSIT_REQUESTED,
+            _tokens,
+            _amounts
+        );
+    }
+
+    /**
+     * @notice Request a withdrawal for a given vault shares
+     * @param _vaultId The ID of the vault
+     * @param _shares The vault shares to withdraw
+     * @return requestId The generated withdrawal request ID
+     */
+    function requestWithdrawal(
+        uint256 _vaultId,
+        uint208 _shares
+    ) external nonReentrant whenNotPaused returns (bytes32 requestId) {
+        require(_shares > 0, "OV-ZEVS-01");
+        address shareTokenAddress = vaultDetails[_vaultId].shareToken;
+        VaultStatus status = vaultDetails[_vaultId].status;
+        require(status == VaultStatus.ACTIVE || status == VaultStatus.PAUSED, "OV-RDPR-01");
+        require(pendingRequestCount < MAX_PENDING_REQUESTS, "OV-MPRC-01");
+        IERC20Upgradeable(shareTokenAddress).safeTransferFrom(msg.sender, address(this), uint256(_shares));
+
+        requestId = _generateRequestId(_vaultId, msg.sender, userNonce[msg.sender]++);
+        pendingRequestCount++;
+        transferRequests[requestId] = TransferRequest({
+            status: RequestStatus.WITHDRAWAL_REQUESTED,
+            timestamp: uint32(block.timestamp),
+            shares: _shares
+        });
+        rollingWithdrawalHash = keccak256(abi.encode(rollingWithdrawalHash, requestId, _shares));
+
+        uint16[] memory symbolsArray = new uint16[](0);
+        uint256[] memory sharesArray = new uint256[](1);
+        sharesArray[0] = uint256(_shares);
+
+        emit TransferRequestUpdate(
+            requestId,
+            currentBatchId,
+            msg.sender,
+            RequestStatus.WITHDRAWAL_REQUESTED,
+            symbolsArray,
+            sharesArray
+        );
+    }
+
+    /**
+     * @notice Unwind a batch of unsettled deposit and withdrawal requests after the reclaim delay
+     * @param _deposits The deposit fulfillments to unwind
+     * @param _withdrawals The withdrawal fulfillments to unwind
+     */
+    function unwindBatch(
+        DepositFufillment[] calldata _deposits,
+        WithdrawalFufillment[] calldata _withdrawals
+    ) external nonReentrant {
+        require(block.timestamp >= batchStartTime + RECLAIM_DELAY, "OV-RDPR-01");
+
+        bytes32 depositHash = 0;
+
+        for (uint256 i = 0; i < _deposits.length; i++) {
+            DepositFufillment calldata item = _deposits[i];
+            depositHash = keccak256(abi.encode(depositHash, item.depositRequestId, item.tokenIds, item.amounts));
+            require(transferRequests[item.depositRequestId].status == RequestStatus.DEPOSIT_REQUESTED, "OV-DRNV-01");
+            delete transferRequests[item.depositRequestId]; // Clear state
+            _refundDeposit(item.depositRequestId, item.tokenIds, item.amounts);
+        }
+        require(depositHash == rollingDepositHash, "OV-DHSH-01");
+
+        bytes32 withdrawalHash = 0;
+
+        for (uint256 i = 0; i < _withdrawals.length; i++) {
+            WithdrawalFufillment calldata item = _withdrawals[i];
+            TransferRequest memory wRequest = transferRequests[item.withdrawalRequestId];
+            withdrawalHash = keccak256(abi.encode(withdrawalHash, item.withdrawalRequestId, wRequest.shares));
+            require(
+                transferRequests[item.withdrawalRequestId].status == RequestStatus.WITHDRAWAL_REQUESTED,
+                "OV-RDPR-01"
+            );
+            uint256 shares = uint256(wRequest.shares);
+            delete transferRequests[item.withdrawalRequestId]; // Clear state
+
+            (uint16 vaultId, address user, ) = _decodeRequestId(item.withdrawalRequestId);
+            IERC20Upgradeable(vaultDetails[vaultId].shareToken).safeTransfer(user, shares);
+        }
+
+        require(withdrawalHash == rollingWithdrawalHash, "OV-WHSH-01");
+
+        emit TransferBatchUpdate(currentBatchId, false, _deposits, _withdrawals);
+        _resetBatch();
+    }
+
+    /**
+     * @notice Registers a new vault with initial deposit
+     * @dev Deposit transfer occurs directly to executor contract on mainnet.
+     * Tokens + amounts are only required for correct TransferRequest event emission.
+     * @param _vaultId The unique ID of the vault
+     * @param _vaultDetails The details of the vault
+     * @param _tokens The list of token IDs being deposited
+     * @param _amounts The list of token amounts being deposited
+     * @param _shares The amount of vault shares to mint for the proposer
+     */
+    function registerVault(
+        uint16 _vaultId,
+        VaultDetails calldata _vaultDetails,
+        uint16[] calldata _tokens,
+        uint256[] calldata _amounts,
+        uint208 _shares
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(vaultDetails[_vaultId].proposer == address(0), "OV-RVEA-01");
+        require(_vaultId == vaultIndex, "OV-IVID-01");
+        vaultIndex++;
+
+        vaultDetails[_vaultId] = _vaultDetails;
+        IOmniVaultShare(_vaultDetails.shareToken).mint(_vaultId, _vaultDetails.proposer, _shares);
+        emit TransferRequestUpdate(
+            bytes32(0),
+            0,
+            _vaultDetails.proposer,
+            RequestStatus.DEPOSIT_REQUESTED,
+            _tokens,
+            _amounts
+        );
+        uint256[] memory sharesArray = new uint256[](1);
+        sharesArray[0] = uint256(_shares);
+        emit TransferRequestUpdate(
+            bytes32(0),
+            0,
+            _vaultDetails.proposer,
+            RequestStatus.DEPOSIT_SUCCESS,
+            new uint16[](0),
+            sharesArray
+        );
+    }
+
+    /**
+     * @notice Pause a vault, disabling deposits
+     * @param _vaultId The ID of the vault to pause
+     */
+    function pauseVault(uint256 _vaultId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultDetails storage vaultDetail = vaultDetails[_vaultId];
+        require(vaultDetail.status != VaultStatus.NONE, "OV-PVDA-01");
+        vaultDetail.status = VaultStatus.PAUSED;
+    }
+
+    /**
+     * @notice Update details for an existing vault
+     * @param _vaultId The ID of the vault to update
+     * @param _vaultDetails The updated vault details
+     */
+    function updateVaultDetails(
+        uint256 _vaultId,
+        VaultDetails calldata _vaultDetails
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultDetails storage vaultDetail = vaultDetails[_vaultId];
+        require(vaultDetail.status != VaultStatus.PAUSED, "OV-UVDA-01");
+        if (_vaultDetails.shareToken != vaultDetail.shareToken || _vaultDetails.executor != vaultDetail.executor) {
+            require(rollingDepositHash == 0 && rollingWithdrawalHash == 0, "OV-UPND-01");
+        }
+        vaultDetails[_vaultId] = _vaultDetails;
+    }
+
+    /**
+     * @notice Add details for a new supported token
+     * @param _asset The AssetInfo struct containing the token details
+     */
+    function addTokenDetails(AssetInfo calldata _asset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        IPortfolio.TokenDetails memory tokenDetails = IPortfolio(address(portfolio)).getTokenDetails(_asset.symbol);
+        require(tokenDetails.symbol == _asset.symbol, "OVM-ITNS-01");
+        require(!tokenList.contains(_asset.symbol), "OVM-ATEX-01");
+        assetInfo[tokenIndex++] = _asset;
+        tokenList.add(_asset.symbol);
+    }
+
+    /**
+     * @notice Update details for an existing supported token
+     * @dev The token address cannot be changed
+     * @param _tokenId The ID of the token to update
+     * @param _asset The AssetInfo struct containing the updated token details
+     */
+    function updateTokenDetails(uint16 _tokenId, AssetInfo calldata _asset) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(tokenList.contains(_asset.symbol));
+        AssetInfo memory existing = assetInfo[_tokenId];
+        require(existing.tokenType != AssetType.NONE, "OV-IVTA-01");
+        require(existing.symbol == _asset.symbol, "OV-ITSN-01");
+        assetInfo[_tokenId] = _asset;
+    }
+
+    /**
+     * @notice Pause the contract, disabling deposits and withdrawals
+     */
+    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _pause();
+    }
+
+    /**
+     * @notice Unpause the contract, enabling deposits and withdrawals
+     */
+    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _unpause();
+    }
+
+    /**
+     * @notice Set the PortfolioSub contract address
+     * @param _portfolio The new PortfolioSub contract address
+     */
+    function setPortfolio(address _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_portfolio != address(0), "OV-SAZ-01");
+        portfolio = IPortfolioSub(_portfolio);
+    }
+
+    /**
+     * @notice Internal function to bulk settle deposit requests
+     * @dev Mints vault shares to users and unlocks tokens in the vault
+     */
+    function _bulkSettleDeposits(DepositFufillment[] calldata _deposits) internal {
+        uint256 len = _deposits.length;
+        bytes32 depositHash = bytes32(0);
+        for (uint256 i = 0; i < len; i++) {
+            bytes32 requestId = _deposits[i].depositRequestId;
+            (uint16 vaultId, address user, ) = _decodeRequestId(requestId);
+            depositHash = keccak256(abi.encode(depositHash, requestId, _deposits[i].tokenIds, _deposits[i].amounts));
+
+            TransferRequest memory dRequest = transferRequests[requestId];
+            require(dRequest.status == RequestStatus.DEPOSIT_REQUESTED, "OV-DSNR-01");
+            delete transferRequests[requestId];
+
+            if (_deposits[i].depositShares != 0) {
+                IOmniVaultShare(vaultDetails[vaultId].shareToken).mint(vaultId, user, _deposits[i].depositShares);
+                continue;
+            }
+
+            _refundDeposit(requestId, _deposits[i].tokenIds, _deposits[i].amounts);
+        }
+        require(depositHash == rollingDepositHash, "OV-DHSH-01");
+    }
+
+    /**
+     * @notice Internal function to refund a deposit request
+     * @param requestId The ID of the deposit request
+     * @param tokenIds The token IDs to refund
+     * @param amounts The amounts to refund
+     */
+    function _refundDeposit(bytes32 requestId, uint16[] calldata tokenIds, uint256[] calldata amounts) internal {
+        uint256 len = tokenIds.length;
+        (uint16 vaultId, address user, ) = _decodeRequestId(requestId);
+        require(len == amounts.length, "OV-RDLM-01");
+        address executor = vaultDetails[vaultId].executor;
+
+        bytes32[] memory symbols = new bytes32[](len);
+        for (uint256 i = 0; i < len; i++) {
+            symbols[i] = assetInfo[tokenIds[i]].symbol;
+        }
+        IOmniVaultExecutorSub(executor).dispatchAssets(user, symbols, amounts);
+        emit TransferRequestUpdate(requestId, currentBatchId, user, RequestStatus.DEPOSIT_FAILED, tokenIds, amounts);
+    }
+
+    /**
+     * @notice Internal function to bulk settle withdrawal requests
+     * @dev Burns vault shares from users and dispatches tokens to them
+     * @param _withdrawals The array of withdrawal fulfillments
+     */
+    function _bulkSettleWithdrawals(WithdrawalFufillment[] calldata _withdrawals) internal {
+        bytes32 withdrawalHash = bytes32(0);
+        uint256 len = _withdrawals.length;
+        for (uint256 i = 0; i < len; i++) {
+            WithdrawalFufillment calldata item = _withdrawals[i];
+            TransferRequest memory wRequest = transferRequests[item.withdrawalRequestId];
+            require(wRequest.status == RequestStatus.WITHDRAWAL_REQUESTED, "OV-WSNR-01");
+            (uint16 vaultId, address user, ) = _decodeRequestId(item.withdrawalRequestId);
+            withdrawalHash = keccak256(abi.encode(withdrawalHash, item.withdrawalRequestId, wRequest.shares));
+
+            delete transferRequests[item.withdrawalRequestId];
+
+            VaultDetails storage vaultDetail = vaultDetails[vaultId];
+
+            IOmniVaultShare shareToken = IOmniVaultShare(vaultDetail.shareToken);
+
+            require(_withdrawals[i].symbols.length == _withdrawals[i].amounts.length, "OV-WSIA-01");
+            if (_withdrawals[i].symbols.length > 0) {
+                shareToken.burn(vaultId, uint256(wRequest.shares));
+                IOmniVaultExecutorSub(vaultDetail.executor).dispatchAssets(
+                    user,
+                    _withdrawals[i].symbols,
+                    _withdrawals[i].amounts
+                );
+            } else {
+                IERC20Upgradeable(address(shareToken)).safeTransfer(user, uint256(wRequest.shares));
+            }
+        }
+        require(withdrawalHash == rollingWithdrawalHash, "OV-WHSH-01");
+    }
+
+    /**
+     * @notice Internal function to reset the batch state
+     */
+    function _resetBatch() internal {
+        rollingDepositHash = 0;
+        rollingWithdrawalHash = 0;
+        pendingRequestCount = 0;
+        batchStartTime = block.timestamp;
+        currentBatchId++;
+    }
+
+    /**
+     * @notice Internal function to deposit tokens into the vault
+     * @param _tokenIds The token IDs to deposit
+     * @param _amounts The amounts to deposit
+     * @param _vaultTokens The list of token IDs supported by the vault
+     * @param _executor The executor address to transfer tokens to
+     */
+    function _depositTokens(
+        uint16[] calldata _tokenIds,
+        uint256[] calldata _amounts,
+        uint16[] memory _vaultTokens,
+        address _executor
+    ) internal {
+        uint256 len = _tokenIds.length;
+        require(len == _amounts.length, "OV-IVAL-01");
+        bytes32[] memory symbols = new bytes32[](len);
+        for (uint256 i = 0; i < len; i++) {
+            uint16 tokenId = _tokenIds[i];
+            uint256 amount = _amounts[i];
+
+            require(_tokenExistsInVault(tokenId, _vaultTokens), "OV-ITNS-01");
+            AssetInfo memory asset = assetInfo[tokenId];
+            require(asset.tokenType != AssetType.NONE, "OV-IVTA-01");
+            uint256 scaledAmount = amount / (10 ** asset.precision);
+            require(scaledAmount >= asset.minPerDeposit && scaledAmount <= asset.maxPerDeposit, "OV-IMPD-01");
+            symbols[i] = asset.symbol;
+        }
+        portfolio.bulkTransferTokens(msg.sender, _executor, symbols, _amounts);
+    }
+
+    /**
+     * @notice Internal function to check if a token exists in the vault's supported tokens
+     * @param _tokenId The token ID to check
+     * @param _tokens The list of token IDs supported by the vault
+     * @return True if the token exists in the vault, false otherwise
+     */
+    function _tokenExistsInVault(uint16 _tokenId, uint16[] memory _tokens) internal pure returns (bool) {
+        uint256 len = _tokens.length;
+        for (uint256 i = 0; i < len; i++) {
+            if (_tokens[i] == _tokenId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @notice Internal function to generate a unique request ID
+     * @param _vaultId The ID of the vault
+     * @param _user The address of the user making the request
+     * @param _nonce The user's current nonce for requests
+     * @return The generated unique request ID
+     */
+    function _generateRequestId(uint256 _vaultId, address _user, uint256 _nonce) internal pure returns (bytes32) {
+        return bytes32(((uint256(uint16(_vaultId)) << 240) | (uint256(uint160(_user)) << 80)) | _nonce);
+    }
+
+    /**
+     * @notice Internal function to extract the request info from a request ID
+     * @param _requestId The request ID to extract the info from
+     * @return vaultId The extracted vault ID
+     * @return user The extracted user address
+     * @return nonce The extracted nonce
+     */
+    function _decodeRequestId(bytes32 _requestId) internal pure returns (uint16 vaultId, address user, uint80 nonce) {
+        uint256 id = uint256(_requestId);
+        vaultId = uint16(id >> 240);
+        user = address(uint160(id >> 80));
+        nonce = uint80(id);
+    }
+}

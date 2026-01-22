@@ -68,12 +68,14 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // account collecting trading fees
     address public feeAddress;
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
+    // role for trusted contracts to transfer tokens on behalf of users
+    bytes32 public constant TRUSTED_TRANSFER_ROLE = keccak256("TRUSTED_TRANSFER_ROLE");
 
     // keep track of deposited and burned native tokens
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.7.1");
+    bytes32 public constant VERSION = bytes32("2.7.2");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -858,15 +860,33 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         autoFillPrivate(_to, _symbol, Tx.AUTOFILL);
     }
 
-    // TODO: only vault
-    function transferTokenFrom(
+    /**
+     * @notice  Bulk Transfers tokens from the `msg.sender`'s portfolio to `_to`'s portfolio
+     * @dev     Balance transfer between 2 address within the portfolio. _from must be msg.sender or trusted
+     * transfer role
+     * @param   _from  Address of the sender
+     * @param   _to  Address of the receiver
+     * @param   _symbols  Array of Symbols of the tokens
+     * @param   _quantities  Array of Amounts of the tokens
+     */
+    function bulkTransferTokens(
         address _from,
         address _to,
-        bytes32 _symbol,
-        uint256 _quantity
+        bytes32[] calldata _symbols,
+        uint256[] calldata _quantities
     ) external whenNotPaused nonReentrant {
-        // TODO: only vault role
-        transferToken(_from, _to, _symbol, _quantity, 0, Tx.IXFERSENT, false, address(0));
+        require(_from == msg.sender || hasRole(TRUSTED_TRANSFER_ROLE, msg.sender), "P-OOWN-03");
+        require(_to != msg.sender, "P-DOTS-01");
+        require(_symbols.length == _quantities.length, "P-ARLM-01");
+        for (uint256 i = 0; i < _symbols.length; ) {
+            bytes32 symbol = _symbols[i];
+            uint256 quantity = _quantities[i];
+            require(tokenList.contains(symbol), "P-ETNS-01");
+            transferToken(_from, _to, symbol, quantity, 0, Tx.IXFERSENT, false, address(0));
+            unchecked {
+                i++;
+            }
+        }
     }
 
     /**

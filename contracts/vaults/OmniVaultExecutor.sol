@@ -6,13 +6,14 @@ import "@openzeppelin-v5/token/ERC20/IERC20.sol";
 import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IOmniVaultExecutor.sol";
+import "../interfaces/IPortfolioSub.sol";
 
 /**
  * @title OmniVaultExecutor
  * @notice The OmniVaultExecutor acts as an executor for OmniVaults by allowing an EOA trading bot to interact with trusted
  *         contracts via whitelisted function calls. Used on Dexalot L1 to place orders on TradePairs, withdraw funds
  *         via PortfolioSub & claim rewards from IncentiveDistributor. Used on Mainnets to deposit funds via
- *         PortfolioMain, rebalance liquidity on DexalotRFQ & manage assets from OmniVaults.  Supports sending native
+ *         PortfolioMain, rebalance liquidity on DexalotRFQ & manage assets from OmniVaults. Supports sending native
  *         currency and approving ERC20 tokens to trusted contracts based on their access levels.
  */
 contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
@@ -20,6 +21,8 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
 
     // Role for EOA trading bot
     bytes32 public constant OMNITRADER_ROLE = keccak256("OMNITRADER_ROLE");
+
+    address public portfolio;
 
     // bytes4 function signature => target contract, if address(0) then not whitelisted
     mapping(bytes4 => address) public whitelistedFunctions;
@@ -124,8 +127,17 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         trustedContracts[_contract] = _access;
     }
 
+    /**
+     * @notice Sets the portfolio contract address
+     * @param _portfolio The address of the portfolio contract
+     */
+    function setPortfolio(address _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_portfolio != address(0), "OT-SAZ-01");
+        portfolio = _portfolio;
+    }
+
     function VERSION() external pure virtual returns (bytes32) {
-        return bytes32("1.0.3");
+        return bytes32("1.1.0");
     }
 
     /**

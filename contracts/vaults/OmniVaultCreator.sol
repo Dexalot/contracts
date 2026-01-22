@@ -6,8 +6,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeab
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
 
-import "../library/TokenLibrary.sol";
-import "../interfaces/IOmniVault.sol";
 import "../interfaces/IOmniVaultCreator.sol";
 
 /**
@@ -32,10 +30,14 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
     address public feeToken;
     // Total collected fees available for withdrawal by admin
     uint256 public collectedFees;
+    // Pending collected fees from vault requests
+    uint256 public pendingFees;
     // Mapping from request ID to new vault request
     mapping(bytes32 => VaultRequest) public vaultRequests;
     // Mapping from vault proposer to whether they have acknowledged the risk disclosure
     mapping(address => bool) public hasAcknowledgedRisk;
+    // Mapping to track nonces for each proposer address
+    mapping(address => uint256) public creationNonces;
 
     /**
      * @notice Initializes the contract.
@@ -48,7 +50,6 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
 
         _setupRole(DEFAULT_ADMIN_ROLE, _admin);
         reclaimDelay = 7 days;
-        feeAmount = 100 * 1e6;
     }
 
     /**
@@ -66,13 +67,13 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
         address[] calldata baseTokens,
         address[] calldata quoteTokens,
         uint32[] calldata chainIds,
-        uint208 baseAmount,
-        uint208 quoteAmount
-    ) external payable nonReentrant returns (bytes32 requestId) {
+        uint256 baseAmount,
+        uint256 quoteAmount
+    ) external nonReentrant returns (bytes32 requestId) {
         require(baseTokens.length == quoteTokens.length && chainIds.length == baseTokens.length, "VC-IVAL-01");
         require(chainIds[0] == block.chainid, "VC-IVCI-01");
         address[] memory _tokens = new address[](2);
-        uint208[] memory _amounts = new uint208[](2);
+        uint256[] memory _amounts = new uint256[](2);
         _tokens[0] = baseTokens[0];
         _tokens[1] = quoteTokens[0];
         _amounts[0] = baseAmount;
@@ -86,28 +87,38 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      * @notice Allows the proposer to reclaim their deposited funds if the vault
      *         request is still pending after the reclaim delay or has been rejected.
      * @param _requestId The ID of the vault creation request to reclaim.
+     * @param _tokens The array of token addresses to reclaim.
+     * @param _amounts The array of token amounts to reclaim.
      */
-    function reclaimRequest(bytes32 _requestId) external nonReentrant {
+    function reclaimRequest(
+        bytes32 _requestId,
+        address[] calldata _tokens,
+        uint256[] calldata _amounts
+    ) external nonReentrant {
         VaultRequest memory request = vaultRequests[_requestId];
         address proposer = request.proposer;
 
         require(proposer == msg.sender, "VC-SNEP-01");
         require(
-            (request.status == VaultRequestStatus.PENDING && block.timestamp > request.timestamp + reclaimDelay) ||
+            (request.status == VaultRequestStatus.PENDING && block.timestamp >= request.timestamp + reclaimDelay) ||
                 request.status == VaultRequestStatus.REJECTED,
             "VC-IVRS-01"
         );
+        require(request.initialDepositHash == keccak256(abi.encode(_tokens, _amounts)), "VC-IDHM-01");
 
-        uint256 len = request.tokens.length;
+        uint256 len = _tokens.length;
         for (uint256 i = 0; i < len; i++) {
-            address _token = request.tokens[i];
-            uint256 _amount = uint256(request.amounts[i]);
-            TokenLibrary.sendToken(_token, proposer, _amount);
+            IERC20Upgradeable token = IERC20Upgradeable(_tokens[i]);
+            uint256 balBefore = token.balanceOf(address(this));
+            token.safeTransfer(proposer, _amounts[i]);
+            uint256 balAfter = token.balanceOf(address(this));
+            // To ensure no transfer fees are applied
+            require(balBefore - balAfter == _amounts[i], "VC-ITFM-01");
         }
 
         if (request.feeCollected > 0) {
-            collectedFees -= request.feeCollected;
-            TokenLibrary.sendToken(feeToken, proposer, request.feeCollected);
+            pendingFees -= request.feeCollected;
+            IERC20Upgradeable(feeToken).safeTransfer(proposer, request.feeCollected);
         }
 
         delete vaultRequests[_requestId];
@@ -117,29 +128,33 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
 
     /**
      * @notice Accepts a vault creation request, transfers the deposited funds to the
-     *         new vault's OmniTrader, and mints the initial shares to the proposer.
+     *         new vault's OmniVaultExecutor.
+     * @dev Verifies that the provided tokens and amounts match the original deposit (initialDepositHash).
+     *      Does not mint shares; initial shares are minted via OmniVaultManager.registerVault.
      * @param _requestId The ID of the vault creation request to accept.
-     * @param _omniVaultAddress The address of the newly created OmniVault contract.
+     * @param _omniVaultExecutor The address of the newly created OmniVaultExecutor contract.
+     * @param _tokens The array of token addresses that were initially deposited and will be forwarded.
+     * @param _amounts The array of token amounts that were initially deposited and will be forwarded.
      */
     function acceptAndFundVault(
         bytes32 _requestId,
-        address _omniVaultAddress
+        address _omniVaultExecutor,
+        address[] calldata _tokens,
+        uint256[] calldata _amounts
     ) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_omniVaultAddress != address(0), "VC-SAZ-01");
+        require(_omniVaultExecutor != address(0), "VC-SAZ-01");
         VaultRequest memory request = vaultRequests[_requestId];
         require(request.proposer != address(0), "VC-SNEP-01");
         require(request.status == VaultRequestStatus.PENDING, "VC-IVRS-01");
-        uint256 len = request.tokens.length;
-
-        address _omniTraderAddress = IOmniVault(_omniVaultAddress).omniVaultExecutor();
+        require(request.initialDepositHash == keccak256(abi.encode(_tokens, _amounts)), "VC-IDHM-01");
+        uint256 len = _tokens.length;
 
         for (uint256 i = 0; i < len; i++) {
-            address _token = request.tokens[i];
-            uint256 _amount = uint256(request.amounts[i]);
-            TokenLibrary.sendToken(_token, _omniTraderAddress, _amount);
+            IERC20Upgradeable(_tokens[i]).safeTransfer(_omniVaultExecutor, _amounts[i]);
         }
 
         collectedFees += request.feeCollected;
+        pendingFees -= request.feeCollected;
 
         delete vaultRequests[_requestId];
 
@@ -177,6 +192,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      * @param _feeToken The address of the new fee token.
      */
     function setFeeToken(address _feeToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(collectedFees == 0 && pendingFees == 0, "VC-FTLK-01");
         require(_feeToken != address(0), "VC-SAZ-01");
         address oldFeeToken = feeToken;
         feeToken = _feeToken;
@@ -200,6 +216,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      * @param _newDelay The new reclaim delay in seconds.
      */
     function setReclaimDelay(uint256 _newDelay) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(_newDelay < 28 days, "VC-IRDL-01");
         uint256 oldDelay = reclaimDelay;
         reclaimDelay = _newDelay;
         emit ReclaimDelayUpdated(_newDelay, oldDelay);
@@ -211,7 +228,11 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
     function withdrawCollectedFees() external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 amount = collectedFees;
         collectedFees = 0;
-        TokenLibrary.sendToken(feeToken, msg.sender, amount);
+        IERC20Upgradeable(feeToken).safeTransfer(msg.sender, amount);
+    }
+
+    function getCreationRequest(bytes32 _requestId) external view returns (VaultRequest memory) {
+        return vaultRequests[_requestId];
     }
 
     /**
@@ -222,35 +243,34 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      */
     function _requestVaultCreation(
         address[] memory _tokens,
-        uint208[] memory _amounts
+        uint256[] memory _amounts
     ) internal returns (bytes32 requestId) {
         uint256 len = _tokens.length;
-        require(len == _amounts.length, "VC-IVAL-01");
         require(hasAcknowledgedRisk[msg.sender], "VC-RDNS-01");
 
         uint256 feeAmt = feeAmount;
         address feeTokenAddress;
         if (feeAmt > 0) {
             feeTokenAddress = feeToken;
-            TokenLibrary.receiveToken(feeTokenAddress, msg.sender, feeAmt);
+            pendingFees += feeAmt;
+            IERC20Upgradeable(feeTokenAddress).safeTransferFrom(msg.sender, address(this), feeAmt);
         }
 
         for (uint256 i = 0; i < len; i++) {
             address _token = _tokens[i];
             uint256 _amount = uint256(_amounts[i]);
 
-            TokenLibrary.receiveToken(_token, msg.sender, _amount);
+            IERC20Upgradeable(_token).safeTransferFrom(msg.sender, address(this), _amount);
         }
 
-        requestId = keccak256(abi.encodePacked(msg.sender, block.chainid, block.timestamp));
+        requestId = keccak256(abi.encodePacked(msg.sender, creationNonces[msg.sender]++));
 
         vaultRequests[requestId] = VaultRequest({
             proposer: msg.sender,
             status: VaultRequestStatus.PENDING,
-            tokens: _tokens,
-            amounts: _amounts,
             timestamp: uint32(block.timestamp),
-            feeCollected: uint64(feeAmt)
+            feeCollected: uint64(feeAmt),
+            initialDepositHash: keccak256(abi.encode(_tokens, _amounts))
         });
 
         emit VaultCreationRequest(

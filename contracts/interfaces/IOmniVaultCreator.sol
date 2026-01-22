@@ -15,8 +15,7 @@ interface IOmniVaultCreator {
         uint32 timestamp;
         VaultRequestStatus status; // Current status of the request
         uint64 feeCollected;
-        address[] tokens; // The ERC20 token address
-        uint208[] amounts; // The amount of the token sent
+        bytes32 initialDepositHash; // Hash of the initial deposit tokens and amounts
     }
 
     // Emitted when a new vault creation request is made
@@ -27,7 +26,7 @@ interface IOmniVaultCreator {
         address feeToken,
         uint256 feeCollected,
         address[] tokens,
-        uint208[] amounts
+        uint256[] amounts
     );
 
     // Emitted when a vault request is accepted, rejected, or reclaimed

@@ -12,6 +12,7 @@ import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IPortfolio.sol";
 import "./interfaces/IPortfolioMain.sol";
 import "./interfaces/IMainnetRFQ.sol";
+import "./interfaces/IDexalotRFQ.sol";
 import "./interfaces/IWrappedToken.sol";
 import "./library/UtilsLibrary.sol";
 
@@ -48,7 +49,7 @@ import "./library/UtilsLibrary.sol";
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2023 Dexalot.
 
-contract DexalotRFQ is IMainnetRFQ, AccessControlEnumerable, EIP712, IERC1271, ReentrancyGuard {
+contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, ReentrancyGuard {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
@@ -82,55 +83,6 @@ contract DexalotRFQ is IMainnetRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     // max slippage bps
     uint24 private constant MAX_SLIP_BPS = 50000;
     uint256 private constant ADDRESS_LENGTH = 20;
-
-    // firm order data structure sent to user for regular swap from RFQ API
-    struct Order {
-        uint256 nonceAndMeta;
-        uint128 expiry;
-        address makerAsset;
-        address takerAsset;
-        address maker;
-        address taker;
-        uint256 makerAmount;
-        uint256 takerAmount;
-    }
-
-    // firm order data structure sent to user for cross chain swap from RFQ API
-    struct XChainSwap {
-        bytes32 from;
-        bytes32 to;
-        bytes32 makerSymbol;
-        bytes32 makerAsset;
-        bytes32 takerAsset;
-        uint256 makerAmount;
-        uint256 takerAmount;
-        uint96 nonce;
-        uint32 expiry;
-        uint32 destChainId;
-        IPortfolioBridge.BridgeProvider bridgeProvider;
-    }
-
-    struct SwapData {
-        uint256 nonceAndMeta;
-        // originating user
-        address taker;
-        // aggregator or destination user
-        bytes32 destTrader;
-        uint32 destChainId;
-        address srcAsset;
-        bytes32 destAsset;
-        uint256 srcAmount;
-        uint256 destAmount;
-        address msgSender;
-        bool isDirect;
-    }
-
-    // data structure for swaps unable to release funds on destination chain due to lack of inventory
-    struct PendingSwap {
-        address trader;
-        uint256 quantity;
-        bytes32 symbol;
-    }
 
     address public immutable trustedForwarder;
 
@@ -275,17 +227,6 @@ contract DexalotRFQ is IMainnetRFQ, AccessControlEnumerable, EIP712, IERC1271, R
         uint256 nonceAndMeta = (uint256(_xfer.trader) << 96) | (uint144(_xfer.customdata) & NONCE_MASK);
         _processXFerPayloadInternal(destTrader, _xfer.symbol, _xfer.quantity, nonceAndMeta);
     }
-
-    // /**
-    //  * @notice Sets the wrapped info for the given chain
-    //  * @dev Only callable by admin
-    //  * @param _wrappedToken Address of the wrapped token
-    //  * @param _keepWrapped Boolean to keep wrapped token or false for native token
-    //  */
-    // function setWrapped(address _wrappedToken, bool _keepWrapped) external onlyRole(DEFAULT_ADMIN_ROLE) {
-    //     wrappedInfo = WrappedInfo(IWrappedToken(_wrappedToken), _keepWrapped);
-    //     emit AddressSet("MAINNETRFQ", "SET-WRAPPED", _wrappedToken);
-    // }
 
     /**
      * @notice  Sets the portfolio bridge contract address
@@ -593,7 +534,7 @@ contract DexalotRFQ is IMainnetRFQ, AccessControlEnumerable, EIP712, IERC1271, R
             uint32(_order.expiry),
             _order.taker,
             _sender,
-            destTrader == _sender,
+            destTrader == _sender || destTrader == trustedForwarder,
             hashedStruct,
             _signature
         );

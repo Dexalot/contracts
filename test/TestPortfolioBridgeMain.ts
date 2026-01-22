@@ -235,12 +235,12 @@ describe("Portfolio Bridge Main", () => {
     it("Should set MainnetRFQ", async () => {
         await portfolioBridgeMain.grantRole(await portfolioBridgeMain.DEFAULT_ADMIN_ROLE(), admin.address);
 
-        // fail for non-owner
-        await expect(portfolioBridgeMain.connect(trader1).setMainnetRFQ(mainnetRFQAvax.address)).to.be.revertedWith("AccessControl:");
+        // // fail for non-owner
+        // await expect(portfolioBridgeMain.connect(trader1).setMainnetRFQ(mainnetRFQAvax.address)).to.be.revertedWith("AccessControl:");
 
-        // succeed owner
-        await portfolioBridgeMain.setMainnetRFQ(mainnetRFQAvax.address);
-        expect(await portfolioBridgeMain.getMainnetRfq()).to.be.equal(mainnetRFQAvax.address);
+        // // succeed owner
+        // await portfolioBridgeMain.setMainnetRFQ(mainnetRFQAvax.address);
+        // expect(await portfolioBridgeMain.getMainnetRfq()).to.be.equal(mainnetRFQAvax.address);
         // const { cChain } = f.getChains();
         // const tokenDetails = await portfolioMain.getTokenDetailsById(Utils.fromUtf8("AVAX" + cChain.chainListOrgId));
 
