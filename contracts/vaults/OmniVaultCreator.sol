@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import "@openzeppelin-upgradeable-v5/access/AccessControlUpgradeable.sol";
+import "@openzeppelin-v5/utils/ReentrancyGuardTransient.sol";
+import "@openzeppelin-v5/utils/cryptography/ECDSA.sol";
+import "@openzeppelin-v5/utils/cryptography/MessageHashUtils.sol";
+import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin-v5/token/ERC20/IERC20.sol";
 
 import "../interfaces/IOmniVaultCreator.sol";
 
@@ -15,10 +17,10 @@ import "../interfaces/IOmniVaultCreator.sol";
  *         lifecycle of vault creation requests. Deployment of contracts is handled
  *         off-chain by Dexalot admins upon acceptance of requests.
  */
-contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgradeable, ReentrancyGuardUpgradeable {
-    using SafeERC20Upgradeable for IERC20Upgradeable;
+contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgradeable, ReentrancyGuardTransient {
+    using SafeERC20 for IERC20;
 
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.0.2");
     string public constant RISK_DISCLOSURE =
         "I acknowledge that I have read and understood the risks associated with creating and funding this vault.";
 
@@ -46,9 +48,8 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
     function initialize(address _admin) public initializer {
         require(_admin != address(0), "VC-SAZ-01");
         __AccessControl_init();
-        __ReentrancyGuard_init();
 
-        _setupRole(DEFAULT_ADMIN_ROLE, _admin);
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         reclaimDelay = 7 days;
     }
 
@@ -108,17 +109,17 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
 
         uint256 len = _tokens.length;
         for (uint256 i = 0; i < len; i++) {
-            IERC20Upgradeable token = IERC20Upgradeable(_tokens[i]);
-            uint256 balBefore = token.balanceOf(address(this));
+            IERC20 token = IERC20(_tokens[i]);
+            uint256 balBefore = token.balanceOf(proposer);
             token.safeTransfer(proposer, _amounts[i]);
-            uint256 balAfter = token.balanceOf(address(this));
+            uint256 balAfter = token.balanceOf(proposer);
             // To ensure no transfer fees are applied
-            require(balBefore - balAfter == _amounts[i], "VC-ITFM-01");
+            require(balAfter == balBefore + _amounts[i], "VC-BTNM-01");
         }
 
         if (request.feeCollected > 0) {
             pendingFees -= request.feeCollected;
-            IERC20Upgradeable(feeToken).safeTransfer(proposer, request.feeCollected);
+            IERC20(feeToken).safeTransfer(proposer, request.feeCollected);
         }
 
         delete vaultRequests[_requestId];
@@ -150,7 +151,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
         uint256 len = _tokens.length;
 
         for (uint256 i = 0; i < len; i++) {
-            IERC20Upgradeable(_tokens[i]).safeTransfer(_omniVaultExecutor, _amounts[i]);
+            IERC20(_tokens[i]).safeTransfer(_omniVaultExecutor, _amounts[i]);
         }
 
         collectedFees += request.feeCollected;
@@ -192,7 +193,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      * @param _feeToken The address of the new fee token.
      */
     function setFeeToken(address _feeToken) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(collectedFees == 0 && pendingFees == 0, "VC-FTLK-01");
+        require(collectedFees == 0 && pendingFees == 0, "VC-FTNF-01");
         require(_feeToken != address(0), "VC-SAZ-01");
         address oldFeeToken = feeToken;
         feeToken = _feeToken;
@@ -228,7 +229,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
     function withdrawCollectedFees() external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 amount = collectedFees;
         collectedFees = 0;
-        IERC20Upgradeable(feeToken).safeTransfer(msg.sender, amount);
+        IERC20(feeToken).safeTransfer(msg.sender, amount);
     }
 
     function getCreationRequest(bytes32 _requestId) external view returns (VaultRequest memory) {
@@ -253,14 +254,14 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
         if (feeAmt > 0) {
             feeTokenAddress = feeToken;
             pendingFees += feeAmt;
-            IERC20Upgradeable(feeTokenAddress).safeTransferFrom(msg.sender, address(this), feeAmt);
+            IERC20(feeTokenAddress).safeTransferFrom(msg.sender, address(this), feeAmt);
         }
 
         for (uint256 i = 0; i < len; i++) {
             address _token = _tokens[i];
             uint256 _amount = uint256(_amounts[i]);
 
-            IERC20Upgradeable(_token).safeTransferFrom(msg.sender, address(this), _amount);
+            IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
         }
 
         requestId = keccak256(abi.encodePacked(msg.sender, creationNonces[msg.sender]++));
@@ -290,8 +291,8 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
      * @param signature The signature provided by the proposer.
      */
     function _verifyRiskDisclosure(bytes memory signature) internal view {
-        bytes32 ethSignedHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(RISK_DISCLOSURE));
-        address signer = ECDSAUpgradeable.recover(ethSignedHash, signature);
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(bytes(RISK_DISCLOSURE));
+        address signer = ECDSA.recover(ethSignedHash, signature);
 
         require(signer == msg.sender, "VC-IRDS-01");
     }

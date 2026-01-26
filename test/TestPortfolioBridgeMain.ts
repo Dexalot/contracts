@@ -77,12 +77,6 @@ describe("Portfolio Bridge Main", () => {
         expect(await portfolioBridgeMain.getPortfolio()).to.equal(portfolioMain.address);
     });
 
-
-    it("Should get MainnetRFQ address correctly", async () => {
-        expect(await portfolioBridgeMain.getMainnetRfq()).to.equal(mainnetRFQAvax.address);
-    });
-
-
     it("Should set & get default bridge provider  correctly", async () => {
         await expect(portfolioBridgeMain.connect(trader1).setDefaultBridgeProvider(1)).to.be.revertedWith("AccessControl:");
         await expect(portfolioBridgeMain.setDefaultBridgeProvider(0)).to.be.revertedWith("PB-DBCD-01");

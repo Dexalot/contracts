@@ -2,7 +2,7 @@
 pragma solidity 0.8.30;
 
 import "forge-std/Test.sol";
-import "contracts/DexalotRouter.sol";
+import {DexalotRouter} from "contracts/DexalotRouter.sol";
 import "contracts/interfaces/IMainnetRFQ.sol";
 import "contracts/mocks/MockToken.sol";
 
@@ -168,10 +168,9 @@ contract DexalotRouterTest is Test {
         require(success);
     }
 
-    function test_simpleSwap_ERC20ToERC20(uint256 makerAmount, uint256 takerAmount, uint256 nativeAmount) public {
+    function test_simpleSwap_ERC20ToERC20(uint256 makerAmount, uint256 takerAmount) public {
         vm.assume(makerAmount > 0 && makerAmount <= 1000e18);
         vm.assume(takerAmount > 0 && takerAmount <= 1000e6);
-        vm.assume(nativeAmount <= 1 ether);
         (IMockMainnetRFQ.Order memory order, bytes memory signature) = _getSignedOrder(
             address(mockALOT),
             address(mockUSDC),
@@ -189,7 +188,7 @@ contract DexalotRouterTest is Test {
         // Execute swap via router fallback
         vm.startPrank(trader1);
         mockUSDC.approve(address(router), takerAmount);
-        (bool success, ) = address(router).call{value: nativeAmount}(
+        (bool success, ) = address(router).call{value: 0}(
             abi.encodeWithSelector(SIMPLE_SWAP_SELECTOR, order, signature)
         );
         require(success);
@@ -201,10 +200,9 @@ contract DexalotRouterTest is Test {
         assertEq(mockALOT.balanceOf(address(rfq)), rfqAlotBefore - makerAmount, "RFQ ALOT balance incorrect");
     }
 
-    function test_simpleSwap_ERC20ToNative(uint256 makerAmount, uint256 takerAmount, uint256 nativeAmount) public {
+    function test_simpleSwap_ERC20ToNative(uint256 makerAmount, uint256 takerAmount) public {
         vm.assume(makerAmount > 0 && makerAmount <= 1 ether);
         vm.assume(takerAmount > 0 && takerAmount <= 1000e6);
-        vm.assume(nativeAmount <= 1 ether);
         (IMockMainnetRFQ.Order memory order, bytes memory signature) = _getSignedOrder(
             address(0),
             address(mockUSDC),
@@ -222,16 +220,16 @@ contract DexalotRouterTest is Test {
         // Execute swap via router fallback
         vm.startPrank(trader1);
         mockUSDC.approve(address(router), takerAmount);
-        (bool success, ) = address(router).call{value: nativeAmount}(
+        (bool success, ) = address(router).call{value: 0}(
             abi.encodeWithSelector(SIMPLE_SWAP_SELECTOR, order, signature)
         );
         require(success);
         vm.stopPrank();
 
         assertEq(mockUSDC.balanceOf(trader1), traderUsdcBefore - takerAmount, "Trader USDC balance incorrect");
-        assertEq(trader1.balance, traderNativeBefore + makerAmount - nativeAmount, "Trader native balance incorrect");
+        assertEq(trader1.balance, traderNativeBefore + makerAmount, "Trader native balance incorrect");
         assertEq(mockUSDC.balanceOf(address(rfq)), rfqUsdcBefore + takerAmount, "RFQ USDC balance incorrect");
-        assertEq(address(rfq).balance, rfqNativeBefore - makerAmount + nativeAmount, "RFQ native balance incorrect");
+        assertEq(address(rfq).balance, rfqNativeBefore - makerAmount, "RFQ native balance incorrect");
     }
 
     function test_simpleSwap_NativeToERC20(uint256 makerAmount, uint256 takerAmount, uint256 nativeOffset) public {
@@ -266,16 +264,10 @@ contract DexalotRouterTest is Test {
         assertEq(mockUSDC.balanceOf(address(rfq)), rfqUsdcBefore - makerAmount, "RFQ USDC balance incorrect");
     }
 
-    function test_partialSwap_ERC20ToERC20(
-        uint256 makerAmount,
-        uint256 takerAmount,
-        uint256 partialAmount,
-        uint256 nativeAmount
-    ) public {
+    function test_partialSwap_ERC20ToERC20(uint256 makerAmount, uint256 takerAmount, uint256 partialAmount) public {
         vm.assume(makerAmount > 0 && makerAmount <= 1000e18);
         vm.assume(takerAmount > 0 && takerAmount <= 1000e6);
         vm.assume(partialAmount > 0 && partialAmount <= takerAmount);
-        vm.assume(nativeAmount <= 1 ether);
         (IMockMainnetRFQ.Order memory order, bytes memory signature) = _getSignedOrder(
             address(mockALOT),
             address(mockUSDC),
@@ -293,7 +285,7 @@ contract DexalotRouterTest is Test {
         // Execute swap via router fallback
         vm.startPrank(trader1);
         mockUSDC.approve(address(router), partialAmount);
-        (bool success, ) = address(router).call{value: nativeAmount}(
+        (bool success, ) = address(router).call{value: 0}(
             abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, order, signature, partialAmount)
         );
         require(success);

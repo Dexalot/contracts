@@ -6,7 +6,7 @@ import "@openzeppelin-v5/utils/cryptography/EIP712.sol";
 import "@openzeppelin-v5/access/extensions/AccessControlEnumerable.sol";
 import "@openzeppelin-v5/token/ERC20/IERC20.sol";
 import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
-import "solmate/src/utils/ReentrancyGuard.sol";
+import "@openzeppelin-v5/utils/ReentrancyGuardTransient.sol";
 import "./interfaces/IERC1271.sol";
 import "./interfaces/IPortfolioBridge.sol";
 import "./interfaces/IPortfolio.sol";
@@ -49,7 +49,7 @@ import "./library/UtilsLibrary.sol";
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2023 Dexalot.
 
-contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, ReentrancyGuard {
+contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
     using ECDSA for bytes32;
 
@@ -605,14 +605,6 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
         require(isValidSignature(_hashTypedDataV4(_hashedStruct), _signature) == 0x1626ba7e, "RF-IS-01");
 
         completedSwaps[bucket] = bitmap | mask;
-    }
-
-    function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        // portfolioBridge.pause();
-    }
-
-    function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) {
-        // portfolioBridge.unpause();
     }
 
     /**

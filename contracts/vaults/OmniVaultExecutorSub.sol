@@ -33,7 +33,7 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
      * @param amounts An array of amounts corresponding to each token symbol
      */
     function dispatchAssets(address recipient, bytes32[] calldata tokens, uint256[] calldata amounts) external {
-        require(msg.sender == omniVaultManager, "OT-DAS-01");
+        require(msg.sender == omniVaultManager, "VE-SNVM-01");
         IPortfolioSub(portfolio).bulkTransferTokens(address(this), recipient, tokens, amounts);
     }
 
@@ -50,8 +50,8 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
         uint256[] calldata fees
     ) external onlyRole(OMNITRADER_ROLE) {
         uint256 len = fees.length;
-        require(len == swapIds.length, "OT-IVAL-01");
-        require(feeManager != address(0), "OT-FMNA-01");
+        require(len == swapIds.length, "VE-IVAL-01");
+        require(feeManager != address(0), "VE-FMNS-01");
         uint256 totalFee;
         for (uint256 i = 0; i < len; i++) {
             totalFee += fees[i];
@@ -65,11 +65,11 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
      * @dev Only callable by addresses with the OMNITRADER_ROLE
      */
     function topupGas() external onlyRole(OMNITRADER_ROLE) {
-        require(prevGasTopupTs + 7 days < block.timestamp, "OT-TGTF-01");
+        require(prevGasTopupTs + 7 days < block.timestamp, "VE-TETG-01");
         prevGasTopupTs = block.timestamp;
         uint256 topupAmount = gasTopupAmount;
         (bool success, ) = msg.sender.call{value: topupAmount}("");
-        require(success, "OT-TGTF-02");
+        require(success, "VE-FNGT-01");
         emit GasTopup(block.timestamp, topupAmount);
     }
 
@@ -78,7 +78,7 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
      * @param _omniVaultManager The address of the OmniVaultManager contract
      */
     function setOmniVaultManager(address _omniVaultManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_omniVaultManager != address(0), "OT-SAZ-01");
+        require(_omniVaultManager != address(0), "VE-SAZ-01");
         omniVaultManager = _omniVaultManager;
     }
 

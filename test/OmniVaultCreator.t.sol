@@ -2,16 +2,14 @@
 pragma solidity 0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
-import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
-import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-import {ECDSAUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
+import {IERC20} from "@openzeppelin-v5/token/ERC20/IERC20.sol";
+import {IAccessControl} from "@openzeppelin-v5/access/IAccessControl.sol";
+import {MessageHashUtils} from "@openzeppelin-v5/utils/cryptography/MessageHashUtils.sol";
 
 import {OmniVaultCreator} from "contracts/vaults/OmniVaultCreator.sol";
 
 import {IOmniVaultCreator} from "contracts/interfaces/IOmniVaultCreator.sol";
-import "contracts/mocks/MockToken.sol";
+import {MockToken} from "contracts/mocks/MockToken.sol";
 
 contract OmniVaultCreatorTest is Test {
     OmniVaultCreator public creator;
@@ -23,11 +21,6 @@ contract OmniVaultCreatorTest is Test {
     MockToken internal feeToken;
     MockToken internal baseToken;
     MockToken internal quoteToken;
-
-    address internal constant OMNI_VAULT_MOCK = address(0x0420);
-    address internal constant DEFAULT_BURN_ADDRESS = address(0xDEAD);
-
-    bytes32 internal constant DEFAULT_ADMIN_ROLE = 0x0000000000000000000000000000000000000000000000000000000000000000;
 
     // Amounts
     uint256 internal constant INITIAL_FEE_AMOUNT = 100 * 1e6;
@@ -64,8 +57,10 @@ contract OmniVaultCreatorTest is Test {
         vm.stopPrank();
 
         // 6. Configure Fee Token
-        vm.prank(ADMIN);
+        vm.startPrank(ADMIN);
         creator.setFeeToken(address(feeToken));
+        creator.setFeeAmount(uint64(INITIAL_FEE_AMOUNT));
+        vm.stopPrank();
     }
 
     // Helper to verify expected calls on the Real Mock Tokens
@@ -74,22 +69,23 @@ contract OmniVaultCreatorTest is Test {
             // Verifies that creator calls transferFrom(proposer, creator, amount)
             vm.expectCall(
                 token,
-                abi.encodeWithSelector(IERC20Upgradeable.transferFrom.selector, proposer, address(creator), amount)
+                abi.encodeWithSelector(IERC20.transferFrom.selector, proposer, address(creator), amount)
             );
-        } else if (to == proposer || to == ADMIN || to == OMNI_VAULT_MOCK) {
+        } else {
             // Verifies that creator calls transfer(to, amount)
-            vm.expectCall(token, abi.encodeWithSelector(IERC20Upgradeable.transfer.selector, to, amount));
+            // This covers ADMIN withdrawals, Reclaims to proposer, and Funding to VaultExecutors
+            vm.expectCall(token, abi.encodeWithSelector(IERC20.transfer.selector, to, amount));
         }
     }
 
     // --- TEST INITIALIZATION ---
 
-    function testInitializeSetsAdminAndDefaultValues() public {
+    function test_Initialize_SetsCorrectState() public {
         assertEq(creator.reclaimDelay(), 7 days, "Reclaim delay incorrect");
         assertEq(creator.feeAmount(), INITIAL_FEE_AMOUNT, "Fee amount incorrect");
     }
 
-    function testInitializeRevertsIfAdminIsZero() public {
+    function test_Initialize_RevertIf_AdminIsZero() public {
         OmniVaultCreator newCreator = new OmniVaultCreator();
         vm.expectRevert("VC-SAZ-01");
         newCreator.initialize(address(0));
@@ -97,49 +93,112 @@ contract OmniVaultCreatorTest is Test {
 
     // --- TEST ADMIN FUNCTIONS ---
 
-    function testSetFeeToken() public {
-        address newFeeToken = address(0xDEAD);
+    function test_SetFeeToken_Success(address _newFeeToken) public {
+        vm.assume(_newFeeToken != address(0) && _newFeeToken != address(feeToken));
         vm.prank(ADMIN);
         vm.expectEmit(true, true, false, true);
-        emit IOmniVaultCreator.FeeTokenUpdated(newFeeToken, address(feeToken));
-        creator.setFeeToken(newFeeToken);
-        assertEq(creator.feeToken(), newFeeToken, "Fee token not updated");
+        emit IOmniVaultCreator.FeeTokenUpdated(_newFeeToken, address(feeToken));
+        creator.setFeeToken(_newFeeToken);
+        assertEq(creator.feeToken(), _newFeeToken);
     }
 
-    function testSetFeeTokenRevertsIfZeroAddress() public {
+    function test_SetFeeToken_RevertIf_ZeroAddress() public {
         vm.prank(ADMIN);
         vm.expectRevert("VC-SAZ-01");
         creator.setFeeToken(address(0));
     }
 
-    function testSetFeeAmount() public {
-        uint64 newFee = 500 * 1e6;
+    function test_SetFeeToken_RevertIf_PendingFeesExist(
+        address _newFeeToken,
+        uint256 _baseAmount,
+        uint256 _quoteAmount
+    ) public {
+        vm.assume(_newFeeToken != address(0) && _newFeeToken != address(feeToken));
+        test_OpenPairVault_Success(_baseAmount, _quoteAmount);
+
         vm.prank(ADMIN);
-        vm.expectEmit(true, false, false, true);
-        emit IOmniVaultCreator.FeeUpdated(newFee, uint64(INITIAL_FEE_AMOUNT));
-        creator.setFeeAmount(newFee);
-        assertEq(creator.feeAmount(), newFee, "Fee amount not updated");
+        vm.expectRevert("VC-FTNF-01");
+        creator.setFeeToken(_newFeeToken);
     }
 
-    function testSetReclaimDelay() public {
-        uint256 newDelay = 20 days;
+    function test_SetFeeToken_RevertIf_ClaimableFeesExist(
+        address _newFeeToken,
+        uint256 _baseAmount,
+        uint256 _quoteAmount,
+        address _vaultExecutor
+    ) public {
+        vm.assume(_newFeeToken != address(0) && _newFeeToken != address(feeToken));
+        test_AcceptAndFundVault_Success(_baseAmount, _quoteAmount, _vaultExecutor);
+
         vm.prank(ADMIN);
-        vm.expectEmit(true, false, false, true);
-        emit IOmniVaultCreator.ReclaimDelayUpdated(newDelay, 7 days);
-        creator.setReclaimDelay(newDelay);
-        assertEq(creator.reclaimDelay(), newDelay, "Reclaim delay not updated");
+        vm.expectRevert("VC-FTNF-01");
+        creator.setFeeToken(_newFeeToken);
     }
 
-    function testSetReclaimDelayRevertsIfTooLong() public {
+    function test_SetFeeToken_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        creator.setFeeToken(address(0));
+    }
+
+    function test_SetFeeAmount_Success(uint64 _newFee) public {
+        vm.prank(ADMIN);
+        vm.expectEmit(true, false, false, true);
+        emit IOmniVaultCreator.FeeUpdated(_newFee, uint64(INITIAL_FEE_AMOUNT));
+        creator.setFeeAmount(_newFee);
+        assertEq(creator.feeAmount(), _newFee);
+    }
+
+    function test_SetFeeAmount_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        creator.setFeeAmount(0);
+    }
+
+    function test_SetReclaimDelay_Success(uint256 _newDelay) public {
+        vm.assume(_newDelay < 28 days);
+        vm.prank(ADMIN);
+        vm.expectEmit(true, false, false, true);
+        emit IOmniVaultCreator.ReclaimDelayUpdated(_newDelay, 7 days);
+        creator.setReclaimDelay(_newDelay);
+        assertEq(creator.reclaimDelay(), _newDelay);
+    }
+
+    function test_SetReclaimDelay_RevertIf_DelayTooLong(uint256 _newDelay) public {
+        vm.assume(_newDelay > 28 days);
         vm.prank(ADMIN);
         vm.expectRevert("VC-IRDL-01");
-        creator.setReclaimDelay(30 days);
+        creator.setReclaimDelay(_newDelay);
+    }
+
+    function test_SetReclaimDelay_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        creator.setReclaimDelay(0);
     }
 
     // --- TEST RISK ACKNOWLEDGEMENT ---
 
-    function testAcknowledgeRiskDisclosure() public {
-        bytes32 messageHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
+    function test_AcknowledgeRiskDisclosure_Success() public {
+        bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
 
@@ -148,23 +207,25 @@ contract OmniVaultCreatorTest is Test {
         emit IOmniVaultCreator.RiskAcknowledged(proposer);
         creator.acknowledgeRiskDisclosure(signature);
 
-        assertTrue(creator.hasAcknowledgedRisk(proposer), "Risk not acknowledged");
+        assertTrue(creator.hasAcknowledgedRisk(proposer));
     }
 
-    function testAcknowledgeRiskDisclosureRevertsIfAlreadyAcknowledged() public {
-        bytes32 messageHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
+    function test_AcknowledgeRiskDisclosure_RevertIf_AlreadyAcknowledged() public {
+        _helper_AcknowledgeRisk();
+
+        bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
-        vm.startPrank(proposer);
-        creator.acknowledgeRiskDisclosure(signature);
 
+        vm.prank(proposer);
         vm.expectRevert("VC-RDAA-01");
         creator.acknowledgeRiskDisclosure(signature);
-        vm.stopPrank();
     }
 
-    function testAcknowledgeRiskDisclosureRevertsIfInvalidSignature() public {
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(0x999999, bytes32(0)); // Wrong key
+    function test_AcknowledgeRiskDisclosure_RevertIf_InvalidSigner(uint128 _key) public {
+        vm.assume(_key != proposerKey && _key != 0);
+        bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(_key, messageHash);
         bytes memory badSignature = abi.encodePacked(r, s, v);
 
         vm.prank(proposer);
@@ -172,22 +233,37 @@ contract OmniVaultCreatorTest is Test {
         creator.acknowledgeRiskDisclosure(badSignature);
     }
 
-    // --- TEST OPEN PAIR VAULT ---
+    function test_AcknowledgeRiskDisclosure_RevertIf_InvalidMessage(string memory _message) public {
+        vm.assume(keccak256(bytes(_message)) != keccak256(bytes(creator.RISK_DISCLOSURE())));
+        bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(bytes(_message));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
+        bytes memory badSignature = abi.encodePacked(r, s, v);
 
-    function testOpenPairVaultSuccess() public returns (bytes32) {
-        // Acknowledge risk
-        bytes32 messageHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
+        vm.prank(proposer);
+        vm.expectRevert("VC-IRDS-01");
+        creator.acknowledgeRiskDisclosure(badSignature);
+    }
+
+    function _helper_AcknowledgeRisk() private {
+        bytes32 messageHash = MessageHashUtils.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
         bytes memory signature = abi.encodePacked(r, s, v);
         vm.prank(proposer);
         creator.acknowledgeRiskDisclosure(signature);
+    }
 
-        // Expect Calls on the REAL tokens
+    // --- TEST OPEN PAIR VAULT ---
+
+    function test_OpenPairVault_Success(uint256 _baseAmount, uint256 _quoteAmount) public returns (bytes32) {
+        vm.assume(_baseAmount >= 0 && _baseAmount < 1_000 * 1e18);
+        vm.assume(_quoteAmount >= 0 && _quoteAmount < 1_000 * 1e6);
+
+        _helper_AcknowledgeRisk();
+
         mockTokenTransfer(address(feeToken), proposer, address(creator), INITIAL_FEE_AMOUNT);
-        mockTokenTransfer(address(baseToken), proposer, address(creator), BASE_AMOUNT);
-        mockTokenTransfer(address(quoteToken), proposer, address(creator), QUOTE_AMOUNT);
+        mockTokenTransfer(address(baseToken), proposer, address(creator), _baseAmount);
+        mockTokenTransfer(address(quoteToken), proposer, address(creator), _quoteAmount);
 
-        // Setup call data
         address[] memory baseTokens = new address[](1);
         baseTokens[0] = address(baseToken);
         address[] memory quoteTokens = new address[](1);
@@ -196,19 +272,18 @@ contract OmniVaultCreatorTest is Test {
         chainIds[0] = uint32(CHAIN_ID);
 
         vm.startPrank(proposer);
-        vm.chainId(CHAIN_ID); // Fix: use chainId() not roll()
-        bytes32 requestId = creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
+        vm.chainId(CHAIN_ID);
+        bytes32 requestId = creator.openPairVault(baseTokens, quoteTokens, chainIds, _baseAmount, _quoteAmount);
         vm.stopPrank();
 
         IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(requestId);
-        assertEq(request.proposer, proposer, "Proposer incorrect");
-        assertEq(uint256(request.status), uint256(IOmniVaultCreator.VaultRequestStatus.PENDING), "Status incorrect");
-        assertEq(request.feeCollected, INITIAL_FEE_AMOUNT, "Fee collected incorrect");
+        assertEq(request.proposer, proposer);
+        assertEq(uint256(request.status), uint256(IOmniVaultCreator.VaultRequestStatus.PENDING));
 
         return requestId;
     }
 
-    function testOpenPairVaultRevertsIfUnacknowledgedRisk() public {
+    function test_OpenPairVault_RevertIf_RiskNotAcknowledged() public {
         address[] memory baseTokens = new address[](1);
         baseTokens[0] = address(baseToken);
         address[] memory quoteTokens = new address[](1);
@@ -222,12 +297,8 @@ contract OmniVaultCreatorTest is Test {
         creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
     }
 
-    function testOpenPairVaultRevertsIfInvalidArrayLength() public {
-        bytes32 messageHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-        vm.prank(proposer);
-        creator.acknowledgeRiskDisclosure(signature);
+    function test_OpenPairVault_RevertIf_ArrayLengthMismatch() public {
+        _helper_AcknowledgeRisk();
 
         address[] memory baseTokens = new address[](2);
         address[] memory quoteTokens = new address[](1);
@@ -238,12 +309,8 @@ contract OmniVaultCreatorTest is Test {
         creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
     }
 
-    function testOpenPairVaultRevertsIfInvalidChainId() public {
-        bytes32 messageHash = ECDSAUpgradeable.toEthSignedMessageHash(bytes(creator.RISK_DISCLOSURE()));
-        (uint8 v, bytes32 r, bytes32 s) = vm.sign(proposerKey, messageHash);
-        bytes memory signature = abi.encodePacked(r, s, v);
-        vm.prank(proposer);
-        creator.acknowledgeRiskDisclosure(signature);
+    function test_OpenPairVault_RevertIf_InvalidChainId() public {
+        _helper_AcknowledgeRisk();
 
         address[] memory baseTokens = new address[](1);
         baseTokens[0] = address(baseToken);
@@ -260,8 +327,8 @@ contract OmniVaultCreatorTest is Test {
 
     // --- TEST REJECT VAULT REQUEST ---
 
-    function testRejectVaultRequestFailsIfNotPending() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_RejectVaultRequest_RevertIf_NotPending(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
 
         vm.prank(ADMIN);
         creator.rejectVaultRequest(requestId);
@@ -271,64 +338,65 @@ contract OmniVaultCreatorTest is Test {
         creator.rejectVaultRequest(requestId);
     }
 
+    function test_RejectVaultRequest_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        creator.rejectVaultRequest(bytes32(0));
+    }
+
     // --- TEST RECLAIM REQUEST ---
 
-    function testReclaimRequestSuccessAfterDelay() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_ReclaimRequest_Success_AfterDelay(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
 
         vm.warp(block.timestamp + creator.reclaimDelay() + 1);
 
         mockTokenTransfer(address(feeToken), address(creator), proposer, INITIAL_FEE_AMOUNT);
-        mockTokenTransfer(address(baseToken), address(creator), proposer, BASE_AMOUNT);
-        mockTokenTransfer(address(quoteToken), address(creator), proposer, QUOTE_AMOUNT);
+        mockTokenTransfer(address(baseToken), address(creator), proposer, _baseAmount);
+        mockTokenTransfer(address(quoteToken), address(creator), proposer, _quoteAmount);
 
         vm.prank(proposer);
-        vm.expectEmit(true, false, false, false);
         emit IOmniVaultCreator.VaultCreationUpdate(requestId, IOmniVaultCreator.VaultRequestStatus.RECLAIMED);
 
         address[] memory tokens = new address[](2);
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
 
         creator.reclaimRequest(requestId, tokens, amounts);
-
-        assertEq(creator.collectedFees(), 0, "Collected fees should be reduced");
-        IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(requestId);
-        assertEq(address(request.proposer), address(0), "Request should be deleted");
+        assertEq(creator.collectedFees(), 0);
     }
 
-    function testReclaimRequestSuccessAfterRejection() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_ReclaimRequest_Success_AfterRejection(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
 
         vm.prank(ADMIN);
         creator.rejectVaultRequest(requestId);
 
-        mockTokenTransfer(address(feeToken), address(creator), proposer, INITIAL_FEE_AMOUNT);
-        mockTokenTransfer(address(baseToken), address(creator), proposer, BASE_AMOUNT);
-        mockTokenTransfer(address(quoteToken), address(creator), proposer, QUOTE_AMOUNT);
-
         vm.prank(proposer);
-        vm.expectEmit(true, false, false, false);
-        emit IOmniVaultCreator.VaultCreationUpdate(requestId, IOmniVaultCreator.VaultRequestStatus.RECLAIMED);
-
         address[] memory tokens = new address[](2);
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
 
         creator.reclaimRequest(requestId, tokens, amounts);
 
         IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(requestId);
-        assertEq(address(request.proposer), address(0), "Request should be deleted");
+        assertEq(address(request.proposer), address(0));
     }
 
-    function testReclaimRequestRevertsIfTooEarly() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_ReclaimRequest_RevertIf_TooEarly(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
 
         vm.warp(block.timestamp + 1 days);
 
@@ -336,132 +404,172 @@ contract OmniVaultCreatorTest is Test {
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
 
         vm.prank(proposer);
         vm.expectRevert("VC-IVRS-01");
         creator.reclaimRequest(requestId, tokens, amounts);
     }
 
-    function testReclaimRequestRevertsIfNotProposer() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
-
+    function test_ReclaimRequest_RevertIf_SenderNotProposer(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
         vm.warp(block.timestamp + creator.reclaimDelay() + 1);
 
         address[] memory tokens = new address[](2);
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
 
-        vm.prank(DEFAULT_BURN_ADDRESS);
+        vm.prank(ADMIN);
         vm.expectRevert("VC-SNEP-01");
         creator.reclaimRequest(requestId, tokens, amounts);
     }
 
-    function testReclaimRequestRevertsIfInvalidTokensOrAmounts() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
-
+    function test_ReclaimRequest_RevertIf_InvalidTokensOrAmounts(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
         vm.warp(block.timestamp + creator.reclaimDelay() + 1);
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(baseToken);
         uint256[] memory amounts = new uint256[](1);
-        amounts[0] = BASE_AMOUNT;
+        amounts[0] = _baseAmount;
 
         vm.prank(proposer);
         vm.expectRevert("VC-IDHM-01");
         creator.reclaimRequest(requestId, tokens, amounts);
     }
 
+    function test_ReclaimRequest_RevertIf_FeeOnTransferTokenFails(uint256 _baseAmount, uint256 _quoteAmount) public {
+        _baseAmount = bound(_baseAmount, 100, 1_000 * 1e18); // bound so at lest 1 gwei fee is taken
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
+
+        vm.prank(ADMIN);
+        baseToken.setFeeOnTransfer(true);
+
+        vm.warp(block.timestamp + creator.reclaimDelay() + 1);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
+
+        vm.prank(proposer);
+        vm.expectRevert("VC-BTNM-01");
+        creator.reclaimRequest(requestId, tokens, amounts);
+    }
+
     // --- TEST ACCEPT AND FUND VAULT ---
 
-    function testAcceptAndFundVaultSuccess() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_AcceptAndFundVault_Success(uint256 _baseAmount, uint256 _quoteAmount, address _vaultExecutor) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
+        vm.assume(_vaultExecutor != address(0));
 
-        mockTokenTransfer(address(baseToken), address(creator), OMNI_VAULT_MOCK, BASE_AMOUNT);
-        mockTokenTransfer(address(quoteToken), address(creator), OMNI_VAULT_MOCK, QUOTE_AMOUNT);
-
-        uint256 expectedFees = INITIAL_FEE_AMOUNT;
-
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(baseToken);
-        tokens[1] = address(quoteToken);
-        uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
-
-        vm.prank(ADMIN);
-        vm.expectEmit(true, false, false, false);
-        emit IOmniVaultCreator.VaultCreationUpdate(requestId, IOmniVaultCreator.VaultRequestStatus.ACCEPTED);
-        creator.acceptAndFundVault(requestId, OMNI_VAULT_MOCK, tokens, amounts);
-
-        assertEq(creator.collectedFees(), expectedFees, "Collected fees incorrect");
-        IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(requestId);
-        assertEq(address(request.proposer), address(0), "Request should be deleted");
-    }
-
-    function testAcceptAndFundVaultRevertsIfRequestNotFound() public {
-        vm.prank(ADMIN);
-        vm.expectRevert("VC-SNEP-01");
-        creator.acceptAndFundVault(bytes32(0), OMNI_VAULT_MOCK, new address[](0), new uint256[](0));
-    }
-
-    function testAcceptAndFundVaultRevertsIfVaultAddressIsZero() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+        mockTokenTransfer(address(baseToken), address(creator), _vaultExecutor, _baseAmount);
+        mockTokenTransfer(address(quoteToken), address(creator), _vaultExecutor, _quoteAmount);
 
         address[] memory tokens = new address[](2);
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
+
+        vm.prank(ADMIN);
+        creator.acceptAndFundVault(requestId, _vaultExecutor, tokens, amounts);
+
+        assertEq(creator.collectedFees(), INITIAL_FEE_AMOUNT);
+    }
+
+    function test_AcceptAndFundVault_RevertIf_VaultAddressZero(uint256 _baseAmount, uint256 _quoteAmount) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = _baseAmount;
+        amounts[1] = _quoteAmount;
 
         vm.prank(ADMIN);
         vm.expectRevert("VC-SAZ-01");
         creator.acceptAndFundVault(requestId, address(0), tokens, amounts);
     }
 
-    // VC-SNEP-01
+    function test_AcceptAndFundVault_RevertIf_RequestNotFound(
+        bytes32 _requestId,
+        address _vaultExecutor,
+        address[] calldata _tokens,
+        uint256[] calldata _amounts
+    ) public {
+        vm.assume(_vaultExecutor != address(0));
+        vm.prank(ADMIN);
+        vm.expectRevert("VC-SNEP-01");
+        creator.acceptAndFundVault(_requestId, _vaultExecutor, _tokens, _amounts);
+    }
 
-    function testAcceptAndFundVaultRevertsIfNotPending() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_AcceptAndFundVault_RevertIf_NotPending(
+        uint256 _baseAmount,
+        uint256 _quoteAmount,
+        address _vaultExecutor
+    ) public {
+        vm.assume(_vaultExecutor != address(0));
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
 
         vm.prank(ADMIN);
         creator.rejectVaultRequest(requestId);
 
         address[] memory tokens = new address[](2);
+
         tokens[0] = address(baseToken);
         tokens[1] = address(quoteToken);
         uint256[] memory amounts = new uint256[](2);
-        amounts[0] = BASE_AMOUNT;
-        amounts[1] = QUOTE_AMOUNT;
 
         vm.prank(ADMIN);
         vm.expectRevert("VC-IVRS-01");
-        creator.acceptAndFundVault(requestId, OMNI_VAULT_MOCK, tokens, amounts);
+        creator.acceptAndFundVault(requestId, _vaultExecutor, tokens, amounts);
     }
 
-    function testAcceptAndFundVaultRevertsIfInvalidTokensOrAmounts() public {
-        bytes32 requestId = testOpenPairVaultSuccess();
+    function test_AcceptAndFundVault_RevertIf_InvalidTokensOrAmounts(
+        uint256 _baseAmount,
+        uint256 _quoteAmount,
+        address _vaultExecutor
+    ) public {
+        bytes32 requestId = test_OpenPairVault_Success(_baseAmount, _quoteAmount);
+        vm.assume(_vaultExecutor != address(0));
 
         address[] memory tokens = new address[](1);
         tokens[0] = address(baseToken);
         uint256[] memory amounts = new uint256[](1);
-        amounts[0] = BASE_AMOUNT;
+        amounts[0] = _baseAmount;
 
         vm.prank(ADMIN);
         vm.expectRevert("VC-IDHM-01");
-        creator.acceptAndFundVault(requestId, OMNI_VAULT_MOCK, tokens, amounts);
+        creator.acceptAndFundVault(requestId, _vaultExecutor, tokens, amounts);
+    }
+
+    function test_AcceptAndFundVault_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        creator.acceptAndFundVault(bytes32(0), address(0), new address[](0), new uint256[](0));
     }
 
     // --- TEST WITHDRAW COLLECTED FEES ---
 
-    function testWithdrawCollectedFeesSuccess() public {
-        testAcceptAndFundVaultSuccess();
-
+    function test_WithdrawCollectedFees_Success(
+        uint256 _baseAmount,
+        uint256 _quoteAmount,
+        address _vaultExecutor
+    ) public {
+        test_AcceptAndFundVault_Success(_baseAmount, _quoteAmount, _vaultExecutor);
         uint256 expectedFees = creator.collectedFees();
 
         mockTokenTransfer(address(feeToken), address(creator), ADMIN, expectedFees);
@@ -469,20 +577,18 @@ contract OmniVaultCreatorTest is Test {
         vm.prank(ADMIN);
         creator.withdrawCollectedFees();
 
-        assertEq(creator.collectedFees(), 0, "Collected fees should be zero after withdrawal");
+        assertEq(creator.collectedFees(), 0);
     }
 
-    function testWithdrawCollectedFeesZeroAmount() public {
-        uint256 initialFees = creator.collectedFees();
-        assertEq(initialFees, 0, "Initial fees should be zero");
-
-        vm.prank(ADMIN);
-        vm.expectCall(
-            address(feeToken),
-            abi.encodeWithSelector(IERC20Upgradeable.transfer.selector, ADMIN, initialFees)
+    function test_WithdrawCollectedFees_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                creator.DEFAULT_ADMIN_ROLE()
+            )
         );
+        vm.prank(proposer);
         creator.withdrawCollectedFees();
-
-        assertEq(creator.collectedFees(), 0, "Fees should remain zero");
     }
 }

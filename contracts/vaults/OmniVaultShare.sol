@@ -21,8 +21,8 @@ contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
      * @notice Modifier to restrict functions to be called only by the OmniVaultManager contract.
      */
     modifier onlyOVManager(uint256 _vaultId) {
-        require(msg.sender == omniVaultManager, "OVS-OOV-01");
-        require(_vaultId == vaultId, "OVS-IVD-01");
+        require(msg.sender == omniVaultManager, "VS-OOV-01");
+        require(_vaultId == vaultId, "VS-IVD-01");
         _;
     }
 
@@ -42,7 +42,7 @@ contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
      * @param _admin The address of the admin.
      */
     function initialize(string memory _name, string memory _symbol, address _admin) public initializer {
-        require(_admin != address(0), "OVS-SAZ-01");
+        require(_admin != address(0), "VS-SAZ-01");
         __OFT_init(_name, _symbol, _admin);
         __Ownable_init();
         transferOwnership(_admin);

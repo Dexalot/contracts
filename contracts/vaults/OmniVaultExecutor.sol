@@ -38,8 +38,8 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @param _omniTrader The EOA address to be granted the OMNITRADER_ROLE
      */
     function initialize(address _admin, address _omniTrader) public initializer {
-        require(_admin != address(0), "OT-SAZ-01");
-        require(_omniTrader != address(0), "OT-SAZ-02");
+        require(_admin != address(0), "VE-SAZ-01");
+        require(_omniTrader != address(0), "VE-SAZ-02");
 
         __AccessControl_init();
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -56,9 +56,9 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @dev Only callable by addresses with the OMNITRADER_ROLE
      */
     fallback() external payable onlyRole(OMNITRADER_ROLE) {
-        require(msg.data.length >= 4, "OT-FSNV-01");
+        require(msg.data.length >= 4, "VE-CDTS-01");
         address impl = whitelistedFunctions[msg.sig];
-        require(impl != address(0), "OT-FSNW-01");
+        require(impl != address(0), "VE-FSNW-01");
 
         (bool success, ) = impl.call{value: msg.value}(msg.data);
 
@@ -74,7 +74,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      */
     function sendNative(address payable _to, uint256 _amount) external onlyRole(OMNITRADER_ROLE) {
         ContractAccess access = trustedContracts[_to];
-        require(access == ContractAccess.NATIVE || access == ContractAccess.NATIVE_AND_ERC20, "OT-IVCA-01");
+        require(access == ContractAccess.NATIVE || access == ContractAccess.NATIVE_AND_ERC20, "VE-IVCA-01");
         (bool success, ) = _to.call{value: _amount}("");
         return _returnData(success);
     }
@@ -88,7 +88,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      */
     function approveToken(address _token, address _spender, uint256 _amount) external onlyRole(OMNITRADER_ROLE) {
         ContractAccess access = trustedContracts[_spender];
-        require(access == ContractAccess.ERC20 || access == ContractAccess.NATIVE_AND_ERC20, "OT-IVCA-01");
+        require(access == ContractAccess.ERC20 || access == ContractAccess.NATIVE_AND_ERC20, "VE-IVCA-01");
         IERC20(_token).forceApprove(_spender, _amount);
     }
 
@@ -102,7 +102,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         address[] calldata _contracts
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 len = _funcSignatures.length;
-        require(len == _contracts.length, "OT-IVAL-01");
+        require(len == _contracts.length, "VE-IVAL-01");
         for (uint256 i = 0; i < len; i++) {
             _setWhitelistedFunction(_funcSignatures[i], _contracts[i]);
         }
@@ -123,7 +123,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @param _access The access level to assign to the trusted contract
      */
     function setTrustedContract(address _contract, ContractAccess _access) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_contract != address(0), "OT-SAZ-01");
+        require(_contract != address(0), "VE-SAZ-01");
         trustedContracts[_contract] = _access;
     }
 
@@ -132,7 +132,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @param _portfolio The address of the portfolio contract
      */
     function setPortfolio(address _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(_portfolio != address(0), "OT-SAZ-01");
+        require(_portfolio != address(0), "VE-SAZ-01");
         portfolio = _portfolio;
     }
 
@@ -147,7 +147,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @param _contract The target contract address corresponding to the function signature
      */
     function _setWhitelistedFunction(bytes4 _funcSignature, address _contract) internal {
-        require(trustedContracts[_contract] != ContractAccess.NONE, "OT-IVTC-01");
+        require(trustedContracts[_contract] != ContractAccess.NONE, "VE-IVTC-01");
         whitelistedFunctions[_funcSignature] = _contract;
     }
 

@@ -56,9 +56,5 @@ interface IDexalotRFQ {
 
     function processXFerPayload(IPortfolio.XFER calldata _xfer) external;
 
-    function pause() external;
-
-    function unpause() external;
-
     receive() external payable;
 }
