@@ -49,23 +49,16 @@ library InventoryFeeCalculatorLibrary {
         uint256 R2 = mulBPS(R, R); // R^2
         uint256 R4 = mulBPS(R2, R2); // R^4
         uint256 R8 = mulBPS(R4, R4); // R^8
+
+        if (K == 8) return R8;
+        if (K == 12) return mulBPS(R8, R4);
+
         uint256 R16 = mulBPS(R8, R8); // R^16
 
-        if (K == 8) {
-            return R8;
-        }
-        if (K == 12) {
-            return mulBPS(R8, R4);
-        }
-        if (K == 16) {
-            return R16;
-        }
-        if (K == 20) {
-            return mulBPS(R16, R4);
-        }
-        if (K == 24) {
-            return mulBPS(R16, R8);
-        }
+        if (K == 16) return R16;
+        if (K == 20) return mulBPS(R16, R4);
+        if (K == 24) return mulBPS(R16, R8);
+
         if (K == 28) {
             // R^28 = R^16 * R^12. First compute R^12 = R^8 * R^4
             uint256 R12 = mulBPS(R8, R4);
