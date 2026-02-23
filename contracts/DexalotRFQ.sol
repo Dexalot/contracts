@@ -257,7 +257,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
      * @param   _asset  Address of the asset to be sent
      * @param   _amount  Amount of asset to be sent
      */
-    function sendTokenBalance(address _asset, uint256 _amount) external payable onlyRole(REBALANCER_ADMIN_ROLE) {
+    function sendTokenBalance(address _asset, uint256 _amount) external onlyRole(REBALANCER_ADMIN_ROLE) {
         require(_asset != address(0), "RF-NSNA-01");
         IERC20(_asset).safeTransferFrom(msg.sender, address(this), _amount);
     }
