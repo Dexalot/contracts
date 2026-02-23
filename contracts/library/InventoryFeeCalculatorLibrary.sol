@@ -38,8 +38,8 @@ library InventoryFeeCalculatorLibrary {
     }
 
     /**
-     * @notice Efficiently computes base^K where K is a multiple of 4 BPS (e.g., 8, 12, 16, ..., 32)
-     * @param base The base value
+     * @notice Efficiently computes base^K where K is a multiple of 4 (e.g., 8, 12, 16, ..., 32)
+     * @param base The base value in terms of BPS
      * @param K The exponent value (must be a multiple of 4)
      */
     function powMultipleOf4BPS(uint256 base, uint256 K) private pure returns (uint256 result_) {
