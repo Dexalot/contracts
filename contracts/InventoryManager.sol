@@ -105,12 +105,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         if (userLiquidity > 0) {
             // calculate remaining user liquidity
             userLiquidity = userLiquidity - UtilsLibrary.min(userLiquidity, _withdrawal.quantity);
-            if (userLiquidity > 0) {
-                userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress] = userLiquidity;
-            } else {
-                // clean the state if user liquidity provided is 0
-                delete (userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress]);
-            }
+            userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress] = userLiquidity;
         }
     }
 
