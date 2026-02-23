@@ -150,6 +150,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
      * @param _symbol Symbol of the new reward token
      */
     function addRewardToken(bytes32 _symbol) external whenPaused onlyOwner {
+        require(allTokens != type(uint32).max, "ID-MAXT-01"); // Max 32 tokens
         require(
             _symbol != bytes32(0) && IPortfolio(address(portfolio)).getTokenDetails(_symbol).symbol == _symbol,
             "ID-IVTD-01"
