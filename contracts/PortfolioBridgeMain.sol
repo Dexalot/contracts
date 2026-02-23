@@ -553,6 +553,12 @@ contract PortfolioBridgeMain is
         if (isUserFeePayer) {
             require(_userFeePayer != address(0), "PB-UFPE-01");
             require(msg.value >= fee, "PB-IUMF-01");
+            uint256 feeOverpay = msg.value - fee;
+            // LZ handles refund within bridgeApp
+            if (_bridge != BridgeProvider.LZ && feeOverpay > 0) {
+                (bool success, ) = _userFeePayer.call{value: feeOverpay}("");
+                require(success, "PB-UFPR-02");
+            }
         } else {
             if (_userFeePayer != address(0)) {
                 (bool success, ) = _userFeePayer.call{value: msg.value}("");
