@@ -271,8 +271,8 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
 
     /**
      * @notice  Updates the taker fee collector based on the tradepair and maker address
-     * @dev     If the maker address is same as the taker fee collector address for the tradepair,
-     * then return address(0) to indicate default behavior (fee goes to feeTreasury)
+     * @dev     Returns the taker fee collector only when maker is the designated collector
+     * for this tradepair; otherwise returns address(0) for default treasury behavior.
      * @param   _tradePairId  TradePair Id
      * @param   _makerAddr  Maker address of the trade
      * @return   takerFeeCollector address of the taker fee collector or address(0) for default behavior
