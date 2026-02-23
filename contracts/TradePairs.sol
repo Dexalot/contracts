@@ -132,8 +132,8 @@ contract TradePairs is
             tradePair.minPostAmount = _minTradeAmount;
             tradePair.makerRate = 20; // (0.20% = 20/10000)
             tradePair.takerRate = 30; // (0.30% = 30/10000)
-            // with default allowedSlippagePercent of 20, the market orders cannot be filled
-            // worst than 80% of the bestBid and 120% of bestAsk
+            // with default allowedSlippagePercent of 3, the market orders cannot be filled
+            // worst than 97% of the bestBid and 103% of bestAsk
             tradePair.allowedSlippagePercent = 3; // (3% = 3/100)
             // tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
@@ -464,7 +464,7 @@ contract TradePairs is
      * from the marketPrice(bestbid or bestask) to protect the trader. The remaining quantity gets
      * unsolicited cancel
      * @param   _tradePairId  id of the trading pair
-     * @param   _allowedSlippagePercent  allowed slippage percent=20 (Default = 20 : 20% = 20/100)
+     * @param   _allowedSlippagePercent  allowed slippage percent=3 (Default = 3 : 3% = 3/100)
      */
     function setAllowedSlippagePercent(
         bytes32 _tradePairId,
