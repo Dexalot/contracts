@@ -557,7 +557,7 @@ contract PortfolioBridgeMain is
             if (_userFeePayer != address(0)) {
                 (bool success, ) = _userFeePayer.call{value: msg.value}("");
                 require(success, "PB-UFPR-01");
-                require(address(this).balance > fee, "PB-CBIZ-01");
+                require(address(this).balance >= fee, "PB-CBIZ-01");
             }
             _userFeePayer = address(this);
         }
