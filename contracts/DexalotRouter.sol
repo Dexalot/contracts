@@ -76,6 +76,7 @@ contract DexalotRouter is AccessControlEnumerable {
             : IERC20(_orderA.makerAsset).balanceOf(address(this));
 
         if (_orderA.takerAsset != address(0)) {
+            require(msg.value == 0, "DR-NFES-01");
             IERC20(_orderA.takerAsset).safeTransferFrom(msg.sender, _orderA.maker, _takerAmountA);
         }
 
@@ -212,6 +213,7 @@ contract DexalotRouter is AccessControlEnumerable {
             amount := calldataload(amountOffset)
         }
         if (takerAsset != address(0)) {
+            require(msg.value == 0, "DR-NFES-01");
             // ERC20 transfer
             IERC20(takerAsset).safeTransferFrom(msg.sender, targetImplementation, amount);
         }
