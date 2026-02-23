@@ -63,6 +63,10 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
 
         require(__signer != address(0), "ID-ZADDR-01");
         require(__portfolio != address(0), "ID-ZADDR-02");
+        require(
+            _alotSymbol != bytes32(0) && IPortfolio(__portfolio).getTokenDetails(_alotSymbol).symbol == _alotSymbol,
+            "ID-IVTD-01"
+        );
 
         uint32 tokenId = ~allTokens & (allTokens + 1);
         tokens[tokenId] = _alotSymbol;
@@ -146,6 +150,16 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
      * @param _symbol Symbol of the new reward token
      */
     function addRewardToken(bytes32 _symbol) external whenPaused onlyOwner {
+        require(
+            _symbol != bytes32(0) && IPortfolio(address(portfolio)).getTokenDetails(_symbol).symbol == _symbol,
+            "ID-IVTD-01"
+        );
+
+        // iterate through allTokens to check if symbol exists
+        for (uint32 i = 1; i < allTokens; i <<= 1) {
+            require(tokens[i] != _symbol, "ID-RTEX-01");
+        }
+
         uint32 tokenId = ~allTokens & (allTokens + 1);
         tokens[tokenId] = _symbol;
         allTokens |= tokenId;
