@@ -353,6 +353,21 @@ contract OmniVaultManager is
     }
 
     /**
+     * @notice Withdraw ALOT from OmniVaultManager gas tank to owner
+     * @param amount The amount of ALOT to withdraw to owner
+     */
+    function withdrawGas(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(address(this).balance >= amount, "VM-AGCB-01");
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "VM-WTFR-01");
+    }
+
+    /**
+     * @notice Receive native ALOT, ensures auto gas tank fill logic holds
+     */
+    receive() external payable {}
+
+    /**
      * @notice Get details of a specific vault
      * @param _vaultId The ID of the vault
      * @return The VaultDetails struct containing the vault's details

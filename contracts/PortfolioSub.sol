@@ -890,6 +890,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 i++;
             }
         }
+        // Auto fill gas using the first token. If ALOT is present then within OmniVaultManager + IncentiveDistributor transfers
+        // it will be at the first index, else the first token is used to avoid multiple autoFill calls
+        autoFillPrivate(_to, _symbols[0], Tx.AUTOFILL);
     }
 
     /**
