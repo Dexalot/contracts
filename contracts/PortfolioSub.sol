@@ -69,6 +69,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     address public feeAddress;
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
     // role for trusted contracts to transfer tokens on behalf of users
+    // only assignable to OmniVaultManager contract for handling vault deposits on behalf of users
     bytes32 public constant TRUSTED_TRANSFER_ROLE = keccak256("TRUSTED_TRANSFER_ROLE");
 
     // keep track of deposited and burned native tokens
