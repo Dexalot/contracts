@@ -160,6 +160,11 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
             totalInventory += inventory;
         }
 
+        // No fee is withdrawing total inventory across all chains
+        if (totalInventory == _withdrawal.quantity) {
+            return 0;
+        }
+
         fee = InventoryFeeCalculatorLibrary.calculateFee(
             K,
             _withdrawal.quantity - userLiquidity,
