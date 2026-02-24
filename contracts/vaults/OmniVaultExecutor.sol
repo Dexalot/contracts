@@ -142,12 +142,15 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
 
     /**
      * @notice Internal function to set a whitelisted function and its target contract
-     * @dev Target contract must be a trusted contract
+     * @dev Target contract must be a trusted contract, function signature can only be whitelisted
+     * to one contract to avoid conflicts
      * @param _funcSignature The function signature to whitelist
      * @param _contract The target contract address corresponding to the function signature
      */
     function _setWhitelistedFunction(bytes4 _funcSignature, address _contract) internal {
         require(trustedContracts[_contract] != ContractAccess.NONE, "VE-IVTC-01");
+        address existing = whitelistedFunctions[_funcSignature];
+        require(existing == address(0) || existing == _contract, "VE-SEAO-01");
         whitelistedFunctions[_funcSignature] = _contract;
     }
 
