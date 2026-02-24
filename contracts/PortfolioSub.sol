@@ -885,6 +885,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             bytes32 symbol = _symbols[i];
             uint256 quantity = _quantities[i];
             require(tokenList.contains(symbol), "P-ETNS-01");
+            require(tokenDetailsMap[symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
             transferToken(_from, _to, symbol, quantity, 0, Tx.IXFERSENT, false, address(0));
             unchecked {
                 i++;
