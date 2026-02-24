@@ -180,11 +180,6 @@ contract DexalotRouter is AccessControlEnumerable {
     }
 
     /**
-     * @notice Not supported. To send native properly, the call must be forwarded to an allowed MainnetRFQ contract via partialSwap or simpleSwap.
-     */
-    receive() external payable {}
-
-    /**
      * @notice Fallback function to forward calls to allowed MainnetRFQ contracts.
      * Only the partialSwap and simpleSwap functions are supported.
      * The original sender's address is appended to the calldata for the target contract to extract.
