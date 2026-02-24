@@ -671,6 +671,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _amount  Amount of the token
      * @param   _feeCharged  Fee charged for the _transaction
      * @param   _transaction  Transaction type
+     * @param   _traderOther  The other party involved in the tx, e.g. for executions, the counterparty of the trade
+     * @param   _feeAddress  Address to receive the fee, if feeCharged > 0
      */
     function safeIncrease(
         address _trader,
@@ -811,6 +813,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _feeCharged  Fee charged for the transaction
      * @param   _transaction  Transaction type
      * @param   _decreaseTotalOnly  If true, only total balance is decreased
+     * @param   _feeAddress  Address to receive the fee, if feeCharged > 0
      */
     function transferToken(
         address _from,
