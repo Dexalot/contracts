@@ -310,7 +310,7 @@ contract OmniVaultManager is
      */
     function addTokenDetails(AssetInfo calldata _asset) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IPortfolio.TokenDetails memory tokenDetails = IPortfolio(address(portfolio)).getTokenDetails(_asset.symbol);
-        require(tokenDetails.symbol == _asset.symbol, "VM-TSIP-01");
+        require(_asset.symbol != bytes32(0) && tokenDetails.symbol == _asset.symbol, "VM-TSIP-01");
         require(!tokenList.contains(_asset.symbol), "VM-TSNM-01");
         assetInfo[tokenIndex++] = _asset;
         tokenList.add(_asset.symbol);
@@ -485,7 +485,7 @@ contract OmniVaultManager is
 
             require(_tokenExistsInVault(tokenId, _vaultTokens), "VM-TIIV-01");
             AssetInfo memory asset = assetInfo[tokenId];
-            require(asset.tokenType != AssetType.NONE, "VM-TSIM-01");
+            require(asset.symbol != bytes32(0), "VM-TSIM-01");
             uint256 scaledAmount = amount / (10 ** asset.precision);
             require(scaledAmount >= asset.minPerDeposit && scaledAmount <= asset.maxPerDeposit, "VM-ODLR-01");
             symbols[i] = asset.symbol;

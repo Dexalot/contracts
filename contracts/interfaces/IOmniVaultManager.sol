@@ -69,9 +69,9 @@ interface IOmniVaultManager {
     }
 
     enum AssetType {
-        NONE,
         BASE,
         QUOTE,
-        REWARD
+        REWARD,
+        OTHER
     }
 }
