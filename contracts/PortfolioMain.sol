@@ -266,6 +266,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     function getNativeBridgeFee(IPortfolioBridge.BridgeProvider _bridge) public view returns (uint256) {
         uint32 defaultChain = portfolioBridge.getDefaultDestinationChain();
         if (portfolioBridge.userPaysFee(defaultChain, _bridge)) {
+            // symbol, quantity, sender, options are unused in PortfolioBridgeMain, so passing empty values
             return this.getBridgeFee(_bridge, defaultChain, bytes32(0), 0, address(0), bytes1(0));
         }
         return 0;
