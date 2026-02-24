@@ -576,7 +576,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
             srcAmount: _takerAmount,
             destAmount: _makerAmount,
             msgSender: _sender,
-            isDirect: _sender == trustedForwarder
+            isDirect: _sender == msg.sender
         });
         _executeSwapInternal(swapData, true);
     }
