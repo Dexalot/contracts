@@ -408,13 +408,14 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @notice  Allows deposits from trusted contracts
      * @dev     Used by Avalaunch for DD deposits and Vesting Contracts.
      * Keeping for backward compatibility instead of using ON_BEHALF_ROLE.
+     * Forwards the call to depositToken with native bridge fee and default bridge provider.
      * @param   _from  Address of the depositor
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to deposit
      */
-    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external override {
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external payable override {
         require(trustedContracts[msg.sender], "P-AOTC-01"); // keeping it for backward compatibility
-        this.depositToken(_from, _symbol, _quantity, portfolioBridge.getDefaultBridgeProvider());
+        this.depositToken{value: msg.value}(_from, _symbol, _quantity, portfolioBridge.getDefaultBridgeProvider());
     }
 
     /**

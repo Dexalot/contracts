@@ -23,7 +23,7 @@ interface IPortfolioMain {
         uint256 _gasSwapRatio
     ) external;
 
-    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external;
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external payable;
 
     function addTrustedContract(address _contract, string calldata _organization) external;
 
