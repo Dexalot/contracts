@@ -14,32 +14,40 @@ interface IOmniVaultManager {
         uint16[] tokens;
     }
 
-    struct VaultTransfers {
-        bytes32 symbol;
-        int256 amount;
-    }
-
     struct BatchState {
         uint32 finalizedAt; // Timestamp of finalization
         BatchStatus status; // 0: None, 1: Finalized, 2: Settled
         bytes32 depositHash; // Finalized deposit batch hash
         bytes32 withdrawalHash; // Finalized withdrawal batch hash
+        bytes32 stateHash; // Hash of the state after applying the batch (used for settlement verification)
+    }
+
+    struct VaultState {
+        uint256 vaultId;
+        uint16[] tokenIds;
+        uint256[] balances;
+    }
+
+    struct VaultSnapshot {
+        uint128 totalVaultUSD;
+        uint128 totalShares;
     }
 
     struct DepositFufillment {
         bytes32 depositRequestId;
-        uint256 depositShares; // if 0 then refund funds
+        bool process;
         uint16[] tokenIds;
         uint256[] amounts;
     }
 
     struct WithdrawalFufillment {
         bytes32 withdrawalRequestId;
-        bytes32[] symbols;
-        uint256[] amounts;
+        bool process;
     }
 
     function bulkSettleState(
+        uint256[] calldata _prices,
+        VaultState[] calldata _vaults,
         DepositFufillment[] calldata _deposits,
         WithdrawalFufillment[] calldata _withdrawals
     ) external;
