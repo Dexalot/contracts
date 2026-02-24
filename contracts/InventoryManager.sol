@@ -140,10 +140,11 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         uint256 numChains = map.length();
         uint256 currentInventory = get(_withdrawal.symbol, _withdrawal.symbolId);
 
-        if (numChains == 1 || currentInventory == 0) {
+        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
+
+        if (numChains == 1) {
             return 0;
         }
-        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
 
         uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
         // If the user already provided liquidity to the chain it is trying to withdraw, no additional fee required
