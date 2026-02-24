@@ -59,6 +59,8 @@ contract OmniVaultManager is
     uint256 public batchStartTime;
     uint256 public pendingRequestCount;
 
+    mapping(uint256 => BatchState) public completedBatches;
+
     // Emitted on deposit/withdrawal requests
     event TransferRequestUpdate(
         bytes32 indexed requestId,
@@ -98,11 +100,29 @@ contract OmniVaultManager is
         DepositFufillment[] calldata _deposits,
         WithdrawalFufillment[] calldata _withdrawals
     ) external nonReentrant whenNotPaused onlyRole(SETTLER_ROLE) {
-        uint256 curBatch = currentBatchId;
-        _bulkSettleDeposits(_deposits);
-        _bulkSettleWithdrawals(_withdrawals);
+        uint256 prevBatchId = currentBatchId - 1;
+        BatchState storage batch = completedBatches[prevBatchId];
+        require(batch.status == BatchStatus.FINALIZED, "VM-BSST-01");
+        _bulkSettleDeposits(_deposits, batch.depositHash);
+        _bulkSettleWithdrawals(_withdrawals, batch.withdrawalHash);
+        batch.status = BatchStatus.SETTLED;
+        emit TransferBatchUpdate(prevBatchId, true, _deposits, _withdrawals);
+    }
+
+    function finalizeBatch() external onlyRole(SETTLER_ROLE) {
+        uint256 batchId = currentBatchId;
+        BatchState storage batch = completedBatches[batchId];
+        require(batch.status == BatchStatus.NONE, "VM-BSST-01");
+        require(batchId == 0 || completedBatches[batchId - 1].status == BatchStatus.SETTLED, "VM-PBF-01");
+
+        batch.finalizedAt = uint32(block.timestamp);
+        batch.status = BatchStatus.FINALIZED;
+        batch.withdrawalHash = rollingWithdrawalHash;
+        batch.depositHash = rollingDepositHash;
+
         _resetBatch();
-        emit TransferBatchUpdate(curBatch, true, _deposits, _withdrawals);
+
+        // TODO: add event for finalisation
     }
 
     /**
@@ -390,7 +410,7 @@ contract OmniVaultManager is
      * @notice Internal function to bulk settle deposit requests
      * @dev Mints vault shares to users and unlocks tokens in the vault
      */
-    function _bulkSettleDeposits(DepositFufillment[] calldata _deposits) internal {
+    function _bulkSettleDeposits(DepositFufillment[] calldata _deposits, bytes32 _rollingDepositHash) internal {
         uint256 len = _deposits.length;
         bytes32 depositHash = bytes32(0);
         for (uint256 i = 0; i < len; i++) {
@@ -409,7 +429,7 @@ contract OmniVaultManager is
 
             _refundDeposit(requestId, _deposits[i].tokenIds, _deposits[i].amounts);
         }
-        require(depositHash == rollingDepositHash, "VM-DHMR-01");
+        require(depositHash == _rollingDepositHash, "VM-DHMR-01");
     }
 
     /**
@@ -437,7 +457,10 @@ contract OmniVaultManager is
      * @dev Burns vault shares from users and dispatches tokens to them
      * @param _withdrawals The array of withdrawal fulfillments
      */
-    function _bulkSettleWithdrawals(WithdrawalFufillment[] calldata _withdrawals) internal {
+    function _bulkSettleWithdrawals(
+        WithdrawalFufillment[] calldata _withdrawals,
+        bytes32 _rollingWithdrawalHash
+    ) internal {
         bytes32 withdrawalHash = bytes32(0);
         uint256 len = _withdrawals.length;
         for (uint256 i = 0; i < len; i++) {
@@ -465,7 +488,7 @@ contract OmniVaultManager is
                 IERC20(address(shareToken)).safeTransfer(user, uint256(wRequest.shares));
             }
         }
-        require(withdrawalHash == rollingWithdrawalHash, "VM-WHMR-01");
+        require(withdrawalHash == _rollingWithdrawalHash, "VM-WHMR-01");
     }
 
     /**

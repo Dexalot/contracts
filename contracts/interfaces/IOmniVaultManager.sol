@@ -19,6 +19,13 @@ interface IOmniVaultManager {
         int256 amount;
     }
 
+    struct BatchState {
+        uint32 finalizedAt; // Timestamp of finalization
+        BatchStatus status; // 0: None, 1: Finalized, 2: Settled
+        bytes32 depositHash; // Finalized deposit batch hash
+        bytes32 withdrawalHash; // Finalized withdrawal batch hash
+    }
+
     struct DepositFufillment {
         bytes32 depositRequestId;
         uint256 depositShares; // if 0 then refund funds
@@ -57,6 +64,12 @@ interface IOmniVaultManager {
         ACTIVE,
         PAUSED,
         DEPRECATED
+    }
+
+    enum BatchStatus {
+        NONE,
+        FINALIZED,
+        SETTLED
     }
 
     enum RequestStatus {
