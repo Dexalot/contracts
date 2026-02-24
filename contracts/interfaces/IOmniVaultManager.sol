@@ -28,11 +28,6 @@ interface IOmniVaultManager {
         uint256[] balances;
     }
 
-    struct VaultSnapshot {
-        uint128 totalVaultUSD;
-        uint128 totalShares;
-    }
-
     struct DepositFufillment {
         bytes32 depositRequestId;
         bool process;
@@ -65,6 +60,11 @@ interface IOmniVaultManager {
         uint32 timestamp;
         uint208 shares;
         // space for something uint8
+    }
+
+    struct RequestLimit {
+        uint248 lastBatchId;
+        uint8 pendingCount;
     }
 
     enum VaultStatus {

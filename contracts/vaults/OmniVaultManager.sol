@@ -35,7 +35,9 @@ contract OmniVaultManager is
     bytes32 public constant VERSION = bytes32("1.1.0");
     uint256 public constant RECLAIM_DELAY = 24 hours;
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
-    uint256 public constant MAX_PENDING_REQUESTS = 1000;
+    uint256 public constant MAX_PENDING_REQUESTS = 500;
+    uint256 public constant MAX_VAULT_PENDING_REQUESTS = 50;
+    uint256 public constant MAX_USER_PENDING_REQUESTS = 5;
     uint256 public constant MIN_SHARE_MINT = 1000e18; // Minimum shares to mint on first deposit to prevent dust issues
 
     uint256 public vaultIndex;
@@ -61,6 +63,8 @@ contract OmniVaultManager is
     uint256 public pendingRequestCount;
 
     mapping(uint256 => BatchState) public completedBatches;
+    mapping(uint256 => RequestLimit) public vaultRequestLimits;
+    mapping(address => RequestLimit) public userRequestLimits;
 
     // Emitted on deposit/withdrawal requests
     event TransferRequestUpdate(
@@ -152,6 +156,7 @@ contract OmniVaultManager is
         VaultStatus status = vaultDetails[_vaultId].status;
         require(status == VaultStatus.ACTIVE, "VM-VSAC-01");
         require(pendingRequestCount < MAX_PENDING_REQUESTS, "VM-PRCL-01");
+        _verifyAndIncrementRequestLimits(msg.sender, _vaultId);
         _depositTokens(_tokens, _amounts, vaultDetails[_vaultId].tokens, executor);
 
         requestId = _generateRequestId(_vaultId, msg.sender, userNonce[msg.sender]++);
@@ -188,6 +193,8 @@ contract OmniVaultManager is
         VaultStatus status = vaultDetails[_vaultId].status;
         require(status == VaultStatus.ACTIVE || status == VaultStatus.PAUSED, "VM-VSAP-01");
         require(pendingRequestCount < MAX_PENDING_REQUESTS, "VM-PRCL-01");
+        _verifyAndIncrementRequestLimits(msg.sender, _vaultId);
+
         IERC20(shareTokenAddress).safeTransferFrom(msg.sender, address(this), uint256(_shares));
 
         requestId = _generateRequestId(_vaultId, msg.sender, userNonce[msg.sender]++);
@@ -418,6 +425,29 @@ contract OmniVaultManager is
      */
     function getTransferRequest(bytes32 _requestId) external view returns (TransferRequest memory) {
         return transferRequests[_requestId];
+    }
+
+    function _verifyAndIncrementRequestLimits(address _user, uint256 _vaultId) internal {
+        uint248 batchId = uint248(currentBatchId);
+        RequestLimit storage vaultLimit = vaultRequestLimits[_vaultId];
+
+        if (vaultLimit.lastBatchId < batchId) {
+            vaultLimit.lastBatchId = batchId;
+            vaultLimit.pendingCount = 1;
+        } else {
+            require(vaultLimit.pendingCount < MAX_VAULT_PENDING_REQUESTS, "VM-VPRL-01");
+            vaultLimit.pendingCount++;
+        }
+
+        RequestLimit storage userLimit = userRequestLimits[_user];
+
+        if (userLimit.lastBatchId < batchId) {
+            userLimit.lastBatchId = batchId;
+            userLimit.pendingCount = 1;
+        } else {
+            require(userLimit.pendingCount < MAX_USER_PENDING_REQUESTS, "VM-UPRL-01");
+            userLimit.pendingCount++;
+        }
     }
 
     /**
