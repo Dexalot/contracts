@@ -76,12 +76,7 @@ contract OmniVaultManager is
         uint256[] amounts
     );
 
-    event TransferBatchUpdate(
-        uint256 indexed batchId,
-        bool success,
-        DepositFufillment[] deposits,
-        WithdrawalFufillment[] withdrawals
-    );
+    event TransferBatchUpdate(uint256 indexed batchId, bool success);
 
     /**
      * @notice Initializer for the OmniVaultManager contract
@@ -112,10 +107,10 @@ contract OmniVaultManager is
         require(batch.status == BatchStatus.FINALIZED, "VM-BSST-01");
         require(keccak256(abi.encode(_prices, _vaults)) == batch.stateHash, "VM-BSST-02");
         _loadStateToTransient(_prices, _vaults);
-        _bulkSettleDeposits(_deposits, batch.depositHash);
-        _bulkSettleWithdrawals(_withdrawals, batch.withdrawalHash);
+        require(batch.depositHash == _bulkSettleDeposits(prevBatchId, _deposits), "VM-DHMR-01");
+        require(batch.withdrawalHash == _bulkSettleWithdrawals(prevBatchId, _withdrawals), "VM-WHMR-01");
         batch.status = BatchStatus.SETTLED;
-        emit TransferBatchUpdate(prevBatchId, true, _deposits, _withdrawals);
+        emit TransferBatchUpdate(prevBatchId, true);
     }
 
     function finalizeBatch(uint256[] calldata _prices, VaultState[] calldata _vaults) external onlyRole(SETTLER_ROLE) {
@@ -257,11 +252,19 @@ contract OmniVaultManager is
 
             (uint16 vaultId, address user, ) = _decodeRequestId(item.withdrawalRequestId);
             IERC20(vaultDetails[vaultId].shareToken).safeTransfer(user, shares);
+            emit TransferRequestUpdate(
+                item.withdrawalRequestId,
+                currentBatchId,
+                user,
+                RequestStatus.WITHDRAWAL_FAILED,
+                new uint16[](0),
+                new uint256[](0)
+            );
         }
 
         require(withdrawalHash == rollingWithdrawalHash, "VM-WHMR-01");
 
-        emit TransferBatchUpdate(currentBatchId, false, _deposits, _withdrawals);
+        emit TransferBatchUpdate(currentBatchId, false);
         _resetBatch();
     }
 
@@ -454,38 +457,57 @@ contract OmniVaultManager is
      * @notice Internal function to bulk settle deposit requests
      * @dev Mints vault shares to users and unlocks tokens in the vault
      */
-    function _bulkSettleDeposits(DepositFufillment[] calldata _deposits, bytes32 _rollingDepositHash) internal {
-        uint256 len = _deposits.length;
-        bytes32 depositHash = bytes32(0);
-        for (uint256 i = 0; i < len; i++) {
-            bytes32 requestId = _deposits[i].depositRequestId;
-            (uint16 vaultId, address user, ) = _decodeRequestId(requestId);
-            depositHash = keccak256(abi.encode(depositHash, requestId, _deposits[i].tokenIds, _deposits[i].amounts));
+    function _bulkSettleDeposits(
+        uint256 _batchId,
+        DepositFufillment[] calldata _deposits
+    ) internal returns (bytes32 depositHash) {
+        for (uint256 i = 0; i < _deposits.length; i++) {
+            DepositFufillment calldata deposit = _deposits[i];
+            bytes32 requestId = deposit.depositRequestId;
+            (uint16 vaultId, address user) = _verifyDepositRequest(requestId);
+            depositHash = keccak256(abi.encode(depositHash, requestId, deposit.tokenIds, deposit.amounts));
 
-            TransferRequest memory dRequest = transferRequests[requestId];
-            require(dRequest.status == RequestStatus.DEPOSIT_REQUESTED, "VM-ADRP-01");
-            delete transferRequests[requestId];
-
-            if (!_deposits[i].process) {
-                _refundDeposit(requestId, _deposits[i].tokenIds, _deposits[i].amounts);
+            if (!deposit.process) {
+                _refundDeposit(requestId, deposit.tokenIds, deposit.amounts);
                 continue;
             }
 
-            uint256 userDepositUsd = 0;
-            for (uint256 j = 0; j < _deposits[i].tokenIds.length; j++) {
-                userDepositUsd += (_deposits[i].amounts[j] * _tloadPrice(_deposits[i].tokenIds[j])) / 1e18;
-            }
-
-            uint256 totalShares = _tloadVaultTotalShares(vaultId);
-            uint256 sharesToMint = (userDepositUsd * totalShares) / _tloadVaultUSD(vaultId);
-
-            if (totalShares == 0) {
-                sharesToMint = userDepositUsd;
-            }
-
+            uint256 sharesToMint = _calcSharesToMint(vaultId, deposit.tokenIds, deposit.amounts);
             IOmniVaultShare(_tloadShareToken(vaultId)).mint(vaultId, user, sharesToMint);
+            emit TransferRequestUpdate(
+                requestId,
+                _batchId,
+                user,
+                RequestStatus.DEPOSIT_SUCCESS,
+                deposit.tokenIds,
+                deposit.amounts
+            );
         }
-        require(depositHash == _rollingDepositHash, "VM-DHMR-01");
+    }
+
+    function _verifyDepositRequest(bytes32 requestId) internal returns (uint16 vaultId, address user) {
+        TransferRequest memory dRequest = transferRequests[requestId];
+        require(dRequest.status == RequestStatus.DEPOSIT_REQUESTED, "VM-ADRP-01");
+        (vaultId, user, ) = _decodeRequestId(requestId);
+        delete transferRequests[requestId];
+    }
+
+    function _calcSharesToMint(
+        uint256 _vaultId,
+        uint16[] calldata _tokenIds,
+        uint256[] calldata _amounts
+    ) internal view returns (uint256 sharesToMint) {
+        uint256 userDepositUsd = 0;
+        for (uint256 j = 0; j < _tokenIds.length; j++) {
+            userDepositUsd += (_amounts[j] * _tloadPrice(_tokenIds[j])) / 1e18;
+        }
+
+        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
+        sharesToMint = (userDepositUsd * totalShares) / _tloadVaultUSD(_vaultId);
+
+        if (totalShares == 0) {
+            sharesToMint = userDepositUsd;
+        }
     }
 
     /**
@@ -514,40 +536,70 @@ contract OmniVaultManager is
      * @param _withdrawals The array of withdrawal fulfillments
      */
     function _bulkSettleWithdrawals(
-        WithdrawalFufillment[] calldata _withdrawals,
-        bytes32 _rollingWithdrawalHash
-    ) internal {
-        bytes32 withdrawalHash = bytes32(0);
+        uint256 _batchId,
+        WithdrawalFufillment[] calldata _withdrawals
+    ) internal returns (bytes32 withdrawalHash) {
         uint256 len = _withdrawals.length;
         for (uint256 i = 0; i < len; i++) {
             WithdrawalFufillment calldata item = _withdrawals[i];
-            TransferRequest memory wRequest = transferRequests[item.withdrawalRequestId];
-            require(wRequest.status == RequestStatus.WITHDRAWAL_REQUESTED, "VM-AWRP-01");
+            bytes32 requestId = item.withdrawalRequestId;
 
-            uint256 vaultShares = uint256(wRequest.shares);
-            (uint16 vaultId, address user, ) = _decodeRequestId(item.withdrawalRequestId);
-            withdrawalHash = keccak256(abi.encode(withdrawalHash, item.withdrawalRequestId, vaultShares));
-            delete transferRequests[item.withdrawalRequestId];
+            (uint16 vaultId, address user, uint256 vaultShares) = _verifyWithdrawalRequest(requestId);
+            withdrawalHash = keccak256(abi.encode(withdrawalHash, requestId, vaultShares));
 
             IOmniVaultShare shareToken = IOmniVaultShare(_tloadShareToken(vaultId));
 
             if (!item.process) {
                 IERC20(address(shareToken)).safeTransfer(user, vaultShares);
+                emit TransferRequestUpdate(
+                    requestId,
+                    _batchId,
+                    user,
+                    RequestStatus.WITHDRAWAL_FAILED,
+                    new uint16[](0),
+                    new uint256[](0)
+                );
                 continue;
             }
             uint16[] memory tokenIds = _tloadVaultTokenIds(vaultId);
-            bytes32[] memory symbols = new bytes32[](tokenIds.length);
-            uint256[] memory amounts = new uint256[](tokenIds.length);
-            for (uint256 j = 0; j < tokenIds.length; j++) {
-                uint16 tid = tokenIds[j];
-                symbols[j] = assetInfo[tid].symbol;
-                amounts[j] = (vaultShares * _tloadBalance(vaultId, tid)) / _tloadVaultTotalShares(vaultId);
-            }
+            (bytes32[] memory symbols, uint256[] memory amounts) = _calcAmountsToDispatch(
+                vaultId,
+                vaultShares,
+                tokenIds
+            );
 
             shareToken.burn(vaultId, vaultShares);
             IOmniVaultExecutorSub(_tloadVaultExecutor(vaultId)).dispatchAssets(user, symbols, amounts);
+            emit TransferRequestUpdate(requestId, _batchId, user, RequestStatus.WITHDRAWAL_SUCCESS, tokenIds, amounts);
         }
-        require(withdrawalHash == _rollingWithdrawalHash, "VM-WHMR-01");
+    }
+
+    function _verifyWithdrawalRequest(
+        bytes32 requestId
+    ) internal returns (uint16 vaultId, address user, uint256 shares) {
+        TransferRequest storage wRequest = transferRequests[requestId];
+        require(wRequest.status == RequestStatus.WITHDRAWAL_REQUESTED, "VM-AWRP-01");
+        (vaultId, user, ) = _decodeRequestId(requestId);
+        shares = uint256(wRequest.shares);
+        delete transferRequests[requestId];
+    }
+
+    function _calcAmountsToDispatch(
+        uint256 _vaultId,
+        uint256 _vaultShares,
+        uint16[] memory _tokenIds
+    ) internal view returns (bytes32[] memory symbols, uint256[] memory amounts) {
+        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
+        uint256 len = _tokenIds.length;
+
+        symbols = new bytes32[](len);
+        amounts = new uint256[](len);
+
+        for (uint256 i = 0; i < len; i++) {
+            uint16 tokenId = _tokenIds[i];
+            symbols[i] = assetInfo[tokenId].symbol;
+            amounts[i] = (_vaultShares * _tloadBalance(_vaultId, tokenId)) / totalShares;
+        }
     }
 
     /**
