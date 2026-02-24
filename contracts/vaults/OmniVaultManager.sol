@@ -88,6 +88,7 @@ contract OmniVaultManager is
 
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(SETTLER_ROLE, _settler);
+        batchStartTime = block.timestamp;
     }
 
     /**
