@@ -185,8 +185,9 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
      */
     function withdrawGas(uint256 amount) external onlyOwner {
         require(address(this).balance >= amount, "ID-AGCB-01");
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "ID-WTFR-01");
         emit WithdrawGas(msg.sender, amount, block.timestamp);
-        payable(msg.sender).transfer(amount);
     }
 
     /**
