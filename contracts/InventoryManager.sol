@@ -220,12 +220,13 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
 
     /**
      * @notice  Updates the Future K value for the invariant
-     * @dev     Only admin can call this function
+     * @dev     Only admin can call this function, K must be between 8 and 32 and a multiple of 4
      * @param   _K  New K value for the invariant
      * @param   _timePeriod  Time period for the new K value to take effect
      */
     function updateFutureK(uint256 _K, uint256 _timePeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_K >= MIN_K && _K <= MAX_K, "IM-KVNP-01");
+        require(_K % 4 == 0, "IM-KMOD-01");
         require(_timePeriod >= MIN_K_UPDATE_TIME, "IM-KTNP-01");
         futureK = _K;
         futureKTime = block.timestamp + _timePeriod;
