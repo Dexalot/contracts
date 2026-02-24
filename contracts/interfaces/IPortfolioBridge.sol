@@ -28,7 +28,7 @@ interface IPortfolioBridge {
 
     function unpackXFerMessage(
         bytes calldata _data
-    ) external view returns (IPortfolio.XFER memory xfer, address senderAddress);
+    ) external view returns (IPortfolio.XFER memory xfer, address rfqAddress);
 
     function enableBridgeProvider(BridgeProvider _bridge, address _bridgeContract) external;
 

@@ -408,11 +408,11 @@ contract PortfolioBridgeMain is
      * @dev     Currently only XChainMsgType.XFER possible. For more details on payload packing see packXferMessage
      * @param   _payload  Payload passed from the bridge
      * @return  xfer IPortfolio.XFER  Xfer Message
-     * @return  senderAddress  Address of the sender contract for CCTRADE transactions
+     * @return  rfqAddress  Address of the target rfq contract for CCTRADE transactions
      */
     function unpackXFerMessage(
         bytes calldata _payload
-    ) external pure returns (IPortfolio.XFER memory xfer, address senderAddress) {
+    ) external pure returns (IPortfolio.XFER memory xfer, address rfqAddress) {
         // There is only a single type in the XChainMsgType enum.
         bytes32[4] memory msgData = abi.decode(_payload[:128], (bytes32[4]));
         uint256 slot0 = uint256(msgData[0]);
@@ -434,7 +434,7 @@ contract PortfolioBridgeMain is
         if (xfer.transaction == IPortfolio.Tx.CCTRADE) {
             /// Check for exactly 148 bytes (128 + 20)
             require(_payload.length == 148, "PB-UM-02");
-            senderAddress = address(bytes20(_payload[128:148]));
+            rfqAddress = address(bytes20(_payload[128:148]));
         } else {
             require(_payload.length == 128, "PB-UM-03");
         }
@@ -445,9 +445,9 @@ contract PortfolioBridgeMain is
      * @dev     It is packed as follows:
      * slot0: customdata(18), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
      * slot1: trader(32)
-     * slot1: symbol(32)
-     * slot2: quantity(32)
-     * slot3: senderAddress(20) [only for CCTRADE]
+     * slot2: symbol(32)
+     * slot3: quantity(32)
+     * slot4: rfqAddress(20) [only for CCTRADE]
      * @param   _xfer  XFER message to encode
      * @return  message  Encoded XFER message
      */
@@ -464,6 +464,7 @@ contract PortfolioBridgeMain is
         bytes32 slot3 = bytes32(_xfer.quantity);
 
         if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
+            // Deployed via Create3 so RFQ address is at same address across all evm chains
             bytes20 slot4 = bytes20(msg.sender);
             message = bytes.concat(slot0, slot1, slot2, slot3, slot4);
         } else {
