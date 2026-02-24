@@ -118,6 +118,15 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
     }
 
     /**
+     * @notice Removes a whitelisted function
+     * @param _funcSignature The function signature to remove from the whitelist
+     */
+    function removeWhitelistedFunction(bytes4 _funcSignature) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(whitelistedFunctions[_funcSignature] != address(0), "VE-FSNW-01");
+        delete whitelistedFunctions[_funcSignature];
+    }
+
+    /**
      * @notice Sets the access level for a trusted contract
      * @param _contract The address of the trusted contract
      * @param _access The access level to assign to the trusted contract
