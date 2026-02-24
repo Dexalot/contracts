@@ -186,7 +186,7 @@ contract OmniVaultManager is
         require(_shares > 0, "VM-ZEVS-01");
         address shareTokenAddress = vaultDetails[_vaultId].shareToken;
         VaultStatus status = vaultDetails[_vaultId].status;
-        require(status == VaultStatus.ACTIVE || status == VaultStatus.PAUSED, "VM-VSAP-01");
+        require(status != VaultStatus.NONE, "VM-VSAP-01");
         require(pendingRequestCount < MAX_PENDING_REQUESTS, "VM-PRCL-01");
         _verifyAndIncrementRequestLimits(msg.sender, _vaultId);
 
@@ -333,20 +333,52 @@ contract OmniVaultManager is
     }
 
     /**
+     * @notice Deprecate a vault, preventing new deposits and withdrawals. Existing shares remain redeemable.
+     * @param _vaultId The ID of the vault to deprecate
+     */
+    function deprecateVault(uint256 _vaultId) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        VaultDetails storage vaultDetail = vaultDetails[_vaultId];
+        require(vaultDetail.status != VaultStatus.NONE, "VM-VNA-01");
+        require(_getPendingVaultRequests(_vaultId) == 0, "VM-DVPR-01");
+        vaultDetail.status = VaultStatus.DEPRECATED;
+    }
+
+    /**
      * @notice Update details for an existing vault
      * @param _vaultId The ID of the vault to update
-     * @param _vaultDetails The updated vault details
+     * @param _newDetails The updated vault details
      */
     function updateVaultDetails(
         uint256 _vaultId,
-        VaultDetails calldata _vaultDetails
+        VaultDetails calldata _newDetails
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        VaultDetails storage vaultDetail = vaultDetails[_vaultId];
-        require(vaultDetail.status == VaultStatus.PAUSED, "VM-VINP-01");
-        if (_vaultDetails.shareToken != vaultDetail.shareToken || _vaultDetails.executor != vaultDetail.executor) {
-            require(rollingDepositHash == 0 && rollingWithdrawalHash == 0, "VM-PTNU-01");
+        VaultDetails storage vault = vaultDetails[_vaultId];
+        require(vault.status == VaultStatus.PAUSED, "VM-PVSD-01");
+
+        // Only allow core contract changes if no pending requests
+        if (
+            _newDetails.shareToken != vault.shareToken ||
+            _newDetails.executor != vault.executor ||
+            keccak256(abi.encode(vault.tokens)) != keccak256(abi.encode(_newDetails.tokens))
+        ) {
+            require(_getPendingVaultRequests(_vaultId) == 0, "VM-PTNU-01");
+            vault.shareToken = _newDetails.shareToken;
+            vault.executor = _newDetails.executor;
+            vault.tokens = _newDetails.tokens;
         }
-        vaultDetails[_vaultId] = _vaultDetails;
+
+        vault.name = _newDetails.name;
+        vault.omniTrader = _newDetails.omniTrader;
+        vault.dexalotRFQ = _newDetails.dexalotRFQ;
+        vault.chainIds = _newDetails.chainIds;
+    }
+
+    function _getPendingVaultRequests(uint256 _vaultId) internal view returns (uint256) {
+        RequestLimit memory vLimit = vaultRequestLimits[_vaultId];
+        if (vLimit.lastBatchId == currentBatchId) {
+            return vLimit.pendingCount;
+        }
+        return 0;
     }
 
     /**
