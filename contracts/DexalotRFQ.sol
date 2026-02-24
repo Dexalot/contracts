@@ -165,7 +165,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
      * @param _order Trade parameters for swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      **/
-    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable {
+    function simpleSwap(Order calldata _order, bytes calldata _signature) external payable nonReentrant {
         address sender = _msgSender();
         address destTrader = _verifyOrder(_order, _signature, sender);
 
@@ -182,7 +182,11 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      * @param _takerAmount Actual amount of takerAsset utilized in swap
      **/
-    function partialSwap(Order calldata _order, bytes calldata _signature, uint256 _takerAmount) external payable {
+    function partialSwap(
+        Order calldata _order,
+        bytes calldata _signature,
+        uint256 _takerAmount
+    ) external payable nonReentrant {
         address sender = _msgSender();
         address destTrader = _verifyOrder(_order, _signature, sender);
 
@@ -203,7 +207,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
      * @param _order Trade parameters for cross chain swap generated from /api/rfq/firm
      * @param _signature Signature of trade parameters generated from /api/rfq/firm
      */
-    function xChainSwap(XChainSwap calldata _order, bytes calldata _signature) external payable {
+    function xChainSwap(XChainSwap calldata _order, bytes calldata _signature) external payable nonReentrant {
         uint256 nonceAndMeta = _verifyXSwap(_order, _signature);
 
         _executeXSwap(_order, nonceAndMeta);
@@ -219,7 +223,9 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
      * flight then upgrade
      * @param  _xfer  XFER message
      */
-    function processXFerPayload(IPortfolio.XFER calldata _xfer) external override onlyRole(PORTFOLIO_BRIDGE_ROLE) {
+    function processXFerPayload(
+        IPortfolio.XFER calldata _xfer
+    ) external override onlyRole(PORTFOLIO_BRIDGE_ROLE) nonReentrant {
         require(_xfer.transaction == IPortfolio.Tx.CCTRADE, "RF-PTNS-01");
         address destTrader = UtilsLibrary.bytes32ToAddress(_xfer.trader);
         require(destTrader != address(0), "RF-ZADDR-01");
