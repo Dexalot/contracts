@@ -27,10 +27,7 @@ import "./library/UtilsLibrary.sol";
  * the quote. This will execute a swap, exchanging the taker asset (asset you provide) with
  * the maker asset (asset we provide). In times of high volatility, the API may adjust the expiry of your quote.
  * The Api may also add slippage to all orders for a particular tradepair during times of high volatility.
- * Monitor the SwapExpired event to verify if a swap has been adjusted. Adjusting the quote is rare, and
- * only resorted to in periods of high volatility for quotes that do not properly represent the liquidity
- * of the Dexalot L1.
- * IThis contract also supports a new cross chain swap flow(originally referred to as GUN Flow) where
+ * This contract also supports a new cross chain swap flow(originally referred to as GUN Flow) where
  * any user can buy GUN token from any network with a single click. This is particularly
  * beneficial for Avalanche L1s that have certain token restrictions. For example Gunzilla prohibits ERC20s just
  * like Dexalat L1 and they don't allow their gas token in any network but in Gunzilla.
@@ -101,6 +98,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     bool private immutable keepWrapped;
     // number of bps to slip quote by to 2 decimal places
     // key = [ slipBpsEnum ] or [ expiryTime | slipBpsEnum ]
+    // 0 = takes default slippage of curve, 1 = no slippage, >1 = custom slippage
     mapping(uint256 => uint24) public slippagePoints;
 
     event SwapSignerUpdated(address newSwapSigner);
@@ -795,16 +793,16 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
         }
 
         uint256 activeQuoteTs = block.timestamp - expiryMinusTtl;
-
-        if (activeQuoteTs > 15) {
-            uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
-            if (slipBps == 0) {
-                slipBps = slippagePoints[slipBpsKey];
-            }
-            return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
+        uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
+        // if set to 0.01 bps treat as no slippage
+        if (slipBps == 1) {
+            return amount;
         }
-
-        return amount;
+        // if point not set, use default for curve
+        if (slipBps == 0) {
+            slipBps = slippagePoints[slipBpsKey];
+        }
+        return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
     }
 
     // solhint-disable-next-line payable-fallback
