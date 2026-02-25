@@ -55,6 +55,8 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
     event AddRewardToken(bytes32 symbol, uint32 tokenId, uint256 timestamp);
     event DepositGas(address from, uint256 quantity, uint256 timestamp);
     event WithdrawGas(address to, uint256 quantity, uint256 timestamp);
+    event UpdateSigner(address oldSigner, address newSigner);
+    event RetrieveRewardToken(address indexed retriever, uint32 tokenId, uint256 quantity);
 
     function initialize(bytes32 _alotSymbol, address __signer, address __portfolio) public initializer {
         __Ownable_init();
@@ -177,6 +179,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
         require(symbol != bytes32(0), "ID-TDNE-02");
         (, uint256 availableBalance, ) = portfolio.getBalance(address(this), symbol);
         portfolio.transferToken(msg.sender, symbol, availableBalance);
+        emit RetrieveRewardToken(msg.sender, _tokenId, availableBalance);
     }
 
     /**
@@ -211,7 +214,9 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
      */
     function updateSigner(address _newSigner) external onlyOwner whenPaused {
         require(_newSigner != address(0), "ID-ZADDR-01");
+        address oldSigner = rewardSigner;
         rewardSigner = _newSigner;
+        emit UpdateSigner(oldSigner, _newSigner);
     }
 
     /**

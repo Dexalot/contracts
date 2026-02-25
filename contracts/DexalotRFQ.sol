@@ -124,6 +124,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     event RebalancerWithdraw(address asset, uint256 amount);
     event SwapExpired(uint256 nonceAndMeta, uint256 timestamp);
     event SwapQueue(string action, uint256 nonceAndMeta, PendingSwap pendingSwap);
+    event SlippagePointsUpdated(uint256[] slipBpsKey, uint24[] slipBps);
 
     /**
      * @notice  initializer function for Upgradeable RFQ
@@ -344,6 +345,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
             require(_slipBpsPoints[i] <= MAX_SLIP_BPS, "RF-SPMB-01");
             slippagePoints[_slipBpsKeys[i]] = _slipBpsPoints[i];
         }
+        emit SlippagePointsUpdated(_slipBpsKeys, _slipBpsPoints);
     }
 
     /**
