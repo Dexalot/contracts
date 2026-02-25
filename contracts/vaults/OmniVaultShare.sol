@@ -13,7 +13,7 @@ import "../interfaces/IOmniVaultShare.sol";
  *         contract to enable cross-chain functionality.
  */
 contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
-    bytes32 public constant VERSION = bytes32("1.0.0");
+    bytes32 public constant VERSION = bytes32("1.1.0");
     uint256 public immutable vaultId;
     address public omniVaultManager;
 

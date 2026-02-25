@@ -51,7 +51,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     using ECDSA for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.0.2");
+    bytes32 public constant VERSION = bytes32("2.1.0");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");

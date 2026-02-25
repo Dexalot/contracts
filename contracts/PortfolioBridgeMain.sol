@@ -111,7 +111,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.2.0");
+        return bytes32("4.3.0");
     }
 
     /**

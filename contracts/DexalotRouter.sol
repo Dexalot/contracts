@@ -36,7 +36,7 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
     uint256 private constant TAKER_PARTIAL_AMOUNT_OFFSET = 4 + 32 * 8 + 32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.2");
+    bytes32 public constant VERSION = bytes32("1.1.0");
     // addresses of allowed MainnetRFQ contracts
     EnumerableSet.AddressSet private allowedRFQs;
 

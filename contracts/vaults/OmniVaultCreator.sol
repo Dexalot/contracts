@@ -20,7 +20,7 @@ import "../interfaces/IOmniVaultCreator.sol";
 contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
-    bytes32 public constant VERSION = bytes32("1.0.2");
+    bytes32 public constant VERSION = bytes32("1.1.0");
     string public constant RISK_DISCLOSURE =
         "I acknowledge that I have read and understood the risks associated with creating and funding this vault.";
 

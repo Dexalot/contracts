@@ -150,7 +150,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
     }
 
     function VERSION() external pure virtual returns (bytes32) {
-        return bytes32("1.1.0");
+        return bytes32("1.2.0");
     }
 
     /**

@@ -104,6 +104,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     }
 
     function VERSION() external pure virtual override returns (bytes32) {
-        return bytes32("1.1.0");
+        return bytes32("1.2.0");
     }
 }
