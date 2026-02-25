@@ -84,8 +84,9 @@ contract DexalotRouter is AccessControlEnumerable {
         bytes memory callDataA = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderA, _signatureA, _takerAmountA);
         callDataA = abi.encodePacked(callDataA, msg.sender);
         // Execute the call on the child DexalotRFQ contract
-        (bool success, ) = payable(_orderA.maker).call{value: msg.value}(callDataA);
-        require(success, "DR-PSA-01");
+        (bool success, bytes memory returnData) = payable(_orderA.maker).call{value: msg.value}(callDataA);
+        // Forward the revert reason if the call failed
+        if (!success) _bubbleRevert(returnData, "DR-PSA-01");
 
         uint256 takerAmountB;
         bool isHopNative = (_orderA.makerAsset == address(0));
@@ -101,8 +102,9 @@ contract DexalotRouter is AccessControlEnumerable {
         bytes memory callDataB = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderB, _signatureB, takerAmountB);
         callDataB = abi.encodePacked(callDataB, msg.sender);
         // Execute the call on the child DexalotRFQ contract
-        (success, ) = payable(_orderB.maker).call{value: isHopNative ? takerAmountB : 0}(callDataB);
-        require(success, "DR-PSB-01");
+        (success, returnData) = payable(_orderB.maker).call{value: isHopNative ? takerAmountB : 0}(callDataB);
+        // Forward the revert reason if the call failed
+        if (!success) _bubbleRevert(returnData, "DR-PSB-01");
     }
 
     /**
@@ -121,8 +123,8 @@ contract DexalotRouter is AccessControlEnumerable {
     }
 
     /**
-     * @notice Retrieve any ERC20 or native tokens mistakenly sent to this contract
-     * @param _token The address of the token to retrieve, or address(0) for native
+     * @notice Retrieve any ERC20 tokens mistakenly sent to this contract
+     * @param _token The address of the token to retrieve
      * @param _amount The amount of tokens to retrieve
      */
     function retrieveToken(address _token, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -177,6 +179,21 @@ contract DexalotRouter is AccessControlEnumerable {
      */
     function numberOfAllowedRFQs() external view returns (uint256) {
         return allowedRFQs.length();
+    }
+
+    /** Internal function to bubble up revert reasons from low-level calls
+     * @param _returnData The return data from the failed call
+     * @param _defaultMsg The default revert message to use if no revert reason is found in the return data
+     */
+    function _bubbleRevert(bytes memory _returnData, string memory _defaultMsg) internal pure {
+        if (_returnData.length > 0) {
+            assembly {
+                let size := mload(_returnData)
+                revert(add(32, _returnData), size)
+            }
+        } else {
+            revert(_defaultMsg);
+        }
     }
 
     /**
