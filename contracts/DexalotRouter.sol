@@ -18,7 +18,7 @@ import "./interfaces/IDexalotRFQ.sol";
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2025 Dexalot
-contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
+contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient {
     using EnumerableSet for EnumerableSet.AddressSet;
     using SafeERC20 for IERC20;
 
@@ -69,7 +69,7 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
         uint256 _takerAmountA,
         IDexalotRFQ.Order calldata _orderB,
         bytes calldata _signatureB
-    ) external payable {
+    ) external payable nonReentrant {
         require(_orderA.maker != address(0) && allowedRFQs.contains(_orderA.maker), "DR-IRMA-01");
         require(_orderB.maker != address(0) && allowedRFQs.contains(_orderB.maker), "DR-IRMB-01");
         require(_orderA.makerAsset == _orderB.takerAsset, "DR-ASMTA-01");
@@ -204,12 +204,12 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
     }
 
     /**
-     * @notice Fallback function to forward calls to allowed MainnetRFQ contracts.
+     * @notice Internal fallback function to forward calls to allowed MainnetRFQ contracts.
      * Only the partialSwap and simpleSwap functions are supported.
      * The original sender's address is appended to the calldata for the target contract to extract.
      * If the call involves token transfer, the tokens are transferred from the original sender to the target contract before forwarding the call.
      */
-    fallback() external payable {
+    function _handleFallback() internal {
         bytes4 selector = msg.sig;
         // If the selector is NOT partialSwap AND NOT simpleSwap, revert.
         if (selector != PARTIAL_SWAP_SELECTOR && selector != SIMPLE_SWAP_SELECTOR) {
@@ -259,5 +259,13 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
             returndatacopy(0, 0, returndata_size)
             return(0, returndata_size)
         }
+    }
+
+    /**
+     * @notice Non-Reentrant fallback function to handle swap forwarding
+     * @dev Triggers _handleFallback() logic
+     */
+    fallback() external payable nonReentrant {
+        _handleFallback();
     }
 }
