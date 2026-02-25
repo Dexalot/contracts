@@ -77,7 +77,8 @@ interface IOmniVaultManager {
     enum BatchStatus {
         NONE,
         FINALIZED,
-        SETTLED
+        SETTLED,
+        UNWOUND
     }
 
     enum RequestStatus {
@@ -106,5 +107,5 @@ interface IOmniVaultManager {
         uint256[] amounts
     );
 
-    event TransferBatchUpdate(uint256 indexed batchId, bool success);
+    event BatchUpdate(uint256 indexed batchId, BatchStatus status);
 }

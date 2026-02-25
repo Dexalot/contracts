@@ -98,7 +98,7 @@ contract OmniVaultManager is
         require(batch.depositHash == _bulkSettleDeposits(prevBatchId, _deposits), "VM-DHMR-01");
         require(batch.withdrawalHash == _bulkSettleWithdrawals(prevBatchId, _withdrawals), "VM-WHMR-01");
         batch.status = BatchStatus.SETTLED;
-        emit TransferBatchUpdate(prevBatchId, true);
+        emit BatchUpdate(prevBatchId, BatchStatus.SETTLED);
     }
 
     function finalizeBatch(uint256[] calldata _prices, VaultState[] calldata _vaults) external onlyRole(SETTLER_ROLE) {
@@ -113,7 +113,6 @@ contract OmniVaultManager is
         // Locks the prices + vault balances at finalization time for settlement verification,
         // ensures the batch cannot be manipulated after finalization
         batch.stateHash = keccak256(abi.encode(_prices, _vaults));
-
         batch.finalizedAt = uint32(block.timestamp);
         batch.status = BatchStatus.FINALIZED;
         batch.withdrawalHash = rollingWithdrawalHash;
@@ -121,7 +120,7 @@ contract OmniVaultManager is
 
         _resetBatch();
 
-        // TODO: add event for finalisation
+        emit BatchUpdate(batchId, BatchStatus.FINALIZED);
     }
 
     /**
@@ -252,7 +251,7 @@ contract OmniVaultManager is
 
         require(withdrawalHash == rollingWithdrawalHash, "VM-WHMR-01");
 
-        emit TransferBatchUpdate(currentBatchId, false);
+        emit BatchUpdate(currentBatchId, BatchStatus.UNWOUND);
         _resetBatch();
     }
 
