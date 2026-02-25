@@ -209,7 +209,7 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
      * The original sender's address is appended to the calldata for the target contract to extract.
      * If the call involves token transfer, the tokens are transferred from the original sender to the target contract before forwarding the call.
      */
-    function _handleFallback() internal {
+    fallback() external payable {
         bytes4 selector = msg.sig;
         // If the selector is NOT partialSwap AND NOT simpleSwap, revert.
         if (selector != PARTIAL_SWAP_SELECTOR && selector != SIMPLE_SWAP_SELECTOR) {
@@ -259,14 +259,6 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
             returndatacopy(0, 0, returndata_size)
             return(0, returndata_size)
         }
-    }
-
-    /**
-     * @notice Non-Reentrant fallback function to handle swap forwarding
-     * @dev Triggers _handleFallback() logic
-     */
-    fallback() external payable nonReentrant {
-        _handleFallback();
     }
 
     /**
