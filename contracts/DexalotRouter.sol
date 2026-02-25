@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import "@openzeppelin-v5/utils/structs/EnumerableSet.sol";
+import "@openzeppelin-v5/token/ERC20/IERC20.sol";
+import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin-v5/utils/ReentrancyGuardTransient.sol";
+import "@openzeppelin-upgradeable-v5/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin-upgradeable-v5/proxy/utils/UUPSUpgradeable.sol";
 
 import "./interfaces/IDexalotRFQ.sol";
 
@@ -17,7 +18,7 @@ import "./interfaces/IDexalotRFQ.sol";
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2025 Dexalot
-contract DexalotRouter is AccessControlEnumerable {
+contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable {
     using EnumerableSet for EnumerableSet.AddressSet;
     using SafeERC20 for IERC20;
 
@@ -39,15 +40,18 @@ contract DexalotRouter is AccessControlEnumerable {
     // addresses of allowed MainnetRFQ contracts
     EnumerableSet.AddressSet private allowedRFQs;
 
+    uint256[50] private __gap; // gap for future storage variables
+
     event AllowedRFQUpdated(address indexed rfq, bool allowed);
 
     /**
      * @notice Constructor to set up roles
      * @param _owner The address to be granted the admin role
      */
-    constructor(address _owner) {
+    function initialize(address _owner) public initializer {
         require(_owner != address(0), "DR-SAZ-01");
 
+        __AccessControlEnumerable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, _owner);
     }
 
@@ -180,6 +184,9 @@ contract DexalotRouter is AccessControlEnumerable {
     function numberOfAllowedRFQs() external view returns (uint256) {
         return allowedRFQs.length();
     }
+
+    // UUPS upgrade authorization function
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /** Internal function to bubble up revert reasons from low-level calls
      * @param _returnData The return data from the failed call
