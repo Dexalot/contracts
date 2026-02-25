@@ -17,6 +17,8 @@ contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
     uint256 public immutable vaultId;
     address public omniVaultManager;
 
+    event OmniVaultManagerUpdated(address oldManager, address newManager);
+
     /**
      * @notice Modifier to restrict functions to be called only by the OmniVaultManager contract.
      */
@@ -73,6 +75,8 @@ contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
      * @param _omniVaultManager The address of the OmniVaultManager contract.
      */
     function setOmniVaultManager(address _omniVaultManager) external onlyOwner {
+        address oldManager = omniVaultManager;
         omniVaultManager = _omniVaultManager;
+        emit OmniVaultManagerUpdated(oldManager, _omniVaultManager);
     }
 }

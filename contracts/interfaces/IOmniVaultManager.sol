@@ -95,4 +95,16 @@ interface IOmniVaultManager {
         REWARD,
         OTHER
     }
+
+    // Emitted on deposit/withdrawal requests
+    event TransferRequestUpdate(
+        bytes32 indexed requestId,
+        uint256 indexed batchId,
+        address indexed user,
+        RequestStatus status,
+        uint16[] tokenIds,
+        uint256[] amounts
+    );
+
+    event TransferBatchUpdate(uint256 indexed batchId, bool success);
 }

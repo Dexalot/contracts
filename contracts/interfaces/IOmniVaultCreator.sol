@@ -37,4 +37,5 @@ interface IOmniVaultCreator {
     event FeeUpdated(uint256 newFee, uint256 oldFee);
     event FeeTokenUpdated(address newFeeToken, address oldFeeToken);
     event ReclaimDelayUpdated(uint256 newDelay, uint256 oldDelay);
+    event CreationFeeCollected(address feeClaimer, address feeToken, uint256 feeAmount);
 }

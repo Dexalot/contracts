@@ -79,7 +79,9 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
      */
     function setOmniVaultManager(address _omniVaultManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_omniVaultManager != address(0), "VE-SAZ-01");
+        address oldManager = omniVaultManager;
         omniVaultManager = _omniVaultManager;
+        emit AddressUpdate("OmniVaultManager", oldManager, _omniVaultManager);
     }
 
     /**
@@ -87,14 +89,18 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
      * @param _amount The amount of gas to top up weekly
      */
     function setGasTopupAmount(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 oldAmount = gasTopupAmount;
         gasTopupAmount = _amount;
+        emit SetGasTopupValue(oldAmount, _amount);
     }
 
     /**
      * @notice Sets the fee manager address
      */
     function setFeeManager() external onlyRole(DEFAULT_ADMIN_ROLE) {
+        address oldFeeManager = feeManager;
         feeManager = IPortfolioSub(portfolio).feeAddress();
+        emit AddressUpdate("FeeManager", oldFeeManager, feeManager);
     }
 
     function VERSION() external pure virtual override returns (bytes32) {

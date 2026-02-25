@@ -124,6 +124,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
     function removeWhitelistedFunction(bytes4 _funcSignature) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(whitelistedFunctions[_funcSignature] != address(0), "VE-FSNW-01");
         delete whitelistedFunctions[_funcSignature];
+        emit WhitelistedFunctionUpdate(_funcSignature, address(0));
     }
 
     /**
@@ -134,6 +135,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
     function setTrustedContract(address _contract, ContractAccess _access) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_contract != address(0), "VE-SAZ-01");
         trustedContracts[_contract] = _access;
+        emit TrustedContractUpdate(_contract, _access);
     }
 
     /**
@@ -142,7 +144,9 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      */
     function setPortfolio(address _portfolio) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_portfolio != address(0), "VE-SAZ-01");
+        address oldPortfolio = portfolio;
         portfolio = _portfolio;
+        emit AddressUpdate("Portfolio", oldPortfolio, _portfolio);
     }
 
     function VERSION() external pure virtual returns (bytes32) {
@@ -161,6 +165,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         address existing = whitelistedFunctions[_funcSignature];
         require(existing == address(0) || existing == _contract, "VE-SEAO-01");
         whitelistedFunctions[_funcSignature] = _contract;
+        emit WhitelistedFunctionUpdate(_funcSignature, _contract);
     }
 
     /**

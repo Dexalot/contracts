@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 interface IOmniVaultExecutorSub {
+    event SetGasTopupValue(uint256 oldValue, uint256 newValue);
     event GasTopup(uint256 timestamp, uint256 amount);
     event SwapFeesCollected(bytes32 indexed symbol, uint256[] swapIds, uint256[] fees);
 

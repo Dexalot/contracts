@@ -66,18 +66,6 @@ contract OmniVaultManager is
     mapping(uint256 => RequestLimit) public vaultRequestLimits;
     mapping(address => RequestLimit) public userRequestLimits;
 
-    // Emitted on deposit/withdrawal requests
-    event TransferRequestUpdate(
-        bytes32 indexed requestId,
-        uint256 indexed batchId,
-        address indexed user,
-        RequestStatus status,
-        uint16[] tokenIds,
-        uint256[] amounts
-    );
-
-    event TransferBatchUpdate(uint256 indexed batchId, bool success);
-
     /**
      * @notice Initializer for the OmniVaultManager contract
      * @param _admin The admin address with DEFAULT_ADMIN_ROLE

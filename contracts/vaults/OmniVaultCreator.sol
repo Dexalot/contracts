@@ -230,6 +230,7 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
         uint256 amount = collectedFees;
         collectedFees = 0;
         IERC20(feeToken).safeTransfer(msg.sender, amount);
+        emit CreationFeeCollected(msg.sender, feeToken, amount);
     }
 
     function getCreationRequest(bytes32 _requestId) external view returns (VaultRequest memory) {

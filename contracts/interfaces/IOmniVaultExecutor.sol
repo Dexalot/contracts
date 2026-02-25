@@ -9,4 +9,9 @@ interface IOmniVaultExecutor {
         ERC20, // Trusted contract, can call whitelisted functions that send/receive ERC20 tokens
         NATIVE_AND_ERC20 // Trusted contract, can call whitelisted functions that send/receive both native currency and ERC20 tokens
     }
+
+    // address(0) targetContract = removal from whitelist
+    event WhitelistedFunctionUpdate(bytes4 funcSignature, address targetContract);
+    event TrustedContractUpdate(address contractAddress, ContractAccess access);
+    event AddressUpdate(string name, address oldAddress, address newAddress);
 }
