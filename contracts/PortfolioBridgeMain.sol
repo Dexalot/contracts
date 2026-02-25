@@ -89,6 +89,11 @@ contract PortfolioBridgeMain is
     uint32 private constant SOL_CHAIN_ID = 0x534f4c;
     // Symbol => chainListOrgChainId ==> address mapping to control xchain swaps allowed symbols for each destination
     // stores spl token mint address for sending messages to solana
+    // OR
+    // srcAddress => chainListOrgChainId => dstAddress (bytes32) used to handle cctrades for RFQ contracts not deployed
+    // with Create3 (i.e. older versions of RFQ contracts), can safely use mapping as bytes20(address) does not clash
+    // with bytes32(symbol), if result = bytes32(0) then can assume the message is create 3 deployed so at same address
+    // safe assumption as invalid CCTRADEs routes will not be signed by off-chain component
     mapping(bytes32 => mapping(uint32 => bytes32)) public xChainAllowedDestinations;
 
     uint64 public outNonce;
@@ -449,9 +454,16 @@ contract PortfolioBridgeMain is
      * slot3: quantity(32)
      * slot4: rfqAddress(20) [only for CCTRADE]
      * @param   _xfer  XFER message to encode
+     * @param   _dstChainId  Destination chain id to check if the message is for solana or not
      * @return  message  Encoded XFER message
      */
-    function packXferMessage(IPortfolio.XFER memory _xfer) private view returns (bytes memory message) {
+    function packXferMessage(
+        IPortfolio.XFER memory _xfer,
+        uint32 _dstChainId
+    ) private view returns (bytes memory message) {
+        if (_dstChainId == SOL_CHAIN_ID) {
+            return packXferMessageSolana(_xfer);
+        }
         bytes32 slot0 = bytes32(
             (uint256(uint144(_xfer.customdata)) << 112) |
                 (uint256(uint32(_xfer.timestamp)) << 80) |
@@ -464,9 +476,16 @@ contract PortfolioBridgeMain is
         bytes32 slot3 = bytes32(_xfer.quantity);
 
         if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
-            // Deployed via Create3 so RFQ address is at same address across all evm chains
-            bytes20 slot4 = bytes20(msg.sender);
-            message = bytes.concat(slot0, slot1, slot2, slot3, slot4);
+            bytes32 dstAddress = xChainAllowedDestinations[bytes32(bytes20(msg.sender))][_dstChainId];
+            address rfqAddress;
+            if (dstAddress != bytes32(0)) {
+                // Only EVM <-> EVM cctrades supported for now
+                rfqAddress = UtilsLibrary.bytes32ToAddress(dstAddress);
+            } else {
+                // Deployed via Create3 so RFQ address is at same address across all evm chains
+                rfqAddress = msg.sender;
+            }
+            message = bytes.concat(slot0, slot1, slot2, slot3, bytes20(rfqAddress));
         } else {
             message = bytes.concat(slot0, slot1, slot2, slot3);
         }
@@ -545,9 +564,7 @@ contract PortfolioBridgeMain is
             outNonce += 1;
             _xfer.nonce = outNonce;
         }
-        bytes memory _payload = _dstChainListOrgChainId == SOL_CHAIN_ID
-            ? packXferMessageSolana(_xfer)
-            : packXferMessage(_xfer);
+        bytes memory _payload = packXferMessage(_xfer, _dstChainListOrgChainId);
         bool isUserFeePayer = userPaysFee[_dstChainListOrgChainId][_bridge];
         IBridgeProvider.CrossChainMessageType msgType = getCrossChainMessageType(_xfer.transaction);
         uint256 fee = bridgeContract.getBridgeFee(_dstChainListOrgChainId, msgType);
