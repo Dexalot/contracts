@@ -476,7 +476,7 @@ contract PortfolioBridgeMain is
         bytes32 slot3 = bytes32(_xfer.quantity);
 
         if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
-            bytes32 dstAddress = xChainAllowedDestinations[bytes32(bytes20(msg.sender))][_dstChainId];
+            bytes32 dstAddress = xChainAllowedDestinations[UtilsLibrary.addressToBytes32(msg.sender)][_dstChainId];
             address rfqAddress;
             if (dstAddress != bytes32(0)) {
                 // Only EVM <-> EVM cctrades supported for now
