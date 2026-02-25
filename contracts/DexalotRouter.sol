@@ -268,4 +268,11 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
     fallback() external payable nonReentrant {
         _handleFallback();
     }
+
+    /**
+     * @notice Receive function to reject direct native transfers without calldata
+     */
+    receive() external payable {
+        revert("DR-NNT-01");
+    }
 }
