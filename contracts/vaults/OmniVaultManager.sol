@@ -38,7 +38,8 @@ contract OmniVaultManager is
     uint256 public constant MAX_PENDING_REQUESTS = 500;
     uint256 public constant MAX_VAULT_PENDING_REQUESTS = 50;
     uint256 public constant MAX_USER_PENDING_REQUESTS = 5;
-    uint256 public constant MIN_SHARE_MINT = 1000e18; // Minimum shares to mint on first deposit to prevent dust issues
+    // Minimum shares to mint on first deposit to prevent dust issues
+    uint256 public constant MIN_SHARE_MINT = 1000e18;
 
     uint256 public vaultIndex;
     mapping(uint256 => VaultDetails) public vaultDetails;
@@ -60,10 +61,14 @@ contract OmniVaultManager is
     bytes32 public rollingWithdrawalHash;
     uint256 public currentBatchId;
     uint256 public batchStartTime;
+    // global count of pending requests to ensure settlement does not exceed block gas limit
     uint256 public pendingRequestCount;
 
+    // batchId => BatchState, stores the state of each batch for verification during settlement
     mapping(uint256 => BatchState) public completedBatches;
+    // vaultId => RequestLimit, tracks the number of pending requests for each vault in the current batch
     mapping(uint256 => RequestLimit) public vaultRequestLimits;
+    // user => RequestLimit, tracks the number of pending requests for each user in the current batch
     mapping(address => RequestLimit) public userRequestLimits;
 
     /**
@@ -83,6 +88,16 @@ contract OmniVaultManager is
 
     /**
      * @notice Bulk settle deposit and withdrawal requests
+     * @dev This function is called by the off-chain batch settlement process after finalization to settle
+     * pending deposit/withdrawals requests in one tx. It uses the prices and vault states recorded at
+     * finalization time to correctly calculate shares to mint for deposits and tokens to dispatch for withdrawals,
+     * preventing manipulation after batch finalization.
+     * The batch state is verified against the recorded state hash to ensure integrity of the settlement process.
+     * The batch is marked as settled after successful settlement, and cannot be settled again.
+     * @param _prices The array of token prices for the batch, indexed by token ID (0 if token not used in batch)
+     * @param _vaults The array of vault states for the batch, present only for vaults with pending requests
+     * @param _deposits The array of deposit fulfillments to settle
+     * @param _withdrawals The array of withdrawal fulfillments to settle
      */
     function bulkSettleState(
         uint256[] calldata _prices,
@@ -92,8 +107,8 @@ contract OmniVaultManager is
     ) external nonReentrant whenNotPaused onlyRole(SETTLER_ROLE) {
         uint256 prevBatchId = currentBatchId - 1;
         BatchState storage batch = completedBatches[prevBatchId];
-        require(batch.status == BatchStatus.FINALIZED, "VM-BSST-01");
-        require(keccak256(abi.encode(_prices, _vaults)) == batch.stateHash, "VM-BSST-02");
+        require(batch.status == BatchStatus.FINALIZED, "VM-BSNF-01");
+        require(keccak256(abi.encode(_prices, _vaults)) == batch.stateHash, "VM-IVSH-01");
         _loadStateToTransient(_prices, _vaults);
         require(batch.depositHash == _bulkSettleDeposits(prevBatchId, _deposits), "VM-DHMR-01");
         require(batch.withdrawalHash == _bulkSettleWithdrawals(prevBatchId, _withdrawals), "VM-WHMR-01");
@@ -101,11 +116,21 @@ contract OmniVaultManager is
         emit BatchUpdate(prevBatchId, BatchStatus.SETTLED);
     }
 
+    /**
+     * @notice Finalize the current batch, recording the state for settlement
+     * @dev This function is called by the off-chain batch settlement process to finalize the batch before settlement.
+     * It records the prices and vault states at finalization time, which are used to mint vault shares
+     * and dispatch tokens for withdrawals. Finalization can only occur if the previous batch is settled,
+     * ensuring a first-in-first-out process for settlement.
+     * The batch state is hashed and stored to ensure integrity of the settlement process, preventing manipulation after finalization.
+     * @param _prices The array of token prices for the batch, indexed by token ID (0 if token not used in batch)
+     * @param _vaults The array of vault states for the batch, present only for vaults with pending requests
+     */
     function finalizeBatch(uint256[] calldata _prices, VaultState[] calldata _vaults) external onlyRole(SETTLER_ROLE) {
         uint256 batchId = currentBatchId;
         BatchState storage batch = completedBatches[batchId];
-        require(batch.status == BatchStatus.NONE, "VM-BSST-01");
-        require(batchId == 0 || completedBatches[batchId - 1].status == BatchStatus.SETTLED, "VM-PBF-01");
+        require(batch.status == BatchStatus.NONE, "VM-BSNN-01");
+        require(batchId == 0 || completedBatches[batchId - 1].status == BatchStatus.SETTLED, "VM-PBNS-01");
 
         // index in price array corresponds to tokenId, set to 0 if not used in batch
         require(_prices.length == tokenIndex, "VM-IVAL-01");
@@ -173,7 +198,7 @@ contract OmniVaultManager is
         require(_shares > 0, "VM-ZEVS-01");
         address shareTokenAddress = vaultDetails[_vaultId].shareToken;
         VaultStatus status = vaultDetails[_vaultId].status;
-        require(status != VaultStatus.NONE, "VM-VSAP-01");
+        require(status != VaultStatus.NONE, "VM-VSNN-01");
         require(pendingRequestCount < MAX_PENDING_REQUESTS, "VM-PRCL-01");
         _verifyAndIncrementRequestLimits(msg.sender, _vaultId);
 
@@ -274,7 +299,7 @@ contract OmniVaultManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_vaultId == vaultIndex, "VM-RNVI-01");
         // To prevent inflation attack
-        require(_shares > MIN_SHARE_MINT, "VM-ZEVS-01");
+        require(_shares > MIN_SHARE_MINT, "VM-SLTM-01");
         vaultIndex++;
 
         vaultDetails[_vaultId] = _vaultDetails;
@@ -325,8 +350,8 @@ contract OmniVaultManager is
      */
     function deprecateVault(uint256 _vaultId) external onlyRole(DEFAULT_ADMIN_ROLE) {
         VaultDetails storage vaultDetail = vaultDetails[_vaultId];
-        require(vaultDetail.status != VaultStatus.NONE, "VM-VNA-01");
-        require(_getPendingVaultRequests(_vaultId) == 0, "VM-DVPR-01");
+        require(vaultDetail.status != VaultStatus.NONE, "VM-VSNN-01");
+        require(_getPendingVaultRequests(_vaultId) == 0, "VM-PRNZ-01");
         vaultDetail.status = VaultStatus.DEPRECATED;
     }
 
@@ -340,7 +365,7 @@ contract OmniVaultManager is
         VaultDetails calldata _newDetails
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         VaultDetails storage vault = vaultDetails[_vaultId];
-        require(vault.status == VaultStatus.PAUSED, "VM-PVSD-01");
+        require(vault.status == VaultStatus.PAUSED, "VM-VSNP-01");
 
         // Only allow core contract changes if no pending requests
         if (
@@ -348,7 +373,7 @@ contract OmniVaultManager is
             _newDetails.executor != vault.executor ||
             keccak256(abi.encode(vault.tokens)) != keccak256(abi.encode(_newDetails.tokens))
         ) {
-            require(_getPendingVaultRequests(_vaultId) == 0, "VM-PTNU-01");
+            require(_getPendingVaultRequests(_vaultId) == 0, "VM-PRNZ-01");
             vault.shareToken = _newDetails.shareToken;
             vault.executor = _newDetails.executor;
             vault.tokens = _newDetails.tokens;
@@ -358,14 +383,6 @@ contract OmniVaultManager is
         vault.omniTrader = _newDetails.omniTrader;
         vault.dexalotRFQ = _newDetails.dexalotRFQ;
         vault.chainIds = _newDetails.chainIds;
-    }
-
-    function _getPendingVaultRequests(uint256 _vaultId) internal view returns (uint256) {
-        RequestLimit memory vLimit = vaultRequestLimits[_vaultId];
-        if (vLimit.lastBatchId == currentBatchId) {
-            return vLimit.pendingCount;
-        }
-        return 0;
     }
 
     /**
@@ -417,16 +434,6 @@ contract OmniVaultManager is
     }
 
     /**
-     * @notice Withdraw ALOT from OmniVaultManager gas tank to owner
-     * @param amount The amount of ALOT to withdraw to owner
-     */
-    function withdrawGas(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(address(this).balance >= amount, "VM-AGCB-01");
-        (bool success, ) = msg.sender.call{value: amount}("");
-        require(success, "VM-WTFR-01");
-    }
-
-    /**
      * @notice Receive native ALOT, ensures auto gas tank fill logic holds
      */
     receive() external payable {}
@@ -449,6 +456,11 @@ contract OmniVaultManager is
         return transferRequests[_requestId];
     }
 
+    /**
+     * @notice Verify and increment the request limits for a user and vault
+     * @param _user The address of the user making the request
+     * @param _vaultId The ID of the vault for the request
+     */
     function _verifyAndIncrementRequestLimits(address _user, uint256 _vaultId) internal {
         uint248 batchId = uint248(currentBatchId);
         RequestLimit storage vaultLimit = vaultRequestLimits[_vaultId];
@@ -474,7 +486,10 @@ contract OmniVaultManager is
 
     /**
      * @notice Internal function to bulk settle deposit requests
-     * @dev Mints vault shares to users and unlocks tokens in the vault
+     * @dev Mints vault shares to users based on the USD value of their deposits
+     * USD value is recorded at finalization time, so manipulation is not possible after batch finalization
+     * @param _batchId The ID of the current batch
+     * @param _deposits The array of deposit fulfillments
      */
     function _bulkSettleDeposits(
         uint256 _batchId,
@@ -504,29 +519,17 @@ contract OmniVaultManager is
         }
     }
 
+    /**
+     * @notice Internal function to verify a deposit request
+     * @param requestId The ID of the deposit request
+     * @return vaultId The ID of the vault for the deposit
+     * @return user The address of the user who made the deposit request
+     */
     function _verifyDepositRequest(bytes32 requestId) internal returns (uint16 vaultId, address user) {
         TransferRequest memory dRequest = transferRequests[requestId];
         require(dRequest.status == RequestStatus.DEPOSIT_REQUESTED, "VM-ADRP-01");
         (vaultId, user, ) = _decodeRequestId(requestId);
         delete transferRequests[requestId];
-    }
-
-    function _calcSharesToMint(
-        uint256 _vaultId,
-        uint16[] calldata _tokenIds,
-        uint256[] calldata _amounts
-    ) internal view returns (uint256 sharesToMint) {
-        uint256 userDepositUsd = 0;
-        for (uint256 j = 0; j < _tokenIds.length; j++) {
-            userDepositUsd += (_amounts[j] * _tloadPrice(_tokenIds[j])) / 1e18;
-        }
-
-        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
-        sharesToMint = (userDepositUsd * totalShares) / _tloadVaultUSD(_vaultId);
-
-        if (totalShares == 0) {
-            sharesToMint = userDepositUsd;
-        }
     }
 
     /**
@@ -551,7 +554,10 @@ contract OmniVaultManager is
 
     /**
      * @notice Internal function to bulk settle withdrawal requests
-     * @dev Burns vault shares from users and dispatches tokens to them
+     * @dev Burns vault shares from users and dispatches tokens to them equitable to the
+     * current state of the vault at finalization time, so manipulation is not possible after batch finalization
+     * Users with failed withdrawals are refunded their shares
+     * @param _batchId The ID of the batch to settle
      * @param _withdrawals The array of withdrawal fulfillments
      */
     function _bulkSettleWithdrawals(
@@ -593,6 +599,13 @@ contract OmniVaultManager is
         }
     }
 
+    /**
+     * @notice Internal function to verify a withdrawal request
+     * @param requestId The ID of the withdrawal request
+     * @return vaultId The ID of the vault for the withdrawal
+     * @return user The address of the user who made the withdrawal request
+     * @return shares The amount of vault shares to withdraw
+     */
     function _verifyWithdrawalRequest(
         bytes32 requestId
     ) internal returns (uint16 vaultId, address user, uint256 shares) {
@@ -601,24 +614,6 @@ contract OmniVaultManager is
         (vaultId, user, ) = _decodeRequestId(requestId);
         shares = uint256(wRequest.shares);
         delete transferRequests[requestId];
-    }
-
-    function _calcAmountsToDispatch(
-        uint256 _vaultId,
-        uint256 _vaultShares,
-        uint16[] memory _tokenIds
-    ) internal view returns (bytes32[] memory symbols, uint256[] memory amounts) {
-        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
-        uint256 len = _tokenIds.length;
-
-        symbols = new bytes32[](len);
-        amounts = new uint256[](len);
-
-        for (uint256 i = 0; i < len; i++) {
-            uint16 tokenId = _tokenIds[i];
-            symbols[i] = assetInfo[tokenId].symbol;
-            amounts[i] = (_vaultShares * _tloadBalance(_vaultId, tokenId)) / totalShares;
-        }
     }
 
     /**
@@ -663,6 +658,266 @@ contract OmniVaultManager is
     }
 
     /**
+     * @notice Internal function to load the batch state (prices and vault states) into transient storage for settlement
+     * @param _prices The array of token prices to load
+     * @param _vaults The array of vault states to load
+     */
+    function _loadStateToTransient(uint256[] calldata _prices, VaultState[] calldata _vaults) internal {
+        uint16 pricesLen = uint16(_prices.length);
+        for (uint16 i = 0; i < pricesLen; i++) {
+            _tstorePrice(i, _prices[i]);
+        }
+        uint256 vaultsLen = _vaults.length;
+        for (uint256 v = 0; v < vaultsLen; v++) {
+            uint256 vaultId = _vaults[v].vaultId;
+
+            VaultDetails storage details = vaultDetails[vaultId];
+            uint256 vaultTotalUsd = 0;
+            uint256 tokensLen = _vaults[v].tokenIds.length;
+            for (uint256 t = 0; t < tokensLen; t++) {
+                uint256 balance = _vaults[v].balances[t];
+                uint16 tokenId = _vaults[v].tokenIds[t];
+
+                _tstoreBalance(vaultId, tokenId, balance);
+                vaultTotalUsd += (balance * _tloadPrice(tokenId)) / 1e18;
+            }
+
+            address shareToken = details.shareToken;
+
+            _tstoreVaultCtx(vaultId, vaultTotalUsd, IERC20(shareToken).totalSupply(), shareToken, details.executor);
+            _tstoreVaultTokenIds(vaultId, _vaults[v].tokenIds);
+        }
+    }
+
+    /**
+     * @notice Internal function to store a token price in transient storage
+     * @param _tokenId The ID of the token
+     * @param _price The price of the token
+     */
+    function _tstorePrice(uint16 _tokenId, uint256 _price) internal {
+        bytes32 slot = keccak256(abi.encode("PRICE", _tokenId));
+        assembly {
+            tstore(slot, _price)
+        }
+    }
+
+    /**
+     * @notice Internal function to store a token balance in transient storage
+     * @param _vaultId The ID of the vault
+     * @param _tokenId The ID of the token
+     * @param _bal The balance of the token
+     */
+    function _tstoreBalance(uint256 _vaultId, uint16 _tokenId, uint256 _bal) internal {
+        bytes32 slot = keccak256(abi.encode("BAL", _vaultId, _tokenId));
+        assembly {
+            tstore(slot, _bal)
+        }
+    }
+
+    /**
+     * @notice Internal function to store vault context in transient storage
+     * @param _vaultId The ID of the vault
+     * @param _usd The total USD value of the vault
+     * @param _totalShares The total shares of the vault
+     * @param _shareToken The share token address of the vault
+     * @param _executor The executor address of the vault
+     */
+    function _tstoreVaultCtx(
+        uint256 _vaultId,
+        uint256 _usd,
+        uint256 _totalShares,
+        address _shareToken,
+        address _executor
+    ) internal {
+        bytes32 base = keccak256(abi.encode("VAULT", _vaultId));
+        assembly {
+            tstore(base, _usd)
+            tstore(add(base, 32), _totalShares)
+            tstore(add(base, 64), _shareToken)
+            tstore(add(base, 96), _executor)
+        }
+    }
+
+    /**
+     * @notice Internal function to store vault token IDs in transient storage
+     * @param _vaultId The ID of the vault
+     * @param _tokenIds The array of token IDs supported by the vault
+     */
+    function _tstoreVaultTokenIds(uint256 _vaultId, uint16[] calldata _tokenIds) internal {
+        bytes32 base = keccak256(abi.encode("TIDS", _vaultId));
+        uint256 len = _tokenIds.length;
+        assembly {
+            tstore(base, len)
+        } // Store length at index 0
+
+        for (uint256 i = 0; i < len; i++) {
+            uint16 tid = _tokenIds[i];
+            assembly {
+                tstore(add(base, add(mul(i, 32), 32)), tid)
+            }
+        }
+    }
+
+    /**
+     * @notice Internal function to calculate the number of vault shares to mint for a deposit
+     * @param _vaultId The ID of the vault for the deposit
+     * @param _tokenIds The token IDs being deposited
+     * @param _amounts The amounts of each token being deposited
+     * @return sharesToMint The amount of vault shares to mint for the deposit
+     */
+    function _calcSharesToMint(
+        uint256 _vaultId,
+        uint16[] calldata _tokenIds,
+        uint256[] calldata _amounts
+    ) internal view returns (uint256 sharesToMint) {
+        uint256 userDepositUsd = 0;
+        for (uint256 j = 0; j < _tokenIds.length; j++) {
+            userDepositUsd += (_amounts[j] * _tloadPrice(_tokenIds[j])) / 1e18;
+        }
+
+        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
+        sharesToMint = (userDepositUsd * totalShares) / _tloadVaultUSD(_vaultId);
+
+        if (totalShares == 0) {
+            sharesToMint = userDepositUsd;
+        }
+    }
+
+    /**
+     * @notice Internal function to calculate the amounts of each token to dispatch for a withdrawal
+     * @param _vaultId The ID of the vault for the withdrawal
+     * @param _vaultShares The amount of vault shares to withdraw
+     * @param _tokenIds The token IDs supported by the vault
+     * @return symbols The symbols of the tokens to dispatch
+     * @return amounts The amounts of each token to dispatch
+     */
+    function _calcAmountsToDispatch(
+        uint256 _vaultId,
+        uint256 _vaultShares,
+        uint16[] memory _tokenIds
+    ) internal view returns (bytes32[] memory symbols, uint256[] memory amounts) {
+        uint256 totalShares = _tloadVaultTotalShares(_vaultId);
+        uint256 len = _tokenIds.length;
+
+        symbols = new bytes32[](len);
+        amounts = new uint256[](len);
+
+        for (uint256 i = 0; i < len; i++) {
+            uint16 tokenId = _tokenIds[i];
+            symbols[i] = assetInfo[tokenId].symbol;
+            amounts[i] = (_vaultShares * _tloadBalance(_vaultId, tokenId)) / totalShares;
+        }
+    }
+
+    /**
+     * @notice Get the number of pending requests for a vault in the current batch
+     * @param _vaultId The ID of the vault
+     * @return The number of pending requests for the vault
+     */
+    function _getPendingVaultRequests(uint256 _vaultId) internal view returns (uint256) {
+        RequestLimit memory vLimit = vaultRequestLimits[_vaultId];
+        if (vLimit.lastBatchId == currentBatchId) {
+            return vLimit.pendingCount;
+        }
+        return 0;
+    }
+
+    /**
+     * @notice Internal function to load a token price from transient storage
+     * @param _tokenId The ID of the token
+     * @return price The price of the token
+     */
+    function _tloadPrice(uint16 _tokenId) internal view returns (uint256 price) {
+        bytes32 slot = keccak256(abi.encode("PRICE", _tokenId));
+        assembly {
+            price := tload(slot)
+        }
+    }
+
+    /**
+     * @notice Internal function to load a token balance from transient storage
+     * @param _vaultId The ID of the vault
+     * @param _tokenId The ID of the token
+     * @return bal The balance of the token
+     */
+    function _tloadBalance(uint256 _vaultId, uint16 _tokenId) internal view returns (uint256 bal) {
+        bytes32 slot = keccak256(abi.encode("BAL", _vaultId, _tokenId));
+        assembly {
+            bal := tload(slot)
+        }
+    }
+
+    /**
+     * @notice Internal function to load vault token IDs from transient storage
+     * @param _vaultId The ID of the vault
+     * @return tokenIds The array of token IDs supported by the vault
+     */
+    function _tloadVaultTokenIds(uint256 _vaultId) internal view returns (uint16[] memory tokenIds) {
+        bytes32 base = keccak256(abi.encode("TIDS", _vaultId));
+        uint256 len;
+        assembly {
+            len := tload(base)
+        }
+
+        tokenIds = new uint16[](len);
+        for (uint256 i = 0; i < len; i++) {
+            uint256 tid;
+            assembly {
+                tid := tload(add(base, add(mul(i, 32), 32)))
+            }
+            tokenIds[i] = uint16(tid);
+        }
+    }
+
+    /**
+     * @notice Internal function to load vault usd from transient storage
+     * @param _vaultId The ID of the vault
+     * @return usd The total USD value of the vault
+     */
+    function _tloadVaultUSD(uint256 _vaultId) internal view returns (uint256 usd) {
+        bytes32 base = keccak256(abi.encode("VAULT", _vaultId));
+        assembly {
+            usd := tload(base)
+        }
+    }
+
+    /**
+     * @notice Internal function to load vault total shares from transient storage
+     * @param _vaultId The ID of the vault
+     * @return totalShares The total shares of the vault
+     */
+    function _tloadVaultTotalShares(uint256 _vaultId) internal view returns (uint256 totalShares) {
+        bytes32 base = keccak256(abi.encode("VAULT", _vaultId));
+        assembly {
+            totalShares := tload(add(base, 32))
+        }
+    }
+
+    /**
+     * @notice Internal function to load vault share token address from transient storage
+     * @param _vaultId The ID of the vault
+     * @return shareToken The share token address of the vault
+     */
+    function _tloadShareToken(uint256 _vaultId) internal view returns (address shareToken) {
+        bytes32 base = keccak256(abi.encode("VAULT", _vaultId));
+        assembly {
+            shareToken := tload(add(base, 64))
+        }
+    }
+
+    /**
+     * @notice Internal function to load vault executor address from transient storage
+     * @param _vaultId The ID of the vault
+     * @return executor The executor address of the vault
+     */
+    function _tloadVaultExecutor(uint256 _vaultId) internal view returns (address executor) {
+        bytes32 base = keccak256(abi.encode("VAULT", _vaultId));
+        assembly {
+            executor := tload(add(base, 96))
+        }
+    }
+
+    /**
      * @notice Internal function to check if a token exists in the vault's supported tokens
      * @param _tokenId The token ID to check
      * @param _tokens The list of token IDs supported by the vault
@@ -701,139 +956,5 @@ contract OmniVaultManager is
         vaultId = uint16(id >> 240);
         user = address(uint160(id >> 80));
         nonce = uint80(id);
-    }
-
-    function _loadStateToTransient(uint256[] calldata _prices, VaultState[] calldata _vaults) internal {
-        uint16 pricesLen = uint16(_prices.length);
-        for (uint16 i = 0; i < pricesLen; i++) {
-            _tstorePrice(i, _prices[i]);
-        }
-        uint256 vaultsLen = _vaults.length;
-        for (uint256 v = 0; v < vaultsLen; v++) {
-            uint256 vaultId = _vaults[v].vaultId;
-
-            VaultDetails storage details = vaultDetails[vaultId];
-            // address shareToken = details.shareToken;
-            // address executor = details.executor;
-            uint256 vaultTotalUsd = 0;
-            uint256 tokensLen = _vaults[v].tokenIds.length;
-            for (uint256 t = 0; t < tokensLen; t++) {
-                uint256 balance = _vaults[v].balances[t];
-                uint16 tokenId = _vaults[v].tokenIds[t];
-
-                _tstoreBalance(vaultId, tokenId, balance);
-                vaultTotalUsd += (balance * _tloadPrice(tokenId)) / 1e18;
-            }
-
-            address shareToken = details.shareToken;
-
-            _tstoreVaultCtx(vaultId, vaultTotalUsd, IERC20(shareToken).totalSupply(), shareToken, details.executor);
-            _tstoreVaultTokenIds(vaultId, _vaults[v].tokenIds);
-        }
-    }
-
-    function _tstorePrice(uint16 _tokenId, uint256 _price) internal {
-        bytes32 slot = keccak256(abi.encode("PRICE", _tokenId));
-        assembly {
-            tstore(slot, _price)
-        }
-    }
-
-    function _tloadPrice(uint16 _tokenId) internal view returns (uint256 price) {
-        bytes32 slot = keccak256(abi.encode("PRICE", _tokenId));
-        assembly {
-            price := tload(slot)
-        }
-    }
-
-    function _tstoreBalance(uint256 _vaultId, uint16 _tokenId, uint256 _bal) internal {
-        bytes32 slot = keccak256(abi.encode("BAL", _vaultId, _tokenId));
-        assembly {
-            tstore(slot, _bal)
-        }
-    }
-
-    function _tloadBalance(uint256 _vaultId, uint16 _tokenId) internal view returns (uint256 bal) {
-        bytes32 slot = keccak256(abi.encode("BAL", _vaultId, _tokenId));
-        assembly {
-            bal := tload(slot)
-        }
-    }
-
-    function _tstoreVaultCtx(
-        uint256 _vid,
-        uint256 _usd,
-        uint256 _totalShares,
-        address _shareToken,
-        address _exec
-    ) internal {
-        bytes32 base = keccak256(abi.encode("VAULT", _vid));
-        assembly {
-            tstore(base, _usd)
-            tstore(add(base, 32), _totalShares)
-            tstore(add(base, 64), _shareToken)
-            tstore(add(base, 96), _exec)
-        }
-    }
-
-    function _tstoreVaultTokenIds(uint256 _vid, uint16[] calldata _tids) internal {
-        bytes32 base = keccak256(abi.encode("TIDS", _vid));
-        uint256 len = _tids.length;
-        assembly {
-            tstore(base, len)
-        } // Store length at index 0
-
-        for (uint256 i = 0; i < len; i++) {
-            uint16 tid = _tids[i];
-            assembly {
-                tstore(add(base, add(mul(i, 32), 32)), tid)
-            }
-        }
-    }
-
-    function _tloadVaultTokenIds(uint256 _vid) internal view returns (uint16[] memory tids) {
-        bytes32 base = keccak256(abi.encode("TIDS", _vid));
-        uint256 len;
-        assembly {
-            len := tload(base)
-        }
-
-        tids = new uint16[](len);
-        for (uint256 i = 0; i < len; i++) {
-            uint256 tid;
-            assembly {
-                tid := tload(add(base, add(mul(i, 32), 32)))
-            }
-            tids[i] = uint16(tid);
-        }
-    }
-
-    // Helper getters for specific Metadata fields
-    function _tloadVaultUSD(uint256 _vid) internal view returns (uint256 usd) {
-        bytes32 base = keccak256(abi.encode("VAULT", _vid));
-        assembly {
-            usd := tload(base)
-        }
-    }
-
-    function _tloadVaultTotalShares(uint256 _vid) internal view returns (uint256 totalShares) {
-        bytes32 base = keccak256(abi.encode("VAULT", _vid));
-        assembly {
-            totalShares := tload(add(base, 32))
-        }
-    }
-
-    function _tloadShareToken(uint256 _vid) internal view returns (address st) {
-        bytes32 base = keccak256(abi.encode("VAULT", _vid));
-        assembly {
-            st := tload(add(base, 64))
-        }
-    }
-
-    function _tloadVaultExecutor(uint256 _vid) internal view returns (address exec) {
-        bytes32 base = keccak256(abi.encode("VAULT", _vid));
-        assembly {
-            exec := tload(add(base, 96))
-        }
     }
 }

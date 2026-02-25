@@ -1577,5 +1577,13 @@ describe("Portfolio Sub", () => {
         expect(await portfolioBridgeSub.getTokenList()).to.not.include(Utils.fromUtf8("MOCK" + srcChainListOrgId));
     });
 
+    it("Should fail to bulkTransferTokens", async () => {
+        const native = "ALOT";
+        const SYMBOL = Utils.fromUtf8(native);
+        await expect(portfolioSub.bulkTransferTokens(trader1.address, trader2.address, [], [])).to.be.revertedWith("P-OOWN-03");
+        await expect(portfolioSub.bulkTransferTokens(owner.address, owner.address, [], [])).to.be.revertedWith("P-DOTS-01");
+        await expect(portfolioSub.bulkTransferTokens(owner.address, trader1.address, [SYMBOL], [])).to.be.revertedWith("P-ARLM-01");
+        await expect(portfolioSub.bulkTransferTokens(owner.address, trader1.address, [Utils.fromUtf8("MOCK")], [0])).to.be.revertedWith("P-ETNS-01");
+    });
 
 });

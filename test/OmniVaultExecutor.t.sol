@@ -133,6 +133,20 @@ contract OmniVaultExecutorTest is Test {
         executor.setWhitelistedFunction(sig, targetAddress);
     }
 
+    function test_SetWhitelistedFunction_RevertIf_SelectorOccupied() public {
+        bytes4 sig = TargetMock.setValue.selector;
+        address targetAddress = address(target);
+
+        vm.startPrank(ADMIN);
+        executor.setTrustedContract(targetAddress, IOmniVaultExecutor.ContractAccess.NATIVE);
+        executor.setWhitelistedFunction(sig, targetAddress);
+
+        executor.setTrustedContract(omniTrader, IOmniVaultExecutor.ContractAccess.TRUSTED);
+
+        vm.expectRevert("VE-SEAO-01");
+        executor.setWhitelistedFunction(sig, omniTrader);
+    }
+
     function test_SetWhitelistedFunctions_Success() public {
         bytes4[] memory sigs = new bytes4[](2);
         sigs[0] = TargetMock.setValue.selector;
@@ -176,6 +190,41 @@ contract OmniVaultExecutorTest is Test {
         );
         vm.prank(omniTrader);
         executor.setWhitelistedFunctions(sigs, targets);
+    }
+
+    function test_RemoveWhitelistedFunction_Success() public {
+        bytes4 sig = TargetMock.setValue.selector;
+        address targetAddress = address(target);
+
+        vm.startPrank(ADMIN);
+        executor.setTrustedContract(targetAddress, IOmniVaultExecutor.ContractAccess.NATIVE);
+        executor.setWhitelistedFunction(sig, targetAddress);
+        executor.removeWhitelistedFunction(sig);
+        vm.stopPrank();
+
+        assertEq(executor.whitelistedFunctions(sig), address(0));
+    }
+
+    function test_RemoveWhitelistedFunction_RevertIf_NotWhitelisted() public {
+        bytes4 sig = TargetMock.setValue.selector;
+
+        vm.prank(ADMIN);
+        vm.expectRevert("VE-FSNW-01");
+        executor.removeWhitelistedFunction(sig);
+    }
+
+    function test_RemoveWhitelistedFunction_RevertIf_NotOwner() public {
+        bytes4 sig = TargetMock.setValue.selector;
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                omniTrader,
+                executor.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(omniTrader);
+        executor.removeWhitelistedFunction(sig);
     }
 
     function test_SetPortfolio_Success() public {

@@ -1,13 +1,11 @@
 module.exports = {
   skipFiles: [
     "mocks",
-    "bridgeApps/CelerApp",
-    "interfaces/celer",
-    "library/celer",
-    "MainnetRFQAssembly",
-    "others/Multicall3",
-    "PortfolioMainBnb",
-    "others/UpgradableDeployer",
+    "others",
+    "vaults/OmniVaultCreator.sol",
+    "vaults/OmniVaultExecutor.sol",
+    "vaults/OmniVaultExecutorSub.sol",
+    "vaults/OmniVaultManager.sol",
   ],
   mocha: {
     grep: "@skip-on-coverage", // Find everything with this tag

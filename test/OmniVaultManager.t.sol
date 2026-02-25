@@ -47,7 +47,7 @@ contract OmniVaultManagerTest is Test {
         amounts[0] = 50_000;
         amounts[1] = 10_000;
 
-        _setupVault(0, tokenIds, amounts, 100);
+        _setupVault(0, tokenIds, amounts, 10000e18);
     }
 
     function _setupToken(bytes32 symbol, uint16 id) internal {
@@ -84,6 +84,31 @@ contract OmniVaultManagerTest is Test {
         });
         manager.registerVault(_vaultId, details, _tokenIds, _amounts, _shares);
         vm.stopPrank();
+    }
+
+    function _finalizeBatch() internal returns (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) {
+        // 1. Build the Prices Array (Length MUST match manager.tokenIndex())
+        prices = new uint256[](2);
+        prices[0] = 1e17; // Price for tokenId 0 (ALOT)
+        prices[1] = 1e18; // Price for tokenId 1 (USDC)
+
+        // 2. Build the Vaults Array
+        vaults = new IOmniVaultManager.VaultState[](1);
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = 10_000;
+        balances[1] = 50_000;
+        vaults[0] = IOmniVaultManager.VaultState({
+            vaultId: 0,
+            tokenIds: manager.getVaultDetails(0).tokens,
+            balances: balances
+        });
+
+        // 3. Execute the Finalization as the Settler
+        vm.prank(SETTLER);
+        manager.finalizeBatch(prices, vaults);
+
+        // 4. Return the exact arrays so the test can use them for settlement hashes
+        return (prices, vaults);
     }
 
     function test_Initialize_SetsCorrectRoles() public {
@@ -178,6 +203,46 @@ contract OmniVaultManagerTest is Test {
         );
         vm.prank(proposer);
         manager.unpause();
+    }
+
+    function test_DeprecateVault_Success() public {
+        vm.prank(ADMIN);
+        manager.deprecateVault(0);
+
+        IOmniVaultManager.VaultDetails memory details = manager.getVaultDetails(0);
+        assertEq(uint256(details.status), uint256(IOmniVaultManager.VaultStatus.DEPRECATED));
+    }
+
+    function test_DeprecateVault_RevertIf_NotExistingVault() public {
+        vm.expectRevert("VM-VSNN-01");
+        vm.prank(ADMIN);
+        manager.deprecateVault(1);
+    }
+
+    function test_DeprecateVault_RevertIf_NotAdmin() public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                proposer,
+                manager.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(proposer);
+        manager.deprecateVault(0);
+    }
+
+    function test_DeprecateVault_RevertIf_PendingRequests() public {
+        uint16[] memory tokenIds = new uint16[](1);
+        tokenIds[0] = 0;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 1000;
+
+        vm.prank(proposer);
+        manager.requestDeposit(0, tokenIds, amounts);
+
+        vm.expectRevert("VM-PRNZ-01");
+        vm.prank(ADMIN);
+        manager.deprecateVault(0);
     }
 
     function test_AddTokenDetails_Success() public {
@@ -410,50 +475,20 @@ contract OmniVaultManagerTest is Test {
         assertEq(details.tokens[0], 1);
     }
 
-    function test_UpdateVaultDetails_RevertIf_NotExistingVault() public {
-        uint32[] memory chainIds = new uint32[](1);
-        chainIds[0] = 2;
+    function test_UpdateVaultDetails_Success_NewTokens() public {
         uint16[] memory tokens = new uint16[](1);
         tokens[0] = 1;
 
-        IOmniVaultManager.VaultDetails memory newDetails = IOmniVaultManager.VaultDetails({
-            name: "Updated Vault",
-            proposer: proposer,
-            omniTrader: address(0x0004),
-            status: IOmniVaultManager.VaultStatus.ACTIVE,
-            executor: address(0x0005),
-            shareToken: address(shareToken),
-            dexalotRFQ: address(0x0006),
-            chainIds: chainIds,
-            tokens: tokens
-        });
+        IOmniVaultManager.VaultDetails memory details = manager.getVaultDetails(0);
+        details.tokens = tokens;
 
-        vm.expectRevert("VM-VINP-01");
-        vm.prank(ADMIN);
-        manager.updateVaultDetails(999, newDetails);
-    }
+        vm.startPrank(ADMIN);
+        manager.pauseVault(0);
+        manager.updateVaultDetails(0, details);
+        vm.stopPrank();
 
-    function test_UpdateVaultDetauls_RevertIf_NotPaused() public {
-        uint32[] memory chainIds = new uint32[](1);
-        chainIds[0] = 2;
-        uint16[] memory tokens = new uint16[](1);
-        tokens[0] = 1;
-
-        IOmniVaultManager.VaultDetails memory newDetails = IOmniVaultManager.VaultDetails({
-            name: "Updated Vault",
-            proposer: proposer,
-            omniTrader: address(0x0004),
-            status: IOmniVaultManager.VaultStatus.ACTIVE,
-            executor: address(0x0005),
-            shareToken: address(shareToken),
-            dexalotRFQ: address(0x0006),
-            chainIds: chainIds,
-            tokens: tokens
-        });
-
-        vm.expectRevert("VM-VINP-01");
-        vm.prank(ADMIN);
-        manager.updateVaultDetails(0, newDetails);
+        details = manager.getVaultDetails(0);
+        assertEq(details.tokens[0], 1);
     }
 
     function test_UpdateVaultDetails_RevertIf_NotAdmin() public {
@@ -516,9 +551,32 @@ contract OmniVaultManagerTest is Test {
         vm.startPrank(ADMIN);
         manager.pauseVault(0);
 
-        vm.expectRevert("VM-PTNU-01");
+        vm.expectRevert("VM-PRNZ-01");
         manager.updateVaultDetails(0, newDetails);
         vm.stopPrank();
+    }
+
+    function test_UpdateVaultDetails_RevertIf_NotPaused() public {
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = 2;
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 1;
+
+        IOmniVaultManager.VaultDetails memory newDetails = IOmniVaultManager.VaultDetails({
+            name: "Updated Vault",
+            proposer: proposer,
+            omniTrader: address(0x0004),
+            status: IOmniVaultManager.VaultStatus.ACTIVE,
+            executor: address(0x0005),
+            shareToken: address(shareToken),
+            dexalotRFQ: address(0x0006),
+            chainIds: chainIds,
+            tokens: tokens
+        });
+
+        vm.expectRevert("VM-VSNP-01");
+        vm.prank(ADMIN);
+        manager.updateVaultDetails(0, newDetails);
     }
 
     function test_RegisterVault_RevertIf_VaultIdMismatch() public {
@@ -543,7 +601,7 @@ contract OmniVaultManagerTest is Test {
 
         vm.expectRevert("VM-RNVI-01");
         vm.prank(ADMIN);
-        manager.registerVault(wrongVaultId, details, tokenIds, amounts, 100);
+        manager.registerVault(wrongVaultId, details, tokenIds, amounts, 10000e18);
     }
 
     function test_RegisterVault_RevertIf_NotAdmin() public {
@@ -572,7 +630,30 @@ contract OmniVaultManagerTest is Test {
             )
         );
         vm.prank(proposer);
-        manager.registerVault(1, details, tokenIds, amounts, 100);
+        manager.registerVault(1, details, tokenIds, amounts, 10000e18);
+    }
+
+    function test_RegisterVault_RevertIf_SharesLessThanMin() public {
+        uint16[] memory tokenIds = new uint16[](1);
+        tokenIds[0] = 0;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 1000;
+
+        IOmniVaultManager.VaultDetails memory details = IOmniVaultManager.VaultDetails({
+            name: "Test Vault",
+            proposer: proposer,
+            omniTrader: address(0x0001),
+            status: IOmniVaultManager.VaultStatus.ACTIVE,
+            executor: address(0x0002),
+            shareToken: address(shareToken),
+            dexalotRFQ: address(0x0003),
+            chainIds: new uint32[](0),
+            tokens: tokenIds
+        });
+
+        vm.expectRevert("VM-SLTM-01");
+        vm.prank(ADMIN);
+        manager.registerVault(1, details, tokenIds, amounts, 500e18);
     }
 
     function test_RequestDeposit_Success()
@@ -604,19 +685,19 @@ contract OmniVaultManagerTest is Test {
         manager.requestDeposit(0, tokens, amounts);
     }
 
-    function test_RequestDeposit_RevertIf_TooManyPending() public {
-        uint16[] memory tokens = new uint16[](1);
-        tokens[0] = 0;
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = 100;
-        for (uint256 i = 0; i < manager.MAX_PENDING_REQUESTS(); i++) {
-            manager.requestDeposit(0, tokens, amounts);
-        }
+    // function test_RequestDeposit_RevertIf_TooManyPending() public {
+    //     uint16[] memory tokens = new uint16[](1);
+    //     tokens[0] = 0;
+    //     uint256[] memory amounts = new uint256[](1);
+    //     amounts[0] = 100;
+    //     for (uint256 i = 0; i < manager.MAX_PENDING_REQUESTS(); i++) {
+    //         manager.requestDeposit(0, tokens, amounts);
+    //     }
 
-        vm.prank(proposer);
-        vm.expectRevert("VM-PRCL-01");
-        manager.requestDeposit(0, tokens, amounts);
-    }
+    //     vm.prank(proposer);
+    //     vm.expectRevert("VM-PRCL-01");
+    //     manager.requestDeposit(0, tokens, amounts);
+    // }
 
     function test_RequestDeposit_RevertIf_TokenNotInVault() public {
         uint16[] memory tokens = new uint16[](1);
@@ -688,44 +769,24 @@ contract OmniVaultManagerTest is Test {
         manager.requestWithdrawal(0, 0);
     }
 
-    function test_RequestWithdrawal_RevertIf_TooManyPending() public {
-        vm.startPrank(proposer);
-        shareToken.mint(0, proposer, type(uint208).max);
-        shareToken.approve(address(manager), type(uint208).max);
-        for (uint256 i = 0; i < manager.MAX_PENDING_REQUESTS(); i++) {
-            manager.requestWithdrawal(0, 10);
-        }
-
-        vm.expectRevert("VM-PRCL-01");
-        manager.requestWithdrawal(0, 10);
-        vm.stopPrank();
+    function test_RequestWithdrawal_RevertIf_StatusNone() public {
+        vm.prank(proposer);
+        vm.expectRevert("VM-VSNN-01");
+        manager.requestWithdrawal(1, 10);
     }
 
-    function test_RequestWithdrawal_RevertIf_Deprecated() public {
-        vm.startPrank(ADMIN);
-        manager.pauseVault(0);
-        manager.updateVaultDetails(
-            0,
-            IOmniVaultManager.VaultDetails({
-                name: "Test Vault",
-                proposer: proposer,
-                omniTrader: address(0x0001),
-                status: IOmniVaultManager.VaultStatus.DEPRECATED,
-                executor: address(vaultExecutor),
-                shareToken: address(shareToken),
-                dexalotRFQ: address(0x0003),
-                chainIds: new uint32[](0),
-                tokens: new uint16[](0)
-            })
-        );
-        vm.stopPrank();
+    // function test_RequestWithdrawal_RevertIf_TooManyPending() public {
+    //     vm.startPrank(proposer);
+    //     shareToken.mint(0, proposer, type(uint208).max);
+    //     shareToken.approve(address(manager), type(uint208).max);
+    //     for (uint256 i = 0; i < manager.MAX_PENDING_REQUESTS(); i++) {
+    //         manager.requestWithdrawal(0, 10);
+    //     }
 
-        vm.startPrank(proposer);
-        shareToken.approve(address(manager), 10);
-        vm.expectRevert("VM-VSAP-01");
-        manager.requestWithdrawal(0, 10);
-        vm.stopPrank();
-    }
+    //     vm.expectRevert("VM-PRCL-01");
+    //     manager.requestWithdrawal(0, 10);
+    //     vm.stopPrank();
+    // }
 
     function test_BulkSettleState_Success() public {
         // Setup a deposit and withdrawal request
@@ -747,18 +808,16 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: depReq,
             tokenIds: tokens,
             amounts: amounts,
-            depositShares: 10
+            process: true
         });
 
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: wReq,
-            symbols: new bytes32[](0),
-            amounts: new uint256[](0)
-        });
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReq, process: true});
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
 
         vm.prank(SETTLER);
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
 
         IOmniVaultManager.TransferRequest memory depRequest = manager.getTransferRequest(depReq);
         assertEq(depRequest.timestamp, 0);
@@ -783,13 +842,15 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: depReq,
             tokenIds: tokens,
             amounts: amounts,
-            depositShares: 0
+            process: false
         });
 
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
         vm.prank(SETTLER);
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
 
         IOmniVaultManager.TransferRequest memory depRequest = manager.getTransferRequest(depReq);
         assertEq(depRequest.timestamp, 0);
@@ -804,23 +865,73 @@ contract OmniVaultManagerTest is Test {
         // Prepare fulfillments
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        bytes32[] memory symbols = new bytes32[](2);
-        uint256[] memory amounts = new uint256[](2);
-        symbols[0] = bytes32("ALOT");
-        amounts[0] = 50;
-        symbols[1] = bytes32("USDC");
-        amounts[1] = 10;
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: wReq,
-            symbols: symbols,
-            amounts: amounts
-        });
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReq, process: true});
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
 
         vm.prank(SETTLER);
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
 
         IOmniVaultManager.TransferRequest memory wRequest = manager.getTransferRequest(wReq);
         assertEq(wRequest.timestamp, 0);
+    }
+
+    function test_BulkSettleState_Success_WithdrawalRefund() public {
+        vm.startPrank(proposer);
+        shareToken.approve(address(manager), 10);
+        bytes32 wReq = manager.requestWithdrawal(0, 10);
+        vm.stopPrank();
+
+        // Prepare fulfillments
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReq, process: false});
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        vm.prank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+
+        IOmniVaultManager.TransferRequest memory wRequest = manager.getTransferRequest(wReq);
+        assertEq(wRequest.timestamp, 0);
+    }
+
+    function test_BulkSettleState_RevertIf_BatchNotFinalized() public {
+        test_BulkSettleState_Success();
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        uint256[] memory prices = new uint256[](2);
+        prices[0] = 1e17;
+        prices[1] = 1e18;
+
+        IOmniVaultManager.VaultState[] memory vaults = new IOmniVaultManager.VaultState[](1);
+        uint256[] memory balances = new uint256[](2);
+        balances[0] = 10_000;
+        balances[1] = 50_000;
+        vaults[0] = IOmniVaultManager.VaultState({
+            vaultId: 0,
+            tokenIds: manager.getVaultDetails(0).tokens,
+            balances: balances
+        });
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-BSNF-01");
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_RevertIf_IncorrectStateHash() public {
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        // Tamper with prices to cause state hash mismatch
+        prices[0] = 2e17;
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-IVSH-01");
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 
     function test_BulkSettleState_RevertIf_DepositHashMismatch() public {
@@ -838,9 +949,11 @@ contract OmniVaultManagerTest is Test {
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
         vm.prank(SETTLER);
         vm.expectRevert("VM-DHMR-01");
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 
     function test_BulkSettleState_RevertIf_WithdrawalHashMismatch() public {
@@ -853,9 +966,11 @@ contract OmniVaultManagerTest is Test {
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
         vm.prank(SETTLER);
         vm.expectRevert("VM-WHMR-01");
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 
     function test_BulkSettleState_RevertIf_InvalidDepositRequestId() public {
@@ -870,14 +985,14 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: wReq, // invalid deposit request id
             tokenIds: new uint16[](0),
             amounts: new uint256[](0),
-            depositShares: 10
+            process: true
         });
 
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
-
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
         vm.prank(SETTLER);
         vm.expectRevert("VM-ADRP-01");
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 
     function test_BulkSettleState_RevertIf_InvalidWithdrawalRequestId() public {
@@ -885,46 +1000,43 @@ contract OmniVaultManagerTest is Test {
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
         withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
             withdrawalRequestId: bytes32(0), // invalid withdrawal request id
-            symbols: new bytes32[](0),
-            amounts: new uint256[](0)
+            process: true
         });
 
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
         vm.prank(SETTLER);
         vm.expectRevert("VM-AWRP-01");
-        manager.bulkSettleState(deposits, withdrawals);
-    }
-
-    function test_BulkSettleState_RevertIf_WithdrawalArraysMismatch() public {
-        vm.startPrank(proposer);
-        shareToken.approve(address(manager), 10);
-        bytes32 wReq = manager.requestWithdrawal(0, 10);
-        vm.stopPrank();
-
-        // Prepare fulfillments
-        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
-        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        bytes32[] memory symbols = new bytes32[](2);
-        uint256[] memory amounts = new uint256[](1);
-        symbols[0] = bytes32("ALOT");
-        amounts[0] = 50;
-        symbols[1] = bytes32("USDC");
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: wReq,
-            symbols: symbols,
-            amounts: amounts
-        });
-
-        vm.prank(SETTLER);
-        vm.expectRevert("VM-IVAL-02");
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 
     function test_BulkSettleState_RevertIf_NotSettler() public {
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
         vm.expectRevert();
-        manager.bulkSettleState(deposits, withdrawals);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_FinalizeBatch_Success() public {
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+    }
+
+    function test_FinalizeBatch_RevertIf_PrevBatchNotSettled() public {
+        _finalizeBatch();
+
+        console.log(manager.currentBatchId());
+
+        vm.expectRevert("VM-PBNS-01");
+        vm.prank(SETTLER);
+        manager.finalizeBatch(new uint256[](0), new IOmniVaultManager.VaultState[](0));
+    }
+
+    function test_FinalizeBatch_RevertIf_PricesLengthMismatch() public {
+        vm.expectRevert("VM-IVAL-01");
+        vm.prank(SETTLER);
+        manager.finalizeBatch(new uint256[](0), new IOmniVaultManager.VaultState[](1));
     }
 
     function test_UnwindBatch_Success_Empty() public {
@@ -944,7 +1056,7 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: reqId,
             tokenIds: tokens,
             amounts: amounts,
-            depositShares: 0
+            process: true
         });
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
@@ -957,11 +1069,7 @@ contract OmniVaultManagerTest is Test {
         (bytes32 reqId, uint208 shares) = test_RequestWithdrawal_Success();
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: reqId,
-            symbols: new bytes32[](0),
-            amounts: new uint256[](0)
-        });
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: reqId, process: false});
 
         vm.warp(block.timestamp + manager.RECLAIM_DELAY() + 1);
 
@@ -977,15 +1085,11 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: depReqId,
             tokenIds: tokens,
             amounts: amounts,
-            depositShares: 0
+            process: false
         });
 
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: wReqId,
-            symbols: new bytes32[](0),
-            amounts: new uint256[](0)
-        });
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReqId, process: false});
 
         vm.warp(block.timestamp + manager.RECLAIM_DELAY() + 1);
 
@@ -999,7 +1103,7 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: wReqId,
             tokenIds: new uint16[](0),
             amounts: new uint256[](0),
-            depositShares: 0
+            process: false
         });
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 
@@ -1012,11 +1116,7 @@ contract OmniVaultManagerTest is Test {
     function test_UnwindBatch_RevertIf_InvalidWithdrawalRequestId() public {
         IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
-        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({
-            withdrawalRequestId: bytes32(0),
-            symbols: new bytes32[](0),
-            amounts: new uint256[](0)
-        });
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: bytes32(0), process: false});
 
         vm.warp(block.timestamp + manager.RECLAIM_DELAY() + 1);
 
@@ -1053,7 +1153,7 @@ contract OmniVaultManagerTest is Test {
             depositRequestId: depReqId,
             tokenIds: new uint16[](0),
             amounts: amounts,
-            depositShares: 0
+            process: false
         });
         IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
 

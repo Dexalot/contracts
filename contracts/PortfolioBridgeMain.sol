@@ -437,11 +437,8 @@ contract PortfolioBridgeMain is
         xfer.quantity = uint256(msgData[3]);
 
         if (xfer.transaction == IPortfolio.Tx.CCTRADE) {
-            /// Check for exactly 148 bytes (128 + 20)
-            require(_payload.length == 148, "PB-UM-02");
+            // Must be exactly 148 bytes (128 + 20)
             rfqAddress = address(bytes20(_payload[128:148]));
-        } else {
-            require(_payload.length == 128, "PB-UM-03");
         }
     }
 

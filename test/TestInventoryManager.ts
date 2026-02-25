@@ -159,6 +159,10 @@ describe("InventoryManager", () => {
     await expect(inventoryManager.updateFutureK(20, 60)).to.be.revertedWith("IM-KTNP-01");
   });
 
+  it("Should fail to update future K if not a multiple of 4", async function () {
+    await expect(inventoryManager.updateFutureK(10, 3600)).to.be.revertedWith("IM-KMOD-01");
+  });
+
   it("Should successfuly update future K", async function () {
     const startTime = Math.floor(Date.now() / 1000);
     const timePeriod = 3600;
@@ -328,13 +332,13 @@ describe("InventoryManager", () => {
     expect(await inventoryManager.userProvidedLiquidity(usdcAvax, trader1.address)).to.equal(0);
   });
 
-  it("Should get 0 withdrawal fee if token not deposited", async () => {
+  it("Should fail to get 0 withdrawal fee if token not deposited", async () => {
     const quantity = Utils.parseUnits("10000", usdcDecimals);
     const withdrawal = { traderaddress: trader1.address, symbol: usdcHex, symbolId: usdcAvax, quantity};
-    expect(await inventoryManager.calculateWithdrawalFee(withdrawal)).to.be.equal(0);
+    await expect(inventoryManager.calculateWithdrawalFee(withdrawal)).to.be.revertedWith("IM-INVT-02");
   });
 
-  it("Should successfully get withdrawal fee if 0 inventory in one chain", async () => {
+  it("Should fail to get withdrawal fee if 0 inventory in one chain", async () => {
     await f.depositToken(portfolioAvax, trader1, mockUSDC, usdcDecimals, usdcHex, "100000");
     await f.depositToken(portfolioArb, trader1, mockUSDC, usdcDecimals, usdcHex, "100000");
     await f.depositToken(portfolioGun, trader1, mockUSDC, usdcDecimals, usdcHex, "1");
@@ -348,7 +352,7 @@ describe("InventoryManager", () => {
     withdrawal.symbolId = usdcArb;
     await expect(inventoryManager.calculateWithdrawalFee(withdrawal)).to.not.be.reverted;
     withdrawal.symbolId = usdcGun;
-    expect(await inventoryManager.calculateWithdrawalFee(withdrawal)).to.equal(0);
+    await expect(inventoryManager.calculateWithdrawalFee(withdrawal)).to.be.revertedWith("IM-INVT-02");
   });
 
   it("Should successfully get withdrawal fee if 0 inventory in one chain from given trader", async () => {
@@ -460,8 +464,8 @@ describe("InventoryManager", () => {
       fees.push(all.bridgeFees[i]);
     }
 
-    expect(chainIds.length).to.be.equal(4);
-    expect(fees.length).to.be.equal(4);
+    expect(chainIds.length).to.be.equal(3);
+    expect(fees.length).to.be.equal(3);
     expect(chainIds.includes(cChain.chainListOrgId));
     expect(chainIds.includes(gunzillaSubnet.chainListOrgId));
     expect(chainIds.includes(arbitrumChain.chainListOrgId));
