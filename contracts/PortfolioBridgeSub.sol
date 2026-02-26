@@ -499,21 +499,21 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     /**
      * @notice  Truncate the quantity to the token's mainnet decimals
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _symbol  Dexalot L1(subnet) symbol of the token
+     * @param   _subnetSymbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @param   _bridgeFee  bridge fee for the destination
      * @return  truncated quantity
      */
     function truncateQuantity(
         uint32 _dstChainListOrgChainId,
-        bytes32 _symbol,
+        bytes32 _subnetSymbol,
         uint256 _quantity,
         uint256 _bridgeFee
     ) external view override returns (uint256) {
         if (_bridgeFee > _quantity) {
             return 0;
         }
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _dstChainListOrgChainId);
+        bytes32 symbolId = tokenInfoMapBySymbolChainId[_subnetSymbol][_dstChainListOrgChainId].symbolId;
         return
             UtilsLibrary.truncateQuantity(
                 _quantity - _bridgeFee,
