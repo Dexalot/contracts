@@ -32,7 +32,7 @@ contract OmniVaultManager is
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    bytes32 public constant VERSION = bytes32("1.1.0");
+    bytes32 public constant VERSION = bytes32("1.2.0");
     uint256 public constant RECLAIM_DELAY = 24 hours;
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
     uint256 public constant MAX_PENDING_REQUESTS = 500;
@@ -776,11 +776,10 @@ contract OmniVaultManager is
         }
 
         uint256 totalShares = _tloadVaultTotalShares(_vaultId);
-        sharesToMint = (userDepositUsd * totalShares) / _tloadVaultUSD(_vaultId);
-
         if (totalShares == 0) {
-            sharesToMint = userDepositUsd;
+            return userDepositUsd;
         }
+        return (userDepositUsd * totalShares) / _tloadVaultUSD(_vaultId);
     }
 
     /**
