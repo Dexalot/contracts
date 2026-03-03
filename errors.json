@@ -283,7 +283,7 @@
     "IM-BTNE-01": "InventoryManager: block time not elapsed for future K time and K to be updated",
     "IM-NVSI-01": "InventoryManager: not valid symbolId, symbolId does not exist in portfolio bridge",
     "IM-NVSI-02": "InventoryManager: not valid symbolId, symbolId still exists in portfolio bridge",
-    "IM-KMOD-01": "InventoryManager: K can only be updated to multiple of 5",
+    "IM-KMOD-01": "InventoryManager: K can only be updated to multiple of 4",
 
     "DB-OPBA-01": "DefaultBridgeApp: only portfolio bridge allowed to call this function",
     "DB-PBNZ-01": "DefaultBridgeApp: portfolio bridge must not be zero address",
