@@ -20,7 +20,7 @@ import "../interfaces/IOmniVaultCreator.sol";
 contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
-    bytes32 public constant VERSION = bytes32("1.1.0");
+    bytes32 public constant VERSION = bytes32("1.1.1");
     string public constant RISK_DISCLOSURE =
         "I acknowledge that I have read and understood the risks associated with creating and funding this vault.";
 
@@ -182,6 +182,14 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
     function rejectVaultRequest(bytes32 _requestId) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         VaultRequest storage request = vaultRequests[_requestId];
         require(request.status == VaultRequestStatus.PENDING, "VC-IVRS-01");
+
+        uint64 fee = request.feeCollected;
+
+        if (fee > 0) {
+            pendingFees -= fee;
+            request.feeCollected = 0;
+            IERC20(feeToken).safeTransfer(request.proposer, fee);
+        }
 
         request.status = VaultRequestStatus.REJECTED;
 
