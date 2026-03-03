@@ -159,7 +159,7 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
         );
 
         // iterate through allTokens to check if symbol exists
-        for (uint32 i = 1; i < allTokens; i <<= 1) {
+        for (uint32 i = 1; i <= allTokens; i <<= 1) {
             require(tokens[i] != _symbol, "ID-RTEX-01");
         }
 
