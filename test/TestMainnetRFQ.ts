@@ -153,11 +153,14 @@ describe("Mainnet RFQ Multichain", () => {
     //Enable GUN for CCTRADE at Cchain for destination gun
     await portfolioBridgeAvax.enableXChainSwapDestination(gunDetails.symbolbytes32, gunzillaSubnet.chainListOrgId, constants.HashZero);
     await portfolioBridgeAvax.enableSupportedNative(gunzillaSubnet.chainListOrgId, gunDetails.symbolbytes32);
+    // Add dst MainnetRFQ for forwarding
+    await portfolioBridgeAvax.enableXChainSwapDestination(Utils.addressToBytes32(mainnetRFQAvax.address), gunzillaSubnet.chainListOrgId, Utils.addressToBytes32(mainnetRFQGun.address));
     //Enable USDC for CCTRADE at gunzilla for destination avax
     await portfolioBridgeGun.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(mockUSDC.address));
     //Enable AVAX for CCTRADE at Gunzilla for destination avax
     await portfolioBridgeGun.enableXChainSwapDestination(Utils.fromUtf8("AVAX"), cChain.chainListOrgId, constants.HashZero);
     await portfolioBridgeGun.enableSupportedNative(cChain.chainListOrgId, Utils.fromUtf8("AVAX"));
+    await portfolioBridgeGun.enableXChainSwapDestination(Utils.addressToBytes32(mainnetRFQGun.address), cChain.chainListOrgId, Utils.addressToBytes32(mainnetRFQAvax.address));
 
     await f.addToken(portfolioContracts.portfolioAvax, portfolioContracts.portfolioSub, mockUSDC, 0.5, 0, true, 0); //gasSwapRatio 10
 
@@ -251,8 +254,10 @@ describe("Mainnet RFQ Multichain", () => {
     //*********Enable Cross Chain Trade between USDC(sell in avax) and USDT(buy in arb) **********/
     //Enable USDT for CCTRADE at Cchain for destination arb
     await portfolioBridgeAvax.enableXChainSwapDestination(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId, Utils.addressToBytes32(mockUSDT.address));
+    await portfolioBridgeAvax.enableXChainSwapDestination(Utils.addressToBytes32(mainnetRFQAvax.address), arbitrumChain.chainListOrgId, Utils.addressToBytes32(mainnetRFQArb.address));
     //Enable USDC for CCTRADE at arb for destination avax
     await portfolioBridgeArb.enableXChainSwapDestination(usdcDetails.symbolbytes32, cChain.chainListOrgId, Utils.addressToBytes32(mockUSDC.address));
+    await portfolioBridgeArb.enableXChainSwapDestination(Utils.addressToBytes32(mainnetRFQArb.address), cChain.chainListOrgId, Utils.addressToBytes32(mainnetRFQAvax.address));
 
     expect(await portfolioBridgeAvax.xChainAllowedDestinations(usdtDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(Utils.addressToBytes32(mockUSDT.address));
     expect(await portfolioBridgeAvax.xChainAllowedDestinations(gunDetails.symbolbytes32, arbitrumChain.chainListOrgId)).to.be.equal(constants.HashZero);
@@ -3023,7 +3028,8 @@ describe("Dexalot Router", () => {
 
   it("Should not deploy with 0 address", async function () {
     const DexalotRouter = await ethers.getContractFactory("DexalotRouter");
-    await expect(DexalotRouter.deploy(ethers.constants.AddressZero)).to.be.revertedWith("DR-SAZ-01");
+    const f = await DexalotRouter.deploy();
+    await expect(f.initialize(ethers.constants.AddressZero)).to.be.revertedWith("DR-SAZ-01");
   });
 
 
@@ -3034,23 +3040,13 @@ describe("Dexalot Router", () => {
   it("Should be able to set everything correctly", async () => {
     const dummyAddress = aggregator.address;
     // fail for non-owner
-    await expect(mainnetRFQ.connect(signer).setTrustedForwarder(dummyAddress)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
-    await expect(dexalotRouter.connect(signer).setAllowedRFQ(dummyAddress, true)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
-    await expect(dexalotRouter.connect(signer).retrieveToken(ethers.constants.AddressZero, 0)).to.be.revertedWith(`AccessControl: account ${signer.address.toLowerCase()} is missing role 0x0000000000000000000000000000000000000000000000000000000000000000`);
+    await expect(mainnetRFQ.connect(signer).setTrustedForwarder(dummyAddress)).to.be.revertedWith(`AccessControlUnauthorizedAccount("${signer.address.toLowerCase()}, "0x0000000000000000000000000000000000000000000000000000000000000000")`);
+    await expect(dexalotRouter.connect(signer).setAllowedRFQ(dummyAddress, true)).to.be.revertedWith(`AccessControlUnauthorizedAccount("${signer.address.toLowerCase()}, "0x0000000000000000000000000000000000000000000000000000000000000000")`);
+    await expect(dexalotRouter.connect(signer).retrieveToken(ethers.constants.AddressZero, 0)).to.be.revertedWith(`AccessControlUnauthorizedAccount("${signer.address.toLowerCase()}, "0x0000000000000000000000000000000000000000000000000000000000000000")`);
 
     // should not set to 0x0
     await expect(dexalotRouter.connect(owner).setAllowedRFQ(ethers.constants.AddressZero, true)).to.be.revertedWith("DR-SAZ-01");
     await expect(mainnetRFQ.connect(owner).setTrustedForwarder(ethers.constants.AddressZero)).to.be.revertedWith("RF-SAZ-01");
-  });
-
-  it("Should accept native token but no action ", async () => {
-    await owner.sendTransaction({
-      to: routerAsMainnetRFQ.address,
-      value: ethers.utils.parseEther("1.0"),
-    })
-    expect(await ethers.provider.getBalance(routerAsMainnetRFQ.address)).to.equal(ethers.utils.parseEther("1.0"));
-    await dexalotRouter.connect(owner).retrieveToken(ethers.constants.AddressZero, ethers.utils.parseEther("1.0"));
-    expect(await ethers.provider.getBalance(routerAsMainnetRFQ.address)).to.equal(0);
   });
 
   it("Should retrieve ERC20 token if sent accidentally", async () => {

@@ -1,6 +1,7 @@
 # dependencies
 /node_modules
 /lib
+.yarn
 
 # Hardhat artifacts directory
 unknown-*.json

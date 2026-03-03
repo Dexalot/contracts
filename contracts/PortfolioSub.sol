@@ -68,12 +68,15 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // account collecting trading fees
     address public feeAddress;
     bytes32 public constant EXECUTOR_ROLE = keccak256("EXECUTOR_ROLE");
+    // role for trusted contracts to transfer tokens on behalf of users
+    // only assignable to OmniVaultManager contract for handling vault deposits on behalf of users
+    bytes32 public constant TRUSTED_TRANSFER_ROLE = keccak256("TRUSTED_TRANSFER_ROLE");
 
     // keep track of deposited and burned native tokens
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.7.1");
+    bytes32 public constant VERSION = bytes32("2.7.5");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -669,6 +672,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _amount  Amount of the token
      * @param   _feeCharged  Fee charged for the _transaction
      * @param   _transaction  Transaction type
+     * @param   _traderOther  The other party involved in the tx, e.g. for executions, the counterparty of the trade
+     * @param   _feeAddress  Address to receive the fee, if feeCharged > 0
      */
     function safeIncrease(
         address _trader,
@@ -809,6 +814,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _feeCharged  Fee charged for the transaction
      * @param   _transaction  Transaction type
      * @param   _decreaseTotalOnly  If true, only total balance is decreased
+     * @param   _feeAddress  Address to receive the fee, if feeCharged > 0
      */
     function transferToken(
         address _from,
@@ -856,6 +862,40 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         transferToken(msg.sender, _to, _symbol, _quantity, 0, Tx.IXFERSENT, false, address(0));
         autoFillPrivate(_to, _symbol, Tx.AUTOFILL);
+    }
+
+    /**
+     * @notice  Bulk Transfers tokens from the `msg.sender`'s portfolio to `_to`'s portfolio
+     * @dev     Balance transfer between 2 address within the portfolio. _from must be msg.sender or trusted
+     * transfer role
+     * @param   _from  Address of the sender
+     * @param   _to  Address of the receiver
+     * @param   _symbols  Array of Symbols of the tokens
+     * @param   _quantities  Array of Amounts of the tokens
+     */
+    function bulkTransferTokens(
+        address _from,
+        address _to,
+        bytes32[] calldata _symbols,
+        uint256[] calldata _quantities
+    ) external whenNotPaused nonReentrant {
+        require(_from == msg.sender || hasRole(TRUSTED_TRANSFER_ROLE, msg.sender), "P-OOWN-03");
+        require(_to != msg.sender, "P-DOTS-01");
+        uint256 symLen = _symbols.length;
+        require(symLen == _quantities.length && symLen > 0, "P-ARLM-01");
+        for (uint256 i = 0; i < symLen; ) {
+            bytes32 symbol = _symbols[i];
+            uint256 quantity = _quantities[i];
+            require(tokenList.contains(symbol), "P-ETNS-01");
+            require(tokenDetailsMap[symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
+            transferToken(_from, _to, symbol, quantity, 0, Tx.IXFERSENT, false, address(0));
+            unchecked {
+                i++;
+            }
+        }
+        // Auto fill gas using the first token. If ALOT is present then within OmniVaultManager + IncentiveDistributor transfers
+        // it will be at the first index, else the first token is used to avoid multiple autoFill calls
+        autoFillPrivate(_to, _symbols[0], Tx.AUTOFILL);
     }
 
     /**

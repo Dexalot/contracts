@@ -23,7 +23,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
     using EnumerableMap for EnumerableMap.Bytes32ToUintMap;
 
     bytes32 private constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
-    bytes32 public constant VERSION = bytes32("3.2.1");
+    bytes32 public constant VERSION = bytes32("3.3.0");
     uint256 private constant STARTING_K = 24;
     uint256 private constant MIN_K = 8;
     uint256 private constant MAX_K = 32;
@@ -105,12 +105,7 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         if (userLiquidity > 0) {
             // calculate remaining user liquidity
             userLiquidity = userLiquidity - UtilsLibrary.min(userLiquidity, _withdrawal.quantity);
-            if (userLiquidity > 0) {
-                userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress] = userLiquidity;
-            } else {
-                // clean the state if user liquidity provided is 0
-                delete (userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress]);
-            }
+            userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress] = userLiquidity;
         }
     }
 
@@ -145,10 +140,11 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         uint256 numChains = map.length();
         uint256 currentInventory = get(_withdrawal.symbol, _withdrawal.symbolId);
 
-        if (numChains == 1 || currentInventory == 0) {
+        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
+
+        if (numChains == 1) {
             return 0;
         }
-        require(currentInventory >= _withdrawal.quantity, "IM-INVT-02");
 
         uint256 userLiquidity = userProvidedLiquidity[_withdrawal.symbolId][_withdrawal.traderaddress];
         // If the user already provided liquidity to the chain it is trying to withdraw, no additional fee required
@@ -162,6 +158,11 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
         for (uint256 i = 0; i < numChains; ++i) {
             (, uint256 inventory) = map.at(i);
             totalInventory += inventory;
+        }
+
+        // No fee is withdrawing total inventory across all chains
+        if (totalInventory == _withdrawal.quantity) {
+            return 0;
         }
 
         fee = InventoryFeeCalculatorLibrary.calculateFee(
@@ -224,12 +225,13 @@ contract InventoryManager is AccessControlEnumerableUpgradeable, IInventoryManag
 
     /**
      * @notice  Updates the Future K value for the invariant
-     * @dev     Only admin can call this function
+     * @dev     Only admin can call this function, K must be between 8 and 32 and a multiple of 4
      * @param   _K  New K value for the invariant
      * @param   _timePeriod  Time period for the new K value to take effect
      */
     function updateFutureK(uint256 _K, uint256 _timePeriod) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_K >= MIN_K && _K <= MAX_K, "IM-KVNP-01");
+        require(_K % 4 == 0, "IM-KMOD-01");
         require(_timePeriod >= MIN_K_UPDATE_TIME, "IM-KTNP-01");
         futureK = _K;
         futureKTime = block.timestamp + _timePeriod;

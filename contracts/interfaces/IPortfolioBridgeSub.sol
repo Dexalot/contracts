@@ -52,7 +52,7 @@ interface IPortfolioBridgeSub {
 
     function truncateQuantity(
         uint32 dstChainListOrgChainId,
-        bytes32 symbol,
+        bytes32 subnetSymbol,
         uint256 quantity,
         uint256 bridgeFee
     ) external view returns (uint256);

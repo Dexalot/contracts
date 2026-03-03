@@ -1,3 +1,9 @@
 [submodule "lib/teleporter"]
 	path = lib/teleporter
 	url = https://github.com/ava-labs/teleporter
+[submodule "lib/openzeppelin-v5"]
+	path = lib/openzeppelin-v5
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "lib/openzeppelin-upgradeable-v5"]
+	path = lib/openzeppelin-upgradeable-v5
+	url = https://github.com/OpenZeppelin/openzeppelin-contracts-upgradeable

@@ -26,6 +26,8 @@ contract MockToken is ERC20, AccessControlEnumerable {
     uint8 private __decimals;
     string private __symbol;
 
+    bool feeOnTransfer = false;
+
     constructor(string memory _name, string memory _symbol, uint8 _decimals) ERC20(_name, _symbol) {
         __decimals = _decimals;
         __symbol = _symbol;
@@ -79,5 +81,20 @@ contract MockToken is ERC20, AccessControlEnumerable {
 
     function renameSymbol(string memory symbol_) public onlyRole(DEFAULT_ADMIN_ROLE) {
         __symbol = symbol_;
+    }
+
+    function setFeeOnTransfer(bool _feeOnTransfer) public onlyRole(DEFAULT_ADMIN_ROLE) {
+        feeOnTransfer = _feeOnTransfer;
+    }
+
+    function _transfer(address sender, address recipient, uint256 amount) internal virtual override {
+        if (feeOnTransfer) {
+            uint256 fee = amount / 100; // 1% fee
+            uint256 amountAfterFee = amount - fee;
+            super._transfer(sender, address(this), fee); // collect fee
+            super._transfer(sender, recipient, amountAfterFee);
+        } else {
+            super._transfer(sender, recipient, amount);
+        }
     }
 }

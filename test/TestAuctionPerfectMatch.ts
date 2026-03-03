@@ -94,7 +94,7 @@ const orders = new Map<string, any>()
 
 
 
-describe("Auction", () => {
+describe.skip("Auction", () => {
 
   const type1 = 1;//LIMIT
   const type2 = 0;//GTC

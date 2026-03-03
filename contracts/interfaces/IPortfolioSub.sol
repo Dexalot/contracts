@@ -15,6 +15,8 @@ import "./IPortfolio.sol";
 // Copyright 2022 Dexalot.
 
 interface IPortfolioSub {
+    function feeAddress() external view returns (address);
+
     function adjustAvailable(IPortfolio.Tx _transaction, address _trader, bytes32 _symbol, uint256 _amount) external;
 
     function checkAvailable(address _trader, bytes32 _symbol, uint256 _amount) external returns (bytes32 code);
@@ -30,6 +32,13 @@ interface IPortfolioSub {
     ) external returns (uint256 makerfee, uint256 takerfee);
 
     function transferToken(address _to, bytes32 _symbol, uint256 _quantity) external;
+
+    function bulkTransferTokens(
+        address _from,
+        address _to,
+        bytes32[] calldata _symbols,
+        uint256[] calldata _quantities
+    ) external;
 
     enum AssetType {
         NATIVE,

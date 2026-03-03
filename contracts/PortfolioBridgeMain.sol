@@ -68,7 +68,7 @@ contract PortfolioBridgeMain is
     using EnumerableMapUpgradeable for EnumerableMapUpgradeable.UintToUintMap;
 
     IPortfolio internal portfolio;
-    IMainnetRFQ internal mainnetRfq;
+    IMainnetRFQ internal mainnetRfq; // redundant
     // Maps supported bridge providers to their contract implementations
     mapping(BridgeProvider => IBridgeProvider) public enabledBridges;
     // chainListOrgChainId => bridge type => bool mapping to control user pays fee for each destination and bridge
@@ -89,6 +89,11 @@ contract PortfolioBridgeMain is
     uint32 private constant SOL_CHAIN_ID = 0x534f4c;
     // Symbol => chainListOrgChainId ==> address mapping to control xchain swaps allowed symbols for each destination
     // stores spl token mint address for sending messages to solana
+    // OR
+    // srcAddress => chainListOrgChainId => dstAddress (bytes32) used to handle cctrades for RFQ contracts not deployed
+    // with Create3 (i.e. older versions of RFQ contracts), can safely use mapping as bytes20(address) does not clash
+    // with bytes32(symbol), if result = bytes32(0) then can assume the message is create 3 deployed so at same address
+    // safe assumption as invalid CCTRADEs routes will not be signed by off-chain component
     mapping(bytes32 => mapping(uint32 => bytes32)) public xChainAllowedDestinations;
 
     uint64 public outNonce;
@@ -106,7 +111,7 @@ contract PortfolioBridgeMain is
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure virtual override returns (bytes32) {
-        return bytes32("4.1.7");
+        return bytes32("4.3.0");
     }
 
     /**
@@ -332,19 +337,6 @@ contract PortfolioBridgeMain is
     }
 
     /**
-     * @notice  Set MainnetRFQ address and grant role
-     * @dev     Only admin can set MainnetRFQ address.
-     * There is a one to one relationship between MainnetRFQ and PortfolioBridgeMain.
-     * @param   _mainnetRfq  MainnetRFQ address
-     */
-    function setMainnetRFQ(address payable _mainnetRfq) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        //Can't have multiple mainnetRfq's using the same bridge
-        if (hasRole(BRIDGE_USER_ROLE, address(mainnetRfq))) super.revokeRole(BRIDGE_USER_ROLE, address(mainnetRfq));
-        mainnetRfq = IMainnetRFQ(_mainnetRfq);
-        grantRole(BRIDGE_USER_ROLE, _mainnetRfq);
-    }
-
-    /**
      * @notice  Sets the bridge provider fee & gasSwapRatio per ALOT for the given token and usedForGasSwap flag
      * @dev     External function to be called by BRIDGE_ADMIN_ROLE
      * @param   _symbol  Symbol of the token
@@ -366,13 +358,6 @@ contract PortfolioBridgeMain is
      */
     function getPortfolio() external view override returns (IPortfolio) {
         return portfolio;
-    }
-
-    /**
-     * @return  IMainnetRFQ  MainnetRFQ contract
-     */
-    function getMainnetRfq() external view override returns (IMainnetRFQ) {
-        return mainnetRfq;
     }
 
     /**
@@ -428,10 +413,13 @@ contract PortfolioBridgeMain is
      * @dev     Currently only XChainMsgType.XFER possible. For more details on payload packing see packXferMessage
      * @param   _payload  Payload passed from the bridge
      * @return  xfer IPortfolio.XFER  Xfer Message
+     * @return  rfqAddress  Address of the target rfq contract for CCTRADE transactions
      */
-    function unpackXFerMessage(bytes calldata _payload) external pure returns (IPortfolio.XFER memory xfer) {
+    function unpackXFerMessage(
+        bytes calldata _payload
+    ) external pure returns (IPortfolio.XFER memory xfer, address rfqAddress) {
         // There is only a single type in the XChainMsgType enum.
-        bytes32[4] memory msgData = abi.decode(_payload, (bytes32[4]));
+        bytes32[4] memory msgData = abi.decode(_payload[:128], (bytes32[4]));
         uint256 slot0 = uint256(msgData[0]);
         // will revert if anything else other than XChainMsgType.XFER is passed
         XChainMsgType msgType = XChainMsgType(uint8(slot0));
@@ -447,6 +435,11 @@ contract PortfolioBridgeMain is
         xfer.trader = msgData[1];
         xfer.symbol = msgData[2];
         xfer.quantity = uint256(msgData[3]);
+
+        if (xfer.transaction == IPortfolio.Tx.CCTRADE) {
+            // Must be exactly 148 bytes (128 + 20)
+            rfqAddress = address(bytes20(_payload[128:148]));
+        }
     }
 
     /**
@@ -454,12 +447,20 @@ contract PortfolioBridgeMain is
      * @dev     It is packed as follows:
      * slot0: customdata(18), timestamp(4), nonce(8), transaction(1), XChainMsgType(1)
      * slot1: trader(32)
-     * slot1: symbol(32)
-     * slot2: quantity(32)
+     * slot2: symbol(32)
+     * slot3: quantity(32)
+     * slot4: rfqAddress(20) [only for CCTRADE]
      * @param   _xfer  XFER message to encode
+     * @param   _dstChainId  Destination chain id to check if the message is for solana or not
      * @return  message  Encoded XFER message
      */
-    function packXferMessage(IPortfolio.XFER memory _xfer) private pure returns (bytes memory message) {
+    function packXferMessage(
+        IPortfolio.XFER memory _xfer,
+        uint32 _dstChainId
+    ) private view returns (bytes memory message) {
+        if (_dstChainId == SOL_CHAIN_ID) {
+            return packXferMessageSolana(_xfer);
+        }
         bytes32 slot0 = bytes32(
             (uint256(uint144(_xfer.customdata)) << 112) |
                 (uint256(uint32(_xfer.timestamp)) << 80) |
@@ -470,7 +471,21 @@ contract PortfolioBridgeMain is
         bytes32 slot1 = bytes32(_xfer.trader);
         bytes32 slot2 = bytes32(_xfer.symbol);
         bytes32 slot3 = bytes32(_xfer.quantity);
-        message = bytes.concat(slot0, slot1, slot2, slot3);
+
+        if (_xfer.transaction == IPortfolio.Tx.CCTRADE) {
+            bytes32 dstAddress = xChainAllowedDestinations[UtilsLibrary.addressToBytes32(msg.sender)][_dstChainId];
+            address rfqAddress;
+            if (dstAddress != bytes32(0)) {
+                // Only EVM <-> EVM cctrades supported for now
+                rfqAddress = UtilsLibrary.bytes32ToAddress(dstAddress);
+            } else {
+                // Deployed via Create3 so RFQ address is at same address across all evm chains
+                rfqAddress = msg.sender;
+            }
+            message = bytes.concat(slot0, slot1, slot2, slot3, bytes20(rfqAddress));
+        } else {
+            message = bytes.concat(slot0, slot1, slot2, slot3);
+        }
     }
 
     /**
@@ -546,20 +561,24 @@ contract PortfolioBridgeMain is
             outNonce += 1;
             _xfer.nonce = outNonce;
         }
-        bytes memory _payload = _dstChainListOrgChainId == SOL_CHAIN_ID
-            ? packXferMessageSolana(_xfer)
-            : packXferMessage(_xfer);
+        bytes memory _payload = packXferMessage(_xfer, _dstChainListOrgChainId);
         bool isUserFeePayer = userPaysFee[_dstChainListOrgChainId][_bridge];
         IBridgeProvider.CrossChainMessageType msgType = getCrossChainMessageType(_xfer.transaction);
         uint256 fee = bridgeContract.getBridgeFee(_dstChainListOrgChainId, msgType);
         if (isUserFeePayer) {
             require(_userFeePayer != address(0), "PB-UFPE-01");
             require(msg.value >= fee, "PB-IUMF-01");
+            uint256 feeOverpay = msg.value - fee;
+            // LZ handles refund within bridgeApp
+            if (_bridge != BridgeProvider.LZ && feeOverpay > 0) {
+                (bool success, ) = _userFeePayer.call{value: feeOverpay}("");
+                require(success, "PB-UFPR-02");
+            }
         } else {
             if (_userFeePayer != address(0)) {
                 (bool success, ) = _userFeePayer.call{value: msg.value}("");
                 require(success, "PB-UFPR-01");
-                require(address(this).balance > fee, "PB-CBIZ-01");
+                require(address(this).balance >= fee, "PB-CBIZ-01");
             }
             _userFeePayer = address(this);
         }
@@ -589,8 +608,8 @@ contract PortfolioBridgeMain is
         BridgeProvider _bridge,
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
-    ) internal returns (IPortfolio.XFER memory xfer) {
-        xfer = this.unpackXFerMessage(_payload);
+    ) internal returns (IPortfolio.XFER memory xfer, address rfqAddress) {
+        (xfer, rfqAddress) = this.unpackXFerMessage(_payload);
         xfer.timestamp = block.timestamp; // log receival/process timestamp
         emit XChainXFerMessage(
             XCHAIN_XFER_MESSAGE_VERSION,
@@ -631,13 +650,17 @@ contract PortfolioBridgeMain is
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
     ) external virtual onlyRole(BRIDGE_PROVIDER_ROLE) {
-        IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
+        (IPortfolio.XFER memory xfer, address rfqAddress) = processPayloadShared(
+            _bridge,
+            _srcChainListOrgChainId,
+            _payload
+        );
         // check the validity of the symbol
         IPortfolio.TokenDetails memory details = portfolio.getTokenDetails(xfer.symbol);
         require(details.symbol != bytes32(0), "PB-ETNS-02");
         processGasAirdrop(xfer.customdata[0], xfer.trader);
         xfer.transaction == IPortfolio.Tx.CCTRADE
-            ? mainnetRfq.processXFerPayload(xfer)
+            ? IMainnetRFQ(payable(rfqAddress)).processXFerPayload(xfer)
             : portfolio.processXFerPayload(xfer);
     }
 

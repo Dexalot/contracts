@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.6.1");
+    bytes32 public constant VERSION = bytes32("3.6.2");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
@@ -132,8 +132,8 @@ contract TradePairs is
             tradePair.minPostAmount = _minTradeAmount;
             tradePair.makerRate = 20; // (0.20% = 20/10000)
             tradePair.takerRate = 30; // (0.30% = 30/10000)
-            // with default allowedSlippagePercent of 20, the market orders cannot be filled
-            // worst than 80% of the bestBid and 120% of bestAsk
+            // with default allowedSlippagePercent of 3, the market orders cannot be filled
+            // worst than 97% of the bestBid and 103% of bestAsk
             tradePair.allowedSlippagePercent = 3; // (3% = 3/100)
             // tradePair.addOrderPaused = false;   // addOrder is not paused by default (EVM initializes to false)
             // tradePair.pairPaused = false;       // pair is not paused by default (EVM initializes to false)
@@ -464,7 +464,7 @@ contract TradePairs is
      * from the marketPrice(bestbid or bestask) to protect the trader. The remaining quantity gets
      * unsolicited cancel
      * @param   _tradePairId  id of the trading pair
-     * @param   _allowedSlippagePercent  allowed slippage percent=20 (Default = 20 : 20% = 20/100)
+     * @param   _allowedSlippagePercent  allowed slippage percent=3 (Default = 3 : 3% = 3/100)
      */
     function setAllowedSlippagePercent(
         bytes32 _tradePairId,
@@ -1129,27 +1129,18 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Function to match Auction orders
-     * @dev     Requires `DEFAULT_ADMIN_ROLE`, also called by `ExchangeSub.matchAuctionOrders` that
+     * @notice  Deprecated function to match Auction orders
+     * @dev     Performs no action as auction matching logic is deprecated.
+     * Requires `DEFAULT_ADMIN_ROLE`, also called by `ExchangeSub.matchAuctionOrders` that
      * requires `AUCTION_ADMIN_ROLE`.
      * @param   _takerOrder  Taker Order
-     * @param   _maxNbrOfFills   controls max number of fills an order can get at a time to avoid running out of gas
-     * @return  quantityRemaining Remaining quantity of the taker order
+     * @return  quantityRemaining Full quantity of the taker order
      */
     function matchAuctionOrder(
         Order memory _takerOrder,
-        uint256 _maxNbrOfFills
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256 quantityRemaining) {
-        TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
-        // Commented out require statements to save room in contract size CD 2025-07-01. Auction functionality will
-        // not be used for the foreseeable future. Even after removal of the require statements, the integrity of
-        // the logic is still there due to the following if statement.
-        // require(tradePair.auctionMode == AuctionMode.MATCHING, "T-AUCT-01");
-        // require(tradePair.auctionPrice > 0, "T-AUCT-03");
-        if (tradePair.auctionMode == AuctionMode.MATCHING && tradePair.auctionPrice > 0) {
-            (_takerOrder, ) = matchOrder(_takerOrder, _maxNbrOfFills, STP.NONE);
-            quantityRemaining = UtilsLibrary.getRemainingQuantity(_takerOrder.quantity, _takerOrder.quantityFilled);
-        }
+        uint256
+    ) external view override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256 quantityRemaining) {
+        return _takerOrder.quantity;
     }
 
     /**

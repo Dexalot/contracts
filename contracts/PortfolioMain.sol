@@ -28,7 +28,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     using SafeERC20Upgradeable for IERC20Upgradeable;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.6.2");
+    bytes32 public constant VERSION = bytes32("2.7.0");
 
     // bytes32 symbols to ERC20 token map
     mapping(bytes32 => IERC20Upgradeable) public tokenMap;
@@ -266,6 +266,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     function getNativeBridgeFee(IPortfolioBridge.BridgeProvider _bridge) public view returns (uint256) {
         uint32 defaultChain = portfolioBridge.getDefaultDestinationChain();
         if (portfolioBridge.userPaysFee(defaultChain, _bridge)) {
+            // symbol, quantity, sender, options are unused in PortfolioBridgeMain, so passing empty values
             return this.getBridgeFee(_bridge, defaultChain, bytes32(0), 0, address(0), bytes1(0));
         }
         return 0;
@@ -407,13 +408,14 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
      * @notice  Allows deposits from trusted contracts
      * @dev     Used by Avalaunch for DD deposits and Vesting Contracts.
      * Keeping for backward compatibility instead of using ON_BEHALF_ROLE.
+     * Forwards the call to depositToken with native bridge fee and default bridge provider.
      * @param   _from  Address of the depositor
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to deposit
      */
-    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external override {
+    function depositTokenFromContract(address _from, bytes32 _symbol, uint256 _quantity) external payable override {
         require(trustedContracts[msg.sender], "P-AOTC-01"); // keeping it for backward compatibility
-        this.depositToken(_from, _symbol, _quantity, portfolioBridge.getDefaultBridgeProvider());
+        this.depositToken{value: msg.value}(_from, _symbol, _quantity, portfolioBridge.getDefaultBridgeProvider());
     }
 
     /**
@@ -449,7 +451,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
             TokenDetails memory tokenDetails = tokenDetailsMap[_xfer.symbol];
             uint256 quantity = scaleQuantity(_xfer.quantity, tokenDetails.l1Decimals, tokenDetails.decimals);
 
-            bool unwrapToken = processOptions(_xfer);
+            bool unwrapToken = processOptions(_xfer, quantity);
 
             if (_xfer.symbol == native || unwrapToken) {
                 //Withdraw native
@@ -468,7 +470,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
         }
     }
 
-    function processOptions(IPortfolio.XFER calldata _xfer) private returns (bool unwrapToken) {
+    function processOptions(IPortfolio.XFER calldata _xfer, uint256 quantity) private returns (bool unwrapToken) {
         if (_xfer.customdata[0] == 0) {
             return false;
         }
@@ -479,7 +481,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
 
         if (unwrapToken) {
             IWrappedToken wrappedToken = IWrappedToken(address(tokenMap[wrappedNative]));
-            wrappedToken.withdraw(_xfer.quantity);
+            wrappedToken.withdraw(quantity);
         }
     }
 

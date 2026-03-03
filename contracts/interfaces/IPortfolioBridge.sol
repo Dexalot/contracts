@@ -26,7 +26,9 @@ interface IPortfolioBridge {
         address _userFeePayer
     ) external payable;
 
-    function unpackXFerMessage(bytes calldata _data) external view returns (IPortfolio.XFER memory xfer);
+    function unpackXFerMessage(
+        bytes calldata _data
+    ) external view returns (IPortfolio.XFER memory xfer, address rfqAddress);
 
     function enableBridgeProvider(BridgeProvider _bridge, address _bridgeContract) external;
 
@@ -37,8 +39,6 @@ interface IPortfolioBridge {
     function getDefaultDestinationChain() external view returns (uint32);
 
     function getPortfolio() external view returns (IPortfolio);
-
-    function getMainnetRfq() external view returns (IMainnetRFQ);
 
     function getTokenList() external view returns (bytes32[] memory);
 

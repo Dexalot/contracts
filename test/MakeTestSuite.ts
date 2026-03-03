@@ -37,7 +37,14 @@ import {
     DexalotTokenOFT,
     DexalotTokenOFTMinter,
     SolPortfolioBridgeMock,
-    DexalotRouter
+    DexalotRouter,
+    OmniVaultRegistry,
+    OmniVaultCreator,
+    OmniVaultShare,
+    OmniVaultExecutor,
+    OmniVaultExecutorMain,
+    DexalotRFQ,
+    OmniVault
 } from '../typechain-types'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 // import { NativeMinterMock } from "../typechain-types/contracts/mocks";
@@ -122,6 +129,16 @@ interface MultiPortfolioContracts {
     mainnetRFQBase: MainnetRFQ,
     mainnetRFQGun: MainnetRFQ,
     alot: MockToken | undefined
+}
+
+interface VaultContracts {
+    omniVaultRegistry: OmniVaultRegistry,
+    omniVaultCreator: OmniVaultCreator,
+    omniVaultShare: OmniVaultShare,
+    omniVaultExecutor: OmniVaultExecutor,
+    omniVaultExecutorMain: OmniVaultExecutorMain,
+    omniVault: OmniVault,
+    dexalotRFQ: DexalotRFQ
 }
 
 /*
@@ -227,13 +244,13 @@ export const deployMainnetRFQ = async (signer: SignerWithAddress, portfolioBridg
     const mainnetRFQ: MainnetRFQ = await upgrades.deployProxy(MainnetRFQ, [signer.address]) as MainnetRFQ;
     await mainnetRFQ.setPortfolioBridge(portfolioBridgeMain.address);
     await mainnetRFQ.setPortfolioMain();
-    await portfolioBridgeMain.setMainnetRFQ(mainnetRFQ.address);
+    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), mainnetRFQ.address);
     return mainnetRFQ;
 }
 
 export const deployDexalotRouter = async (owner: SignerWithAddress, mainnetRFQ: MainnetRFQ): Promise<DexalotRouter> => {
     const DexalotRouter = await ethers.getContractFactory("DexalotRouter");
-    const dexalotRouter: DexalotRouter = await DexalotRouter.deploy(owner.address) as DexalotRouter;
+    const dexalotRouter: DexalotRouter = await upgrades.deployProxy(DexalotRouter, [owner.address], {kind: "uups"}) as DexalotRouter;
     await dexalotRouter.setAllowedRFQ(mainnetRFQ.address, true);
     await mainnetRFQ.setTrustedForwarder(dexalotRouter.address);
     return dexalotRouter;

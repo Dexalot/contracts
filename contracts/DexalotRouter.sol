@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.30;
 
-import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin-v5/utils/structs/EnumerableSet.sol";
+import "@openzeppelin-v5/token/ERC20/IERC20.sol";
+import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin-v5/utils/ReentrancyGuardTransient.sol";
+import "@openzeppelin-upgradeable-v5/access/extensions/AccessControlEnumerableUpgradeable.sol";
+import "@openzeppelin-upgradeable-v5/proxy/utils/UUPSUpgradeable.sol";
 
-import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
+import "./interfaces/IDexalotRFQ.sol";
 
 /**
  * @title DexalotRouter
@@ -15,7 +18,7 @@ import "@openzeppelin/contracts/access/AccessControlEnumerable.sol";
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
 // Copyright 2025 Dexalot
-contract DexalotRouter is AccessControlEnumerable {
+contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, ReentrancyGuardTransient {
     using EnumerableSet for EnumerableSet.AddressSet;
     using SafeERC20 for IERC20;
 
@@ -33,20 +36,84 @@ contract DexalotRouter is AccessControlEnumerable {
     uint256 private constant TAKER_PARTIAL_AMOUNT_OFFSET = 4 + 32 * 8 + 32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.0.1");
+    bytes32 public constant VERSION = bytes32("1.1.1");
     // addresses of allowed MainnetRFQ contracts
     EnumerableSet.AddressSet private allowedRFQs;
 
+    uint256[50] private __gap; // gap for future storage variables
+
     event AllowedRFQUpdated(address indexed rfq, bool allowed);
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     /**
      * @notice Constructor to set up roles
      * @param _owner The address to be granted the admin role
      */
-    constructor(address _owner) {
+    function initialize(address _owner) public initializer {
         require(_owner != address(0), "DR-SAZ-01");
 
+        __AccessControlEnumerable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, _owner);
+    }
+
+    /**
+     * @notice Executes two partial swaps in sequence between two allowed DexalotRFQ contracts
+     * @param _orderA The first RFQ order
+     * @param _signatureA The signature for the first RFQ order
+     * @param _takerAmountA The taker amount for the first RFQ order
+     * @param _orderB The second RFQ order
+     * @param _signatureB The signature for the second RFQ order
+     */
+    function multiPartialSwap(
+        IDexalotRFQ.Order calldata _orderA,
+        bytes calldata _signatureA,
+        uint256 _takerAmountA,
+        IDexalotRFQ.Order calldata _orderB,
+        bytes calldata _signatureB
+    ) external payable nonReentrant {
+        require(_orderA.maker != address(0) && allowedRFQs.contains(_orderA.maker), "DR-IRMA-01");
+        require(_orderB.maker != address(0) && allowedRFQs.contains(_orderB.maker), "DR-IRMB-01");
+        require(_orderA.makerAsset == _orderB.takerAsset, "DR-ASMTA-01");
+        address destTraderA = address(uint160(_orderA.nonceAndMeta >> 96));
+        require(destTraderA == address(this), "DR-DTIT-01");
+        uint256 preBal = _orderA.makerAsset == address(0)
+            ? address(this).balance
+            : IERC20(_orderA.makerAsset).balanceOf(address(this));
+
+        if (_orderA.takerAsset != address(0)) {
+            require(msg.value == 0, "DR-NFES-01");
+            IERC20(_orderA.takerAsset).safeTransferFrom(msg.sender, _orderA.maker, _takerAmountA);
+        }
+
+        // Append the original sender's address to the calldata
+        bytes memory callDataA = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderA, _signatureA, _takerAmountA);
+        callDataA = abi.encodePacked(callDataA, msg.sender);
+        // Execute the call on the child DexalotRFQ contract
+        (bool success, bytes memory returnData) = payable(_orderA.maker).call{value: msg.value}(callDataA);
+        // Forward the revert reason if the call failed
+        if (!success) _bubbleRevert(returnData, "DR-PSA-01");
+
+        uint256 takerAmountB;
+        bool isHopNative = (_orderA.makerAsset == address(0));
+
+        if (!isHopNative) {
+            IERC20 bInputAsset = IERC20(_orderA.makerAsset);
+            takerAmountB = bInputAsset.balanceOf(address(this)) - preBal;
+            bInputAsset.safeTransfer(_orderB.maker, takerAmountB);
+        } else {
+            takerAmountB = address(this).balance + msg.value - preBal;
+        }
+
+        bytes memory callDataB = abi.encodeWithSelector(PARTIAL_SWAP_SELECTOR, _orderB, _signatureB, takerAmountB);
+        callDataB = abi.encodePacked(callDataB, msg.sender);
+        // Execute the call on the child DexalotRFQ contract
+        (success, returnData) = payable(_orderB.maker).call{value: isHopNative ? takerAmountB : 0}(callDataB);
+        // Forward the revert reason if the call failed
+        if (!success) _bubbleRevert(returnData, "DR-PSB-01");
     }
 
     /**
@@ -65,8 +132,8 @@ contract DexalotRouter is AccessControlEnumerable {
     }
 
     /**
-     * @notice Retrieve any ERC20 or native tokens mistakenly sent to this contract
-     * @param _token The address of the token to retrieve, or address(0) for native
+     * @notice Retrieve any ERC20 tokens or native mistakenly sent to this contract
+     * @param _token The address of the token to retrieve
      * @param _amount The amount of tokens to retrieve
      */
     function retrieveToken(address _token, uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -123,24 +190,32 @@ contract DexalotRouter is AccessControlEnumerable {
         return allowedRFQs.length();
     }
 
-    /**
-     * @notice Not supported. To send native properly, the call must be forwarded to an allowed MainnetRFQ contract via partialSwap or simpleSwap.
+    // UUPS upgrade authorization function
+    function _authorizeUpgrade(address newImplementation) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /** Internal function to bubble up revert reasons from low-level calls
+     * @param _returnData The return data from the failed call
+     * @param _defaultMsg The default revert message to use if no revert reason is found in the return data
      */
-    receive() external payable {}
+    function _bubbleRevert(bytes memory _returnData, string memory _defaultMsg) internal pure {
+        if (_returnData.length > 0) {
+            assembly {
+                let size := mload(_returnData)
+                revert(add(32, _returnData), size)
+            }
+        } else {
+            revert(_defaultMsg);
+        }
+    }
 
     /**
-     * @notice Fallback function to forward calls to allowed MainnetRFQ contracts.
+     * @notice Internal fallback function to forward calls to allowed MainnetRFQ contracts.
      * Only the partialSwap and simpleSwap functions are supported.
      * The original sender's address is appended to the calldata for the target contract to extract.
      * If the call involves token transfer, the tokens are transferred from the original sender to the target contract before forwarding the call.
      */
     fallback() external payable {
-        bytes4 selector;
-        assembly {
-            // Read the first 4 bytes of calldata
-            selector := calldataload(0)
-        }
-
+        bytes4 selector = msg.sig;
         // If the selector is NOT partialSwap AND NOT simpleSwap, revert.
         if (selector != PARTIAL_SWAP_SELECTOR && selector != SIMPLE_SWAP_SELECTOR) {
             revert("DR-FSNW-01"); // function selector not whitelisted
@@ -162,6 +237,7 @@ contract DexalotRouter is AccessControlEnumerable {
             amount := calldataload(amountOffset)
         }
         if (takerAsset != address(0)) {
+            require(msg.value == 0, "DR-NFES-01");
             // ERC20 transfer
             IERC20(takerAsset).safeTransferFrom(msg.sender, targetImplementation, amount);
         }
@@ -188,5 +264,12 @@ contract DexalotRouter is AccessControlEnumerable {
             returndatacopy(0, 0, returndata_size)
             return(0, returndata_size)
         }
+    }
+
+    /**
+     * @notice Receive function to reject direct native transfers without calldata
+     */
+    receive() external payable {
+        require(allowedRFQs.contains(msg.sender), "DR-IRMA-01"); // invalid RFQ Maker address
     }
 }

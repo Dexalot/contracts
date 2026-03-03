@@ -1,0 +1,20 @@
+{
+  "lib/forge-std": {
+    "rev": "ab6de56ed94bed75866c78c62cad882e8a046348"
+  },
+  "lib/openzeppelin-upgradeable-v5": {
+    "tag": {
+      "name": "v5.5.0",
+      "rev": "aa677e9d28ed78fc427ec47ba2baef2030c58e7c"
+    }
+  },
+  "lib/openzeppelin-v5": {
+    "tag": {
+      "name": "v5.5.0",
+      "rev": "fcbae5394ae8ad52d8e580a3477db99814b9d565"
+    }
+  },
+  "lib/teleporter": {
+    "rev": "36e6bfd764a0ce2baafe9f69c76b696d4ccd8319"
+  }
+}

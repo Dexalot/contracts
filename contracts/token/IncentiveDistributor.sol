@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/ECDSAUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/structs/BitMapsUpgradeable.sol";
 
 import "../interfaces/IPortfolioSub.sol";
 
@@ -20,147 +21,62 @@ import "../interfaces/IPortfolioSub.sol";
  * This signature is input to the claim function to verify and allow traders to withdraw
  * their earned Dexalot Incentive Program (DIP) rewards to the PortfolioSubnet contract.
  */
-
 // The code in this file is part of Dexalot project.
 // Please see the LICENSE.txt file for licensing info.
-// Copyright 2022 Dexalot.
-
+// Copyright 2026 Dexalot.
 contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712Upgradeable {
-    // version
-    bytes32 public constant VERSION = bytes32("1.0.2");
+    using BitMapsUpgradeable for BitMapsUpgradeable.BitMap;
 
-    IPortfolioSub private _portfolio;
+    bytes32 public constant VERSION = bytes32("2.0.0");
+
+    // EIP-712 typehash for claim struct
+    bytes32 public constant CLAIM_TYPEHASH =
+        keccak256("Claim(address user,uint32 tokenIds,uint32 expiry,uint16[] weekIds,uint128[] amounts)");
+
+    IPortfolioSub public portfolio;
 
     // bitmap representing current reward tokenIds
     uint32 public allTokens;
-    address private _signer;
+    address public rewardSigner;
+    // tokenId => symbol
     mapping(uint32 => bytes32) public tokens;
-    mapping(address => mapping(uint32 => uint128)) public claimedRewards;
 
-    event Claimed(address indexed claimer, uint32 tokenIds, uint128[] amounts, uint256 timestamp);
+    // user address => tokenId => bitmap of claimed weeks
+    mapping(address => mapping(uint32 => BitMapsUpgradeable.BitMap)) private _claimedWeeks;
+
+    event Claimed(
+        address indexed claimer,
+        uint32 tokenIds,
+        uint32 expiry,
+        uint16[] weekIds,
+        uint128[] amounts,
+        uint256 timestamp
+    );
     event AddRewardToken(bytes32 symbol, uint32 tokenId, uint256 timestamp);
     event DepositGas(address from, uint256 quantity, uint256 timestamp);
     event WithdrawGas(address to, uint256 quantity, uint256 timestamp);
+    event UpdateSigner(address oldSigner, address newSigner);
+    event RetrieveRewardToken(address indexed retriever, uint32 tokenId, uint256 quantity);
 
-    /**
-     * @notice Initializer of the IncentiveDistributor
-     * @dev    Adds ALOT token as the first reward token and defines the signer of claim messages.
-     * @param  _alotSymbol The symbol of the ALOT token
-     * @param  __signer The public address of the signer of claim messages
-     * @param __portfolio The address of the portfolio sub contract
-     */
     function initialize(bytes32 _alotSymbol, address __signer, address __portfolio) public initializer {
         __Ownable_init();
         __Pausable_init();
-        __EIP712_init("Dexalot", "1.0.2");
+        __EIP712_init("Dexalot", "2");
 
         require(__signer != address(0), "ID-ZADDR-01");
         require(__portfolio != address(0), "ID-ZADDR-02");
+        require(
+            _alotSymbol != bytes32(0) && IPortfolio(__portfolio).getTokenDetails(_alotSymbol).symbol == _alotSymbol,
+            "ID-IVTD-01"
+        );
 
         uint32 tokenId = ~allTokens & (allTokens + 1);
         tokens[tokenId] = _alotSymbol;
         allTokens |= tokenId;
-        _signer = __signer;
-        _portfolio = IPortfolioSub(__portfolio);
+        rewardSigner = __signer;
+        portfolio = IPortfolioSub(__portfolio);
 
         emit AddRewardToken(_alotSymbol, tokenId, block.timestamp);
-    }
-
-    /**
-     * @notice Claim DIP token rewards for a given trader in their portfolio
-     * @param  _amounts An array of total earned amount for each reward token
-     * @param  _tokenIds A bitmap representing which tokens to claim
-     * @param  _signature A signed claim message to be verified
-     */
-    function claim(uint128[] memory _amounts, uint32 _tokenIds, bytes calldata _signature) external whenNotPaused {
-        require(_tokenIds | allTokens == allTokens, "ID-TDNE-01");
-        require(_checkClaim(msg.sender, _tokenIds, _amounts, _signature), "ID-SIGN-01");
-
-        bool isClaimed;
-        uint32 bitmap = _tokenIds;
-
-        for (uint256 i = 0; i < _amounts.length; ++i) {
-            require(bitmap != 0, "ID-TACM-01");
-            uint32 tokenId = bitmap & ~(bitmap - 1);
-            bitmap -= tokenId;
-
-            uint128 amount = _amounts[i];
-            uint128 prevClaimed = claimedRewards[msg.sender][tokenId];
-            require(amount >= prevClaimed, "ID-RTPC-01");
-
-            if (amount != prevClaimed) {
-                bytes32 symbol = tokens[tokenId];
-                uint128 claimableAmount = amount - prevClaimed;
-
-                _portfolio.transferToken(msg.sender, symbol, claimableAmount);
-                claimedRewards[msg.sender][tokenId] += claimableAmount;
-
-                _amounts[i] = claimableAmount;
-                isClaimed = true;
-            } else {
-                _amounts[i] = 0;
-            }
-        }
-        require(isClaimed, "ID-NTTC-01");
-        require(bitmap == 0, "ID-TACM-02");
-
-        emit Claimed(msg.sender, _tokenIds, _amounts, block.timestamp);
-    }
-
-    /**
-     * @notice Verifies claim message (_user, _tokenIds, _amount) has been signed by signer
-     * @param  _user The trader making a claim
-     * @param  _tokenIds A bitmap representing which tokens to claim
-     * @param  _amounts An array of total earned amount for each reward token
-     * @param  _signature A signed claim message to be verified
-     */
-    function _checkClaim(
-        address _user,
-        uint32 _tokenIds,
-        uint128[] memory _amounts,
-        bytes calldata _signature
-    ) internal view returns (bool) {
-        bytes32 structType = keccak256("Claim(address user,uint32 tokenIds,uint128[] amounts)");
-        bytes32 hashedStruct = keccak256(
-            abi.encode(structType, _user, _tokenIds, keccak256(abi.encodePacked(_amounts)))
-        );
-        bytes32 digest = _hashTypedDataV4(hashedStruct);
-        return ECDSAUpgradeable.recover(digest, _signature) == _signer;
-    }
-
-    /**
-     * @notice Add new claimable reward token
-     * @param  _symbol The symbol of the new reward token
-     */
-    function addRewardToken(bytes32 _symbol) external whenPaused onlyOwner {
-        uint32 tokenId = ~allTokens & (allTokens + 1);
-        tokens[tokenId] = _symbol;
-        allTokens |= tokenId;
-
-        emit AddRewardToken(_symbol, tokenId, block.timestamp);
-    }
-
-    /**
-     * @notice Retrieve reward token when DIP ends
-     * @param  _tokenId The id of the reward token to retrieve
-     */
-    function retrieveRewardToken(uint32 _tokenId) external whenPaused onlyOwner {
-        bytes32 symbol = tokens[_tokenId];
-        require(symbol != bytes32(0), "ID-TDNE-02");
-
-        (, uint256 availableBalance, ) = _portfolio.getBalance(address(this), symbol);
-        _portfolio.transferToken(msg.sender, symbol, availableBalance);
-    }
-
-    /**
-     * @notice Retrieve all reward tokens when DIP ends
-     */
-    function retrieveAllRewardTokens() external whenPaused onlyOwner {
-        for (uint32 tokenId = 1; tokenId < allTokens; tokenId <<= 1) {
-            bytes32 symbol = tokens[tokenId];
-            (, uint256 availableBalance, ) = _portfolio.getBalance(address(this), symbol);
-            _portfolio.transferToken(msg.sender, symbol, availableBalance);
-        }
     }
 
     /**
@@ -171,13 +87,110 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
     }
 
     /**
+     * @notice Claim DIP token rewards for specific weeks
+     * @dev To handle rolling expiry, we claim specific Week IDs.
+     * The _amounts array should correspond to the total expected for the provided weeks.
+     * Example: If claiming Week 10, 11 + 12 for Token A and Token B.
+     * _weekIds: [10, 11, 12] (The weeks being claimed)
+     * _amounts: [TotalForTokenA, TotalForTokenB] (The sum of those specific weeks)
+     * @param _tokenIds Bitmap of token IDs being claimed
+     * @param _expiry Expiry timestamp of the signature
+     * @param _weekIds Array of week IDs being claimed
+     * @param _amounts Array of amounts corresponding to each token ID being claimed
+     * @param _signature EIP-712 signature from the authorized signer
+     */
+    function claim(
+        uint32 _tokenIds,
+        uint32 _expiry,
+        uint16[] calldata _weekIds,
+        uint128[] calldata _amounts,
+        bytes calldata _signature
+    ) external whenNotPaused {
+        require(_weekIds.length > 0, "ID-NWID-01");
+        require(block.timestamp <= _expiry, "ID-EXPR-01");
+        require(_tokenIds | allTokens == allTokens, "ID-TDNE-01");
+        require(_checkClaim(msg.sender, _tokenIds, _expiry, _weekIds, _amounts, _signature), "ID-SIGN-01");
+
+        uint256 len = _amounts.length;
+        bytes32[] memory symbols = new bytes32[](len);
+        uint256[] memory amounts = new uint256[](len);
+        uint32 bitmap = _tokenIds;
+
+        uint256 tokenIndex = 0;
+        // iterate through each token in the bitmap
+        while (bitmap != 0) {
+            require(tokenIndex < len, "ID-TACM-01");
+
+            uint32 tokenId = bitmap & ~(bitmap - 1);
+            bitmap -= tokenId;
+
+            // require that none of the weeks in this batch have been claimed for this token
+            for (uint256 w = 0; w < _weekIds.length; w++) {
+                require(!_claimedWeeks[msg.sender][tokenId].get(_weekIds[w]), "ID-WKCL-01");
+            }
+
+            // mark weeks as claimed
+            for (uint256 w = 0; w < _weekIds.length; w++) {
+                _claimedWeeks[msg.sender][tokenId].set(_weekIds[w]);
+            }
+
+            amounts[tokenIndex] = _amounts[tokenIndex];
+            symbols[tokenIndex] = tokens[tokenId];
+            tokenIndex++;
+        }
+        // ensure all tokens have been processed
+        require(tokenIndex == len, "ID-TACM-02");
+
+        portfolio.bulkTransferTokens(address(this), msg.sender, symbols, amounts);
+
+        emit Claimed(msg.sender, _tokenIds, _expiry, _weekIds, _amounts, block.timestamp);
+    }
+
+    /**
+     * @notice Adds a new reward token to the distributor
+     * @dev Can only be called by the owner when the contract is paused
+     * @param _symbol Symbol of the new reward token
+     */
+    function addRewardToken(bytes32 _symbol) external whenPaused onlyOwner {
+        require(allTokens != type(uint32).max, "ID-MAXT-01"); // Max 32 tokens
+        require(
+            _symbol != bytes32(0) && IPortfolio(address(portfolio)).getTokenDetails(_symbol).symbol == _symbol,
+            "ID-IVTD-01"
+        );
+
+        // iterate through allTokens to check if symbol exists
+        for (uint32 i = 1; i <= allTokens; i <<= 1) {
+            require(tokens[i] != _symbol, "ID-RTEX-01");
+        }
+
+        uint32 tokenId = ~allTokens & (allTokens + 1);
+        tokens[tokenId] = _symbol;
+        allTokens |= tokenId;
+        emit AddRewardToken(_symbol, tokenId, block.timestamp);
+    }
+
+    /**
+     * @notice Retrieve unclaimed reward tokens to owner
+     * @dev Can only be called by the owner when the contract is paused
+     * @param _tokenId Token ID to retrieve
+     */
+    function retrieveRewardToken(uint32 _tokenId) external whenPaused onlyOwner {
+        bytes32 symbol = tokens[_tokenId];
+        require(symbol != bytes32(0), "ID-TDNE-02");
+        (, uint256 availableBalance, ) = portfolio.getBalance(address(this), symbol);
+        portfolio.transferToken(msg.sender, symbol, availableBalance);
+        emit RetrieveRewardToken(msg.sender, _tokenId, availableBalance);
+    }
+
+    /**
      * @notice Withdraw ALOT from IncentiveDistributor gas tank to owner
      * @param amount The amount of ALOT to withdraw to owner
      */
     function withdrawGas(uint256 amount) external onlyOwner {
         require(address(this).balance >= amount, "ID-AGCB-01");
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "ID-WTFR-01");
         emit WithdrawGas(msg.sender, amount, block.timestamp);
-        payable(msg.sender).transfer(amount);
     }
 
     /**
@@ -192,5 +205,60 @@ contract IncentiveDistributor is PausableUpgradeable, OwnableUpgradeable, EIP712
      */
     function unpause() external onlyOwner whenPaused {
         _unpause();
+    }
+
+    /**
+     * @notice Update the authorized signer address
+     * @dev Can only be called by the owner when the contract is paused
+     * @param _newSigner Address of the new signer
+     */
+    function updateSigner(address _newSigner) external onlyOwner whenPaused {
+        require(_newSigner != address(0), "ID-ZADDR-01");
+        address oldSigner = rewardSigner;
+        rewardSigner = _newSigner;
+        emit UpdateSigner(oldSigner, _newSigner);
+    }
+
+    /**
+     * @notice Check if a specific week has been claimed for a user and token
+     * @param _user Address of the user
+     * @param _tokenId Token ID to check
+     * @param _weekId Week ID to check
+     * @return bool indicating if the week has been claimed
+     */
+    function isWeekClaimed(address _user, uint32 _tokenId, uint16 _weekId) external view returns (bool) {
+        return _claimedWeeks[_user][_tokenId].get(_weekId);
+    }
+
+    /**
+     * @notice Internal function to verify claim signature
+     * @param _user Address of the user making the claim
+     * @param _tokenIds Bitmap of token IDs being claimed
+     * @param _expiry Expiry timestamp of the signature
+     * @param _weekIds Array of week IDs being claimed
+     * @param _amounts Array of amounts corresponding to each token ID being claimed
+     * @param _signature EIP-712 signature from the authorized signer
+     * @return bool indicating if the signature is valid
+     */
+    function _checkClaim(
+        address _user,
+        uint32 _tokenIds,
+        uint32 _expiry,
+        uint16[] calldata _weekIds,
+        uint128[] memory _amounts,
+        bytes calldata _signature
+    ) internal view returns (bool) {
+        bytes32 hashedStruct = keccak256(
+            abi.encode(
+                CLAIM_TYPEHASH,
+                _user,
+                _tokenIds,
+                _expiry,
+                keccak256(abi.encodePacked(_weekIds)),
+                keccak256(abi.encodePacked(_amounts))
+            )
+        );
+        bytes32 digest = _hashTypedDataV4(hashedStruct);
+        return ECDSAUpgradeable.recover(digest, _signature) == rewardSigner;
     }
 }

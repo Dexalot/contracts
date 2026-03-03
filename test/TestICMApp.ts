@@ -5,7 +5,7 @@ import Utils from './utils';
 
 import * as f from "./MakeTestSuite";
 
-import { ICMApp, PortfolioBridgeMain, PortfolioBridgeSub, PortfolioMain } from "../typechain-types";
+import { ICMApp, MainnetRFQ, PortfolioBridgeMain, PortfolioBridgeSub, PortfolioMain } from "../typechain-types";
 import { ethers, network, upgrades } from "hardhat";
 import { SignerWithAddress } from '@nomiclabs/hardhat-ethers/signers';
 import { expect } from "chai";
@@ -17,6 +17,7 @@ describe("ICMApp", () => {
   let portfolioBridgeMain: PortfolioBridgeMain;
   let portfolioBridgeSub: PortfolioBridgeSub;
   let portfolioMain: PortfolioMain;
+  let rfq: MainnetRFQ;
   let icmAppMain: ICMApp;
   let icmAppSub: ICMApp;
 
@@ -45,6 +46,7 @@ describe("ICMApp", () => {
     portfolioBridgeMain = portfolioContracts.portfolioBridgeMainnet;
     portfolioMain = portfolioContracts.portfolioMainnet;
     portfolioBridgeSub = portfolioContracts.portfolioBridgeSub;
+    rfq = portfolioContracts.mainnetRFQ;
   });
 
   after(async () => {
@@ -288,5 +290,76 @@ describe("ICMApp", () => {
     } catch (e) {
       const f = e
     }
+  })
+
+  it("Should refund icm additional fee", async() => {
+    const nonce = 0;
+    const transaction = 1;
+    const traderAddress = trader1.address;
+    const trader = Utils.addressToBytes32(traderAddress);
+    const symbol = Utils.fromUtf8("AVAX");
+    const quantity = Utils.toWei("10");
+    const timestamp = BigNumber.from(await f.latestTime());
+
+    const { dexalotSubnet} = f.getChains();
+
+    const xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata: Utils.emptyCustomData()
+    };
+    const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
+
+    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+    await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
+    await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
+    await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, Utils.addressToBytes32(icmAppMain.address), true);
+    await icmAppMain.setGasLimit(1, 1000000);
+
+    const bridgeFee = await icmAppMain['getBridgeFee(uint32)'](dexalotSubnet.chainListOrgId);
+
+    try {
+      // fails due to icm precompile
+      await portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, 2, xfer, traderAddress, { value: bridgeFee.add(Utils.toWei("0.01")) })
+    } catch (e) {
+      const f = e
+    }
+  })
+
+  it("Should fail to refund icm additional fee where sender address is invalid", async() => {
+    const nonce = 0;
+    const transaction = 1;
+    const traderAddress = rfq.address;
+    const trader = Utils.addressToBytes32(traderAddress);
+    const symbol = Utils.fromUtf8("AVAX");
+    const quantity = Utils.toWei("10");
+    const timestamp = BigNumber.from(await f.latestTime());
+
+    const { dexalotSubnet} = f.getChains();
+
+    const xfer = {
+      nonce,
+      transaction,
+      trader,
+      symbol,
+      quantity,
+      timestamp,
+      customdata: Utils.emptyCustomData()
+    };
+    const defaultDestinationChainId = await portfolioBridgeMain.getDefaultDestinationChain();
+
+    await portfolioBridgeMain.grantRole(await portfolioBridgeMain.BRIDGE_USER_ROLE(), owner.address);
+    await portfolioBridgeMain.enableBridgeProvider(2, icmAppMain.address);
+    await icmAppMain.setPortfolioBridge(portfolioBridgeMain.address);
+    await portfolioBridgeMain.setTrustedRemoteAddress(2, dexalotSubnet.chainListOrgId, subnetBlockchainID, Utils.addressToBytes32(icmAppMain.address), true);
+    await icmAppMain.setGasLimit(1, 1000000);
+
+    const bridgeFee = await icmAppMain['getBridgeFee(uint32)'](dexalotSubnet.chainListOrgId);
+
+    await expect(portfolioBridgeMain.sendXChainMessage(defaultDestinationChainId, 2, xfer, traderAddress, { value: bridgeFee.add(Utils.toWei("0.01")) })).to.be.revertedWith("PB-UFPR-02");
   })
 });

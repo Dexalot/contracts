@@ -104,22 +104,12 @@ library UtilsLibrary {
 
     /**
      * @notice  Round down a unit256 value.  Used for the fees to avoid dust.
-     * @dev     example: a = 1245, m: 2 ==> 1200. But always take a min fee
-     * a = 1, m : 2 ==> 100 instead of flooring to 0
      * @param   _a  number to round down
      * @param   _m  number of digits from the right to round down
-     * @return  uint256  .
+     * @return  uint256  rounded down value
      */
     function floor(uint256 _a, uint256 _m) internal pure returns (uint256) {
         return (_a / 10 ** _m) * 10 ** _m;
-        // if (_a == 0) {
-        //     return 0;
-        // }
-        // uint256 n = (_a / 10 ** _m) * 10 ** _m;
-        // if (n == 0) {
-        //     return 10 ** _m;
-        // }
-        // return n;
     }
 
     /**

@@ -1,0 +1,3 @@
+@teleporter/=lib/teleporter/contracts/teleporter/
+@openzeppelin-upgradeable-v5/=lib/openzeppelin-upgradeable-v5/contracts/
+@openzeppelin-v5/=lib/openzeppelin-v5/contracts/

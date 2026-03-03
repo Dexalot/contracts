@@ -64,7 +64,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
 
     // solhint-disable-next-line func-name-mixedcase
     function VERSION() public pure override returns (bytes32) {
-        return bytes32("4.1.7");
+        return bytes32("4.3.0");
     }
 
     /**
@@ -171,7 +171,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         ) {
             require(inventoryManager.remove(_subnetSymbol, symbolId), "PB-INVZ-01");
             delete (tokenDetailsMapById[symbolId]);
-            delete (tokenInfoMapBySymbolChainId[_srcChainSymbol][_srcChainId]);
+            delete (tokenInfoMapBySymbolChainId[_subnetSymbol][_srcChainId]);
             tokenListById.remove(symbolId);
             deleted = true;
         }
@@ -423,7 +423,7 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         uint32 _srcChainListOrgChainId,
         bytes calldata _payload
     ) external override onlyRole(BRIDGE_PROVIDER_ROLE) {
-        IPortfolio.XFER memory xfer = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
+        (IPortfolio.XFER memory xfer, ) = processPayloadShared(_bridge, _srcChainListOrgChainId, _payload);
         bytes32 subnetSymbol;
         // overwrite the xfer.symbol with the sourceSymbol + chainId
         (subnetSymbol, xfer.symbol) = getSymbolMappings(_srcChainListOrgChainId, xfer.symbol);
@@ -499,21 +499,21 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
     /**
      * @notice  Truncate the quantity to the token's mainnet decimals
      * @param   _dstChainListOrgChainId  destination chain id
-     * @param   _symbol  Dexalot L1(subnet) symbol of the token
+     * @param   _subnetSymbol  Dexalot L1(subnet) symbol of the token
      * @param   _quantity  quantity of the token to withdraw
      * @param   _bridgeFee  bridge fee for the destination
      * @return  truncated quantity
      */
     function truncateQuantity(
         uint32 _dstChainListOrgChainId,
-        bytes32 _symbol,
+        bytes32 _subnetSymbol,
         uint256 _quantity,
         uint256 _bridgeFee
     ) external view override returns (uint256) {
         if (_bridgeFee > _quantity) {
             return 0;
         }
-        bytes32 symbolId = UtilsLibrary.getIdForToken(_symbol, _dstChainListOrgChainId);
+        bytes32 symbolId = tokenInfoMapBySymbolChainId[_subnetSymbol][_dstChainListOrgChainId].symbolId;
         return
             UtilsLibrary.truncateQuantity(
                 _quantity - _bridgeFee,
@@ -579,20 +579,21 @@ contract PortfolioBridgeSub is PortfolioBridgeMain, IPortfolioBridgeSub {
         }
         uint256 bridgeFee = (tokenInfo.bridgeFee * multiplier) / TENK;
 
+        uint256 inventoryFee = _inventoryFee == 0
+            ? inventoryManager.calculateWithdrawalFee(_withdrawal)
+            : _inventoryFee;
+        uint256 optionSurcharge = 0;
         uint256 options = uint256(uint8(_options));
         uint256 bitIndex = 0;
 
         while (options != 0) {
             if (options & 1 != 0) {
-                _inventoryFee += (bridgeFee * optionsGasCost[bitIndex]) / TENK;
+                optionSurcharge += (bridgeFee * optionsGasCost[bitIndex]) / TENK;
             }
             options >>= 1;
             bitIndex++;
         }
-        if (_inventoryFee == 0) {
-            _inventoryFee = inventoryManager.calculateWithdrawalFee(_withdrawal);
-        }
-        bridgeFee += _inventoryFee;
+        bridgeFee += inventoryFee + optionSurcharge;
 
         uint256 maxBridgeFee = tokenInfo.bridgeFee * tokenInfo.maxBridgeFeeCap;
         return bridgeFee >= maxBridgeFee ? maxBridgeFee : bridgeFee;
