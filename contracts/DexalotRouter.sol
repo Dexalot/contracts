@@ -36,13 +36,18 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
     uint256 private constant TAKER_PARTIAL_AMOUNT_OFFSET = 4 + 32 * 8 + 32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.0");
+    bytes32 public constant VERSION = bytes32("1.1.1");
     // addresses of allowed MainnetRFQ contracts
     EnumerableSet.AddressSet private allowedRFQs;
 
     uint256[50] private __gap; // gap for future storage variables
 
     event AllowedRFQUpdated(address indexed rfq, bool allowed);
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     /**
      * @notice Constructor to set up roles
@@ -127,7 +132,7 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
     }
 
     /**
-     * @notice Retrieve any ERC20 tokens mistakenly sent to this contract
+     * @notice Retrieve any ERC20 tokens or native mistakenly sent to this contract
      * @param _token The address of the token to retrieve
      * @param _amount The amount of tokens to retrieve
      */
@@ -265,6 +270,6 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
      * @notice Receive function to reject direct native transfers without calldata
      */
     receive() external payable {
-        revert("DR-NNT-01");
+        require(allowedRFQs.contains(msg.sender), "DR-IRMA-01"); // invalid RFQ Maker address
     }
 }
