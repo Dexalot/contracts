@@ -32,7 +32,7 @@ contract OmniVaultManager is
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    bytes32 public constant VERSION = bytes32("1.2.0");
+    bytes32 public constant VERSION = bytes32("1.2.1");
     uint256 public constant RECLAIM_DELAY = 24 hours;
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
     uint256 public constant MAX_PENDING_REQUESTS = 500;
@@ -120,8 +120,8 @@ contract OmniVaultManager is
      * @notice Finalize the current batch, recording the state for settlement
      * @dev This function is called by the off-chain batch settlement process to finalize the batch before settlement.
      * It records the prices and vault states at finalization time, which are used to mint vault shares
-     * and dispatch tokens for withdrawals. Finalization can only occur if the previous batch is settled,
-     * ensuring a first-in-first-out process for settlement.
+     * and dispatch tokens for withdrawals. Finalization can only occur if its the first batch or if previous batch
+     * is settled or unwound ensuring a first-in-first-out process for settlement.
      * The batch state is hashed and stored to ensure integrity of the settlement process, preventing manipulation after finalization.
      * @param _prices The array of token prices for the batch, indexed by token ID (0 if token not used in batch)
      * @param _vaults The array of vault states for the batch, present only for vaults with pending requests
@@ -130,7 +130,11 @@ contract OmniVaultManager is
         uint256 batchId = currentBatchId;
         BatchState storage batch = completedBatches[batchId];
         require(batch.status == BatchStatus.NONE, "VM-BSNN-01");
-        require(batchId == 0 || completedBatches[batchId - 1].status == BatchStatus.SETTLED, "VM-PBNS-01");
+        BatchStatus prevBatchStatus = completedBatches[batchId - 1].status;
+        require(
+            batchId == 0 || prevBatchStatus == BatchStatus.SETTLED || prevBatchStatus == BatchStatus.UNWOUND,
+            "VM-PBNS-01"
+        );
 
         // index in price array corresponds to tokenId, set to 0 if not used in batch
         require(_prices.length == tokenIndex, "VM-IVAL-01");
@@ -250,6 +254,7 @@ contract OmniVaultManager is
         require(depositHash == rollingDepositHash, "VM-DHMR-01");
 
         bytes32 withdrawalHash = 0;
+        uint256 curBatch = currentBatchId;
 
         for (uint256 i = 0; i < _withdrawals.length; i++) {
             WithdrawalFufillment calldata item = _withdrawals[i];
@@ -266,7 +271,7 @@ contract OmniVaultManager is
             IERC20(vaultDetails[vaultId].shareToken).safeTransfer(user, shares);
             emit TransferRequestUpdate(
                 item.withdrawalRequestId,
-                currentBatchId,
+                curBatch,
                 user,
                 RequestStatus.WITHDRAWAL_FAILED,
                 new uint16[](0),
@@ -276,7 +281,12 @@ contract OmniVaultManager is
 
         require(withdrawalHash == rollingWithdrawalHash, "VM-WHMR-01");
 
-        emit BatchUpdate(currentBatchId, BatchStatus.UNWOUND);
+        BatchState storage batch = completedBatches[curBatch];
+
+        batch.status = BatchStatus.UNWOUND;
+        batch.finalizedAt = uint32(block.timestamp);
+
+        emit BatchUpdate(curBatch, BatchStatus.UNWOUND);
         _resetBatch();
     }
 
@@ -345,7 +355,8 @@ contract OmniVaultManager is
     }
 
     /**
-     * @notice Deprecate a vault, preventing new deposits and withdrawals. Existing shares remain redeemable.
+     * @notice Deprecate a vault, preventing new deposits. Existing shares remain redeemable
+     * (withdrawals allowed)
      * @param _vaultId The ID of the vault to deprecate
      */
     function deprecateVault(uint256 _vaultId) external onlyRole(DEFAULT_ADMIN_ROLE) {

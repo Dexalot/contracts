@@ -16,7 +16,7 @@ interface IOmniVaultManager {
 
     struct BatchState {
         uint32 finalizedAt; // Timestamp of finalization
-        BatchStatus status; // 0: None, 1: Finalized, 2: Settled
+        BatchStatus status; // 0: None, 1: Finalized, 2: Settled, 3: Unwound
         bytes32 depositHash; // Finalized deposit batch hash
         bytes32 withdrawalHash; // Finalized withdrawal batch hash
         bytes32 stateHash; // Hash of the state after applying the batch (used for settlement verification)
