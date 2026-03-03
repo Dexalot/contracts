@@ -20,9 +20,11 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
     // Default payload size for IPortfolio.XFER messages
     bytes private constant DEFAULT_PAYLOAD =
         "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098c";
+    bytes private constant DEFAULT_CCTRADE_PAYLOAD =
+        "0x90f79bf6eb2c4f870365e785982e1f101e93b906000000000000000100000000414c4f543433313133000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000029a2241af62c00000000000000000000000000000000000000000000000000000000000065c5098ca331ab200e4a8c5a5f6bd74e0a9a43411344ac03";
 
     // version
-    bytes32 public constant VERSION = bytes32("1.1.0");
+    bytes32 public constant VERSION = bytes32("1.2.0");
 
     event LzMessageSent(uint32 dstEid, uint64 nonce, bytes32 guid);
     event LzMessageReceived(uint32 srcEid, uint64 nonce, bytes32 guid);
@@ -59,7 +61,10 @@ contract LzV2App is Ownable, OApp, OAppOptionsType3, DefaultBridgeApp {
     function getBridgeFee(uint32 _chainID, CrossChainMessageType _msgType) public view override returns (uint256) {
         RemoteChain memory destination = _verifyDestination(_chainID);
         uint32 dstEid = uint32(uint256(destination.blockchainID));
-        return _quote(dstEid, DEFAULT_PAYLOAD, enforcedOptions[dstEid][uint16(_msgType)], false).nativeFee;
+        bytes memory payload = _msgType == IBridgeProvider.CrossChainMessageType.CCTRADE
+            ? DEFAULT_CCTRADE_PAYLOAD
+            : DEFAULT_PAYLOAD;
+        return _quote(dstEid, payload, enforcedOptions[dstEid][uint16(_msgType)], false).nativeFee;
     }
 
     /**
