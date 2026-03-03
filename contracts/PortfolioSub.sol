@@ -76,7 +76,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.7.4");
+    bytes32 public constant VERSION = bytes32("2.7.5");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -881,8 +881,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     ) external whenNotPaused nonReentrant {
         require(_from == msg.sender || hasRole(TRUSTED_TRANSFER_ROLE, msg.sender), "P-OOWN-03");
         require(_to != msg.sender, "P-DOTS-01");
-        require(_symbols.length == _quantities.length, "P-ARLM-01");
-        for (uint256 i = 0; i < _symbols.length; ) {
+        uint256 symLen = _symbols.length;
+        require(symLen == _quantities.length && symLen > 0, "P-ARLM-01");
+        for (uint256 i = 0; i < symLen; ) {
             bytes32 symbol = _symbols[i];
             uint256 quantity = _quantities[i];
             require(tokenList.contains(symbol), "P-ETNS-01");
