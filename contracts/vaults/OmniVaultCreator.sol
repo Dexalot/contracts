@@ -20,7 +20,7 @@ import "../interfaces/IOmniVaultCreator.sol";
 contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgradeable, ReentrancyGuardTransient {
     using SafeERC20 for IERC20;
 
-    bytes32 public constant VERSION = bytes32("1.1.1");
+    bytes32 public constant VERSION = bytes32("1.1.2");
     string public constant RISK_DISCLOSURE =
         "I acknowledge that I have read and understood the risks associated with creating and funding this vault.";
 
@@ -267,10 +267,14 @@ contract OmniVaultCreator is IOmniVaultCreator, Initializable, AccessControlUpgr
         }
 
         for (uint256 i = 0; i < len; i++) {
-            address _token = _tokens[i];
-            uint256 _amount = uint256(_amounts[i]);
-
-            IERC20(_token).safeTransferFrom(msg.sender, address(this), _amount);
+            IERC20 token = IERC20(_tokens[i]);
+            uint256 amount = uint256(_amounts[i]);
+            address ovCreator = address(this);
+            uint256 balBefore = token.balanceOf(ovCreator);
+            token.safeTransferFrom(msg.sender, ovCreator, amount);
+            uint256 balAfter = token.balanceOf(ovCreator);
+            // To ensure no transfer fees are applied
+            require(balAfter == balBefore + _amounts[i], "VC-BTNM-01");
         }
 
         requestId = keccak256(abi.encodePacked(msg.sender, creationNonces[msg.sender]++));

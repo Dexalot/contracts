@@ -7,6 +7,7 @@ import "@openzeppelin-v5/token/ERC20/utils/SafeERC20.sol";
 
 import "../interfaces/IOmniVaultExecutor.sol";
 import "../interfaces/IPortfolioSub.sol";
+import "../interfaces/IDexalotRFQ.sol";
 
 /**
  * @title OmniVaultExecutor
@@ -28,6 +29,11 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
     mapping(bytes4 => address) public whitelistedFunctions;
     // Trusted contracts to interact with + corresponding token access level
     mapping(address => ContractAccess) public trustedContracts;
+
+    // Weekly gas topup amount for the trading bot
+    uint256 public gasTopupAmount;
+    // Timestamp of the previous gas topup
+    uint256 public prevGasTopupTs;
 
     // Storage gap for upgradability
     bytes32[50] private __gap;
@@ -64,6 +70,21 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
 
         // Forward the revert reason if the call failed
         _returnData(success);
+    }
+
+    /**
+     * @notice Tops up gas for the trading bot on a weekly basis
+     * @dev Only callable by addresses with the OMNITRADER_ROLE
+     * @param _swap The encoded swap data containing the RFQ order and signature for
+     * swapping to native currency on mainnet, if empty will top up with native currency
+     * directly from Executor balance
+     */
+    function topupGas(bytes calldata _swap) external onlyRole(OMNITRADER_ROLE) {
+        require(prevGasTopupTs + 7 days < block.timestamp, "VE-TETG-01");
+        prevGasTopupTs = block.timestamp;
+        uint256 topupAmount = gasTopupAmount;
+        _topupGas(topupAmount, _swap);
+        emit GasTopup(block.timestamp, topupAmount);
     }
 
     /**
@@ -149,8 +170,18 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         emit AddressUpdate("Portfolio", oldPortfolio, _portfolio);
     }
 
+    /**
+     * @notice Sets the weekly gas topup amount for the trading bot
+     * @param _amount The amount of gas to top up weekly
+     */
+    function setGasTopupAmount(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        uint256 oldAmount = gasTopupAmount;
+        gasTopupAmount = _amount;
+        emit SetGasTopupValue(oldAmount, _amount);
+    }
+
     function VERSION() external pure virtual returns (bytes32) {
-        return bytes32("1.2.0");
+        return bytes32("1.2.1");
     }
 
     /**
@@ -166,6 +197,35 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         require(existing == address(0) || existing == _contract, "VE-SEAO-01");
         whitelistedFunctions[_funcSignature] = _contract;
         emit WhitelistedFunctionUpdate(_funcSignature, _contract);
+    }
+
+    /**
+     * @notice Internal function to top up gas for the trading bot by performing a swap on DexalotRFQ
+     * @param _amount The amount of native currency to swap on mainnet
+     * @param _swap The encoded swap data containing the RFQ order and signature
+     */
+    function _topupGas(uint256 _amount, bytes calldata _swap) internal virtual {
+        if (_swap.length == 0) {
+            // If no swap data provided, simply top up with native currency
+            _withdrawNativeToBot(_amount);
+            return;
+        }
+        (IDexalotRFQ.Order memory order, bytes memory signature) = abi.decode(_swap, (IDexalotRFQ.Order, bytes));
+        address destTrader = address(uint160(order.nonceAndMeta >> 96));
+        require(trustedContracts[order.maker] == ContractAccess.NATIVE_AND_ERC20, "VE-IVCA-01");
+        require(order.taker == address(this) && destTrader == msg.sender, "VE-TSOT-01");
+        require(order.makerAsset == address(0) && order.makerAmount == _amount, "VE-GTSN-01");
+        IERC20(order.takerAsset).forceApprove(order.maker, order.takerAmount);
+        IDexalotRFQ(payable(order.maker)).simpleSwap(order, signature);
+    }
+
+    /**
+     * @notice Internal function to withdraw native currency from Executor and send it to the trading bot
+     * @param _amount The amount of native currency to withdraw and send
+     */
+    function _withdrawNativeToBot(uint256 _amount) internal {
+        (bool success, ) = msg.sender.call{value: _amount}("");
+        require(success, "VE-FNGT-01");
     }
 
     /**

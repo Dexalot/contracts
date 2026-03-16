@@ -267,7 +267,9 @@ contract DexalotRouter is AccessControlEnumerableUpgradeable, UUPSUpgradeable, R
     }
 
     /**
-     * @notice Receive function to reject direct native transfers without calldata
+     * @notice Rejects direct native transfers without calldata from non-whitelisted senders.
+     * Whitelisted RFQ contracts may send native as part of multi-hop execution (e.g., when
+     * this router is the destTrader in a hop that releases native).
      */
     receive() external payable {
         require(allowedRFQs.contains(msg.sender), "DR-IRMA-01"); // invalid RFQ Maker address

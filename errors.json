@@ -314,6 +314,8 @@
     "VE-FMNS-01": "OmniVaultExecutor: fee manager not set",
     "VE-TETG-01": "OmniVaultExecutor: too early to topup gas",
     "VE-FNGT-01": "OmniVaultExecutor: failed native gas topup",
+    "VE-TSOT-01": "OmniVaultExecutor: taker swap must be omnitrader",
+    "VE-GTSN-01": "OmniVaultExecutor: gas topup must swap to native of set amount",
 
     "VM-SAZ-01": "OmniVaultManager: set address to zero",
     "VM-VSAC-01": "OmniVaultManager: vault status must be active",
@@ -344,6 +346,7 @@
     "VM-PBNS-01": "OmniVaultManager: previous batch not settled",
     "VM-IVSH-01": "OmniVaultManager: invalid state hash of prices and vault state",
     "VM-VSNP-01": "OmniVaultManager: vault status not paused",
+    "VM-PBFS-01": "OmniVaultManager: pending batch in finalized status",
 
     "VS-SAZ-01": "OmniVaultShare: set address to zero",
     "VS-OOV-01": "OmniVaultShare: only OmniVault can mint or burn shares",

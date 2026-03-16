@@ -32,7 +32,7 @@ contract OmniVaultManager is
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    bytes32 public constant VERSION = bytes32("1.2.1");
+    bytes32 public constant VERSION = bytes32("1.2.2");
     uint256 public constant RECLAIM_DELAY = 24 hours;
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
     uint256 public constant MAX_PENDING_REQUESTS = 500;
@@ -74,6 +74,7 @@ contract OmniVaultManager is
     /**
      * @notice Initializer for the OmniVaultManager contract
      * @param _admin The admin address with DEFAULT_ADMIN_ROLE
+     * @param _settler The address with SETTLER_ROLE responsible for batch settlement
      */
     function initialize(address _admin, address _settler) public initializer {
         require(_admin != address(0), "VM-SAZ-01");
@@ -84,6 +85,10 @@ contract OmniVaultManager is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(SETTLER_ROLE, _settler);
         batchStartTime = block.timestamp;
+        // Initialize batch 0 as settled to allow first batch finalization without special case logic
+        currentBatchId = 1;
+        completedBatches[0].status = BatchStatus.SETTLED;
+        completedBatches[0].finalizedAt = uint32(block.timestamp);
     }
 
     /**
@@ -131,10 +136,7 @@ contract OmniVaultManager is
         BatchState storage batch = completedBatches[batchId];
         require(batch.status == BatchStatus.NONE, "VM-BSNN-01");
         BatchStatus prevBatchStatus = completedBatches[batchId - 1].status;
-        require(
-            batchId == 0 || prevBatchStatus == BatchStatus.SETTLED || prevBatchStatus == BatchStatus.UNWOUND,
-            "VM-PBNS-01"
-        );
+        require(prevBatchStatus == BatchStatus.SETTLED || prevBatchStatus == BatchStatus.UNWOUND, "VM-PBNS-01");
 
         // index in price array corresponds to tokenId, set to 0 if not used in batch
         require(_prices.length == tokenIndex, "VM-IVAL-01");
@@ -154,6 +156,7 @@ contract OmniVaultManager is
 
     /**
      * @notice Request a deposit for one to multiple tokens
+     * @param _vaultId The ID of the vault to deposit into
      * @param _tokens The token IDs to deposit
      * @param _amounts The amounts to deposit
      * @return requestId The generated deposit request ID
@@ -243,18 +246,18 @@ contract OmniVaultManager is
         require(block.timestamp >= batchStartTime + RECLAIM_DELAY, "VM-RCNP-01");
 
         bytes32 depositHash = 0;
+        uint256 curBatch = currentBatchId;
 
         for (uint256 i = 0; i < _deposits.length; i++) {
             DepositFufillment calldata item = _deposits[i];
             depositHash = keccak256(abi.encode(depositHash, item.depositRequestId, item.tokenIds, item.amounts));
             require(transferRequests[item.depositRequestId].status == RequestStatus.DEPOSIT_REQUESTED, "VM-ADRP-01");
             delete transferRequests[item.depositRequestId]; // Clear state
-            _refundDeposit(item.depositRequestId, item.tokenIds, item.amounts);
+            _refundDeposit(item.depositRequestId, item.tokenIds, item.amounts, curBatch);
         }
         require(depositHash == rollingDepositHash, "VM-DHMR-01");
 
         bytes32 withdrawalHash = 0;
-        uint256 curBatch = currentBatchId;
 
         for (uint256 i = 0; i < _withdrawals.length; i++) {
             WithdrawalFufillment calldata item = _withdrawals[i];
@@ -380,12 +383,11 @@ contract OmniVaultManager is
 
         // Only allow core contract changes if no pending requests
         if (
-            _newDetails.shareToken != vault.shareToken ||
             _newDetails.executor != vault.executor ||
             keccak256(abi.encode(vault.tokens)) != keccak256(abi.encode(_newDetails.tokens))
         ) {
+            require(completedBatches[currentBatchId - 1].status != BatchStatus.FINALIZED, "VM-PBFS-01");
             require(_getPendingVaultRequests(_vaultId) == 0, "VM-PRNZ-01");
-            vault.shareToken = _newDetails.shareToken;
             vault.executor = _newDetails.executor;
             vault.tokens = _newDetails.tokens;
         }
@@ -513,7 +515,7 @@ contract OmniVaultManager is
             depositHash = keccak256(abi.encode(depositHash, requestId, deposit.tokenIds, deposit.amounts));
 
             if (!deposit.process) {
-                _refundDeposit(requestId, deposit.tokenIds, deposit.amounts);
+                _refundDeposit(requestId, deposit.tokenIds, deposit.amounts, _batchId);
                 continue;
             }
 
@@ -548,19 +550,28 @@ contract OmniVaultManager is
      * @param requestId The ID of the deposit request
      * @param tokenIds The token IDs to refund
      * @param amounts The amounts to refund
+     * @param batchId The ID of the batch for event emission
      */
-    function _refundDeposit(bytes32 requestId, uint16[] calldata tokenIds, uint256[] calldata amounts) internal {
+    function _refundDeposit(
+        bytes32 requestId,
+        uint16[] calldata tokenIds,
+        uint256[] calldata amounts,
+        uint256 batchId
+    ) internal {
         uint256 len = tokenIds.length;
         (uint16 vaultId, address user, ) = _decodeRequestId(requestId);
         require(len == amounts.length, "VM-IVAL-01");
-        address executor = vaultDetails[vaultId].executor;
+        address executor = _tloadVaultExecutor(vaultId);
+        if (executor == address(0)) {
+            executor = vaultDetails[vaultId].executor;
+        }
 
         bytes32[] memory symbols = new bytes32[](len);
         for (uint256 i = 0; i < len; i++) {
             symbols[i] = assetInfo[tokenIds[i]].symbol;
         }
         IOmniVaultExecutorSub(executor).dispatchAssets(user, symbols, amounts);
-        emit TransferRequestUpdate(requestId, currentBatchId, user, RequestStatus.DEPOSIT_FAILED, tokenIds, amounts);
+        emit TransferRequestUpdate(requestId, batchId, user, RequestStatus.DEPOSIT_FAILED, tokenIds, amounts);
     }
 
     /**

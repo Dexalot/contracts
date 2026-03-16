@@ -13,14 +13,12 @@ import "../interfaces/IOmniVaultExecutorSub.sol";
  *         to facilitate asset transfers and fee management.
  */
 contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
+    // Role for ADMIN BACKEND tasks such as collecting swap fees
+    bytes32 public constant ADMIN_BE_ROLE = keccak256("ADMIN_BE_ROLE");
+
     address public omniVaultManager;
     // Treasury address (future replaced by feeManager contract)
     address public feeManager;
-
-    // Weekly gas topup amount for the trading bot
-    uint256 public gasTopupAmount;
-    // Timestamp of the previous gas topup
-    uint256 public prevGasTopupTs;
 
     // Storage gap for upgradability
     bytes32[50] private __gap;
@@ -39,7 +37,7 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
 
     /**
      * @notice Collects swap fees from mainnet swaps and transfers them to the fee manager
-     * @dev Only callable by addresses with the OMNITRADER_ROLE
+     * @dev Only callable by addresses with the ADMIN_BE_ROLE
      * @param feeSymbol The symbol of the fee token
      * @param swapIds An array of swap IDs for which fees are being collected
      * @param fees An array of fee amounts corresponding to each swap ID
@@ -48,7 +46,7 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
         bytes32 feeSymbol,
         uint256[] calldata swapIds,
         uint256[] calldata fees
-    ) external onlyRole(OMNITRADER_ROLE) {
+    ) external onlyRole(ADMIN_BE_ROLE) {
         uint256 len = fees.length;
         require(len == swapIds.length, "VE-IVAL-01");
         require(feeManager != address(0), "VE-FMNS-01");
@@ -58,19 +56,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
         }
         IPortfolioSub(portfolio).transferToken(feeManager, feeSymbol, totalFee);
         emit SwapFeesCollected(feeSymbol, swapIds, fees);
-    }
-
-    /**
-     * @notice Tops up gas for the trading bot on a weekly basis
-     * @dev Only callable by addresses with the OMNITRADER_ROLE
-     */
-    function topupGas() external onlyRole(OMNITRADER_ROLE) {
-        require(prevGasTopupTs + 7 days < block.timestamp, "VE-TETG-01");
-        prevGasTopupTs = block.timestamp;
-        uint256 topupAmount = gasTopupAmount;
-        (bool success, ) = msg.sender.call{value: topupAmount}("");
-        require(success, "VE-FNGT-01");
-        emit GasTopup(block.timestamp, topupAmount);
     }
 
     /**
@@ -85,16 +70,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     }
 
     /**
-     * @notice Sets the weekly gas topup amount for the trading bot
-     * @param _amount The amount of gas to top up weekly
-     */
-    function setGasTopupAmount(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 oldAmount = gasTopupAmount;
-        gasTopupAmount = _amount;
-        emit SetGasTopupValue(oldAmount, _amount);
-    }
-
-    /**
      * @notice Sets the fee manager address
      */
     function setFeeManager() external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -104,6 +79,16 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     }
 
     function VERSION() external pure virtual override returns (bytes32) {
-        return bytes32("1.2.0");
+        return bytes32("1.2.1");
+    }
+
+    /**
+     * @notice Top-ups the trading bot's gas by withdrawing ALOT from PortfolioSub
+     * and sending it to the bot EOA address. Can only be called once per week.
+     * @dev Only callable by addresses with the OMNITRADER_ROLE
+     */
+    function _topupGas(uint256 _amount, bytes calldata) internal override {
+        IPortfolioSub(portfolio).withdrawNative(payable(address(this)), _amount);
+        _withdrawNativeToBot(_amount);
     }
 }
