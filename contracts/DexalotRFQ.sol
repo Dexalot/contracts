@@ -51,7 +51,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     using ECDSA for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.1.0");
+    bytes32 public constant VERSION = bytes32("2.1.1");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -59,6 +59,8 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     bytes32 public constant PORTFOLIO_BRIDGE_ROLE = keccak256("PORTFOLIO_BRIDGE_ROLE");
     // volatility admin role
     bytes32 public constant VOLATILITY_ADMIN_ROLE = keccak256("VOLATILITY_ADMIN_ROLE");
+    // trusted forwarder role
+    bytes32 public constant TRUSTED_FORWARDER_ROLE = keccak256("TRUSTED_FORWARDER_ROLE");
     // typehash for same chain swaps
     bytes32 private constant ORDER_TYPEHASH =
         keccak256(
@@ -142,6 +144,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
 
         _grantRole(DEFAULT_ADMIN_ROLE, _owner);
         _grantRole(REBALANCER_ADMIN_ROLE, _swapSigner);
+        _grantRole(TRUSTED_FORWARDER_ROLE, _trustedForwarder);
         swapSigner = _swapSigner;
         wrappedNative = _wrappedNative;
         keepWrapped = _keepWrapped;
@@ -444,7 +447,7 @@ contract DexalotRFQ is IDexalotRFQ, AccessControlEnumerable, EIP712, IERC1271, R
     }
 
     function _msgSender() internal view virtual override returns (address) {
-        if (msg.data.length >= ADDRESS_LENGTH && msg.sender == trustedForwarder) {
+        if (msg.data.length >= ADDRESS_LENGTH && hasRole(TRUSTED_FORWARDER_ROLE, msg.sender)) {
             return address(bytes20(msg.data[msg.data.length - ADDRESS_LENGTH:]));
         } else {
             return msg.sender;

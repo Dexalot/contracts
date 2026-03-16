@@ -53,6 +53,7 @@ contract OmniVaultShare is Initializable, OFTUpgradeable, IOmniVaultShare {
     /**
      * @notice Mints new vault shares to a specified address.
      * @dev Can only be called by the OmniVaultManager contract upon deposits.
+     * @param _vaultId The ID of the vault. Must match the vaultId of this contract.
      * @param _to The address to mint vault shares to.
      * @param _amount The amount of vault shares to mint.
      */

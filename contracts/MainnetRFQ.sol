@@ -62,7 +62,7 @@ contract MainnetRFQ is
     using ECDSAUpgradeable for bytes32;
 
     // version
-    bytes32 public constant VERSION = bytes32("1.2.4");
+    bytes32 public constant VERSION = bytes32("1.2.8");
 
     // rebalancer admin role
     bytes32 public constant REBALANCER_ADMIN_ROLE = keccak256("REBALANCER_ADMIN_ROLE");
@@ -967,16 +967,16 @@ contract MainnetRFQ is
         }
 
         uint256 activeQuoteTs = block.timestamp - expiryMinusTtl;
-
-        if (activeQuoteTs > 15) {
-            uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
-            if (slipBps == 0) {
-                slipBps = slippagePoints[slipBpsKey];
-            }
-            return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
+        uint256 slipBps = slippagePoints[(activeQuoteTs << SLIP_BPS_SHIFT) | slipBpsKey];
+        // if set to 0.01 bps treat as no slippage
+        if (slipBps == 1) {
+            return amount;
         }
-
-        return amount;
+        // if point not set, use default for curve
+        if (slipBps == 0) {
+            slipBps = slippagePoints[slipBpsKey];
+        }
+        return (amount * (SLIP_PRECISION - slipBps)) / SLIP_PRECISION;
     }
 
     // solhint-disable-next-line payable-fallback

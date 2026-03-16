@@ -14,4 +14,6 @@ interface IOmniVaultExecutor {
     event WhitelistedFunctionUpdate(bytes4 funcSignature, address targetContract);
     event TrustedContractUpdate(address contractAddress, ContractAccess access);
     event AddressUpdate(string name, address oldAddress, address newAddress);
+    event SetGasTopupValue(uint256 oldValue, uint256 newValue);
+    event GasTopup(uint256 timestamp, uint256 amount);
 }

@@ -56,5 +56,7 @@ interface IDexalotRFQ {
 
     function processXFerPayload(IPortfolio.XFER calldata _xfer) external;
 
+    function simpleSwap(Order calldata order, bytes calldata signature) external;
+
     receive() external payable;
 }

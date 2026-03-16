@@ -17,11 +17,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     // Treasury address (future replaced by feeManager contract)
     address public feeManager;
 
-    // Weekly gas topup amount for the trading bot
-    uint256 public gasTopupAmount;
-    // Timestamp of the previous gas topup
-    uint256 public prevGasTopupTs;
-
     // Storage gap for upgradability
     bytes32[50] private __gap;
 
@@ -61,19 +56,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     }
 
     /**
-     * @notice Tops up gas for the trading bot on a weekly basis
-     * @dev Only callable by addresses with the OMNITRADER_ROLE
-     */
-    function topupGas() external onlyRole(OMNITRADER_ROLE) {
-        require(prevGasTopupTs + 7 days < block.timestamp, "VE-TETG-01");
-        prevGasTopupTs = block.timestamp;
-        uint256 topupAmount = gasTopupAmount;
-        (bool success, ) = msg.sender.call{value: topupAmount}("");
-        require(success, "VE-FNGT-01");
-        emit GasTopup(block.timestamp, topupAmount);
-    }
-
-    /**
      * @notice Sets the OmniVaultManager contract address
      * @param _omniVaultManager The address of the OmniVaultManager contract
      */
@@ -82,16 +64,6 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
         address oldManager = omniVaultManager;
         omniVaultManager = _omniVaultManager;
         emit AddressUpdate("OmniVaultManager", oldManager, _omniVaultManager);
-    }
-
-    /**
-     * @notice Sets the weekly gas topup amount for the trading bot
-     * @param _amount The amount of gas to top up weekly
-     */
-    function setGasTopupAmount(uint256 _amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 oldAmount = gasTopupAmount;
-        gasTopupAmount = _amount;
-        emit SetGasTopupValue(oldAmount, _amount);
     }
 
     /**
@@ -104,6 +76,16 @@ contract OmniVaultExecutorSub is OmniVaultExecutor, IOmniVaultExecutorSub {
     }
 
     function VERSION() external pure virtual override returns (bytes32) {
-        return bytes32("1.2.0");
+        return bytes32("1.2.1");
+    }
+
+    /**
+     * @notice Top-ups the trading bot's gas by withdrawing ALOT from PortfolioSub
+     * and sending it to the bot EOA address. Can only be called once per week.
+     * @dev Only callable by addresses with the OMNITRADER_ROLE
+     */
+    function _topupGas(uint256 _amount, bytes calldata) internal override {
+        IPortfolioSub(portfolio).withdrawNative(payable(address(this)), _amount);
+        _withdrawNativeToBot(_amount);
     }
 }
