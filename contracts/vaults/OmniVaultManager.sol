@@ -85,7 +85,10 @@ contract OmniVaultManager is
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
         _grantRole(SETTLER_ROLE, _settler);
         batchStartTime = block.timestamp;
+        // Initialize batch 0 as settled to allow first batch finalization without special case logic
         currentBatchId = 1;
+        completedBatches[0].status = BatchStatus.SETTLED;
+        completedBatches[0].finalizedAt = uint32(block.timestamp);
     }
 
     /**
@@ -243,18 +246,18 @@ contract OmniVaultManager is
         require(block.timestamp >= batchStartTime + RECLAIM_DELAY, "VM-RCNP-01");
 
         bytes32 depositHash = 0;
+        uint256 curBatch = currentBatchId;
 
         for (uint256 i = 0; i < _deposits.length; i++) {
             DepositFufillment calldata item = _deposits[i];
             depositHash = keccak256(abi.encode(depositHash, item.depositRequestId, item.tokenIds, item.amounts));
             require(transferRequests[item.depositRequestId].status == RequestStatus.DEPOSIT_REQUESTED, "VM-ADRP-01");
             delete transferRequests[item.depositRequestId]; // Clear state
-            _refundDeposit(item.depositRequestId, item.tokenIds, item.amounts);
+            _refundDeposit(item.depositRequestId, item.tokenIds, item.amounts, curBatch);
         }
         require(depositHash == rollingDepositHash, "VM-DHMR-01");
 
         bytes32 withdrawalHash = 0;
-        uint256 curBatch = currentBatchId;
 
         for (uint256 i = 0; i < _withdrawals.length; i++) {
             WithdrawalFufillment calldata item = _withdrawals[i];
@@ -512,7 +515,7 @@ contract OmniVaultManager is
             depositHash = keccak256(abi.encode(depositHash, requestId, deposit.tokenIds, deposit.amounts));
 
             if (!deposit.process) {
-                _refundDeposit(requestId, deposit.tokenIds, deposit.amounts);
+                _refundDeposit(requestId, deposit.tokenIds, deposit.amounts, _batchId);
                 continue;
             }
 
@@ -547,8 +550,14 @@ contract OmniVaultManager is
      * @param requestId The ID of the deposit request
      * @param tokenIds The token IDs to refund
      * @param amounts The amounts to refund
+     * @param batchId The ID of the batch for event emission
      */
-    function _refundDeposit(bytes32 requestId, uint16[] calldata tokenIds, uint256[] calldata amounts) internal {
+    function _refundDeposit(
+        bytes32 requestId,
+        uint16[] calldata tokenIds,
+        uint256[] calldata amounts,
+        uint256 batchId
+    ) internal {
         uint256 len = tokenIds.length;
         (uint16 vaultId, address user, ) = _decodeRequestId(requestId);
         require(len == amounts.length, "VM-IVAL-01");
@@ -562,7 +571,7 @@ contract OmniVaultManager is
             symbols[i] = assetInfo[tokenIds[i]].symbol;
         }
         IOmniVaultExecutorSub(executor).dispatchAssets(user, symbols, amounts);
-        emit TransferRequestUpdate(requestId, currentBatchId, user, RequestStatus.DEPOSIT_FAILED, tokenIds, amounts);
+        emit TransferRequestUpdate(requestId, batchId, user, RequestStatus.DEPOSIT_FAILED, tokenIds, amounts);
     }
 
     /**

@@ -204,7 +204,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
      * @param _amount The amount of native currency to swap on mainnet
      * @param _swap The encoded swap data containing the RFQ order and signature
      */
-    function _topupGas(uint256 _amount, bytes calldata _swap) internal {
+    function _topupGas(uint256 _amount, bytes calldata _swap) internal virtual {
         if (_swap.length == 0) {
             // If no swap data provided, simply top up with native currency
             _withdrawNativeToBot(_amount);
@@ -212,6 +212,7 @@ contract OmniVaultExecutor is IOmniVaultExecutor, AccessControlUpgradeable {
         }
         (IDexalotRFQ.Order memory order, bytes memory signature) = abi.decode(_swap, (IDexalotRFQ.Order, bytes));
         address destTrader = address(uint160(order.nonceAndMeta >> 96));
+        require(trustedContracts[order.maker] == ContractAccess.NATIVE_AND_ERC20, "VE-IVCA-01");
         require(order.taker == address(this) && destTrader == msg.sender, "VE-TSOT-01");
         require(order.makerAsset == address(0) && order.makerAmount == _amount, "VE-GTSN-01");
         IERC20(order.takerAsset).forceApprove(order.maker, order.takerAmount);
