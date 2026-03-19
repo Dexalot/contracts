@@ -27,7 +27,7 @@ import { BigNumber, Event } from "ethers";
 let MockToken: MockToken__factory;
 
 // using the first numberOfAccounts accounts
-const numberOfAccounts = 10;
+const numberOfAccounts = 3;
 
 // initial state
 // do transfers to Portfolio contract as follows before starting tests
@@ -53,7 +53,7 @@ const initial_mints: any = {AVAX: 10000, LFG: 15000, SER: 50000};
 
 const initial_portfolio_deposits: any = {AVAX: 9000, LFG: 14000, SER: 45000};
 
-const startAuctionMode: any = 2;
+const startAuctionMode: any = 2; //OPEN
 
 // address (a multisig in production) that collects the fees
 const feeSafe = '0x48a04b706548F7034DC50bafbF9990C6B4Bff177'
@@ -66,6 +66,10 @@ let deploymentAccount: string;
 
 let auctionAdminWallet: SignerWithAddress;
 let auctionAdminAccount: string;
+
+
+let trader1: SignerWithAddress;
+let trader1Account: string;
 
 let exchange: ExchangeSub
 let portfolioSub: PortfolioSub
@@ -80,22 +84,19 @@ let _tokenAddr: string;
 let _token: MockToken;
 
 let pairs: any;
+let pair: any;
+let tp: string; // trading pair id needs to be bytes32
 
-interface IOrder {
-  id: string;
-  tp: string;
-  price: string;
-  quantity: string;
-  side: number;
-  type1: number;
-  type2: number;
-}
+let buyOrder: any;
+let sellOrder: any;
+let buyOrderClient: any;
+let sellOrderClient: any;
 
 const orders = new Map<string, any>()
 
 const lfgBalances: Array<BigNumber> = [];
 
-describe.skip("Auction", () => {
+describe("Auction", () => {
 
 before(async () => {
 
@@ -118,6 +119,10 @@ before(async () => {
   auctionAdminWallet = wallets[1] // AUCTION Admin Account  HH
   auctionAdminAccount = accounts[1];
   console.log("Auction Admin Account:", auctionAdminAccount)
+
+
+  trader1 = wallets[2];
+  trader1Account  = accounts[2];
 
   const portfolioContracts = await f.deployCompletePortfolio(true);
   portfolioMain = portfolioContracts.portfolioMainnet;
@@ -241,8 +246,8 @@ before(async () => {
                                   Utils.parseUnits((pair.minTradeAmount).toString(), pair.quoteDecimals),
                                   Utils.parseUnits((pair.maxTradeAmount).toString(), pair.quoteDecimals), startAuctionMode);
       console.log(`${pair.id} added to TradePairs at ${tradePairs.address} with min trade amount of ${pair.minTradeAmount}.`)
-      await tradePairs.addOrderType(tp, 0)  // 0 = MARKET, 1 = LIMIT
-      console.log(`MARKET order type added to ${pair.id} at ${tradePairs.address}.`)
+      // await tradePairs.addOrderType(tp, 0)  // 0 = MARKET, 1 = LIMIT
+      // console.log(`MARKET order type added to ${pair.id} at ${tradePairs.address}.`)
       await tradePairs.updateRate(tp, 10, 0)
       console.log(`${pair.id} at ${tradePairs.address} has its MAKER fee rate updated to 10/10000.`)
       await tradePairs.updateRate(tp, 20, 1)
@@ -279,526 +284,393 @@ before(async () => {
   console.log();
 });
 
-beforeEach(async function () {
-  // empty
+  beforeEach(async function () {
+  pair = pairs[0];
+  tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+
+  await tradePairs.connect(deploymentWallet).setAuctionMode(tp, 2); // OPEN
+
+  // buy and sell orders for auction admin
+  buyOrder = {
+      traderaddress: auctionAdminWallet.address
+      , clientOrderId : await Utils.getClientOrderId(ethers.provider, auctionAdminWallet.address)
+      , tradePairId: tp
+      , price: Utils.parseUnits('0.9', pair.quoteDecimals)
+      , quantity: Utils.parseUnits('100', pair.baseDecimals)
+      , side :  0   // Buy
+      , type1 : 1   // market orders not enabled
+      , type2: 0   // GTC
+      , stp : 0   // CancelTaker
+  }
+
+  sellOrder = {
+      traderaddress: auctionAdminWallet.address
+      , clientOrderId : await Utils.getClientOrderId(ethers.provider, auctionAdminWallet.address, 1)
+      , tradePairId: tp
+      , price: Utils.parseUnits('1.1', pair.quoteDecimals)
+      , quantity: Utils.parseUnits('200', pair.baseDecimals)
+      , side :  1   // Sell
+      , type1 : 1   // market orders not enabled
+      , type2: 0   // GTC
+      , stp : 0   // CancelTaker
+  }
+
+
+  buyOrderClient= JSON.parse(JSON.stringify(buyOrder)) ; // deep copy
+  buyOrderClient.traderaddress = trader1Account
+  buyOrderClient.price = Utils.parseUnits('1.1', pair.quoteDecimals)
+  buyOrderClient.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1Account)
+
+
+  sellOrderClient=  JSON.parse(JSON.stringify(sellOrder)) ; // deep copy
+  sellOrderClient.traderaddress = trader1Account
+  sellOrderClient.quantity = Utils.parseUnits('100', pair.baseDecimals)
+  sellOrderClient.price= Utils.parseUnits('0.9', pair.quoteDecimals)
+  sellOrderClient.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1Account)
+
+
 });
 
 it("Should set up auction properly", async () => {
   // OFF = 0,
   // LIVETRADING = 1,
   // OPEN = 2,
+
+  // The below are obsolete
   // CLOSING = 3,
   // PAUSED = 4,
   // MATCHING = 5
   // RESTRICTED = 6
 
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
   expect(await exchange.isAuctionAdmin(auctionAdminWallet.address) ).to.equal(true);
   expect(await exchange.hasRole(await exchange.AUCTION_ADMIN_ROLE(), auctionAdminWallet.address) ).to.equal(true);
 
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 3)
-  await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0.03', pair.quoteDecimals));
+  await expect(tradePairs.connect(trader1).setAuctionMode(tp, 2)).to.be.revertedWith("AccessControl:");
+  await expect(exchange.connect(trader1).setAuctionMode(tp, 2)).to.be.revertedWith("AccessControl:");
+  await expect(exchange.connect(trader1).setAuctionVaultAdress(tp, auctionAdminWallet.address)).to.be.revertedWith("AccessControl:");
+
+  //Revert for any values above 2
+  for (let i = 3; i < 6; i++) {
+    await expect(exchange.connect(auctionAdminWallet).setAuctionMode(tp, i)).to.be.revertedWith("T-AUCT-03");
+  }
+
+  //Reject if AuctionVaultAddress is not set
+  await addOrderAndVerify(auctionAdminWallet, buyOrder, 1, Utils.fromUtf8("T-AUCT-02"));  // status is REJECTED = 1
+
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 2)
+  await exchange.connect(auctionAdminWallet).setAuctionVaultAdress(tp, auctionAdminWallet.address);
   const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(3);
-  expect(tradePairData.auctionPrice).to.equal(Utils.parseUnits('0.03', pair.quoteDecimals));
-  //console.log (`${pair.id} Auction Mode ${tradePairData.auctionMode},  price ${tradePairData.auctionPrice.toString()}` )
+  expect(tradePairData.auctionMode).to.equal(2);
+  expect(await tradePairs.getAuctionVaultAdress(tp)).to.equal(auctionAdminWallet.address);
+
+  const orderid= await addOrderAndVerify(auctionAdminWallet, buyOrder, 0);  // status is new = 0
+  expect(await cancelOrder(auctionAdminWallet, orderid, pair, orders)).to.equal(true);
 });
 
-it("Should not allow anyone to withdraw auction token when auction mode = 2 (OPEN)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+
+it("Should not allow the auction token withdrawal when mode = 1 (LIVETRADING)", async () => {
+
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)
+
+  for (let i=0; i<3; i++) {
+    await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals)).to.be.revertedWith("P-AUCT-01");
+  }
+});
+
+it("Should not allow the auction token withdrawal when mode = 2 (OPEN)", async () => {
+
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 2)
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(2);
-  for (let i=0; i<10; i++) {  // 2 sells at 0.01
+  for (let i=0; i<3; i++) {  // 2 sells at 0.01
     await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals)).to.be.revertedWith("P-AUCT-01");
   }
 });
 
-it("Should be able to send orders properly", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;    // trading pair id needs to be bytes32
+it("Should not allow the auction token transfer when mode != 0 ", async () => {
 
-  let side = 1;//SELL
-  const type1 = 1;//LIMIT
-  const type2 = 0;//GTC
-  const type2toBeReplaced = 3; //PO contract will replace it with GTC
 
-  for (let i=0; i<2; i++) {  // 2 sells at 0.01
-    const order: IOrder = {id: Utils.fromUtf8(`sell6-${i+1}`), tp, price: "0.01", quantity: "1000", side, type1, type2:type2toBeReplaced};
-    expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
-  }
-
-  side = 0;//BUY
-  for (let i=2; i<4; i++) {  // 2 buys  at 5000000
-    const order: IOrder = {id: Utils.fromUtf8(`buy6-${i+1}`), tp, price: "500000", quantity: "0.01", side, type1, type2};
-    expect(await addOrder(wallets[i], order, pair, orders)).to.equal(true);
-  }
-
-  side = 0;//BUY
-  for (let i=4; i<6; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`buy7-${i+1}`), tp, price: "50000", quantity: "0.01", side, type1, type2};
-    if(i===5) {
-      order.quantity="0.02"
-    }
-     expect(await addOrder (wallets[i], order, pair, orders)).to.equal(true);
-  }
-
-  side = 0;//BUY
-  for (let i=6; i<8; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`buy8-${i+1}`), tp, price: "1", quantity: "5000", side, type1, type2};
-    expect(await addOrder (wallets[i], order, pair, orders)).to.equal(true);
-  }
-
-  side = 1;//SELL
-  for (let i=8; i<10; i++) {
-    const order: IOrder = {id: Utils.fromUtf8(`sells-${i+1}`), tp, price: "0.02", quantity: "500", side, type1, type2};
-    if(i===9) {
-      order.quantity="501"
-    }
-     expect(await addOrder (wallets[i], order, pair, orders)).to.equal(true);
-  }
-
-  expect(orders.size).to.equal(10);
-});
-
-it("Should get the Initial OrderBook correctly", async () => {
-  const pair = pairs[0];
-
-  const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
-
-  expect(buybook.length).to.equal(3);
-  expect(sellbook.length).to.equal(2);
-  console.log(Utils.formatUnits(buybook[0].price, pair.quoteDecimals));
-  expect(Utils.formatUnits(buybook[0].price, pair.quoteDecimals)).to.equal('500000.0');
-  expect(Utils.formatUnits(buybook[0].quantity, pair.baseDecimals)).to.equal('0.02');
-  expect(Utils.formatUnits(buybook[0].total, pair.baseDecimals)).to.equal('0.02');
-
-  console.log(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals));
-  expect(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals)).to.equal('0.01');
-  expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('2000.0');
-  expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('2000.0');
-});
-
-it("Should allow all order operations when auction mode = 3 (CLOSING)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 3)
-  await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0.03', pair.quoteDecimals));
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)   // auction in mode = 1 (OPEN)
   const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(3);
-  expect(tradePairData.auctionPrice).to.equal(Utils.parseUnits('0.03', pair.quoteDecimals));
-
-  const side = 1;//SELL
-  const type1 = 1;//LIMIT
-  const type2 = 0;//GTC
-
-  const order: IOrder = {id: Utils.fromUtf8(`sell1-${1}`), tp, price: "0.03", quantity: "400", side, type1, type2};
-  expect(await addOrder(wallets[3], order, pair, orders)).to.equal(true);
-  expect(orders.size).to.equal(11);
-  const fOrder1 = findOrder(accounts[3], side, "0.03", "400", orders);
-  expect(await CancelReplaceOrder(wallets[3], fOrder1, Utils.fromUtf8(`${2}`), "0.03", "410", pair, orders)).to.equal(true);
-  expect(orders.size).to.equal(12);
-  const fOrder2 = findOrder(accounts[3], side, "0.03", "410", orders);
-  expect(await cancelOrder(wallets[3], fOrder2, pair, orders)).to.equal(true);
-  expect(orders.size).to.equal(12);
-});
-
-it("Should not allow anybody to withdraw auction token when mode = 3 (CLOSING)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 3)
-
-  for (let i=0; i<10; i++) {
-    await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals)).to.be.revertedWith("P-AUCT-01");
-  }
-});
-
-it("Should not allow any order operation when mode = 5 (MATCHING)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 2)   // auction in mode = 2 (OPEN)
-
-  const side = 0;//BUY
-  const type1 = 1;//LIMIT
-  const type2 = 0;//GTC
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5)   // auction in mode = 5 (MATCHING)
-  const order = {id: Utils.fromUtf8(`buy1-${12}`), tp, price: "500000", quantity: "0.01", side, type1, type2};  // add one order
-  await expect(addOrder(wallets[3], order, pair, orders)).to.be.revertedWith("T-PPAU-01");
-
-  const fOrder1 = findOrder(accounts[3], side, "500000", "0.01", orders);
-  await expect(cancelOrder(wallets[3], fOrder1, pair, orders)).to.be.revertedWith("T-PPAU-02");
-  await expect(CancelReplaceOrder(wallets[3], fOrder1, Utils.fromUtf8(`${13}`), "410", "0.03", pair, orders)).to.be.revertedWith("T-PPAU-01");
-
-  const orderids: Array<string> = []
-  orderids[0]= fOrder1.id;
-  await expect(cancelOrderList(wallets[3], orderids, pair, orders)).to.be.revertedWith("T-PPAU-02");
-});
-
-it("Should not allow anyone to withdraw auction token when mode = 5 (MATCHING)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5)   // auction in mode = 5 (MATCHING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(5);
-
-  for (let i=0; i<10; i++) {
-    await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals) ).to.be.revertedWith("P-AUCT-01");
-  }
-});
-
-it("Should not allow anyone to transfer auction token when mode != 0 ", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5)   // auction in mode = 5 (MATCHING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(5);
+  expect(tradePairData.auctionMode).to.equal(1);
+  expect((await portfolioSub.getTokenDetails(tradePairData.baseSymbol)).auctionMode).to.equal(1);
 
   await expect(portfolioSub.transferToken(deploymentWallet.address, Utils.fromUtf8(pair.baseSymbol), 100) ).to.be.revertedWith("P-DOTS-01");
   await expect(portfolioSub.connect(deploymentWallet).transferToken(accounts[1], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
-  for (let mode=2; mode<=6; mode++) {
-    await exchange.connect(auctionAdminWallet).setAuctionMode(tp, mode);
-    await expect(portfolioSub.connect(wallets[1]).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
-  }
+
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 2);
+  expect((await portfolioSub.getTokenDetails(tradePairData.baseSymbol)).auctionMode).to.equal(2);
+  await expect(portfolioSub.connect(wallets[1]).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), 10) ).to.be.revertedWith("P-AUCT-01");
+
 });
 
+it("Should allow OmniVault all order operations when auction mode = 1(LIVETRADING)", async () => {
 
-it("Should not allow to set the status to LIVETRADING or OFF when order book is crossed", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await expect(exchange.connect(auctionAdminWallet).setAuctionMode(tp, 0)).to.be.revertedWith("T-AUCT-05");  // auction mode = 0 (OFF)
-  await expect(exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)).to.be.revertedWith("T-AUCT-05");  // auction mode = 1 (LIVETRADING)
-});
-
-it("Should fail matchAuctionOrder() for unprivileged accounts", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 4)
-  await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0', pair.quoteDecimals));
-
-  // set auction mode to MATCHING
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5);  // auction is MATCHING
-  // try from exchange
-  await expect(exchange.connect(wallets[3]).matchAuctionOrders(tp, 8)).to.be.revertedWith("AccessControl:");
-  // try from trade pairs directly, any order would do
-  const order = {
-    id: ethers.constants.HashZero
-    , tradePairId: tp
-    , totalAmount: 0
-    , quantityFilled :0
-    , traderaddress: wallets[3].address
-    , clientOrderId : await Utils.getClientOrderId(ethers.provider, wallets[3].address)
-    , totalFee: 0
-    , status: 0
-    , updateBlock:96
-    , price: Utils.parseUnits('100', pair.quoteDecimals)
-    , quantity: Utils.parseUnits('10', pair.baseDecimals)
-    , side :  0   // Buy
-    , type1 : 1   // market orders not enabled
-    , type2: 0   // GTC
-    , stp : 0   // CancelTaker
-    , createBlock: 96
-  }
-
-  await expect(tradePairs.connect(wallets[3]).matchAuctionOrder(order, 8)).to.be.revertedWith("AccessControl:");
-})
-
-it("Should fail matchAuctionOrder() for incorrect mode", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 4)
-  await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0', pair.quoteDecimals));
-
-  // Commented out require statements and moved them into if to save room in contract size
-
-  // // fail to use matchAuctionOrders() while not in matching mode (5)
-  // await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-01");
-  // // set auction mode to MATCHING
-  // await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5);  // auction is MATCHING
-  // await expect(exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 8)).to.be.revertedWith("T-AUCT-03");
-})
-
-it("Should do the actual matching", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 5)
-  await exchange.connect(auctionAdminWallet).setAuctionPrice(tp, Utils.parseUnits('0.51', pair.quoteDecimals));
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(5);
-  expect(Utils.formatUnits(tradePairData.auctionPrice, pair.quoteDecimals)).to.equal('0.51');
-
-  for (let i=0; i<6; i++) {
-    console.log(`${pair.id} **** Matching Orders  **** ${i}`)
-    const tx = await exchange.connect(auctionAdminWallet).matchAuctionOrders(tp, 30);
-    await tx.wait();
-  }
-});
-
-it("Should get the OrderBook correctly", async () => {
-  const pair = pairs[0];
-
-  const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
-
-  expect(buybook.length).to.equal(1);
-  expect(sellbook.length).to.equal(0);
-
-
-  expect(Utils.formatUnits(buybook[0].price, pair.quoteDecimals)).to.equal('1.0');
-  expect(Utils.formatUnits(buybook[0].quantity, pair.baseDecimals)).to.equal('6999.05');
-  expect(Utils.formatUnits(buybook[0].total, pair.baseDecimals)).to.equal('6999.05');
-});
-
-it("Should allow to add new and C/R orders in Live Trading Mode", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
-  const tradePairData= await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(1);
-
-  const side = 1;//SELL
-  const type1 = 1;//LIMIT
-  const type2 = 0;//GTC
-
-  const order1: IOrder = {id: Utils.fromUtf8(`sell2-${14}`), tp, price: "1.03", quantity: "100", side, type1, type2};  // add 1st order
-  expect(await addOrder(wallets[3], order1, pair, orders)).to.be.true;
-
- const fOrder1 = findOrder(accounts[3], side, "1.03", "100", orders);
- expect(await CancelReplaceOrder(wallets[3], fOrder1, Utils.fromUtf8(`${13}`), "1.03", "200", pair, orders)).to.be.true;
-});
-
-it("Should not allow anybody to withdraw auction token when mode = 1 (LIVE_TRADING)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
+  await tradePairs.connect(deploymentWallet).setAuctionMode(tp, 1); // OPEN
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(1);
 
-  for (let i=0; i<10; i++) {
-    await expect(withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals) ).to.be.revertedWith("P-AUCT-01");
-  }
+  const id1 = await addOrderAndVerify(auctionAdminWallet, sellOrder, 0);  // status is NEW = 0
+  expect(await cancelOrder(auctionAdminWallet, id1, pair, orders)).to.equal(true);
+
+  });
+
+
+it("Should allow OmniVault all order operations when auction mode = 2 (OPEN)", async () => {
+
+  const tradePairData = await tradePairs.getTradePair(tp);
+  expect(tradePairData.auctionMode).to.equal(2);
+  expect(await tradePairs.getAuctionVaultAdress(tp)).to.equal(auctionAdminWallet.address);
+
+
+  const id1 = await addOrderAndVerify(auctionAdminWallet, sellOrder, 0);  // status is NEW = 0
+
+  const fOrder1 = findOrder(id1, orders);
+
+  let id2 = await CancelReplaceOrder(auctionAdminWallet, fOrder1, await Utils.getClientOrderId(ethers.provider, auctionAdminWallet.address, 2), "1.1", "210", pair, orders);
+  expect(orders.size).to.equal(5);
+  expect(await cancelOrder(auctionAdminWallet, id2, pair, orders)).to.equal(true);
+  expect(orders.size).to.equal(5);
+
+  sellOrder.quantity= Utils.parseUnits('100', pair.baseDecimals)
+  sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, auctionAdminWallet.address, 3);
+
+  await addOrderAndVerify(auctionAdminWallet, sellOrder, 0);
+
+  await addOrderAndVerify(auctionAdminWallet, buyOrder, 0);
+
 });
+
 
 it("Should give the correct OrderBook state", async () => {
-  const pair = pairs[0];
+
+    const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
+    const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
+
+    expect(sellbook.length).to.equal(1);
+    expect(buybook.length).to.equal(1);
+
+    expect(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals)).to.equal('1.1');
+    expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('100.0');
+    expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('100.0');
+
+    expect(Utils.formatUnits(buybook[0].price, pair.quoteDecimals)).to.equal('0.9');
+    expect(Utils.formatUnits(buybook[0].quantity, pair.baseDecimals)).to.equal('100.0');
+    expect(Utils.formatUnits(buybook[0].total, pair.baseDecimals)).to.equal('100.0');
+
+ });
+
+
+it("Should auction participants send LIMIT IOC orders only when mode = 2 (OPEN)", async () => {
+    // enum Type2 {
+    //     GTC,
+    //     FOK,
+    //     IOC,
+    //     PO
+  // }
+
+
+  //GTC
+  await addOrderAndVerify(trader1, buyOrderClient, 1, Utils.fromUtf8("T-AUCT-02"));  // status is REJECTED = 1
+
+  buyOrderClient.type2 = 1;
+  await addOrderAndVerify(trader1, buyOrderClient, 1, Utils.fromUtf8("T-AUCT-02"));  // status is REJECTED = 1
+
+  buyOrderClient.type2 = 3;
+  await addOrderAndVerify(trader1, buyOrderClient, 1, Utils.fromUtf8("T-AUCT-02"));  // status is REJECTED = 1
+
+  //Reject a market order
+  await tradePairs.addOrderType(tp, 0) //Allow Market orders
+
+  buyOrderClient.type2 = 0;
+  buyOrderClient.type1 = 0;
+  await addOrderAndVerify(trader1, buyOrderClient, 1, Utils.fromUtf8("T-AUCT-02"));  // status is REJECTED = 1
+
+
+  buyOrderClient.type1 = 1;
+  // IOC gets a no fill, but cancel
+  buyOrderClient.type2 = 2;
+  buyOrderClient.price = Utils.parseUnits('0.8', pair.quoteDecimals)
+  await addOrderAndVerify(trader1, buyOrderClient, 4);  // status is CANCELED = 4
+
+  // Gets a full fill with a IOC
+  buyOrderClient.price = Utils.parseUnits('1.1', pair.quoteDecimals)
+  let totalFee = BigNumber.from(buyOrderClient.quantity).div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
+  let filledQty = Number(Utils.formatUnits(buyOrderClient.quantity, pair.baseDecimals))
+  let totalAmount = BigNumber.from(filledQty).mul(buyOrderClient.price);
+  await addOrderAndVerify(trader1, buyOrderClient, 3, ethers.constants.HashZero, totalAmount, buyOrderClient.quantity, totalFee);  // status is FILLED = 3
+
+  // Can get a partial fill if not enough in the ob.
+  sellOrderClient.type2 = 2;
+  sellOrderClient.quantity = Utils.parseUnits('200', pair.baseDecimals)
+
+  filledQty = 100 // based on the ob
+  const filledQtyBN = Utils.parseUnits(filledQty.toString(), pair.baseDecimals);
+
+  totalAmount = BigNumber.from(filledQty).mul(sellOrderClient.price);
+  totalFee = totalAmount.div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
+  await addOrderAndVerify(trader1, sellOrderClient, 4, ethers.constants.HashZero, totalAmount,filledQtyBN, totalFee);  // status is FILLED = 3
+
+});
+
+it("Should get the Initial OrderBook correctly", async () => {
 
   const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
   const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
 
-  expect(sellbook.length).to.equal(1);
-  expect(buybook.length).to.equal(1);
-
-  expect(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals)).to.equal('1.03');
-  expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('200.0');
-  expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('200.0');
-});
-
-it("Should correctly make a partial fill", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(1);
-
-  const side = 0;//BUY
-  const type1 = 1;//LIMIT
-  const type2 = 0;//GTC
-  const order1: IOrder = {id: Utils.fromUtf8(`buy3-${15}`), tp, price: "1.03", quantity: "180", side, type1, type2};  // add 1st order
-  expect(await addOrder(wallets[4], order1, pair, orders)).to.be.true;  // This will be fully filled
-});
-
-it("Should get the correct OrderBook state after the partial fill", async () => {
-  const pair = pairs[0];
-
-  const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
-
-  expect(sellbook.length).to.equal(1);
-  expect(buybook.length).to.equal(1);
-
-  expect(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals)).to.equal('1.03');
-  expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('20.0');
-  expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('20.0');
-});
-
-it("Should be able to cancel all outstanding buy orders", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(1);
-
-    for (let i=6; i<8; i++) {
-      const order = findOrder(accounts[i], 0, "1", "5000", orders);
-      if (order) {
-        expect(await cancelOrder(wallets[i], order, pair, orders)).to.be.true;
-      }
-    }
-});
-
-it("Should get the correct OrderBook state after canceling all buy orders", async () => {
-  const pair = pairs[0];
-
-  const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
-
-  expect(sellbook.length).to.equal(1);
   expect(buybook.length).to.equal(0);
-
-  expect(Utils.formatUnits(sellbook[0].price, pair.quoteDecimals)).to.equal('1.03');
-  expect(Utils.formatUnits(sellbook[0].quantity, pair.baseDecimals)).to.equal('20.0');
-  expect(Utils.formatUnits(sellbook[0].total, pair.baseDecimals)).to.equal('20.0');
-});
-
-it("Should be able to set the auction mode to 1 (LIVETRADING) when nothing in buybook", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(1);
-});
-
-it("Should be able to cancel all outstanding sell orders", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
-
-  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
-  const tradePairData = await tradePairs.getTradePair(tp);
-  expect(tradePairData.auctionMode).to.equal(1);
-
-  const order = findOrder(accounts[3], 1 , "1.03", "200", orders);
-  if (order) {
-   expect(await cancelOrder(wallets[3], order,  pair, orders)).to.equal(true);
-  }
-});
-
-it("Should get the correct OrderBook state after canceling all sell orders as well", async () => {
-  const pair = pairs[0];
-
-  const buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  const sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
-
   expect(sellbook.length).to.equal(0);
-  expect(buybook.length).to.equal(0);
+
 });
 
-it("Should be able to set the auction mode to 1 (LIVETRADING) when both books are empty", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+it("Should allow all order types from participants when mode = 1 (LIVETRADING)", async () => {
+
+  await addOrderAndVerify(auctionAdminWallet, sellOrder, 0);  // status is NEW = 0
+  await addOrderAndVerify(auctionAdminWallet, buyOrder, 0);
+
 
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 1)  // auction mode = 1 (LIVETRADING)
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(1);
+
+  // allow a LIMIT GTC
+  buyOrderClient.price = Utils.parseUnits('0.95', pair.quoteDecimals)
+  let ordId = await addOrderAndVerify(trader1, buyOrderClient, 0);  // status is NEW = 0
+  // let fOrder = findOrder(ordId, orders);
+  expect(await cancelOrder(trader1, ordId, pair, orders)).to.equal(true);
+
+
+  // Gets a partial fill and the remaining goes into the OB
+  buyOrderClient.price = Utils.parseUnits('1.1', pair.quoteDecimals)
+  buyOrderClient.quantity = Utils.parseUnits('300', pair.quoteDecimals);
+  buyOrderClient.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1Account, 3)
+
+
+  let filledQty = 200
+  let filledQtyBN = Utils.parseUnits(filledQty.toString(), pair.baseDecimals);
+  let totalFee = filledQtyBN.div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
+
+  let totalAmount = BigNumber.from(filledQty).mul(buyOrderClient.price);
+  ordId = await addOrderAndVerify(trader1, buyOrderClient, 2, ethers.constants.HashZero, totalAmount, filledQtyBN, totalFee);  // status is PARTIAL FILL = 2
+  // cancel the outstating order so it is not caught by STP
+  expect(await cancelOrder(trader1, ordId, pair, orders)).to.equal(true);
+
+
+  // Market order, gets a fill
+  sellOrderClient.type2 = 0;
+  sellOrderClient.type1 = 0;
+  filledQty = 100 // based on the ob
+  filledQtyBN = Utils.parseUnits(filledQty.toString(), pair.baseDecimals);
+
+  totalAmount = BigNumber.from(filledQty).mul(sellOrderClient.price);
+  totalFee = totalAmount.div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
+  await addOrderAndVerify(trader1, sellOrderClient, 3, ethers.constants.HashZero, totalAmount,filledQtyBN, totalFee);  // status is FILLED = 3
+
 });
 
-it("Should give correct Portfolio state after ALL OUTSTANDING ORDERS CANCELED! All Portfolio Totals Should be equal to available", async () => {
-  for (let i=0; i<accounts.length; i++) {
-      for (let j=0; j < tokens.length; j++) {
-          const _token = tokens[j];
-          const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
-          if (!_bal.total.eq(_bal.available)) {
-            console.log(accounts[i] , _token,  "Bal Total ", Utils.formatUnits(_bal.total, decimalsMap[_token]) , "Available", Utils.formatUnits(_bal.available, decimalsMap[_token]));
-          }
-          expect(_bal.total).to.equal(_bal.available);
-      }
-  }
-});
 
-it("Should handle the full trading. Turn Auction Mode OFF. Match 2 orders Live", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+it("Should allow all order types from participants when mode = 0 (OFF)", async () => {
+
+    // enum Type2 {
+    //     GTC,
+    //     FOK,
+    //     IOC,
+    //     PO
+  // }
+
+
+  await addOrderAndVerify(auctionAdminWallet, sellOrder, 0);  // status is NEW = 0
+  await addOrderAndVerify(auctionAdminWallet, buyOrder, 0);
+
 
   await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 0)  // auction mode = 0 (OFF)
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(0);
 
-  const order1: IOrder = {id: Utils.fromUtf8(`buy4-${16}`), tp, price: "0.03", quantity: "400", side: 0, type1: 1, type2: 0};  // add buy order
-  expect(await addOrder(wallets[3], order1, pair, orders)).to.be.true;  // This will be fully filled
+  // allow a LIMIT GTC
+  buyOrderClient.price = Utils.parseUnits('0.95', pair.quoteDecimals)
+  let ordId = await addOrderAndVerify(trader1, buyOrderClient, 0);  // status is NEW = 0
+  expect(await cancelOrder(trader1, ordId, pair, orders)).to.equal(true);
 
-  let buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  let sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
 
-  expect(buybook.length).to.equal(1);
-  expect(sellbook.length).to.equal(0);
+  // Gets a partial fill and the remaining goes into the OB
+  buyOrderClient.price = Utils.parseUnits('1.1', pair.quoteDecimals)
+  buyOrderClient.quantity = Utils.parseUnits('300', pair.quoteDecimals);
+  buyOrderClient.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1Account, 3)
 
-  const order2: IOrder = {id: Utils.fromUtf8(`buy5-${17}`), tp, price: "0.03", quantity: "400", side: 1, type1: 1, type2: 0};  // add sell order
-  expect(await addOrder(wallets[4], order2, pair, orders)).to.be.true;  // This will be fully filled
 
-  buybook =  await Utils.getBookwithLoop(tradePairs, pair.id, "BUY");
-  sellbook = await Utils.getBookwithLoop(tradePairs, pair.id, "SELL");
+  let filledQty = 200
+  let filledQtyBN = Utils.parseUnits(filledQty.toString(), pair.baseDecimals);
+  let totalFee = filledQtyBN.div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
 
-  expect(buybook.length).to.equal(0);
-  expect(sellbook.length).to.equal(0);
+  let totalAmount = BigNumber.from(filledQty).mul(buyOrderClient.price);
+  ordId = await addOrderAndVerify(trader1, buyOrderClient, 2, ethers.constants.HashZero, totalAmount, filledQtyBN, totalFee);  // status is PARTIAL FILL = 2
+  // cancel the outstating order so it is not caught by STP
+  expect(await cancelOrder(trader1, ordId, pair, orders)).to.equal(true);
+
+
+  // Market order, gets a fill
+  sellOrderClient.type2 = 0;
+  sellOrderClient.type1 = 0;
+  filledQty = 100 // based on the ob
+  filledQtyBN = Utils.parseUnits(filledQty.toString(), pair.baseDecimals);
+
+  totalAmount = BigNumber.from(filledQty).mul(sellOrderClient.price);
+  totalFee = totalAmount.div(10000).mul(20); // 20 bps , when buying total fee is from quantity, when selling from totalAmount
+  await addOrderAndVerify(trader1, sellOrderClient, 3, ethers.constants.HashZero, totalAmount,filledQtyBN, totalFee);  // status is FILLED = 3
+
 });
 
-it("Should give correct Portfolio state after All orders filled! All Portfolio Totals Should be equal to available ", async () => {
-  for (let i=0; i<accounts.length; i++) {
-      for (let j=0; j < tokens.length; j++) {
-          const _token = tokens[j];
-          const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
-          if (!_bal.total.eq(_bal.available)) {
-            console.log(accounts[i] , _token,  "Bal Total ", Utils.formatUnits(_bal.total, decimalsMap[_token]) , "Available", Utils.formatUnits(_bal.available, decimalsMap[_token]));
-          }
-          expect(_bal.total).to.equal(_bal.available);
-      }
-  }
-});
 
-it("Should allow withdrawal of Auction Token after auction mode = 0 (OFF)", async () => {
-  const pair = pairs[0];
-  const tp = pair.pairIdAsBytes32;   // trading pair id needs to be bytes32
+it("Should allow both withdraw and transfer when auction mode is OFF", async () => {
 
-  //Auction mode already set to 0 in the previous test and auctionAdminWallet will not be able to change the auctionmode when it is already 0
-  //await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 0)  // auction mode = 0 (OFF)
+  const lfgBalancesNew: Array<BigNumber> = [];
+
+  await exchange.connect(auctionAdminWallet).setAuctionMode(tp, 0)  // auction mode = 0 (OFF)
   const tradePairData = await tradePairs.getTradePair(tp);
   expect(tradePairData.auctionMode).to.equal(0);
 
-  // save LFG balances before withdrawal
+  //Auction mode already set to 0 in the previous test and auctionAdminWallet will not be able to change the auctionmode when it is already 0
+  await expect(exchange.connect(auctionAdminWallet).setAuctionMode(tp, 2)).to.be.revertedWith("E-OACC-04");
+
+  const _token = Utils.fromUtf8("LFG"); //LFG
+  // save LFG balances before withdrawal/transfers
   for (let i=0; i<accounts.length; i++) {
-    const _token = tokens[i];
-    if (_token==='LFG') {
-      const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
+      const _bal = await portfolioSub.getBalance(accounts[i], _token);
       lfgBalances[i] = _bal.total;
-    }
   }
 
-  for (let i=0; i<10; i++) {
-    const _token = tokens[i];
-    expect(await withdrawToken(wallets[i], 100, Utils.fromUtf8(pair.baseSymbol), pair.baseDecimals) ).to.equal(true);
-    if (_token==='LFG') {
-      const _bal = await portfolioSub.getBalance(accounts[i], Utils.fromUtf8(_token));
-      expect(_bal.total).to.equal(lfgBalances[i].sub(Utils.parseUnits('100', pair.baseDecimals)));
-    }
+  //console.log(lfgBalances)
+
+  //do a transfer
+  await portfolioSub.connect(auctionAdminWallet).transferToken(accounts[2], Utils.fromUtf8(pair.baseSymbol), Utils.parseUnits('2', pair.baseDecimals));
+
+  for (let i=0; i<accounts.length; i++) {
+      const _bal = await portfolioSub.getBalance(accounts[i], _token);
+      lfgBalancesNew[i] = _bal.total;
+  }
+  //console.log (lfgBalancesNew)
+  expect(lfgBalancesNew[1]).to.equal(lfgBalances[1].sub(Utils.parseUnits('2', pair.baseDecimals)));
+  expect(lfgBalancesNew[2]).to.equal(lfgBalances[2].add(Utils.parseUnits('2', pair.baseDecimals)));
+
+
+  for (let i = 0; i < accounts.length; i++) {
+    //do withdrawals from all accounts
+    expect(await withdrawToken(wallets[i], 5, _token, pair.baseDecimals) ).to.equal(true);
+    const _bal = await portfolioSub.getBalance(accounts[i], _token);
+    expect(_bal.total).to.equal(lfgBalancesNew[i].sub(Utils.parseUnits('5', pair.baseDecimals)));
  }
+
+
+})
+;
+
 });
 
-}).timeout(240000);
-
-function findOrder(owner: string, side: number, price: string, quantity: string, orders: Map<string, any>)  {
+function findOrder(id: string, orders: Map<string, any>)  {
   for (const order of orders.values()){
     //this.logger.debug (`Order: ${order.side}  ${order.quantity.toString()}  ${order.price.toString()}`);
-    if (order.traderaddress === owner
-        && order.side === side
-          && order.quantity.eq(BN(quantity))
-            && order.price.eq(BN(price))) {
+    if (order.id === id) {
       return order;
     }
   }
@@ -810,40 +682,56 @@ async function withdrawToken(wallet: SignerWithAddress, withdrawal_amount: numbe
   return true;
 }
 
-async function addOrder(wallet: SignerWithAddress, order: IOrder, pair: any, orders: Map<string, any>) {
-  let orderLog: any = {};
-  const  newOrder = {
-    traderaddress: wallet.address
-    , clientOrderId : order.id
-    , tradePairId :order.tp
-    , price: Utils. parseUnits(order.price, pair.quoteDecimals)
-    , quantity:  Utils.parseUnits(order.quantity, pair.baseDecimals)
-    , side :  order.side
-    , type1 : order.type1   // market orders not enabled
-    , type2: order.type2   // GTC
-    , stp: 3 // Cancel NONE
-}
-  //console.log(newOrder);
-  const tx = await tradePairs.connect(wallet).addNewOrder(newOrder);
+async function  addOrderAndVerify(trader: SignerWithAddress, order: any, expectedStatus: number
+    , expectedCode: string = ethers.constants.HashZero
+    , expectedTotalAmount = BigNumber.from(0), expectedQuantityFilled = BigNumber.from(0), expectedTotalFee = BigNumber.from(0)
+    ): Promise<string | any>{
 
-  orderLog = await tx.wait();
-  if (orderLog){
-    for (const _log of orderLog.events) {
-      if (_log.event) {
-        if (_log.event === 'OrderStatusChanged') {
-          const rOrder = processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
-                                           _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
-                                           _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
-          if (rOrder) {
-            orders.set(rOrder.id, rOrder);
-            return true;
-          } else {
-            return false;
-          }
+    const tx = await tradePairs.connect(trader).addNewOrder(order);
+    const res: any  = await tx.wait();
+
+  for (const e of res.events) {
+
+        if (e.event === "OrderStatusChanged" && e.args.traderaddress === trader.address && e.args.order.clientOrderId == order.clientOrderId) {
+            //console.log("code:", Utils.toUtf8(e.args.code) , "order:", e.args.order);
+            //expect(e.event).to.be.equal('OrderStatusChanged');
+            //expect(e.args.traderaddress).to.be.equal(order.traderaddress);
+            // console.log (expectedTotalAmount, expectedQuantityFilled, expectedTotalFee)
+            const rOrder = processOrders(e.args.traderaddress, e.args.pair, e.args.order.id, e.args.order.price, e.args.order.totalAmount,
+                                            e.args.order.quantity,e.args.order.side, e.args.order.type1, e.args.order.type2, e.args.order.status,
+                                            e.args.order.quantityFilled, e.args.order.totalFee, e, pair.baseDecimals, pair.quoteDecimals);
+            if (rOrder) {
+              orders.set(rOrder.id, rOrder);
+            }
+
+
+            if (e.args.order.status ==1 && e.args.order.status != expectedStatus &&  e.args.code != expectedCode) {
+            console.log("Order Rejected unexpectedly", Utils.toUtf8(e.args.code));
+            }
+            expect(e.args.pair).to.be.equal(order.tradePairId);
+
+            expect(e.args.order.traderaddress).to.be.equal(order.traderaddress);
+            expect(e.args.order.tradePairId).to.be.equal(order.tradePairId);
+            expect(e.args.order.clientOrderId).to.be.equal(order.clientOrderId);
+
+            if (!e.args.order.totalAmount.eq(expectedTotalAmount) || e.args.order.status != expectedStatus ) {
+                console.log("expectedStatus:", expectedStatus , "expectedTotalAmount:", expectedTotalAmount, "code:", Utils.toUtf8(e.args.code) , "Order:", e.args.order);
+            }
+
+            expect(e.args.order.totalAmount).to.be.equal(expectedTotalAmount);      // not executed, yet, so totalamount is 0
+            expect(e.args.order.quantity).to.be.equal(order.quantity);
+            expect(e.args.order.side).to.be.equal(order.side);             // side is BUY=0
+            expect(e.args.order.type1).to.be.equal(order.type1);            // type1 is LIMIT=1
+            expect(e.args.order.type2).to.be.equal(order.type2);            // type2 is GTC=0
+            expect(e.args.order.status).to.be.equal(expectedStatus);           // status is NEW = 0
+            expect(e.args.order.quantityFilled).to.be.equal(expectedQuantityFilled);   // not executed, yet, so quantityfilled is 0
+            expect(e.args.order.totalFee).to.be.equal(expectedTotalFee);         // not executed, yet, so free is 0
+            expect(e.args.order.updateBlock).to.be.equal(res.blockNumber);
+            expect(e.args.order.createBlock).to.be.equal(res.blockNumber);
+            expect(e.args.code).to.be.equal(expectedCode);         // error code
+            return e.args.order.id;
         }
-      }
     }
-  }
 }
 
 function makeOrder(traderaddress: string, pair: string, id: string, price: BigNumber, totalamount: BigNumber, quantity: BigNumber, side: string,
@@ -900,17 +788,17 @@ function processOrders(traderaddress: string, pair: string, id: string, price: B
   }
 }
 
-async function cancelOrder(wallet: SignerWithAddress, order: IOrder, pair: any, orders: Map<string, any>) {
+async function cancelOrder(wallet: SignerWithAddress, orderId: string, pair: any, orders: Map<string, any>) {
   let orderLog: any = {};
 
-  const tx = await tradePairs.connect(wallet).cancelOrder(order.id);
+  const tx = await tradePairs.connect(wallet).cancelOrder(orderId);
   orderLog = await tx.wait();
 
   if (orderLog){
     for (const _log of orderLog.events) {
       if (_log.event) {
         if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
+          const rOrder = processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
                                            _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
                                            _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
           if (rOrder) orders.set(rOrder.id, rOrder);
@@ -932,7 +820,7 @@ async function cancelOrderList(wallet: SignerWithAddress, orderIds: string[], pa
     for (const _log of orderLog.events) {
       if (_log.event) {
         if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
+          const rOrder = processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
                                            _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
                                            _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
           if (rOrder) orders.set(rOrder.id, rOrder);
@@ -947,6 +835,8 @@ async function cancelOrderList(wallet: SignerWithAddress, orderIds: string[], pa
 async function CancelReplaceOrder(wallet: SignerWithAddress, order: any, clientOrderId: string, newpx: string, newqty: string, pair: any, orders: Map<string, any>) {
   let orderLog: any = {};
 
+  let orderId: string="";
+
   const tx = await tradePairs.connect(wallet).cancelReplaceOrder(order.id,
                                                                  clientOrderId,
                                                                  Utils.parseUnits(newpx, pair.quoteDecimals),
@@ -957,14 +847,18 @@ async function CancelReplaceOrder(wallet: SignerWithAddress, order: any, clientO
     for (const _log of orderLog.events) {
       if (_log.event) {
         if (_log.event === 'OrderStatusChanged') {
-          const rOrder = await processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
+          const rOrder = processOrders(_log.args.traderaddress, _log.args.pair, _log.args.order.id, _log.args.order.price, _log.args.order.totalAmount,
                                            _log.args.order.quantity,_log.args.order.side, _log.args.order.type1, _log.args.order.type2, _log.args.order.status,
                                            _log.args.order.quantityFilled, _log.args.order.totalFee, _log, pair.baseDecimals, pair.quoteDecimals);
-          if (rOrder) orders.set(rOrder.id, rOrder);
+          if (rOrder) {
+            orders.set(rOrder.id, rOrder);
+            orderId= rOrder.id;
+          }
         }
       }
     }
   }
 
-  return true;
+  return orderId;
+
 }

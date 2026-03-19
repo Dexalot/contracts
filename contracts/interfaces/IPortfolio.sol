@@ -95,10 +95,10 @@ interface IPortfolio {
         DECREASEAVAIL,
         IXFERSENT, // 5  Subnet Sent. I for Internal to Subnet
         IXFERREC, //     Subnet Received. I for Internal to Subnet
-        RECOVERFUNDS, // Obsolete as of 2/1/2024 CD
+        RECOVERFUNDS, // Obsolete as of Feb 1st 2024 CD
         ADDGAS,
         REMOVEGAS,
-        AUTOFILL, // 10
+        AUTOFILL, // 10  Referring to it as AUTOGAS as of March 2026 in the code base, but can't change here, not upgrade safe
         CCTRADE, // Cross Chain Trade.
         CONVERTFROM,
         CONVERTTO

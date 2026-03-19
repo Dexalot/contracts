@@ -503,8 +503,8 @@ describe("Dexalot", () => {
                     const fp_times_qf = (fillPrice.times(quantityFilled)).dp(decimalsMap[mOrder["baseSymbol"]], BigNumber.ROUND_FLOOR);
 
                     // calculate fees
-                    feeBase = quantityFilled.times(makerRate).dp(3, BigNumber.ROUND_FLOOR);
-                    feeQuote = fp_times_qf.times(takerRate).dp(3, BigNumber.ROUND_FLOOR);
+                    feeBase = quantityFilled.times(makerRate) //.dp(3, BigNumber.ROUND_FLOOR);
+                    feeQuote = fp_times_qf.times(takerRate)//.dp(3, BigNumber.ROUND_FLOOR);
 
                     // total
                     // decrease maker quote
@@ -539,8 +539,8 @@ describe("Dexalot", () => {
                     const fp_times_qf = (fillPrice.times(quantityFilled)).dp(decimalsMap[mOrder["baseSymbol"]], BigNumber.ROUND_FLOOR);
 
                     // calculate fees
-                    feeBase = quantityFilled.times(takerRate).dp(3, BigNumber.ROUND_FLOOR);
-                    feeQuote = fp_times_qf.times(makerRate).dp(3, BigNumber.ROUND_FLOOR);
+                    feeBase = quantityFilled.times(takerRate)//.dp(3, BigNumber.ROUND_FLOOR);
+                    feeQuote = fp_times_qf.times(makerRate)//.dp(3, BigNumber.ROUND_FLOOR);
 
                     // total
                     // increase maker quote

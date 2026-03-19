@@ -52,13 +52,14 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
         __AccessControl_init();
         // admin account that can call inherited grantRole and revokeRole functions from OpenZeppelin AccessControl
         _setupRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        minTakerRate = 5;
+        minTakerRate = 5;  // 5/ 100000= 0.00005   *100 = 0.005%
     }
 
     /**
-     * @notice  Sets the minimum Taker rate that is possible after the volume rebates
-     * @dev     Only callable by admin.
-     * @param   _rate  Minimum Taker rate after volume rebates
+     * @notice  Sets the minimum Taker rate allowed after the volume rebates
+     * @dev     Only callable by admin. Set to 5 if you want 0.5 bps as the min taker rate
+     * @param   _rate  Minimum Taker rate in 1 in 100000 (1/10th of a bp) allowed after volume
+     * rebates are applied
      */
     function setMinTakerRate(uint256 _rate) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(_rate > 0, "P-MTNZ-01");
@@ -215,13 +216,13 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
      * Default rates are multiplied by 10 for an additional precision when dealing with default rates
      * of 1 or 2 bps. Without this, we can't have any rates in between 1 and 2 bps. But with it, we can
      * have 10(1 bps)-11(1.1 bps)... 19-20(2 bps)
-     * Portfolio.TENK denominator has been multipled by 10 and was changed to 100000 to level the increase.
+     * UtilsLibrary.getFee divides by 100K instead of 10K to account for this increase
      * @param   _makerAddr  Maker address of the trade
      * @param   _takerAddr  Taker address of the trade
      * @param   _tradePairId  TradePair Id
-     * @param   _makerRate  tradepair's default maker rate uint8 and < 100
-     * @param   _takerRate  tradepair's default taker rate uint8 and < 100
-     * @return   maker tradepair's default maker rate or discounted rate if any
+     * @param   _makerRate  tradepair's default maker rate stored as uint8 and < 100, cast to uint256 before
+     * @param   _takerRate  tradepair's default taker rate stored as uint8 and < 100, cast to uint256 before
+     * @return   maker tradepair's default maker rate or discounted rate if any. 10 is 1bps , 25 is 2.5 bps
      * @return   taker tradepair's default taker rate or discounted rate if any
      */
     function getRates(
@@ -258,7 +259,9 @@ contract PortfolioSubHelper is Initializable, AccessControlEnumerableUpgradeable
                 if (rebate.taker > 0) {
                     taker = (_takerRate * (100 - rebate.taker)) / 10;
                     if (taker < minTakerRate) {
-                        taker = minTakerRate; // taker rate can't be less than 0.005%
+                        // taker rate can't be less than 0.005%.
+                        // No need to multiply by 10, as it is to scale already
+                        taker = minTakerRate;
                     }
                 } else {
                     taker = _takerRate * 10;

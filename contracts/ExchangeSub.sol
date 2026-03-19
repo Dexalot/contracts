@@ -11,10 +11,42 @@ import "./OrderBooks.sol";
 import "./interfaces/ITradePairs.sol";
 
 /**
- * @title Subnet Exchange
- * @notice This contract is the subnet version of the Dexalot Exchange.
- * It has all the AUCTION_ADMIN functions that can be called.
- * @dev ExchangeSub is DEFAULT_ADMIN on both PortfolioSub and TradePairs contracts.
+ * @title Dexalot L1 Exchange
+ * @notice This contract is the Dexalot L1 version of the Dexalot Exchange. \
+ * *********** Dexalot Discovery (DD) Auction: Overview and Workflow \
+ * Dexalot Discovery (DD) is a specialized launchpad mechanism on the Dexalot L1 designed to facilitate new token launches.
+ * By utilizing an Omni-Vault and an off-chain Omni-Trader, projects can provide initial liquidity and manage price discovery through
+ * automated bonding curves. \
+ * *** Core Objectives: \
+ * The smart contract logic focuses on two primary goals: \
+ * Asset Control: Restricting the movement (withdrawals/transfers) of the auction token to prevent external market distortion
+ * (e.g., rogue AMM pools). \
+ * Order Book Integrity: Limiting order "posting" (market making) exclusively to the Omni-Vault to ensure a controlled discovery process. \
+ * *** The Launch Process: \
+ * Setup: Once Dexalot admins approve an Omni-Vault request, the token is added to the PortfolioMain, and initial liquidity is deposited
+ * into the L1 vault. \
+ * Omni-Trader Assignment: An off-chain component is assigned to the project to manage prices and quantities based on predefined bonding
+ * curves and real-time supply/demand. \
+ * Active Auction: While the auction is OPEN, the Omni-Trader is the sole market maker. Participants cannot post their own limit orders;
+ * they can only trade against the Omni-Trader’s existing bids and asks (hitting the bid or lifting the ask). \
+
+ * Graduation: Once the token reaches a specific market cap milestone, the order book transitions to a standard open market where all
+ * users can post orders and transfer tokens freely. \
+ * *** Auction Stages & Transitions: \
+ * Stage 1:    OPEN         Controlled Discovery. Only the Omni-Vault can post orders. Users trade via Limit IOC (Immediate-or-Cancel)
+ *                          orders against the vault. Withdrawals/transfers are disabled. \
+ * Stage 1A:   LIVETRADING  Early Trading (Optional). Anyone can post orders or market make, but the token remains locked within the
+ *                          Dexalot ecosystem (no withdrawals/transfers). \
+ * Stage 2:    OFF          Full Graduation. The auction concludes. The token is available for regular trading and Simple Swaps.
+ *                          All transfer and withdrawal restrictions are lifted. The pair will also be offered in Simple Swap \
+ * @dev
+ * *** Security & Integration: \
+ * Privileged Access: The AUCTION_ADMIN manages transitions, while ExchangeSub holds administrative rights over portfolio and
+ * trading pairs to ensure smooth operation. \
+ * Trusted Deposits: To facilitate pre-sale participants, specific contracts (like Avalaunch or Dexalot TokenVesting) are
+ * authorized to deposit tokens on behalf of users before the Token Generation Event (TGE). \
+ * Anti-Manipulation: By disabling transfers during the auction, Dexalot prevents the formation of external liquidity pools
+ * that could interfere with fair price discovery. \
  */
 
 // The code in this file is part of Dexalot project.
@@ -23,13 +55,12 @@ import "./interfaces/ITradePairs.sol";
 
 contract ExchangeSub is Exchange {
     // version
-    bytes32 public constant VERSION = bytes32("2.2.6");
+    bytes32 public constant VERSION = bytes32("2.3.0");
 
     // map and array of all trading pairs on DEXALOT
     ITradePairs private tradePairs;
     OrderBooks private orderBooks;
     event TradePairsSet(ITradePairs _oldTradePairs, ITradePairs _newTradePairs);
-    event AuctionMatchFinished(bytes32 indexed pair);
 
     /**
      * @notice  (Un)pauses portfolioSub and portfolioBridgeSub and TradePairs contracts for upgrade
@@ -125,7 +156,7 @@ contract ExchangeSub is Exchange {
     /**
      * @notice  Add new token to portfolio
      * @dev     Exchange needs to be DEFAULT_ADMIN on the Portfolio
-     * @param   _subnetSymbol  Subnet Symbol of the token
+     * @param   _srcChainSymbol  Source Chain Symbol of the token
      * @param   _tokenaddress  address of the token
      * @param   _srcChainId  Source Chain id
      * @param   _decimals  decimals of the token
@@ -133,10 +164,10 @@ contract ExchangeSub is Exchange {
      * @param   _mode  starting auction mode
      * @param   _fee  Bridge Fee
      * @param   _gasSwapRatio  Amount of token to swap per ALOT
-     * @param   _srcChainSymbol  Source Chain Symbol of the token
+     * @param   _subnetSymbol  Subnet Symbol of the token
      */
     function addToken(
-        bytes32 _subnetSymbol,
+        bytes32 _srcChainSymbol,
         address _tokenaddress,
         uint32 _srcChainId,
         uint8 _decimals,
@@ -144,10 +175,10 @@ contract ExchangeSub is Exchange {
         ITradePairs.AuctionMode _mode,
         uint256 _fee,
         uint256 _gasSwapRatio,
-        bytes32 _srcChainSymbol
+        bytes32 _subnetSymbol
     ) external onlyRole(AUCTION_ADMIN_ROLE) {
         IPortfolioSub(address(portfolio)).addToken(
-            _subnetSymbol,
+            _srcChainSymbol,
             _tokenaddress,
             _srcChainId,
             _decimals,
@@ -155,7 +186,7 @@ contract ExchangeSub is Exchange {
             _mode,
             _fee,
             _gasSwapRatio,
-            _srcChainSymbol
+            _subnetSymbol
         );
     }
 
@@ -274,14 +305,17 @@ contract ExchangeSub is Exchange {
     }
 
     /**
-     * @notice  Sets auction price
+     * @notice  Sets the OmniVault address that will run the auction
      * @param   _tradePairId  id of the trading pair
-     * @param   _price  price
+     * @param   _omniVaultAdress  omniVault address
      */
-    function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external onlyRole(AUCTION_ADMIN_ROLE) {
+    function setAuctionVaultAdress(
+        bytes32 _tradePairId,
+        address _omniVaultAdress
+    ) external onlyRole(AUCTION_ADMIN_ROLE) {
         ITradePairs.AuctionMode mode = tradePairs.getTradePair(_tradePairId).auctionMode;
         require(mode != ITradePairs.AuctionMode.OFF, "E-OACC-04");
-        tradePairs.setAuctionPrice(_tradePairId, _price);
+        tradePairs.setAuctionVaultAdress(_tradePairId, _omniVaultAdress);
     }
 
     /**
@@ -320,53 +354,5 @@ contract ExchangeSub is Exchange {
      */
     function getMaxTradeAmount(bytes32 _tradePairId) external view returns (uint256) {
         return tradePairs.getTradePair(_tradePairId).maxTradeAmount;
-    }
-
-    /**
-     * @notice  Matches auction orders once the auction is closed and auction price is set
-     * @dev     Takes the top of the book sell order(bestAsk), and matches it with the buy orders sequentially.
-     * An auction mode can safely be changed to AUCTIONMODE.OFF only when this function returns false.
-     * High Level Auction Logic
-     * Auction Token & An auction pair(Base is the auction) gets added with AUCTION_MODE==PAUSED
-     * Nobody can enter orders on this pair, and nobody can transfer/withdraw their auction token
-     * when AUCTION_MODE != OFF
-     * Auction starts with AUCTION_MODE==ON. Participants can enter any buy or sell orders at any price
-     * The order books will not match any orders and it will stay crossed
-     * An off-chain app calculates the match price and quantities and disseminates this information in
-     * real time for participant to adjust their orders accordingly.
-     * When the predetermined auction end time is reached AUCTION_MODE is set to CLOSING. This is the
-     * Randomized Closing Sequence as explained in ExchangeMain.flipCoin()
-     * When auction is closed, the AUCTION_MODE is set to MATCHING.
-     * The auction price is set from the off-chain app. At this point no actions are allowed on this trade pair:
-     * no new orders, cancels, cancel-replaces, deposits, withdraws or transfers until all matching is done.
-     * @param   _tradePairId  id of the trading pair
-     * @param   _maxNbrOfFills  controls max number of fills an order can get at a time to avoid running out of gas
-     * @return  bool  true if more matches are possible. false if no more possible matches left in the orderbook.
-     */
-    function matchAuctionOrders(
-        bytes32 _tradePairId,
-        uint256 _maxNbrOfFills
-    ) external onlyRole(AUCTION_ADMIN_ROLE) returns (bool) {
-        bytes32 bookId = tradePairs.getBookId(_tradePairId, ITradePairs.Side.SELL);
-        (, bytes32 takerOrderId) = orderBooks.getTopOfTheBook(bookId);
-        if (takerOrderId != "") {
-            ITradePairs.Order memory takerOrder = tradePairs.getOrder(takerOrderId);
-            uint256 startRemainingQuantity = UtilsLibrary.getRemainingQuantity(
-                takerOrder.quantity,
-                takerOrder.quantityFilled
-            );
-            uint256 takerRemainingQuantity = tradePairs.matchAuctionOrder(takerOrder, _maxNbrOfFills);
-            if (startRemainingQuantity == takerRemainingQuantity) {
-                //Sell taker order didn't match with any buy orders, auction is finished
-                emit AuctionMatchFinished(_tradePairId);
-                return false;
-            } else {
-                return true;
-            }
-        } else {
-            // no more orders left on the sell book, auction is finished
-            emit AuctionMatchFinished(_tradePairId);
-            return false;
-        }
     }
 }

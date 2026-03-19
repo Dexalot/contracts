@@ -67,21 +67,21 @@ library UtilsLibrary {
     }
 
     /**
-     * @notice  Checks if a tradePair is in auction and if matching is not allowed in the orderbook.
-     * @param   _mode  Auction Mode
-     * @return  bool  true/false
+     * @notice  Converts a uint256 value to an address
+     * @param   _addressAs256  uint256 data to be converted
+     * @return  address  converted address representation
      */
-    function matchingAllowed(ITradePairs.AuctionMode _mode) internal pure returns (bool) {
-        return _mode == ITradePairs.AuctionMode.OFF || _mode == ITradePairs.AuctionMode.LIVETRADING;
+    function uint256ToAddress(uint256 _addressAs256) internal pure returns (address) {
+        return address(uint160(_addressAs256));
     }
 
     /**
-     * @notice  Checks if the auction is in a restricted state.
-     * @param   _mode  Auction Mode
-     * @return  bool  true if Auction is in restricted mode
+     * @notice  Converts an address to uint256 value
+     * @param   _address  address data to be converted
+     * @return  uint256  converted address representation
      */
-    function isAuctionRestricted(ITradePairs.AuctionMode _mode) internal pure returns (bool) {
-        return _mode == ITradePairs.AuctionMode.RESTRICTED || _mode == ITradePairs.AuctionMode.CLOSING;
+    function addressToUint256(address _address) internal pure returns (uint256) {
+        return uint256(uint160(_address));
     }
 
     /**
@@ -110,6 +110,36 @@ library UtilsLibrary {
      */
     function floor(uint256 _a, uint256 _m) internal pure returns (uint256) {
         return (_a / 10 ** _m) * 10 ** _m;
+    }
+    /**
+     * @notice  Returns the commission to be paid.
+     * @param   _amount  token quantity being swapped
+     * @param   _rate  maker or taker rate to be applied to the _amount.
+     * It is expected NOT in bps (1/10000) BUT in  1/1000.
+     * PortfolioSubHelper.getRates mutliplies the rates by 10 before calling this function.
+     * certain admin or contracted market makers have 0 rates.(no minimum applies)
+     * @return  uint256  fee to be paid, at least 1 automic unit for regular users
+     */
+
+    function getFee(uint256 _amount, uint256 _rate) internal pure returns (uint256) {
+        if (_rate == 0) {
+            return 0; // for admin , contracted market makers
+        }
+        // _rate is in bps but PortfolioSubHelper.getRates multiplies it by 10 to be able to get
+        // more precision. Hence the denominator for fee calculations is 100K instead of 10K.
+        uint256 fee = (_amount * _rate) / 100000;
+
+        // If there is an amount and a rate, ensure fee is at least 1 atomic unit
+        // This is a GUARD againts small orders trying to avoidfees(o fees). There has to be some
+        // financial penalty if it is attempted. Theoratically, this line won't execute because
+        // the lowest evm decimal tokens we support are USDC & USDC with 6 decimals. Even with
+        // minTradeAmount = 0.1 (typically set to >=1) USDC and heavily discounted rate of 0.5 bps
+        // wich is the minimum taker rate allowed, the fee would be 0.000005, which is still > 0.000001
+        if (fee == 0 && _amount >= 1) {
+            return 1;
+        }
+
+        return fee;
     }
 
     /**

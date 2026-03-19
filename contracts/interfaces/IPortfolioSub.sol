@@ -73,7 +73,7 @@ interface IPortfolioSub {
 
     function setAuctionMode(bytes32 _symbol, ITradePairs.AuctionMode _mode) external;
 
-    function autoFill(address _trader, bytes32 _symbol) external;
+    function autoGas(address _trader, bytes32 _symbol) external;
 
     function addToken(
         bytes32 _srcChainSymbol,

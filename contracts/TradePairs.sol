@@ -37,7 +37,7 @@ contract TradePairs is
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.UintSet;
 
     // version
-    bytes32 public constant VERSION = bytes32("3.6.2");
+    bytes32 public constant VERSION = bytes32("3.8.0");
 
     // id counter to build a unique handle for each new order/execution
     uint256 private idCounter;
@@ -272,43 +272,54 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Sets the auction mode of a specific Trade Pair
+     * @notice  Sets the auction mode of a specific Trade Pair and the base Token in Portfolio
      * @dev     Need to be able to call it internally from the constructor
      * @param   _tradePairId  id of the trading pair
      * @param   _mode  Auction Mode
      */
     function setAuctionModePrivate(bytes32 _tradePairId, AuctionMode _mode) private {
+        //Currently only the first 3 modes in the enum are supported
+        require(_mode <= AuctionMode.OPEN, "T-AUCT-03");
         TradePair storage tradePair = tradePairMap[_tradePairId];
         uint256 oldValue = uint256(tradePair.auctionMode);
         tradePair.auctionMode = _mode;
         portfolio.setAuctionMode(tradePair.baseSymbol, _mode);
-        if (UtilsLibrary.matchingAllowed(_mode)) {
-            // Makes sure that the matching is completed after the auction has ended and order book
-            // doesn't have any crossed orders left before unpausing the trade pair
-            require(orderBooks.isNotCrossedBook(tradePair.sellBookId, tradePair.buyBookId), "T-AUCT-05");
-            pauseTradePair(_tradePairId, false);
-        } else if (_mode == AuctionMode.OPEN || UtilsLibrary.isAuctionRestricted(_mode)) {
-            pauseTradePair(_tradePairId, false);
-        } else if (_mode == AuctionMode.MATCHING || _mode == AuctionMode.PAUSED) {
-            pauseTradePair(_tradePairId, true);
-        }
         emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-AUCTIONMODE", oldValue, uint256(_mode));
     }
 
     /**
-     * @notice  Sets the auction price
-     * @dev     Price is calculated by the backend (off chain) after the auction has closed.
-     * Auction price can be changed anytime. It is imperative that is not changed after the
-     * first order is matched until the last order to be matched.
+     * @notice  Sets the OmniVault address that will run the auction
+     * @dev     tradePair.auctionPrice has been obsolete since 2023.It has been repurposed as of March 15, 2026
+     * to hold the Acution OmniVault address instead of adding a new field to the tradePair struct
      * @param   _tradePairId  id of the trading pair
-     * @param   _price  price of the auction
+     * @param   _omniVaultAdress  omniVault address
      */
-    function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function setAuctionVaultAdress(
+        bytes32 _tradePairId,
+        address _omniVaultAdress
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         TradePair storage tradePair = tradePairMap[_tradePairId];
-        require(UtilsLibrary.decimalsOk(_price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals), "T-AUCT-02");
+        require(_omniVaultAdress != address(0), "T-AUCT-01");
         uint256 oldValue = tradePair.auctionPrice;
-        tradePair.auctionPrice = _price;
-        emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-AUCTIONPRICE", oldValue, _price);
+        tradePair.auctionPrice = UtilsLibrary.addressToUint256(_omniVaultAdress);
+        emit ParameterUpdated(
+            PARAMETER_UPDATED_VERSION,
+            _tradePairId,
+            "T-AUCTION-OMNIVAULTADDRESS",
+            oldValue,
+            UtilsLibrary.addressToUint256(_omniVaultAdress)
+        );
+    }
+
+    /**
+     * @notice  Returns the OmniVault address that is running the auction
+     * @dev     tradePair.auctionPrice that has been obsolete since 2023, has been repurposed as of March 15, 2026
+     * to hold the Omni Vault address instead of adding a new field
+     * @param   _tradePairId  id of the trading pair
+     * @return  address  address of the OmniVault
+     */
+    function getAuctionVaultAdress(bytes32 _tradePairId) external view override returns (address) {
+        return UtilsLibrary.uint256ToAddress(tradePairMap[_tradePairId].auctionPrice);
     }
 
     /**
@@ -323,7 +334,7 @@ contract TradePairs is
     /**
      * @notice  Sets the minimum post amount allowed to the orderbook of the given Trade Pair
      * @dev     Can only be called by DEFAULT_ADMIN. The min trade amount needs to satisfy
-     * `getQuoteAmount(_price, _quantity, _tradePairId) >= _minTradeAmount`
+     * `getQuoteAmount(_price, _quantity, _tradePairId) >= setMinPostAmount`
      * @param   _tradePairId  id of the trading pair
      * @param   _minPostAmount  minimum trade amount in terms of quote asset that can be posted in the orderbook
      */
@@ -332,6 +343,7 @@ contract TradePairs is
         uint256 _minPostAmount
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(_minPostAmount >= tradePair.minTradeAmount, "T-MTMP-01");
         uint256 oldValue = tradePair.minPostAmount;
         tradePair.minPostAmount = _minPostAmount;
         emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MINPOAMT", oldValue, _minPostAmount);
@@ -349,6 +361,7 @@ contract TradePairs is
         uint256 _minTradeAmount
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         TradePair storage tradePair = tradePairMap[_tradePairId];
+        require(_minTradeAmount <= tradePair.minPostAmount, "T-MTMP-01");
         uint256 oldValue = tradePair.minTradeAmount;
         tradePair.minTradeAmount = _minTradeAmount;
         emit ParameterUpdated(PARAMETER_UPDATED_VERSION, _tradePairId, "T-MINTRAMT", oldValue, _minTradeAmount);
@@ -624,12 +637,7 @@ contract TradePairs is
      * @param   _price  execution price
      * @param   _quantity  execution quantity
      */
-    function addExecution(
-        bytes32 _makerOrderId,
-        Order memory _takerOrder,
-        uint256 _price,
-        uint256 _quantity
-    ) private returns (Order memory) {
+    function addExecution(bytes32 _makerOrderId, Order memory _takerOrder, uint256 _price, uint256 _quantity) private {
         Order storage makerOrder = orderMap[_makerOrderId];
         TradePair storage tradePair = tradePairMap[makerOrder.tradePairId];
 
@@ -656,8 +664,26 @@ contract TradePairs is
         _takerOrder.totalFee = _takerOrder.totalFee + tlastFee;
 
         emitExecuted(_price, _quantity, makerOrder.id, _takerOrder, mlastFee, tlastFee);
-        emitStatusUpdate(makerOrder.id, bytes32(0)); // EMIT maker order's status update
-        return _takerOrder;
+        // Do not allow any dust maker orders to remain in the ob, if they are partially filled and
+        // the remaining is below 1/10th of minTradeAmount then cancel
+        // Typical values for minPostAmount= 10 USDC and minTradeAmount = 1 USDC
+        // This cancel will be in effect for dust orders under 0.1 USDC
+        // Even with the current default minPostAmount=minTradeAmount= 5 USDC, it will impact orders < 0.5 USDC
+        if (
+            makerOrder.status == Status.PARTIAL &&
+            UtilsLibrary.getQuoteAmount(
+                tradePair.baseDecimals,
+                _price,
+                UtilsLibrary.getRemainingQuantity(makerOrder.quantity, makerOrder.quantityFilled)
+            ) <
+            tradePair.minTradeAmount / 10
+        ) {
+            // this call will emit the status update & remove the closed order within
+            doOrderCancel(makerOrder.id, false, UtilsLibrary.stringToBytes32("T-LTPA-02"));
+        } else {
+            emitStatusUpdate(makerOrder.id, bytes32(0)); // EMIT maker order's status update
+            removeClosedOrder(makerOrder.id);
+        }
     }
 
     /**
@@ -732,7 +758,7 @@ contract TradePairs is
      * @param   _msSender  msg.Sender address
      * @param   _order  order details
      */
-    function addOrderChecks(address _msSender, NewOrder memory _order) private view returns (uint256, bytes32) {
+    function addOrderChecks(address _msSender, NewOrder memory _order) private view returns (bytes32) {
         // Order owner check. Will revert the order or the orderList entirely
         require(_order.traderaddress == _msSender, "T-OOCA-01");
         TradePair storage tradePair = tradePairMap[_order.tradePairId];
@@ -741,17 +767,28 @@ contract TradePairs is
         require(!tradePair.addOrderPaused, "T-AOPA-01");
         // Order Types Check - Limit, Market etc
         if (!allowedOrderTypes[_order.tradePairId].contains(uint256(_order.type1))) {
-            return (0, UtilsLibrary.stringToBytes32("T-IVOT-01"));
+            return UtilsLibrary.stringToBytes32("T-IVOT-01");
             // Quantity digit check
         } else if (!UtilsLibrary.decimalsOk(_order.quantity, tradePair.baseDecimals, tradePair.baseDisplayDecimals)) {
-            return (0, UtilsLibrary.stringToBytes32("T-TMDQ-01"));
+            return UtilsLibrary.stringToBytes32("T-TMDQ-01");
             // Unique ClientOrderId Check
         } else if (clientOrderIDMap[_order.traderaddress][_order.clientOrderId] != 0) {
-            return (0, UtilsLibrary.stringToBytes32("T-CLOI-01"));
-            // Pair Level PostOnly mode check. Only PO Orders allowed when TradePair is listed for the first time.
+            return UtilsLibrary.stringToBytes32("T-CLOI-01");
+        } else if (tradePair.auctionMode == AuctionMode.OPEN) {
+            // if TradePair is in auction, only omnivault can send any type of order. Everybody else
+            // needs to send Limit-IOC Orders (tradePair.auctionPrice has been repurposed to hold omnivault address as of March 2026)
+            // if the auction omni-vault address has not been set for an auction yet, nobody can post to the orderbook
+            // due to this check. (LIMIT-IOC orders are not posted to ob)
+            if (_msSender != UtilsLibrary.uint256ToAddress(tradePair.auctionPrice)) {
+                if (!(_order.type1 == Type1.LIMIT && _order.type2 == Type2.IOC)) {
+                    return UtilsLibrary.stringToBytes32("T-AUCT-02");
+                }
+            }
         } else if (tradePair.postOnly) {
+            // Pair Level PostOnly mode check. Only PO Orders allowed when TradePair is listed for the first time.
+            // Make sure to have this after Auction checks just in case the auction pair is set to PO mode
             if (!(_order.type1 == Type1.LIMIT && _order.type2 == Type2.PO)) {
-                return (0, UtilsLibrary.stringToBytes32("T-POOA-01"));
+                return UtilsLibrary.stringToBytes32("T-POOA-01");
             }
         }
 
@@ -759,10 +796,6 @@ contract TradePairs is
         uint256 marketPrice = orderBooks.bestPrice(bookIdOtherSide);
 
         if (_order.type1 == Type1.MARKET) {
-            // Market orders not allowed in Auction Mode
-            if (!UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
-                return (0, UtilsLibrary.stringToBytes32("T-AUCT-04"));
-            }
             //price set to the worst price to fill up to this price given enough quantity
             _order.price = _order.side == Side.BUY
                 ? (marketPrice * (100 + tradePair.allowedSlippagePercent)) / 100
@@ -771,7 +804,7 @@ contract TradePairs is
         } else {
             // _price digit check for LIMIT order
             if (!UtilsLibrary.decimalsOk(_order.price, tradePair.quoteDecimals, tradePair.quoteDisplayDecimals)) {
-                return (0, UtilsLibrary.stringToBytes32("T-TMDP-01"));
+                return UtilsLibrary.stringToBytes32("T-TMDP-01");
             }
             // PostOnly Check (reject order that will get a fill)
             if (
@@ -779,7 +812,7 @@ contract TradePairs is
                 marketPrice > 0 && // marketPrice > 0 check for non-empty orderbook
                 (_order.side == Side.BUY ? _order.price >= marketPrice : _order.price <= marketPrice)
             ) {
-                return (0, UtilsLibrary.stringToBytes32("T-T2PO-01"));
+                return UtilsLibrary.stringToBytes32("T-T2PO-01");
             }
         }
 
@@ -787,11 +820,11 @@ contract TradePairs is
 
         // a market order will be rejected/reverted here if there is an empty orderbook because _price will be 0
         if (tradeAmnt < tradePair.minTradeAmount) {
-            return (0, UtilsLibrary.stringToBytes32("T-LTMT-01"));
+            return UtilsLibrary.stringToBytes32("T-LTMT-01");
         } else if (tradeAmnt > tradePair.maxTradeAmount) {
-            return (0, UtilsLibrary.stringToBytes32("T-MTMT-01"));
+            return UtilsLibrary.stringToBytes32("T-MTMT-01");
         }
-        return (_order.price, bytes32(0));
+        return bytes32(0);
     }
 
     /**
@@ -880,7 +913,7 @@ contract TradePairs is
      * - `T-MTMT-01` : trade amount is more than maxTradeAmount for the tradePair
      * - `T-T2PO-01` : Post Only order is not allowed to be a taker
      * - `T-POOA-01` : Only PO(PostOnly) Orders allowed for this pair
-     * - `T-AUCT-04` : market orders not allowed in auction mode
+     * - `T-AUCT-02` : Only LIMIT-IOC orders allowed when auctionMode = 2 (OPEN)
      *
      * `KILLED (CANCELED) conditions:`
      *
@@ -897,8 +930,6 @@ contract TradePairs is
      * and `clientOrderId` can be used to cancel them without waiting to receive the orderId back from the blockchain. \
      * For MARKET orders, values sent by the user in the `price` and `type2` fields will be ignored and
      * defaulted to `0` and `Type2.GTC` respectively. \
-     * Similarly for auction orders, values sent by the user in the `stp` and `type2` fields will be ignored
-     * and defaulted to `STP.NONE` and `Type2.GTC` respectively. \
      * Valid quantity precision (baseDisplayDecimals) and base token evm decimals can be obtained by calling
      * `getTradePair(..)` and accessing baseDisplayDecimals and baseDecimals respectively.
      * Valid price precision and quote token evm decimals can also be obtained from the same function above and
@@ -962,7 +993,6 @@ contract TradePairs is
         takerOrder.clientOrderId = _order.clientOrderId;
         takerOrder.tradePairId = _order.tradePairId;
         takerOrder.traderaddress = _order.traderaddress;
-        takerOrder.price = _order.price;
         takerOrder.quantity = _order.quantity;
         // for new orders this ensures that previousUpdateBlock is the same as updateBlock
         takerOrder.updateBlock = uint32(block.number);
@@ -974,23 +1004,17 @@ contract TradePairs is
         //takerOrder.totalFee= 0;            // evm initialized
         //takerOrder.type1= Type1.MARKET;    // evm initialized
         //takerOrder.type2= Type2.GTC;       // evm initialized
+        //takerOrder.price = 0;              // evm initialized
         //MARKET orders can only be GTC;  Leave evm initialized values as is unless type1 !=MARKET
         if (_order.type1 != Type1.MARKET) {
+            takerOrder.price = _order.price;
             takerOrder.type1 = _order.type1;
-
-            if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
-                takerOrder.type2 = _order.type2;
-            } else {
-                // All auction orders have to be LIMIT & GTC & STP.NONE
-                takerOrder.type2 = Type2.GTC;
-                _order.stp = STP.NONE;
-            }
+            takerOrder.type2 = _order.type2;
         }
 
-        // Returns applicable price for Type1=MARKET
-        // OR _price unchanged for Type1=LIMIT
-        // OR 0 price along with an errorCode
-        (uint256 price, bytes32 code) = addOrderChecks(_msSender, _order);
+        // Returns applicable price for Type1=MARKET in _order.price
+        // _order.price unchanged for Type1=LIMIT
+        bytes32 code = addOrderChecks(_msSender, _order);
         (bytes32 outSymbol, uint256 outAmount) = UtilsLibrary.getOutgoingDetails(
             _order.side,
             tradePair.quoteSymbol,
@@ -1010,13 +1034,14 @@ contract TradePairs is
             emitStatusUpdateMemory(takerOrder, code);
             return; // reject & stop processing the order
         }
-        // Use the price returned by addOrderCheck as it returns applicable price for Type1=MARKET
-        takerOrder.price = price;
 
-        //Skip matching if in Auction Mode
-        if (UtilsLibrary.matchingAllowed(tradePair.auctionMode)) {
-            (takerOrder, code) = matchOrder(takerOrder, maxNbrOfFills, _order.stp);
+        if (_order.type1 == Type1.MARKET) {
+            // Use the price returned by addOrderCheck as it returns applicable price for Type1=MARKET
+            takerOrder.price = _order.price;
         }
+
+        code = matchOrder(takerOrder, maxNbrOfFills, _order.stp);
+
         uint256 quantityRemaining = UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled);
 
         if (_order.type1 == Type1.MARKET) {
@@ -1064,7 +1089,7 @@ contract TradePairs is
                         outAmount
                     );
 
-                    // Unfilled Limit Orders go in the Orderbook (Including Auction Orders)
+                    // Unfilled Limit Orders go in the Orderbook (Including eligible Auction Orders)
                     addTakerToOrderBook(takerOrder.tradePairId, takerOrder);
                 }
             }
@@ -1076,14 +1101,14 @@ contract TradePairs is
         if (_fillGasTank) {
             // Only called if it is a single order or the very last order in an order list.
             // if any funds available for ALOT or outgoing Symbol in the portfolio then use it to fill the GasTank.
-            portfolio.autoFill(takerOrder.traderaddress, outSymbol);
+            portfolio.autoGas(takerOrder.traderaddress, outSymbol);
         }
     }
 
     /**
      * @notice  Adds the remaining quantity of an unfilled taker order to the orderbook
      * @dev     memory taker order is cast to storage prospective maker order before being added
-     * to the orderbook  (Including Auction Orders)
+     * to the orderbook
      * */
     function addTakerToOrderBook(bytes32 _tradePairId, Order memory _takerOrder) private {
         TradePair storage tradePair = tradePairMap[_tradePairId];
@@ -1129,43 +1154,21 @@ contract TradePairs is
     }
 
     /**
-     * @notice  Deprecated function to match Auction orders
-     * @dev     Performs no action as auction matching logic is deprecated.
-     * Requires `DEFAULT_ADMIN_ROLE`, also called by `ExchangeSub.matchAuctionOrders` that
-     * requires `AUCTION_ADMIN_ROLE`.
-     * @param   _takerOrder  Taker Order
-     * @return  quantityRemaining Full quantity of the taker order
-     */
-    function matchAuctionOrder(
-        Order memory _takerOrder,
-        uint256
-    ) external view override onlyRole(DEFAULT_ADMIN_ROLE) returns (uint256 quantityRemaining) {
-        return _takerOrder.quantity;
-    }
-
-    /**
      * @notice  Matches a taker order with maker orders in the opposite Orderbook before
      * it is entered in its own orderbook.
-     * Also handles matching auction orders.
      * @dev     IF `BUY` order, it will try to match with an order in the `SELL OrderBook` and vice versa
      * A taker order that is entered can match with multiple maker orders that are waiting in the orderbook.
      * This function may run out of gas not because of the single taker order but because of the number of
-     * maker orders that are matching with it. This variable is ESSENTIAL for tradepairs in `AUCTION_MODE== MATCHING`
-     * because we are guaranteed to run into such situations where a single large `SELL` order (quantity 1000)
-     * is potentially matched with multiple small BUY orders (1000 orders with quantity 1) , creating 1000 matches
-     * which will run out of gas.
+     * maker orders that are matching with it. This variable is ESSENTIAL for cases where a single large
+     * `SELL` order (quantity 1000) is potentially matched with multiple small BUY orders
+     * (1000 orders with quantity 1), creating 1000 matches which will run out of gas.
      * Self Trade Prevention is also checked here before allowing any matches.
      * @param   _takerOrder  Taker Order
      * @param   _maxNbrOfFills  Max number of fills an order can get at a time to avoid running out of gas (Default: 100)
      * @param   _stp  Self Trade Prevention mode
-     * @return  updated taker order (status,quantityFilled, totalAmount etc..)
      * @return  code reason for the cancel in the `code` field. Currently only due to STP
      */
-    function matchOrder(
-        Order memory _takerOrder,
-        uint256 _maxNbrOfFills,
-        STP _stp
-    ) private returns (Order memory, bytes32 code) {
+    function matchOrder(Order memory _takerOrder, uint256 _maxNbrOfFills, STP _stp) private returns (bytes32 code) {
         Side side = _takerOrder.side;
         TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
         // Get the opposite Book. if buying need to match with SellBook and vice versa
@@ -1188,7 +1191,6 @@ contract TradePairs is
             _maxNbrOfFills > 0
         ) {
             makerOrder = orderMap[makerOrderId];
-            // Self Trade Prevention is not applied in Auction Mode
             if (_takerOrder.traderaddress == makerOrder.traderaddress && _stp != STP.NONE) {
                 code = UtilsLibrary.stringToBytes32("T-STPR-01");
                 if (_stp == STP.CANCELTAKER) {
@@ -1199,6 +1201,8 @@ contract TradePairs is
                         break; // stop matching the takerOrder with any other maker orders
                     }
                     if (_stp == STP.CANCELMAKER) {
+                        // Count STP-driven cancellations toward the iteration budget
+                        _maxNbrOfFills--;
                         code = bytes32(0);
                         (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
                         continue; // continue with the next maker order
@@ -1213,37 +1217,9 @@ contract TradePairs is
                 UtilsLibrary.getRemainingQuantity(makerOrder.quantity, makerOrder.quantityFilled)
             );
 
-            if (tradePair.auctionMode == AuctionMode.MATCHING) {
-                // In the typical flow, takerOrder amounts are all available and not locked
-                // In auction, taker order amounts are locked like a maker order and
-                // has to be made available before addExecution
-                portfolio.adjustAvailable(
-                    IPortfolio.Tx.INCREASEAVAIL,
-                    _takerOrder.traderaddress,
-                    tradePair.baseSymbol,
-                    quantity
-                );
-                // In Auction, all executions should be at auctionPrice
-                price = tradePair.auctionPrice;
-            }
+            // this updates _takerOrder & makes a state change on the makerOrder in the orderMap
+            addExecution(makerOrder.id, _takerOrder, price, quantity);
 
-            // this makes a state change on the makerOrder in the orderMap
-            _takerOrder = addExecution(makerOrder.id, _takerOrder, price, quantity);
-
-            if (tradePair.auctionMode == AuctionMode.MATCHING && makerOrder.price > tradePair.auctionPrice) {
-                // Increase the available by the difference between the makerOrder & the auction Price
-                portfolio.adjustAvailable(
-                    IPortfolio.Tx.INCREASEAVAIL,
-                    makerOrder.traderaddress,
-                    tradePair.quoteSymbol,
-                    UtilsLibrary.getQuoteAmount(
-                        tradePair.baseDecimals,
-                        makerOrder.price - tradePair.auctionPrice,
-                        quantity
-                    )
-                );
-            }
-            removeClosedOrder(makerOrder.id);
             (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
             takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(
                 _takerOrder.quantity,
@@ -1252,18 +1228,10 @@ contract TradePairs is
             _maxNbrOfFills--;
         }
 
-        if (tradePair.auctionMode == AuctionMode.MATCHING) {
-            emitStatusUpdate(_takerOrder.id, bytes32(0)); // EMIT taker order's status update
-            if (takerRemainingQuantity == 0) {
-                // Remove the taker auction order from the sell orderbook
-                orderBooks.removeFirstOrder(tradePair.sellBookId, _takerOrder.price);
-                removeClosedOrder(_takerOrder.id);
-            }
-        } else if (
+        if (
             code != bytes32(0) || // Self trade Prevention, cancel the remaining of the taker order.
             (takerRemainingQuantity > 0 && (_maxNbrOfFills == 0 || _takerOrder.type1 == Type1.MARKET))
         ) {
-            // This is not applicable to Auction Matching Mode
             // if an order gets the max number of fills in a single block, it gets CANCELED for the
             // remaining amount to protect the above loop from running out of gas.
             // OR IF the Market Order fills all the way to the worst price and still has remaining,
@@ -1271,7 +1239,7 @@ contract TradePairs is
             _takerOrder.status = Status.CANCELED;
         }
 
-        return (_takerOrder, code);
+        return code;
     }
 
     /**
@@ -1554,7 +1522,7 @@ contract TradePairs is
         if (_fillGasTank) {
             // we just made some funds available for the outgoing Symbol, so we can fillGasTank without worrying about
             // funds availability
-            portfolio.autoFill(order.traderaddress, outSymbol);
+            portfolio.autoGas(order.traderaddress, outSymbol);
         }
         removeClosedOrder(order.id);
     }

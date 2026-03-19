@@ -644,7 +644,7 @@ describe("Portfolio Sub", () => {
         .to.be.revertedWith("P-NTDP-01");
     })
 
-    it("Should get gas Token with autoFill using erc20 (ALOT not available)", async () => {
+    it("Should get gas Token with autoGas using erc20 (ALOT not available)", async () => {
         const { other2 } = await f.getAccounts();
 
         //Set GasStation Gas Amount to 0.5 instead of 0.1 ALOT
@@ -712,12 +712,12 @@ describe("Portfolio Sub", () => {
 
         // fail due to paused portfolio
         await portfolioSub.pause()
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas }))
+        await expect(portfolioSub.connect(other2).autoGas(other2.address, USDT, { gasLimit: 200000, maxFeePerGas }))
             .to.revertedWith("Pausable: paused");
         await portfolioSub.unpause()
 
         // fail due to missing EXECUTOR_ROLE
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas })).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(other2).autoGas(other2.address, USDT, { gasLimit: 200000, maxFeePerGas })).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 
@@ -725,7 +725,7 @@ describe("Portfolio Sub", () => {
         const usdtSwappedAmnt = (await portfolioSub.bridgeParams(USDT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
         const beforeBalance = await other2.getBalance();
 
-         let tx = await portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas });
+         let tx = await portfolioSub.connect(other2).autoGas(other2.address, USDT, { gasLimit: 200000, maxFeePerGas });
          let receipt = await tx.wait();
 
          let gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
@@ -745,7 +745,7 @@ describe("Portfolio Sub", () => {
         newBalance = ethers.utils.parseEther('1');
         await f.setHardhatBalance(other2, newBalance);
         gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
-        tx = await portfolioSub.connect(other2).autoFill(other2.address, USDT, { gasLimit: 200000, maxFeePerGas });
+        tx = await portfolioSub.connect(other2).autoGas(other2.address, USDT, { gasLimit: 200000, maxFeePerGas });
         receipt = await tx.wait();
 
         gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
@@ -773,7 +773,7 @@ describe("Portfolio Sub", () => {
     })
 
 
-    it("Should get gas Token with autoFill using Alot ", async () => {
+    it("Should get gas Token with autoGas using Alot ", async () => {
         const { other2 } = await f.getAccounts();
 
         //Set GasStation Gas Amount to 0.5 instead of 0.1
@@ -821,13 +821,13 @@ describe("Portfolio Sub", () => {
 
         const alotSwappedAmnt = (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
 
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(other2).autoGas(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 
         const beforeBalance = await other2.getBalance();
 
-        let tx: any = await portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas});
+        let tx: any = await portfolioSub.connect(other2).autoGas(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas});
         let receipt = await tx.wait();
 
         let gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
@@ -847,7 +847,7 @@ describe("Portfolio Sub", () => {
         await f.setHardhatBalance(other2, newBalance);
 
         gasStationBeforeBal = await ethers.provider.getBalance(gasStation.address)
-        tx = await portfolioSub.connect(other2).autoFill(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas});
+        tx = await portfolioSub.connect(other2).autoGas(other2.address, ALOT, {gasLimit: 200000, maxFeePerGas});
         receipt = await tx.wait();
 
         gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);
@@ -895,7 +895,7 @@ describe("Portfolio Sub", () => {
 
     })
 
-    it("Should get gas Token ALOT from portfolio when sending erc20 using autoFill if portfolio(ALOT) > gasSwapRatio", async () => {
+    it("Should get gas Token ALOT from portfolio when sending erc20 using autoGas if portfolio(ALOT) > gasSwapRatio", async () => {
         const { other2 } = await f.getAccounts();
 
         //Set GasStation Gas Amount to 0.5 instead of 0.0255
@@ -937,7 +937,7 @@ describe("Portfolio Sub", () => {
         // console.log("USDT", Utils.formatUnits(await portfolioSub.tokenTotals(USDT), tokenDecimals))
         // console.log ("USDT",Utils.formatUnits(await portfolioSub.tokenTotals(ALOT), alot_decimals))
         // No change in tokenTotals
-        console.log("USDT portfolioSub", Utils.formatUnits((await portfolioSub.tokenTotals(USDT)), token_decimals))
+        // console.log("USDT portfolioSub", Utils.formatUnits((await portfolioSub.tokenTotals(USDT)), token_decimals))
         expect(await portfolioSub.tokenTotals(USDT)).to.equal(mainnetUSDTBal);
         expect(await portfolioSub.tokenTotals(ALOT)).to.equal(mainnetALOTBal);
 
@@ -966,7 +966,7 @@ describe("Portfolio Sub", () => {
         newBalance = ethers.utils.parseEther('0.35');
         await f.setHardhatBalance(other2, newBalance);
 
-        await expect(portfolioSub.connect(other2).autoFill(other2.address, USDT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
+        await expect(portfolioSub.connect(other2).autoGas(other2.address, USDT, {gasLimit: 200000, maxFeePerGas})).to.revertedWith("AccessControl:");
         await portfolioSub.grantRole(await portfolioSub.EXECUTOR_ROLE(), other2.address);
         expect(await portfolioSub.hasRole(await portfolioSub.EXECUTOR_ROLE(), other2.address)).to.be.equal(true);
 
@@ -974,7 +974,7 @@ describe("Portfolio Sub", () => {
 
         // const alotSwappedAmnt = (await portfolioSub.bridgeParams(ALOT)).gasSwapRatio.mul(gasDeposited).div(BigNumber.from(10).pow(18))
 
-        const tx: any = await portfolioSub.connect(other2).autoFill(other2.address, USDT, {gasLimit: 200000, maxFeePerGas});
+        const tx: any = await portfolioSub.connect(other2).autoGas(other2.address, USDT, {gasLimit: 200000, maxFeePerGas});
         const receipt = await tx.wait();
 
         const gasUsedInTx = receipt.cumulativeGasUsed.mul(receipt.effectiveGasPrice);

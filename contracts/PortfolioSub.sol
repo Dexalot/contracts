@@ -13,9 +13,9 @@ import "./interfaces/IPortfolioSubHelper.sol";
 /**
  * @title  Dexalot L1(previously subnet) Portfolio
  * @notice Receives deposits messages from the mainnets and sends withdraw requests back to any mainnet.
- * It also transfers tokens between traders as their orders gets matched.
+ * It also transfers tokens between traders as their orders get matched.
  * @dev    Allows only the native token to be withdrawn and deposited from/to the L1 wallet. Any other
- * token deposit has to be done via PortfolioMain's deposit functions that sends a message via the bridge.
+ * token deposit has to be done via PortfolioMain's deposit functions that send a message via the bridge.
  * When the bridge's message receive event emitted PortfolioBridgeSub invokes processXFerPayload \
  * All tokens including ALOT (native) can be withdrawn to mainnet using withdrawToken that will
  * send the funds back to the user's wallet in the mainnet. \
@@ -23,12 +23,12 @@ import "./interfaces/IPortfolioSubHelper.sol";
  * *******Gas Abstraction*********
  * If a trader deposits an XX token and has 0 ALOT in his Dexalot L1(subnet) wallet(Gas Tank), this contract
  * will make a call to GasStation to deposit a small amount of ALOT to the user's Gas Tank to be used for gas.
- * In return, It will deduct a tiny amount of the XX token transferred. This feature is called AutoFill
+ * In return, It will deduct a tiny amount of the XX token transferred. This feature is called autoGas
  * and it aims shield the clients from gas Token management in the Dexalot L1(subnet).
- * It is suffice to set usedForGasSwap=false for all tokens to disable autofill using tokens. ALOT can and
+ * It suffices to set usedForGasSwap=false for any token to disable autofill for that token. ALOT can and
  * will always be used for this purpose.
  * Similarly autofill will kick-in if the user's balance falls below the set threshold, during the normal
- * trading activity and will continue to deposit small amounts to the user's Gas Tank. See autoFillPrivate
+ * trading activity and will continue to deposit small amounts to the user's Gas Tank. See autoGasPrivate
  */
 
 // The code in this file is part of Dexalot project.
@@ -51,9 +51,9 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     // Decremented only with Tx.WITHDRAW.
     // It assumes all funds originate from the mainnet without any exceptions. As a result, amounts
     // transferred from/to wallet in the Dexalot L1 are ignored (add/remove gas)
-    // as well as autofill and account to account Dexalot L1 transfers and Executions(token swaps)
+    // as well as autoGas and account to account Dexalot L1 transfers and Executions(token swaps)
     // 100 ALOT transferred from the mainnet
-    // 100 ALOT is logged in tokenTotals. Any autofill that this may trigger(0.1) or any add/remove gas
+    // 100 ALOT is logged in tokenTotals. Any autoGas that this may trigger(0.1) or any add/remove gas
     // using some of this ALOT(10 AddGas) or tx.IXFERSENT (toAddress: 20) does not change the fact that Dexalot L1 has
     // 69.99(PortfolioSub) + 0.01(wallet) + 10(again same wallet) + 20(toAddress) = 100 ALOT in total.
     // tokenTotals does not keep track of ALOT being burned as gas. It assumes they are readily available in the
@@ -63,7 +63,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
 
     IGasStation private gasStation;
     IPortfolioMinter private portfolioMinter;
-    // account for collecting autoFill transactions and also bridge fees
+    // account for collecting autoGas transactions and also bridge fees
     address private treasury;
     // account collecting trading fees
     address public feeAddress;
@@ -76,7 +76,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     uint256 public totalNativeBurned;
 
     // version
-    bytes32 public constant VERSION = bytes32("2.7.5");
+    bytes32 public constant VERSION = bytes32("2.8.1");
 
     IPortfolioSubHelper private portfolioSubHelper;
 
@@ -133,7 +133,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             TokenDetails memory details = TokenDetails(
                 _decimals,
                 _tokenAddress,
-                _mode, // Auction Mode is ignored as it is irrelevant in the Mainnet
+                _mode,
                 _srcChainId,
                 _l1Decimals,
                 _subnetSymbol, //symbol
@@ -320,14 +320,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             _makerAddr,
             _takerAddr
         );
-        (makerFee, takerFee) = calculateFeeAmounts(
-            _tradePair,
-            _makerSide,
-            _baseAmount,
-            _quoteAmount,
-            makerRate,
-            takerRate
-        );
+        (makerFee, takerFee) = calculateFeeAmounts(_makerSide, _baseAmount, _quoteAmount, makerRate, takerRate);
         // if _maker.side = BUY then _taker.side = SELL
         if (_makerSide == ITradePairs.Side.BUY) {
             // decrease maker quote and incrase taker quote
@@ -394,7 +387,6 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
     }
 
     function calculateFeeAmounts(
-        ITradePairs.TradePair calldata _tradePair,
         ITradePairs.Side _makerSide,
         uint256 _baseAmount,
         uint256 _quoteAmount,
@@ -402,31 +394,11 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         uint256 _takerRate
     ) private pure returns (uint256 makerFee, uint256 takerFee) {
         if (_makerSide == ITradePairs.Side.BUY) {
-            makerFee = _makerRate == 0
-                ? 0
-                : UtilsLibrary.floor(
-                    (_baseAmount * _makerRate) / TENK,
-                    _tradePair.baseDecimals - _tradePair.baseDisplayDecimals
-                );
-            takerFee = _takerRate == 0
-                ? 0
-                : UtilsLibrary.floor(
-                    (_quoteAmount * _takerRate) / TENK,
-                    _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
-                );
+            makerFee = UtilsLibrary.getFee(_baseAmount, _makerRate);
+            takerFee = UtilsLibrary.getFee(_quoteAmount, _takerRate);
         } else {
-            makerFee = _makerRate == 0
-                ? 0
-                : UtilsLibrary.floor(
-                    (_quoteAmount * _makerRate) / TENK,
-                    _tradePair.quoteDecimals - _tradePair.quoteDisplayDecimals
-                );
-            takerFee = _takerRate == 0
-                ? 0
-                : UtilsLibrary.floor(
-                    (_baseAmount * _takerRate) / TENK,
-                    _tradePair.baseDecimals - _tradePair.baseDisplayDecimals
-                );
+            makerFee = UtilsLibrary.getFee(_quoteAmount, _makerRate);
+            takerFee = UtilsLibrary.getFee(_baseAmount, _takerRate);
         }
     }
 
@@ -451,7 +423,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             // Deposit the entire amount to the portfolio first
             safeIncrease(trader, _xfer.symbol, _xfer.quantity, 0, _xfer.transaction, trader, address(0));
             // Use some of the newly deposited portfolio holding to fill up Gas Tank
-            autoFillPrivate(trader, _xfer.symbol, _xfer.transaction);
+            autoGasPrivate(trader, _xfer.symbol, _xfer.transaction);
         } else {
             revert("P-PTNS-01");
         }
@@ -465,10 +437,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _trader  Address of the trader
      * @param   _symbol  Symbol to be used in exchange of Gas Token. ALOT or any other
      */
-    function autoFill(address _trader, bytes32 _symbol) external override whenNotPaused onlyRole(EXECUTOR_ROLE) {
+    function autoGas(address _trader, bytes32 _symbol) external override whenNotPaused onlyRole(EXECUTOR_ROLE) {
         // Trade pairs listed in TradePairs are guaranteed to be synched with Portfolio tokens at
         // when adding exchange.addTradePair. No need for a require check here.
-        autoFillPrivate(_trader, _symbol, Tx.AUTOFILL);
+        autoGasPrivate(_trader, _symbol, Tx.AUTOFILL);
     }
 
     /**
@@ -481,7 +453,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * Hence it is not possible to have a portfolioSub holding without gas in the GasTank
      * In other words: if assets[_trader][_symbol].available > 0 then _trader.balance will be > 0 \
      * Same in the scenario when person A sends tokens to person B who has no gas in his gasTank
-     * using transferToken in the Dexalot L1(subnet) because autoFillPrivate is also called
+     * using transferToken in the Dexalot L1(subnet) because autoGasPrivate is also called
      * if the recipient has ALOT in his portfolio, his ALOT inventory is used to deposit to wallet even when a
      * different token is sent, so swap doesn't happen in this case. \
      * Swap happens using the token sent only when there is not enough ALOT in the recipient portfolio and wallet
@@ -490,7 +462,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * @param   _transaction  Transaction type
      * @return  tankFull  Trader's Gas Tank status
      */
-    function autoFillPrivate(address _trader, bytes32 _symbol, Tx _transaction) private returns (bool tankFull) {
+    function autoGasPrivate(address _trader, bytes32 _symbol, Tx _transaction) private returns (bool tankFull) {
         // Default amount of ALOT to be transferred into traders Dexalot L1(subnet) Wallet(Gas Tank)
         uint256 gasAmount = gasStation.gasAmount();
         // Start refilling at 50%
@@ -517,7 +489,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                         tankFull = true;
                     }
                     // Always deposit some ALOT for any tokens coming from the mainnet, if the trader has 0 balance
-                    // We don't want the user to through the hassle of acquiring our Dexalot L1(subnet) gas token ALOT first in
+                    // We don't want the user to go through the hassle of acquiring our Dexalot L1(subnet) gas token ALOT first in
                     // order to initiate a transaction. This is equivalent of an airdrop
                     // but can't be exploited because the gas fee paid by the user in terms of mainnet gas token
                     // for this DEPOSIT transaction (AVAX) is well above the airdrop. The user is charged for the layerzero/icm
@@ -548,7 +520,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         (bool sent, ) = address(0).call{value: msg.value}("");
         require(sent, "P-BF-01");
         // the ending balance cannot be lower than the twice the gasAmount that we would deposit
-        // using autoFill. Currently 0.1*2= 0.2 ALOT
+        // using autoGas. Currently 0.1*2= 0.2 ALOT
         require(_from.balance >= gasStation.gasAmount() * 2, "P-BLTH-01");
         totalNativeBurned += msg.value;
         safeIncrease(_from, native, msg.value, 0, Tx.REMOVEGAS, _from, address(0));
@@ -655,7 +627,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
                 // Send the Net amount to Mainnet
                 _quantity - bridgeFee,
                 block.timestamp,
-                // set bytes18 to 1 for autofill gas
+                // set bytes18 to 1 for autoGas gas
                 _options
             ),
             _from
@@ -730,8 +702,8 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         // This is bridge fee going to treasury. Commissions go to feeAddress
         safeTransferFee(treasury, _symbol, _feeCharged);
         if (_transaction == Tx.WITHDRAW) {
-            // Using assert here because the sum of trader's holdings should equal
-            // to tokenTotals for the symbol at all times, no exceptions.
+            // Using assert here because the sum of all the holdings of the addresses in the L1
+            // should equal to tokenTotals for the symbol at all times, no exceptions.
             assert(_amount <= tokenTotals[_symbol]);
             // _feeCharged is still left in the Dexalot L1(subnet)
             tokenTotals[_symbol] = tokenTotals[_symbol] - (_amount - _feeCharged);
@@ -861,7 +833,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         //Can not transfer auction tokens
         require(tokenDetailsMap[_symbol].auctionMode == ITradePairs.AuctionMode.OFF, "P-AUCT-01");
         transferToken(msg.sender, _to, _symbol, _quantity, 0, Tx.IXFERSENT, false, address(0));
-        autoFillPrivate(_to, _symbol, Tx.AUTOFILL);
+        autoGasPrivate(_to, _symbol, Tx.AUTOFILL);
     }
 
     /**
@@ -895,7 +867,7 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         }
         // Auto fill gas using the first token. If ALOT is present then within OmniVaultManager + IncentiveDistributor transfers
         // it will be at the first index, else the first token is used to avoid multiple autoFill calls
-        autoFillPrivate(_to, _symbols[0], Tx.AUTOFILL);
+        autoGasPrivate(_to, _symbols[0], Tx.AUTOFILL);
     }
 
     /**

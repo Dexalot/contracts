@@ -405,11 +405,11 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
     }
 
     /**
-     * @notice  Allows deposits from trusted contracts
-     * @dev     Used by Avalaunch for DD deposits and Vesting Contracts.
+     * @notice  Allows deposits from trusted contracts on behalf of a given _from address
+     * @dev     Used by Avalaunch for DD deposits and Dexalot Vesting Contracts.
      * Keeping for backward compatibility instead of using ON_BEHALF_ROLE.
      * Forwards the call to depositToken with native bridge fee and default bridge provider.
-     * @param   _from  Address of the depositor
+     * @param   _from  Address to be credited with the deposit amount
      * @param   _symbol  Symbol of the token
      * @param   _quantity  Amount of token to deposit
      */
@@ -460,7 +460,7 @@ contract PortfolioMain is Portfolio, IPortfolioMain {
                 require(success, "P-WNFA-01");
             } else {
                 //Withdraw Token
-                //We don't check the AuctionMode of the token in the mainnet. If Dexalot L1(subnet) allows the message to be sent
+                //We don't check the AuctionMode of the token in the mainnet. If Dexalot L1 allows the message to be sent
                 //Then the token is no longer is auction
                 tokenMap[_xfer.symbol].safeTransfer(trader, quantity);
             }

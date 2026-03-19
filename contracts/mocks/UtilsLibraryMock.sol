@@ -21,12 +21,12 @@ contract UtilsLibraryMock {
         return UtilsLibrary.getRemainingQuantity(_quantity, _quantityFilled);
     }
 
-    function matchingAllowed(ITradePairs.AuctionMode _mode) external pure returns (bool) {
-        return UtilsLibrary.matchingAllowed(_mode);
+    function uint256ToAddress(uint256 _addressAs256) external pure returns (address) {
+        return UtilsLibrary.uint256ToAddress(_addressAs256);
     }
 
-    function isAuctionRestricted(ITradePairs.AuctionMode _mode) external pure returns (bool) {
-        return UtilsLibrary.isAuctionRestricted(_mode);
+    function addressToUint256(address _address) external pure returns (uint256) {
+        return UtilsLibrary.addressToUint256(_address);
     }
 
     function canCancel(
@@ -39,6 +39,10 @@ contract UtilsLibraryMock {
 
     function floor(uint256 _a, uint256 _m) external pure returns (uint256) {
         return UtilsLibrary.floor(_a, _m);
+    }
+
+    function getFee(uint256 _amount, uint256 _rate) external pure returns (uint256) {
+        return UtilsLibrary.getFee(_amount, _rate);
     }
 
     function min(uint256 _a, uint256 _b) external pure returns (uint256) {
