@@ -642,15 +642,22 @@ contract TradePairs is
         TradePair storage tradePair = tradePairMap[makerOrder.tradePairId];
 
         uint256 quoteAmount = UtilsLibrary.getQuoteAmount(tradePair.baseDecimals, _price, _quantity);
-        (uint256 mlastFee, uint256 tlastFee) = portfolio.addExecution(
-            makerOrder.tradePairId,
-            tradePair,
-            makerOrder.side,
-            makerOrder.traderaddress,
-            _takerOrder.traderaddress,
-            _quantity,
-            quoteAmount
-        );
+
+        Execution memory execution = Execution({
+            tradePairId: makerOrder.tradePairId,
+            baseAmount: _quantity,
+            quoteAmount: quoteAmount,
+            price: _price,
+            baseSymbol: tradePair.baseSymbol,
+            quoteSymbol: tradePair.quoteSymbol,
+            makerAddr: makerOrder.traderaddress,
+            makerSide: makerOrder.side,
+            takerSide: _takerOrder.side,
+            makerRate: tradePair.makerRate,
+            takerRate: tradePair.takerRate,
+            takerAddr: _takerOrder.traderaddress
+        });
+        (uint256 mlastFee, uint256 tlastFee) = portfolio.addExecution(execution);
 
         //Update maker Order
         makerOrder.quantityFilled = makerOrder.quantityFilled + _quantity;
@@ -663,7 +670,7 @@ contract TradePairs is
         _takerOrder.totalAmount = _takerOrder.totalAmount + quoteAmount;
         _takerOrder.totalFee = _takerOrder.totalFee + tlastFee;
 
-        emitExecuted(_price, _quantity, makerOrder.id, _takerOrder, mlastFee, tlastFee);
+        emitExecuted(execution, makerOrder.id, _takerOrder.id, mlastFee, tlastFee);
         // Do not allow any dust maker orders to remain in the ob, if they are partially filled and
         // the remaining is below 1/10th of minTradeAmount then cancel
         // Typical values for minPostAmount= 10 USDC and minTradeAmount = 1 USDC
@@ -704,35 +711,32 @@ contract TradePairs is
      * `execId`  Unique trade id (execution id) assigned by the contract \
      * `addressMaker`  maker traderaddress \
      * `addressTaker`  taker traderaddress \
-     * @param   _price      executed price
-     * @param   _quantity   executed quantity
+     * @param   _execution      execution struct
      * @param   _makerOrderId  Maker Order id
-     * @param   _takerOrder  Taker Order
+     * @param   _takerOrderId  Taker Order id
      * @param   _mlastFee   fee paid by maker
      * @param   _tlastFee   fee paid by taker
      */
     function emitExecuted(
-        uint256 _price,
-        uint256 _quantity,
+        Execution memory _execution,
         bytes32 _makerOrderId,
-        Order memory _takerOrder,
+        bytes32 _takerOrderId,
         uint256 _mlastFee,
         uint256 _tlastFee
     ) private {
-        Order storage makerOrder = orderMap[_makerOrderId];
         emit Executed(
             EXECUTED_VERSION,
-            makerOrder.tradePairId,
-            _price,
-            _quantity,
-            makerOrder.id,
-            _takerOrder.id,
+            _execution.tradePairId,
+            _execution.price,
+            _execution.baseAmount,
+            _makerOrderId,
+            _takerOrderId,
             _mlastFee,
             _tlastFee,
-            _takerOrder.side,
+            _execution.takerSide,
             getNextId(),
-            makerOrder.traderaddress,
-            _takerOrder.traderaddress
+            _execution.makerAddr,
+            _execution.takerAddr
         );
     }
 
@@ -1039,8 +1043,9 @@ contract TradePairs is
             // Use the price returned by addOrderCheck as it returns applicable price for Type1=MARKET
             takerOrder.price = _order.price;
         }
+        bytes32 bookId = takerOrder.side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
 
-        code = matchOrder(takerOrder, maxNbrOfFills, _order.stp);
+        code = matchOrder(bookId, takerOrder, _order.stp);
 
         uint256 quantityRemaining = UtilsLibrary.getRemainingQuantity(takerOrder.quantity, takerOrder.quantityFilled);
 
@@ -1088,9 +1093,9 @@ contract TradePairs is
                         outSymbol,
                         outAmount
                     );
-
+                    bytes32 bookIdSameSide = takerOrder.side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
                     // Unfilled Limit Orders go in the Orderbook (Including eligible Auction Orders)
-                    addTakerToOrderBook(takerOrder.tradePairId, takerOrder);
+                    addTakerToOrderBook(bookIdSameSide, takerOrder.tradePairId, takerOrder);
                 }
             }
         }
@@ -1110,13 +1115,12 @@ contract TradePairs is
      * @dev     memory taker order is cast to storage prospective maker order before being added
      * to the orderbook
      * */
-    function addTakerToOrderBook(bytes32 _tradePairId, Order memory _takerOrder) private {
-        TradePair storage tradePair = tradePairMap[_tradePairId];
+    function addTakerToOrderBook(bytes32 _bookIdSameSide, bytes32 _tradePairId, Order memory _takerOrder) private {
         (Side side, bytes32 id) = (_takerOrder.side, _takerOrder.id);
 
         // Add to clientOrderIDMap to be able to check potential dups & also facilitate cancelByCLientId
         clientOrderIDMap[_takerOrder.traderaddress][_takerOrder.clientOrderId] = id;
-        bytes32 bookIdSameSide = side == Side.BUY ? tradePair.buyBookId : tradePair.sellBookId;
+
         //the remaining of the taker order is entered in the orderbook as a maker order
         Order storage makerOrder = orderMap[id];
 
@@ -1150,7 +1154,7 @@ contract TradePairs is
         makerOrder.updateBlock = uint32(block.number);
         makerOrder.createBlock = uint32(block.number);
 
-        orderBooks.addOrder(bookIdSameSide, makerOrder.id, makerOrder.price);
+        orderBooks.addOrder(_bookIdSameSide, makerOrder.id, makerOrder.price);
     }
 
     /**
@@ -1163,18 +1167,16 @@ contract TradePairs is
      * `SELL` order (quantity 1000) is potentially matched with multiple small BUY orders
      * (1000 orders with quantity 1), creating 1000 matches which will run out of gas.
      * Self Trade Prevention is also checked here before allowing any matches.
+     * @param   _bookId  BookId to match on
      * @param   _takerOrder  Taker Order
-     * @param   _maxNbrOfFills  Max number of fills an order can get at a time to avoid running out of gas (Default: 100)
      * @param   _stp  Self Trade Prevention mode
      * @return  code reason for the cancel in the `code` field. Currently only due to STP
      */
-    function matchOrder(Order memory _takerOrder, uint256 _maxNbrOfFills, STP _stp) private returns (bytes32 code) {
+    function matchOrder(bytes32 _bookId, Order memory _takerOrder, STP _stp) private returns (bytes32 code) {
         Side side = _takerOrder.side;
-        TradePair storage tradePair = tradePairMap[_takerOrder.tradePairId];
+        uint256 _maxNbrOfFills = maxNbrOfFills;
         // Get the opposite Book. if buying need to match with SellBook and vice versa
-        bytes32 bookId = side == Side.BUY ? tradePair.sellBookId : tradePair.buyBookId;
-
-        (uint256 price, bytes32 makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+        (uint256 price, bytes32 makerOrderId) = orderBooks.getTopOfTheBook(_bookId);
 
         Order storage makerOrder;
         uint256 quantity;
@@ -1204,14 +1206,14 @@ contract TradePairs is
                         // Count STP-driven cancellations toward the iteration budget
                         _maxNbrOfFills--;
                         code = bytes32(0);
-                        (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+                        (price, makerOrderId) = orderBooks.getTopOfTheBook(_bookId);
                         continue; // continue with the next maker order
                     }
                 }
             }
 
             quantity = orderBooks.matchTrade(
-                bookId,
+                _bookId,
                 price,
                 takerRemainingQuantity,
                 UtilsLibrary.getRemainingQuantity(makerOrder.quantity, makerOrder.quantityFilled)
@@ -1220,7 +1222,7 @@ contract TradePairs is
             // this updates _takerOrder & makes a state change on the makerOrder in the orderMap
             addExecution(makerOrder.id, _takerOrder, price, quantity);
 
-            (price, makerOrderId) = orderBooks.getTopOfTheBook(bookId);
+            (price, makerOrderId) = orderBooks.getTopOfTheBook(_bookId);
             takerRemainingQuantity = UtilsLibrary.getRemainingQuantity(
                 _takerOrder.quantity,
                 _takerOrder.quantityFilled

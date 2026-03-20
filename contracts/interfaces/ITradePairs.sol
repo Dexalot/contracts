@@ -124,6 +124,36 @@ interface ITradePairs {
         uint256 minPostAmount;
     }
 
+    /**
+     * @notice  Execution (Fill) Struct
+     * @param   tradePairId  tradePairId
+     * @param   baseAmount  quantity also referred as baseAmount
+     * @param   quoteAmount  quantity * price
+     * @param   price  price
+     * @param   baseSymbol  symbol of the base asset
+     * @param   quoteSymbol  symbol of the quote asset
+     * @param   makerAddr address of the maker
+     * @param   makerSide maker side
+     * @param   takerSide taker side
+     * @param   makerRate fee rate for a maker order for the trading pair
+     * @param   takerRate fee rate for taker order for the trading pair
+     * @param   takerAddr address of the taker
+     */
+    struct Execution {
+        bytes32 tradePairId;
+        uint256 baseAmount;
+        uint256 quoteAmount;
+        uint256 price;
+        bytes32 baseSymbol;
+        bytes32 quoteSymbol;
+        address makerAddr;
+        Side makerSide;
+        Side takerSide;
+        uint8 makerRate;
+        uint8 takerRate;
+        address takerAddr;
+    }
+
     function pause() external;
 
     function unpause() external;

@@ -3433,7 +3433,7 @@ beforeEach(async function () {
         // add a sell order for trader1
         sellOrder.price = Utils.parseUnits('2', quoteDecimals);
         sellOrder.quantity = Utils.parseUnits('50', baseDecimals);
-
+        sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader1.address, 1);
         await addOrderAndVerify(trader1, sellOrder, 0);  // status is NEW = 0
         // add a sell order for trader2
         sellOrder.clientOrderId = await Utils.getClientOrderId(ethers.provider, trader2.address, 3);
@@ -3441,7 +3441,7 @@ beforeEach(async function () {
         await addOrderAndVerify(trader2, sellOrder, 0);  // status is NEW = 0
 
 
-        const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address);
+        const clientOrderid = await Utils.getClientOrderId(ethers.provider, trader1.address,2);
 
         // replace buy order at the same price but decrease quantity to 90
         const tx2 = await tradePairs.connect(trader1).cancelReplaceOrder(id1, clientOrderid, Utils.parseUnits('2', quoteDecimals), Utils.parseUnits('100', baseDecimals));

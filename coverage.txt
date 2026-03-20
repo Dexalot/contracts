@@ -4,6 +4,7 @@ File                                |  % Stmts | % Branch |  % Funcs |  % Lines 
  contracts/                         |    88.38 |    87.03 |    90.46 |     89.9 |                |
   BannedAccounts.sol                |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol              |      100 |      100 |      100 |      100 |                |
+  DexalotRFQ.sol                    |        0 |        0 |        0 |        0 |... 865,868,873 |
   DexalotRouter.sol                 |      100 |    96.15 |      100 |      100 |                |
   Exchange.sol                      |      100 |      100 |      100 |      100 |                |
   ExchangeMain.sol                  |      100 |      100 |      100 |      100 |                |

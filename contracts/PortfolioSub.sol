@@ -295,40 +295,25 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
      * can NOT be used, so we have safeDecreaseTotal instead)
      * i.e. (USDT 100 Total, 50 Available after we send a BUY order of 10 avax at 5$.
      * Partial Exec 5 at $5. Total goes down to 75. Available stays at 50)
-     * @param   _tradePair  TradePair struct
-     * @param   _makerSide  Side of the maker
-     * @param   _makerAddr  Address of the maker
-     * @param   _takerAddr  Address of the taker
-     * @param   _baseAmount  execution base amount
-     * @param   _quoteAmount  execution quote amount
+     * @param   _execution  Execution struct
+
      * @return  makerFee Maker fee
      * @return  takerFee Taker fee
      */
     function addExecution(
-        bytes32 _tradePairId,
-        ITradePairs.TradePair calldata _tradePair,
-        ITradePairs.Side _makerSide,
-        address _makerAddr,
-        address _takerAddr,
-        uint256 _baseAmount,
-        uint256 _quoteAmount
+        ITradePairs.Execution calldata _execution
     ) external override onlyRole(EXECUTOR_ROLE) returns (uint256 makerFee, uint256 takerFee) {
         // Only TradePairs can call PORTFOLIO addExecution
-        (uint256 makerRate, uint256 takerRate, address takerFeeCollector) = getFeeRates(
-            _tradePairId,
-            _tradePair,
-            _makerAddr,
-            _takerAddr
-        );
-        (makerFee, takerFee) = calculateFeeAmounts(_makerSide, _baseAmount, _quoteAmount, makerRate, takerRate);
+        address takerFeeCollector;
+        (makerFee, takerFee, takerFeeCollector) = calculateFeeAmounts(_execution);
         // if _maker.side = BUY then _taker.side = SELL
-        if (_makerSide == ITradePairs.Side.BUY) {
+        if (_execution.makerSide == ITradePairs.Side.BUY) {
             // decrease maker quote and incrase taker quote
             transferToken(
-                _makerAddr,
-                _takerAddr,
-                _tradePair.quoteSymbol,
-                _quoteAmount,
+                _execution.makerAddr,
+                _execution.takerAddr,
+                _execution.quoteSymbol,
+                _execution.quoteAmount,
                 takerFee,
                 Tx.EXECUTION,
                 true,
@@ -336,10 +321,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             );
             // increase maker base and decrase taker base
             transferToken(
-                _takerAddr,
-                _makerAddr,
-                _tradePair.baseSymbol,
-                _baseAmount,
+                _execution.takerAddr,
+                _execution.makerAddr,
+                _execution.baseSymbol,
+                _execution.baseAmount,
                 makerFee,
                 Tx.EXECUTION,
                 false,
@@ -348,10 +333,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         } else {
             // increase maker quote and decrease taker quote
             transferToken(
-                _takerAddr,
-                _makerAddr,
-                _tradePair.quoteSymbol,
-                _quoteAmount,
+                _execution.takerAddr,
+                _execution.makerAddr,
+                _execution.quoteSymbol,
+                _execution.quoteAmount,
                 makerFee,
                 Tx.EXECUTION,
                 false,
@@ -359,10 +344,10 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
             );
             // decrease maker base and incrase taker base
             transferToken(
-                _makerAddr,
-                _takerAddr,
-                _tradePair.baseSymbol,
-                _baseAmount,
+                _execution.makerAddr,
+                _execution.takerAddr,
+                _execution.baseSymbol,
+                _execution.baseAmount,
                 takerFee,
                 Tx.EXECUTION,
                 true,
@@ -371,34 +356,26 @@ contract PortfolioSub is Portfolio, IPortfolioSub {
         }
     }
 
-    function getFeeRates(
-        bytes32 _tradePairId,
-        ITradePairs.TradePair calldata _tradePair,
-        address _makerAddr,
-        address _takerAddr
-    ) private view returns (uint256 makerRate, uint256 takerRate, address takerFeeCollector) {
-        (makerRate, takerRate, takerFeeCollector) = portfolioSubHelper.getRates(
-            _makerAddr,
-            _takerAddr,
-            _tradePairId,
-            uint256(_tradePair.makerRate),
-            uint256(_tradePair.takerRate)
-        );
-    }
-
     function calculateFeeAmounts(
-        ITradePairs.Side _makerSide,
-        uint256 _baseAmount,
-        uint256 _quoteAmount,
-        uint256 _makerRate,
-        uint256 _takerRate
-    ) private pure returns (uint256 makerFee, uint256 takerFee) {
-        if (_makerSide == ITradePairs.Side.BUY) {
-            makerFee = UtilsLibrary.getFee(_baseAmount, _makerRate);
-            takerFee = UtilsLibrary.getFee(_quoteAmount, _takerRate);
+        ITradePairs.Execution calldata _execution
+    ) private view returns (uint256 makerFee, uint256 takerFee, address takerFeeCollector) {
+        uint256 makerRate;
+        uint256 takerRate;
+
+        (makerRate, takerRate, takerFeeCollector) = portfolioSubHelper.getRates(
+            _execution.makerAddr,
+            _execution.takerAddr,
+            _execution.tradePairId,
+            uint256(_execution.makerRate),
+            uint256(_execution.takerRate)
+        );
+
+        if (_execution.makerSide == ITradePairs.Side.BUY) {
+            makerFee = UtilsLibrary.getFee(_execution.baseAmount, makerRate);
+            takerFee = UtilsLibrary.getFee(_execution.quoteAmount, takerRate);
         } else {
-            makerFee = UtilsLibrary.getFee(_quoteAmount, _makerRate);
-            takerFee = UtilsLibrary.getFee(_baseAmount, _takerRate);
+            makerFee = UtilsLibrary.getFee(_execution.quoteAmount, makerRate);
+            takerFee = UtilsLibrary.getFee(_execution.baseAmount, takerRate);
         }
     }
 
