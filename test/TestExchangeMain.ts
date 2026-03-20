@@ -64,7 +64,6 @@ describe("Exchange Main", function () {
 
         exchange = await f.deployExchangeMain(portfolio, mainnetRFQAvax)
         mockToken = await f.deployMockToken("MOCK", 18);
-        PriceFeed = await ethers.getContractFactory("PriceFeedMock");
         TokenVestingCloneable = await ethers.getContractFactory("TokenVestingCloneable") as TokenVestingCloneable__factory;
     });
 
@@ -93,58 +92,6 @@ describe("Exchange Main", function () {
             // succeed for auctionAdmin
             await exchange.addAuctionAdmin(auctionAdmin.address);
             await exchange.connect(auctionAdmin).addToken(MOCK, mockToken.address, token_decimals, token_decimals, '0', ethers.utils.parseUnits('0.5',token_decimals));
-        });
-
-
-        it("Should set chainlink price feed correctly by default admin", async function () {
-            const priceFeed = await PriceFeed.deploy();
-            const chainlinkTestAddress = priceFeed.address;
-            // fail with non admin
-            await expect(exchange.connect(trader1).setPriceFeed(chainlinkTestAddress)).to.revertedWith("AccessControl:");
-            // succeed with default admin
-            await exchange.connect(admin).setPriceFeed(chainlinkTestAddress);
-            //await exchange.setPriceFeed(chainlinkTestAddress)
-            expect(await exchange.getPriceFeed()).to.be.equal(chainlinkTestAddress);
-        });
-
-        it("Should set up test price feed contract correctly", async function () {
-            const priceFeed = await PriceFeed.deploy();
-            expect(await priceFeed.decimals()).to.be.equal(18);
-            expect(await priceFeed.description()).to.be.equal("Price Feed Test");
-            expect(await priceFeed.version()).to.be.equal(1);
-            const res = await priceFeed.latestRoundData();
-            expect(res[0].toString()).to.be.equal("36893488147419156216");
-            expect(res[1]).to.be.equal(7504070821);
-            expect(res[2]).to.be.equal(1646589377);
-            expect(res[3]).to.be.equal(1646589377);
-            expect(res[4].toString()).to.be.equal("36893488147419156216");
-        });
-
-        it("Should use isHead() correctly", async function () {
-            const priceFeed = await PriceFeed.deploy();
-            const chainlinkTestAddress = priceFeed.address;
-            await exchange.addAuctionAdmin(auctionAdmin.address);
-            await exchange.setPriceFeed(chainlinkTestAddress)
-            // fail for owner
-            await expect(exchange.isHead()).to.be.revertedWith("AccessControl:");
-            // succeed for auction admin
-            const res = await exchange.connect(auctionAdmin).isHead();
-            // round id
-            expect(res[0].toString()).to.be.equal('36893488147419156216');
-            // price
-            expect(res[1]).to.be.equal(7504070821);
-            // outcome
-            expect(res[2]).to.be.false;
-        });
-
-        it("Should use flipCoin() correctly", async function () {
-            const priceFeed = await PriceFeed.deploy();
-            const chainlinkTestAddress = priceFeed.address;
-            await exchange.addAuctionAdmin(auctionAdmin.address);
-            await exchange.setPriceFeed(chainlinkTestAddress);
-            await expect(exchange.connect(auctionAdmin).flipCoin())
-                .to.emit(exchange, "CoinFlipped")
-                .withArgs(ethers.BigNumber.from("36893488147419156216"), 7504070821, false);
         });
 
         it("Should fail to pause mainnetrfq if not admin", async function () {

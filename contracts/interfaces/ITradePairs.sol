@@ -87,7 +87,8 @@ interface ITradePairs {
      * @param   sellBookId  sell book id for the trading pair
      * @param   minTradeAmount  minimum trade amount as a taker. Less than or equal to the minPostAmount
      * @param   maxTradeAmount  maximum trade amount
-     * @param   auctionPrice  price during an auction
+     * @param   auctionPrice  price during an auction Obsolete as of Jan 1, 2026.
+     * Repurposed to hold OmniVault address that can post to ob when auctionMode =OPEN
      * @param   auctionMode  current auction mode of the trading pair
      * @param   makerRate fee rate for a maker order for the trading pair
      * @param   takerRate fee rate for taker order for the trading pair
@@ -121,6 +122,36 @@ interface ITradePairs {
         bool pairPaused;
         bool postOnly;
         uint256 minPostAmount;
+    }
+
+    /**
+     * @notice  Execution (Fill) Struct
+     * @param   tradePairId  tradePairId
+     * @param   baseAmount  quantity also referred as baseAmount
+     * @param   quoteAmount  quantity * price
+     * @param   price  price
+     * @param   baseSymbol  symbol of the base asset
+     * @param   quoteSymbol  symbol of the quote asset
+     * @param   makerAddr address of the maker
+     * @param   makerSide maker side
+     * @param   takerSide taker side
+     * @param   makerRate fee rate for a maker order for the trading pair
+     * @param   takerRate fee rate for taker order for the trading pair
+     * @param   takerAddr address of the taker
+     */
+    struct Execution {
+        bytes32 tradePairId;
+        uint256 baseAmount;
+        uint256 quoteAmount;
+        uint256 price;
+        bytes32 baseSymbol;
+        bytes32 quoteSymbol;
+        address makerAddr;
+        Side makerSide;
+        Side takerSide;
+        uint8 makerRate;
+        uint8 takerRate;
+        address takerAddr;
     }
 
     function pause() external;
@@ -199,13 +230,13 @@ interface ITradePairs {
 
     function setAuctionMode(bytes32 _tradePairId, AuctionMode _mode) external;
 
-    function setAuctionPrice(bytes32 _tradePairId, uint256 _price) external;
+    function setAuctionVaultAdress(bytes32 _tradePairId, address _omniVaultAdress) external;
+
+    function getAuctionVaultAdress(bytes32 _tradePairId) external view returns (address);
 
     function unsolicitedCancel(bytes32 _tradePairId, bool _isBuyBook, uint256 _maxCount) external;
 
     function getBookId(bytes32 _tradePairId, Side _side) external view returns (bytes32);
-
-    function matchAuctionOrder(Order memory _takerOrder, uint256 _maxNbrOfFills) external returns (uint256);
 
     function getOrderRemainingQuantity(bytes32 _orderId) external view returns (uint256);
 
@@ -306,28 +337,22 @@ interface ITradePairs {
      * @dev     Only the baseToken of a TradePair can be in an auction mode other than OFF
      * When a token is in auction, it can not be withdrawn or transfeered as a Protection againt rogue AMM Pools
      * popping up during auction and distorting the fair auction price. \
-     * Auction tokens can only be deposited by the contracts in the addTrustedContracts list. They are currently
-     * Avalaunch and Dexalot TokenVesting contracts. These contracts allow the deposits to Dexalot Discovery Auction
-     * before TGE
-     * ***Transitions ***
-     * AUCTION_ADMIN enters the tradepair in PAUSED mode \
-     * Changes it to OPEN at pre-announced auction start date/time \
-     * Changes it to CLOSING at pre-announced Randomized Auction Closing Sequence date/time
-     * ExchangeMain.flipCoin() are called for the randomization \
-     * Changes it to MATCHING when the flipCoin condition is satisfied. And proceeds with setting the auction Price
-     * and ExchangeSub.matchAuctionOrders until all the crossed orders are matched and removed from the orderbook \
-     * Changes it to LIVETRADING if pre-announced token release date/time is NOT reached, so regular trading can start
-     * without allowing tokens to be retrieved/transferred  \
-     * Changes it to OFF when the pre-announced token release time is reached. Regular trading in effect and tokens
+     * Auction tokens can be deposited by the contracts in the addTrustedContracts list. They are currently
+     * Avalaunch, Dexalot TokenVesting contracts and OmniVaults. These contracts will allow the deposits
+     * to Dexalot Discovery Auction before TGE
+     * ***AUCTION Transitions ***
+     * Stage 1-  AUCTION_ADMIN enters the tradepair in auctionMode = OPEN mode. Only the Project's OmniVault can post orders in the orderbook.
+     * Everyone else can either BUY from or SELL from/to the orderbook (OmniVault) by placing LIMIT IOC orders.  \
+     * Stage 1A- Optional: Transitions the auction to LIVETRADING. All the functionality of the Regular trading is allowed. Anybody can post
+     * to the orderbook but auction token is still not allowed to be withdrawn/transferred  \
+     * Stage 2-  Transitions the auction OFF when the token market cap reaches a predetermined value. Regular trading in effect and tokens
      * can be withdrawn or transferred \
      * 0: OFF  – Used for the Regular Listing of a token. Default \
-     * 1: LIVETRADING  – Token is in auction. Live trading in effect but tokens can't be withdrawn or transferred \
-     * 2: OPEN  – Ongoing auction. Orders can be entered/cancelled freely. Orders will not match. \
-     * 3: CLOSING   – Randomized Auction Closing Sequence before the auction is closed, new orders/cancels allowed
-     * but auction can close at any time \
-     * 4: PAUSED   – Auction paused, no new orders/cancels allowed \
-     * 5: MATCHING   – Auction closed. Final Auction Price is determined and set. No new orders/cancels allowed.
-     * orders matching starts \
+     * 1: LIVETRADING  – Ongoing auction. All order types are allowed but tokens can't be withdrawn or transferred \
+     * 2: OPEN  – Ongoing auction. Only the Auction OmniVault can post to the orderbook, everybody else trades against it.\
+     * 3: CLOSING   –  Obsolete as of Jan 1, 2026 \
+     * 4: PAUSED   – Obsolete as of Jan 1, 2026 \
+     * 5: MATCHING   – Obsolete as of Jan 1, 2026 \
      * 6: RESTRICTED   – Functionality Reserved for future use \
      */
     enum AuctionMode {

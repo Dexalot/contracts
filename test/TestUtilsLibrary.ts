@@ -3,7 +3,7 @@
  */
 
 import Utils from './utils';
-
+import BN from 'bignumber.js';
 import type {
     UtilsLibraryMock,
 
@@ -34,42 +34,14 @@ describe("UtilsLibrary via UtilsLibraryMock", function () {
 		).to.be.equal(Utils.parseUnits("0.1", 18))
 	});
 
-	it('Should return matchingAllowed() correctly', async () => {
-		// enum AuctionMode {
-		// 	OFF,           // 0
-		// 	LIVETRADING,   // 1
-		// 	OPEN,          // 2
-		// 	CLOSING,       // 3
-		// 	PAUSED,        // 4
-		// 	MATCHING,      // 5
-		// 	RESTRICTED     // 6
-		// }
-		expect(await utilsLibraryMock.matchingAllowed(0)).to.be.true;
-		expect(await utilsLibraryMock.matchingAllowed(1)).to.be.true;
-		expect(await utilsLibraryMock.matchingAllowed(2)).to.be.false;
-		expect(await utilsLibraryMock.matchingAllowed(3)).to.be.false;
-		expect(await utilsLibraryMock.matchingAllowed(4)).to.be.false;
-		expect(await utilsLibraryMock.matchingAllowed(5)).to.be.false;
-		expect(await utilsLibraryMock.matchingAllowed(6)).to.be.false;
-	});
 
-	it('Should return isAuctionRestricted() correctly', async () => {
-		// enum AuctionMode {
-		// 	OFF,           // 0
-		// 	LIVETRADING,   // 1
-		// 	OPEN,          // 2
-		// 	CLOSING,       // 3
-		// 	PAUSED,        // 4
-		// 	MATCHING,      // 5
-		// 	RESTRICTED     // 6
-		// }
-		expect(await utilsLibraryMock.isAuctionRestricted(0)).to.be.false;
-		expect(await utilsLibraryMock.isAuctionRestricted(1)).to.be.false;
-		expect(await utilsLibraryMock.isAuctionRestricted(2)).to.be.false;
-		expect(await utilsLibraryMock.isAuctionRestricted(3)).to.be.true;
-		expect(await utilsLibraryMock.isAuctionRestricted(4)).to.be.false;
-		expect(await utilsLibraryMock.isAuctionRestricted(5)).to.be.false;
-		expect(await utilsLibraryMock.isAuctionRestricted(6)).to.be.true;
+
+	it('Should return uint256ToAddress() addressToUint256() correctly', async () => {
+
+		expect(await utilsLibraryMock.uint256ToAddress(0)).to.be.equal(ethers.constants.AddressZero);
+
+		const addrAsUint =await utilsLibraryMock.addressToUint256("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+		expect(await utilsLibraryMock.uint256ToAddress(addrAsUint)).to.be.equal("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
 	});
 
 	it('Should return canCancel() correctly', async () => {
@@ -117,11 +89,65 @@ describe("UtilsLibrary via UtilsLibraryMock", function () {
 		expect(await utilsLibraryMock.floor(Utils.parseUnits("1.634", 18), 18)).to.be.equal(Utils.parseUnits("1.000", 18));
 	});
 
+	it('Should return getFee() correctly', async () => {
+
+		// _m= (_tradePair.baseDecimals - _tradePair.baseDisplayDecimals)
+		//ETH/USDC     ETH baseDecimals= 18, baseDisplayDecimals = 5   (_m=13)  USDC -. quoteDecimals= 6, quoteDisplayDecimals = 1  (_m=5)
+		//AVAX/USDC    AVAX baseDecimals= 18, baseDisplayDecimals = 3  (_m=15)  USDC -. quoteDecimals= 6, quoteDisplayDecimals = 3  (_m=3)
+		//ARB/USDC     ARB baseDecimals= 18, baseDisplayDecimals = 2   (_m=16)  USDC -. quoteDecimals= 6, quoteDisplayDecimals = 4  (_m=2)
+		//ARENA/AVAX   ARENA baseDecimals= 18, baseDisplayDecimals = 0 (_m=18)  AVAX -. quoteDecimals= 18, quoteDisplayDecimals = 8 (_m=10)
+		//BTC/USDC     BTC baseDecimals= 8, baseDisplayDecimals = 6    (_m=2)   USDC -. quoteDecimals= 6, quoteDisplayDecimals = 1  (_m=5)
+		//COQ/AVAX     COQ baseDecimals= 18, baseDisplayDecimals = 0   (_m=18)  AVAX -. quoteDecimals= 18, quoteDisplayDecimals = 11 (_m=7)
+
+
+		//getFee(uint256 _amount, uint256 _rate, uint256 _m) _rate is in 1 per 1000 NOT bps
+		// 10 bps rate (0.1%) should be passed as 100
+
+		//USDC 10bps rate on 100 = 0.1
+		expect(await utilsLibraryMock.getFee(Utils.parseUnits("100", 6), 100)).to.be.equal(Utils.parseUnits("0.1", 6));
+
+		let td = 6;
+		let bps = 12;
+		let amount = 5;
+
+		let calculatedFee = BN(amount).times(bps).div(10000);
+		// console.log(bps, "bps on $", amount, "USDC. Actual Fee:", calculatedFee.toString())
+
+		expect(await utilsLibraryMock.getFee(Utils.parseUnits(amount.toString(), td), bps * 10)).to.be.equal(Utils.parseUnits(calculatedFee.toString(), 6));
+
+		bps = 10
+		amount = 1;
+
+		calculatedFee = BN(amount).times(bps).div(10000);
+		// console.log(bps, "bps on $", amount, "USDC. Actual Fee:" ,  calculatedFee.toString())
+		expect(await utilsLibraryMock.getFee(Utils.parseUnits(amount.toString(), td), bps * 10)).to.be.equal(Utils.parseUnits(calculatedFee.toString(), 6));
+
+		bps = 0.5
+		amount = 1;
+		calculatedFee = BN(amount).times(bps).div(10000);
+		// console.log(bps, "bps(min taker fee) on $", amount, "USDC. Actual Fee:" ,  calculatedFee.toString())
+		expect(await utilsLibraryMock.getFee(Utils.parseUnits(amount.toString(), td), bps * 10)).to.be.equal(Utils.parseUnits(calculatedFee.toString(), 6));
+		amount = 0.0005;
+
+
+		calculatedFee = BN(amount).times(bps).div(10000);
+		// console.log(bps, "bps on $", amount, "USDC. Actual Fee:" ,  calculatedFee.toString())
+
+		// The actual fee has precision after 6th digit , so it is 0
+		// we do a round up here to get the minimum unit which matches the minimum unit from the getFee function
+		calculatedFee = calculatedFee.dp(6, BN.ROUND_UP);
+		expect(await utilsLibraryMock.getFee(Utils.parseUnits(amount.toString(), td), bps * 10)).to.be.equal(Utils.parseUnits(calculatedFee.toString(), 6));
+
+
+
+	});
+
 	it('Should return min() correctly', async () => {
 		// a > b
 		expect(await utilsLibraryMock.min(
 			Utils.parseUnits("100", 18), Utils.parseUnits("10", 18))
-		).to.be.equal(Utils.parseUnits("10", 18));
+		).to.be.
+			equal(Utils.parseUnits("10", 18));
 		// a < b
 		expect(await utilsLibraryMock.min(
 			Utils.parseUnits("10", 18), Utils.parseUnits("100", 18))

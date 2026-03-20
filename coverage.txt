@@ -1,24 +1,26 @@
 ------------------------------------|----------|----------|----------|----------|----------------|
 File                                |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 ------------------------------------|----------|----------|----------|----------|----------------|
- contracts/                         |      100 |    96.71 |      100 |      100 |                |
+ contracts/                         |    88.38 |    87.03 |    90.46 |     89.9 |                |
   BannedAccounts.sol                |      100 |      100 |      100 |      100 |                |
   DelayedTransfers.sol              |      100 |      100 |      100 |      100 |                |
+  DexalotRFQ.sol                    |        0 |        0 |        0 |        0 |... 865,868,873 |
+  DexalotRouter.sol                 |      100 |    96.15 |      100 |      100 |                |
   Exchange.sol                      |      100 |      100 |      100 |      100 |                |
   ExchangeMain.sol                  |      100 |      100 |      100 |      100 |                |
-  ExchangeSub.sol                   |      100 |      100 |      100 |      100 |                |
+  ExchangeSub.sol                   |      100 |    98.28 |      100 |      100 |                |
   GasStation.sol                    |      100 |    93.33 |      100 |      100 |                |
   InventoryManager.sol              |      100 |      100 |      100 |      100 |                |
-  MainnetRFQ.sol                    |      100 |    99.37 |      100 |      100 |                |
+  MainnetRFQ.sol                    |      100 |    99.38 |      100 |      100 |                |
   OrderBooks.sol                    |      100 |      100 |      100 |      100 |                |
   Portfolio.sol                     |      100 |    95.65 |      100 |      100 |                |
   PortfolioBridgeMain.sol           |      100 |    97.62 |      100 |      100 |                |
   PortfolioBridgeSub.sol            |      100 |    96.51 |      100 |      100 |                |
   PortfolioMain.sol                 |      100 |    93.65 |      100 |      100 |                |
   PortfolioMinter.sol               |      100 |      100 |      100 |      100 |                |
-  PortfolioSub.sol                  |      100 |    93.26 |      100 |      100 |                |
-  PortfolioSubHelper.sol            |      100 |      100 |      100 |      100 |                |
-  TradePairs.sol                    |      100 |    94.64 |      100 |      100 |                |
+  PortfolioSub.sol                  |      100 |    91.49 |      100 |      100 |                |
+  PortfolioSubHelper.sol            |    89.19 |    90.74 |    90.91 |    89.39 |... 207,208,288 |
+  TradePairs.sol                    |      100 |    94.29 |      100 |      100 |                |
  contracts/bridgeApps/              |      100 |      100 |      100 |      100 |                |
   DefaultBridgeApp.sol              |      100 |      100 |      100 |      100 |                |
   ICMApp.sol                        |      100 |      100 |      100 |      100 |                |
@@ -33,6 +35,11 @@ File                                |  % Stmts | % Branch |  % Funcs |  % Lines 
   IInventoryManager.sol             |      100 |      100 |      100 |      100 |                |
   IMainnetRFQ.sol                   |      100 |      100 |      100 |      100 |                |
   INativeMinter.sol                 |      100 |      100 |      100 |      100 |                |
+  IOmniVault.sol                    |      100 |      100 |      100 |      100 |                |
+  IOmniVaultCreator.sol             |      100 |      100 |      100 |      100 |                |
+  IOmniVaultExecutor.sol            |      100 |      100 |      100 |      100 |                |
+  IOmniVaultRegistry.sol            |      100 |      100 |      100 |      100 |                |
+  IOmniVaultShare.sol               |      100 |      100 |      100 |      100 |                |
   IPortfolio.sol                    |      100 |      100 |      100 |      100 |                |
   IPortfolioBridge.sol              |      100 |      100 |      100 |      100 |                |
   IPortfolioBridgeSub.sol           |      100 |      100 |      100 |      100 |                |
@@ -42,27 +49,33 @@ File                                |  % Stmts | % Branch |  % Funcs |  % Lines 
   IPortfolioSubHelper.sol           |      100 |      100 |      100 |      100 |                |
   ITradePairs.sol                   |      100 |      100 |      100 |      100 |                |
   IWrappedToken.sol                 |      100 |      100 |      100 |      100 |                |
- contracts/library/                 |      100 |    98.51 |      100 |      100 |                |
+ contracts/library/                 |    96.02 |    92.75 |    96.08 |    97.64 |                |
   Bytes32LinkedListLibrary.sol      |      100 |    92.86 |      100 |      100 |                |
   InventoryFeeCalculatorLibrary.sol |      100 |    93.75 |      100 |      100 |                |
   RBTLibrary.sol                    |      100 |      100 |      100 |      100 |                |
+  TokenLibrary.sol                  |        0 |        0 |        0 |        0 |... 15,20,21,23 |
   UtilsLibrary.sol                  |      100 |      100 |      100 |      100 |                |
- contracts/others/                  |      100 |      100 |      100 |      100 |                |
+ contracts/others/                  |    78.57 |      100 |    93.75 |    90.63 |                |
   Create3Factory.sol                |      100 |      100 |      100 |      100 |                |
   Multicall2.sol                    |      100 |      100 |      100 |      100 |                |
- contracts/token/                   |      100 |       96 |      100 |      100 |                |
-  Airdrop.sol                       |      100 |      100 |      100 |      100 |                |
+  Temp.sol                          |        0 |      100 |        0 |        0 |         8,9,10 |
+ contracts/token/                   |      100 |    95.05 |      100 |      100 |                |
   AlotOFT.sol                       |      100 |      100 |      100 |      100 |                |
   AlotOFTAdapter.sol                |      100 |      100 |      100 |      100 |                |
   DexalotToken.sol                  |      100 |      100 |      100 |      100 |                |
   DexalotTokenOFT.sol               |      100 |      100 |      100 |      100 |                |
   DexalotTokenOFTMinter.sol         |      100 |      100 |      100 |      100 |                |
   IncentiveDistributor.sol          |      100 |      100 |      100 |      100 |                |
-  MockToken.sol                     |      100 |      100 |      100 |      100 |                |
-  MockWrappedToken.sol              |      100 |    95.45 |      100 |      100 |                |
   Staking.sol                       |      100 |    88.71 |      100 |      100 |                |
   TokenVestingCloneFactory.sol      |      100 |      100 |      100 |      100 |                |
   TokenVestingCloneable.sol         |      100 |    96.67 |      100 |      100 |                |
+ contracts/vaults/                  |        0 |        0 |        0 |        0 |                |
+  OmniVault.sol                     |      100 |      100 |      100 |      100 |                |
+  OmniVaultCreator.sol              |      100 |      100 |      100 |      100 |                |
+  OmniVaultExecutor.sol             |        0 |        0 |        0 |        0 |... 147,149,157 |
+  OmniVaultExecutorMain.sol         |        0 |        0 |        0 |        0 |    49,62,63,67 |
+  OmniVaultRegistry.sol             |      100 |      100 |      100 |      100 |                |
+  OmniVaultShare.sol                |      100 |      100 |      100 |      100 |                |
 ------------------------------------|----------|----------|----------|----------|----------------|
-All files                           |      100 |    96.84 |      100 |      100 |                |
+All files                           |    88.99 |    86.51 |     90.6 |    90.73 |                |
 ------------------------------------|----------|----------|----------|----------|----------------|
