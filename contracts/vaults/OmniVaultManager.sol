@@ -32,7 +32,7 @@ contract OmniVaultManager is
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
-    bytes32 public constant VERSION = bytes32("1.2.2");
+    bytes32 public constant VERSION = bytes32("1.2.3");
     uint256 public constant RECLAIM_DELAY = 24 hours;
     bytes32 public constant SETTLER_ROLE = keccak256("SETTLER_ROLE");
     uint256 public constant MAX_PENDING_REQUESTS = 500;
@@ -664,6 +664,7 @@ contract OmniVaultManager is
     ) internal {
         uint256 len = _tokenIds.length;
         require(len == _amounts.length, "VM-IVAL-01");
+        _checkDuplicateTokenIds(_tokenIds);
         bytes32[] memory symbols = new bytes32[](len);
         for (uint256 i = 0; i < len; i++) {
             uint16 tokenId = _tokenIds[i];
@@ -952,6 +953,22 @@ contract OmniVaultManager is
             }
         }
         return false;
+    }
+
+    /**
+     * @notice Internal function to check for duplicate token IDs in a deposit request
+     * @param _tokenIds The array of token IDs to check
+     * @dev This is an O(n^2) operation but the number of tokens per vault is expected to be between 2-5
+     */
+    function _checkDuplicateTokenIds(uint16[] calldata _tokenIds) internal pure {
+        uint256 len = _tokenIds.length;
+        for (uint256 i = 0; i < len; i++) {
+            for (uint256 j = i + 1; j < len; j++) {
+                if (_tokenIds[i] == _tokenIds[j]) {
+                    revert("VM-DTID-01");
+                }
+            }
+        }
     }
 
     /**

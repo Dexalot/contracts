@@ -591,4 +591,239 @@ contract OmniVaultCreatorTest is Test {
         vm.prank(proposer);
         creator.withdrawCollectedFees();
     }
+
+    function testFuzz_OpenPairVault_ZeroAmounts(uint256 baseAmt, uint256 quoteAmt) public {
+        // Edge Case: Allow creating a vault with 0 initial deposit (if business logic permits)
+        // Bound to prevent overflow/out-of-gas on mints
+        vm.assume(baseAmt < 1_000_000 * 1e18);
+        vm.assume(quoteAmt < 1_000_000 * 1e6);
+
+        _helper_AcknowledgeRisk();
+
+        address[] memory baseTokens = new address[](1);
+        baseTokens[0] = address(baseToken);
+        address[] memory quoteTokens = new address[](1);
+        quoteTokens[0] = address(quoteToken);
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = uint32(CHAIN_ID);
+
+        vm.prank(proposer);
+        vm.chainId(CHAIN_ID);
+        bytes32 reqId = creator.openPairVault(baseTokens, quoteTokens, chainIds, baseAmt, quoteAmt);
+
+        IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(reqId);
+        assertEq(request.proposer, proposer);
+    }
+
+    function test_OpenPairVault_EmptyArrays() public {
+        _helper_AcknowledgeRisk();
+        address[] memory empty = new address[](0);
+        uint32[] memory emptyChains = new uint32[](0);
+
+        vm.prank(proposer);
+        // Expect an out-of-bounds panic because openPairVault accesses chainIds[0] without checking length > 0
+        vm.expectRevert();
+        creator.openPairVault(empty, empty, emptyChains, BASE_AMOUNT, QUOTE_AMOUNT);
+    }
+
+    function testFuzz_AcceptAndFundVault_HashMismatch(uint256 tamperedBase) public {
+        vm.assume(tamperedBase != BASE_AMOUNT);
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory badAmounts = new uint256[](2);
+        badAmounts[0] = tamperedBase; // Tampered amount
+        badAmounts[1] = QUOTE_AMOUNT;
+
+        vm.prank(ADMIN);
+        vm.expectRevert("VC-IDHM-01"); // initialDepositHash mismatch
+        creator.acceptAndFundVault(reqId, address(0xDEAD), tokens, badAmounts);
+    }
+
+    function testFuzz_ReclaimRequest_HashMismatch(uint256 tamperedQuote) public {
+        vm.assume(tamperedQuote != QUOTE_AMOUNT);
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+        vm.warp(block.timestamp + creator.reclaimDelay() + 1);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory badAmounts = new uint256[](2);
+        badAmounts[0] = BASE_AMOUNT;
+        badAmounts[1] = tamperedQuote; // Tampered amount
+
+        vm.prank(proposer);
+        vm.expectRevert("VC-IDHM-01");
+        creator.reclaimRequest(reqId, tokens, badAmounts);
+    }
+
+    function test_ReclaimRequest_RevertIf_AlreadyReclaimed() public {
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+        vm.warp(block.timestamp + creator.reclaimDelay() + 1);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = BASE_AMOUNT;
+        amounts[1] = QUOTE_AMOUNT;
+
+        vm.startPrank(proposer);
+        creator.reclaimRequest(reqId, tokens, amounts);
+
+        // Attempt double reclaim
+        vm.expectRevert("VC-SNEP-01"); // Proposer of a deleted request defaults to address(0)
+        creator.reclaimRequest(reqId, tokens, amounts);
+        vm.stopPrank();
+    }
+
+    function test_AcceptAndFundVault_RevertIf_AlreadyReclaimed() public {
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+        vm.warp(block.timestamp + creator.reclaimDelay() + 1);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = address(baseToken);
+        tokens[1] = address(quoteToken);
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = BASE_AMOUNT;
+        amounts[1] = QUOTE_AMOUNT;
+
+        vm.prank(proposer);
+        creator.reclaimRequest(reqId, tokens, amounts);
+
+        // Admin tries to accept a request that was already reclaimed by the proposer
+        vm.prank(ADMIN);
+        vm.expectRevert("VC-SNEP-01"); // Request deleted, proposer is address(0)
+        creator.acceptAndFundVault(reqId, address(0xDEAD), tokens, amounts);
+    }
+
+    function test_RejectVaultRequest_RevertIf_AlreadyRejected() public {
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+
+        vm.startPrank(ADMIN);
+        creator.rejectVaultRequest(reqId);
+
+        // Admin tries to reject again
+        vm.expectRevert("VC-IVRS-01"); // Status is now REJECTED, not PENDING
+        creator.rejectVaultRequest(reqId);
+        vm.stopPrank();
+    }
+
+    function test_RejectVaultRequest_RefundsFeeExactly() public {
+        uint256 initialProposerFeeBal = feeToken.balanceOf(proposer);
+        bytes32 reqId = test_OpenPairVault_Success(BASE_AMOUNT, QUOTE_AMOUNT);
+
+        // Verify fee was deducted
+        assertEq(feeToken.balanceOf(proposer), initialProposerFeeBal - INITIAL_FEE_AMOUNT);
+        assertEq(creator.pendingFees(), INITIAL_FEE_AMOUNT);
+
+        vm.prank(ADMIN);
+        creator.rejectVaultRequest(reqId);
+
+        // Verify fee was completely refunded
+        assertEq(feeToken.balanceOf(proposer), initialProposerFeeBal);
+        assertEq(creator.pendingFees(), 0);
+    }
+
+    function test_SetFeeAmount_ZeroFee_Success() public {
+        vm.prank(ADMIN);
+        creator.setFeeAmount(0);
+
+        _helper_AcknowledgeRisk();
+        address[] memory baseTokens = new address[](1);
+        baseTokens[0] = address(baseToken);
+        address[] memory quoteTokens = new address[](1);
+        quoteTokens[0] = address(quoteToken);
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = uint32(CHAIN_ID);
+
+        uint256 feeBalBefore = feeToken.balanceOf(proposer);
+
+        vm.prank(proposer);
+        vm.chainId(CHAIN_ID);
+        bytes32 reqId = creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
+
+        uint256 feeBalAfter = feeToken.balanceOf(proposer);
+
+        // Assert no fee was taken and state reflects zero
+        assertEq(feeBalBefore, feeBalAfter);
+        assertEq(creator.pendingFees(), 0);
+
+        IOmniVaultCreator.VaultRequest memory request = creator.getCreationRequest(reqId);
+        assertEq(request.feeCollected, 0);
+    }
+
+    function testFuzz_OpenPairVault_NonceIncrements(uint8 iterations) public {
+        vm.assume(iterations > 1 && iterations <= 10);
+        _helper_AcknowledgeRisk();
+
+        address[] memory baseTokens = new address[](1);
+        baseTokens[0] = address(baseToken);
+        address[] memory quoteTokens = new address[](1);
+        quoteTokens[0] = address(quoteToken);
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = uint32(CHAIN_ID);
+
+        bytes32 lastReqId;
+
+        vm.startPrank(proposer);
+        vm.chainId(CHAIN_ID);
+        for (uint8 i = 0; i < iterations; i++) {
+            bytes32 reqId = creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
+            assertTrue(reqId != lastReqId, "Request IDs should be strictly unique");
+            lastReqId = reqId;
+        }
+        vm.stopPrank();
+
+        // Nonce should strictly match the number of iterations
+        assertEq(creator.creationNonces(proposer), iterations);
+    }
+
+    function test_WithdrawCollectedFees_ZeroFees() public {
+        // Edge Case: Admin withdrawing when collected fees are precisely 0
+        assertEq(creator.collectedFees(), 0);
+
+        vm.prank(ADMIN);
+        vm.expectEmit(true, false, false, true);
+        emit IOmniVaultCreator.CreationFeeCollected(ADMIN, address(feeToken), 0);
+
+        // This should safely process without reverting
+        creator.withdrawCollectedFees();
+    }
+
+    function testFuzz_SetReclaimDelay_Boundary(uint256 delay) public {
+        // Ensures the < 28 days logic acts strictly at the boundary
+        if (delay < 28 days) {
+            vm.prank(ADMIN);
+            creator.setReclaimDelay(delay);
+            assertEq(creator.reclaimDelay(), delay);
+        } else {
+            vm.prank(ADMIN);
+            vm.expectRevert("VC-IRDL-01");
+            creator.setReclaimDelay(delay);
+        }
+    }
+
+    function test_OpenPairVault_RevertIf_FeeTransferFails() public {
+        _helper_AcknowledgeRisk();
+
+        // Proposer revokes approval for the fee token to simulate a failed SafeERC20 transfer
+        vm.prank(proposer);
+        feeToken.approve(address(creator), 0);
+
+        address[] memory baseTokens = new address[](1);
+        baseTokens[0] = address(baseToken);
+        address[] memory quoteTokens = new address[](1);
+        quoteTokens[0] = address(quoteToken);
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = uint32(CHAIN_ID);
+
+        vm.prank(proposer);
+        vm.chainId(CHAIN_ID);
+
+        vm.expectRevert(); // Standard ERC20 Insufficient Allowance revert
+        creator.openPairVault(baseTokens, quoteTokens, chainIds, BASE_AMOUNT, QUOTE_AMOUNT);
+    }
 }

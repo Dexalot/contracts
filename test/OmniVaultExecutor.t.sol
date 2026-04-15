@@ -8,7 +8,9 @@ import {IAccessControl} from "@openzeppelin-v5/access/IAccessControl.sol";
 import {OmniVaultExecutor} from "contracts/vaults/OmniVaultExecutor.sol";
 
 import {IOmniVaultExecutor} from "contracts/interfaces/IOmniVaultExecutor.sol";
+import {IDexalotRFQ} from "contracts/interfaces/IDexalotRFQ.sol";
 import {MockToken} from "contracts/mocks/MockToken.sol";
+import {MockDexalotRFQ} from "test/mock/MockDexalotRFQ.sol";
 
 contract TargetMock {
     uint256 public value;
@@ -31,6 +33,7 @@ contract TargetMock {
 contract OmniVaultExecutorTest is Test {
     OmniVaultExecutor public executor;
     TargetMock public target;
+    MockDexalotRFQ public dexalotRFQ;
 
     address internal constant ADMIN = address(0xBEEF);
     uint256 internal omniTraderKey = 0xCAFE;
@@ -45,18 +48,19 @@ contract OmniVaultExecutorTest is Test {
         executor.initialize(ADMIN, omniTrader);
 
         target = new TargetMock();
-
+        dexalotRFQ = new MockDexalotRFQ();
         vm.startPrank(ADMIN);
         token = new MockToken("MOCK", "MOCK", 18);
 
         token.mint(address(executor), 1_000_000 * 1e18);
+        executor.setGasTopupAmount(0.1 ether);
         vm.stopPrank();
     }
 
     function test_Initialize_SetsCorrectRoles() public {
         assertTrue(executor.hasRole(executor.DEFAULT_ADMIN_ROLE(), ADMIN));
         assertTrue(executor.hasRole(executor.OMNITRADER_ROLE(), omniTrader));
-        assertEq(executor.VERSION(), bytes32("1.1.0"));
+        assertEq(executor.VERSION(), bytes32("1.2.1"));
     }
 
     function test_Initialize_RevertIf_ZeroAddress() public {
@@ -440,5 +444,267 @@ contract OmniVaultExecutorTest is Test {
 
         bytes memory expectedError = abi.encodeWithSignature("Error(string)", "VE-CDTS-01");
         assertEq(returnData, expectedError);
+    }
+
+    function test_SetGasTopupAmount_Success(uint256 _amount) public {
+        vm.prank(ADMIN);
+        executor.setGasTopupAmount(_amount);
+        assertEq(executor.gasTopupAmount(), _amount);
+    }
+
+    function test_SetGasTopupAmount_RevertIf_NotAdmin(uint256 _amount) public {
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                IAccessControl.AccessControlUnauthorizedAccount.selector,
+                omniTrader,
+                executor.DEFAULT_ADMIN_ROLE()
+            )
+        );
+        vm.prank(omniTrader);
+        executor.setGasTopupAmount(_amount);
+    }
+
+    function test_TopupGas_Success(uint256 takerAmt) public {
+        vm.assume(takerAmt > 0 && takerAmt <= 1 ether);
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: uint256(uint160(address(omniTrader))) << 96,
+            expiry: 0,
+            makerAsset: address(0),
+            takerAsset: address(token),
+            maker: address(dexalotRFQ),
+            taker: address(executor),
+            makerAmount: executor.gasTopupAmount(),
+            takerAmount: takerAmt
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(dexalotRFQ), IOmniVaultExecutor.ContractAccess.NATIVE_AND_ERC20);
+
+        vm.prank(omniTrader);
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_TopupGas_Success_NativeInContract() public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+
+        bytes memory emptyData = new bytes(0);
+
+        address(executor).call{value: executor.gasTopupAmount()}("");
+
+        vm.prank(omniTrader);
+        executor.topupGas(emptyData);
+    }
+
+    function test_TopupGas_RevertIf_RFQNotTrusted() public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: 0,
+            expiry: 0,
+            makerAsset: address(0),
+            takerAsset: address(0),
+            maker: address(dexalotRFQ),
+            taker: address(0),
+            makerAmount: 0,
+            takerAmount: 0
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-IVCA-01");
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_TopupGas_RevertIf_TakerNotExecutor() public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: 0,
+            expiry: 0,
+            makerAsset: address(0),
+            takerAsset: address(0),
+            maker: address(dexalotRFQ),
+            taker: address(0),
+            makerAmount: 0,
+            takerAmount: 0
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(dexalotRFQ), IOmniVaultExecutor.ContractAccess.NATIVE_AND_ERC20);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-TSOT-01");
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_TopupGas_RevertIf_DestTraderNotOmniTrader() public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: 0,
+            expiry: 0,
+            makerAsset: address(0),
+            takerAsset: address(0),
+            maker: address(dexalotRFQ),
+            taker: address(executor),
+            makerAmount: 0,
+            takerAmount: 0
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(dexalotRFQ), IOmniVaultExecutor.ContractAccess.NATIVE_AND_ERC20);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-TSOT-01");
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_TopupGas_RevertIf_MakerAmountMismatch() public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: uint256(uint160(address(omniTrader))) << 96,
+            expiry: 0,
+            makerAsset: address(0),
+            takerAsset: address(token),
+            maker: address(dexalotRFQ),
+            taker: address(executor),
+            makerAmount: 0,
+            takerAmount: 0
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(dexalotRFQ), IOmniVaultExecutor.ContractAccess.NATIVE_AND_ERC20);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-GTSN-01");
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_TopupGas_RevertIf_MakerTokenMismatch(uint256) public {
+        vm.warp(block.timestamp + 1 weeks + 1);
+        IDexalotRFQ.Order memory order = IDexalotRFQ.Order({
+            nonceAndMeta: uint256(uint160(address(omniTrader))) << 96,
+            expiry: 0,
+            makerAsset: address(token),
+            takerAsset: address(token),
+            maker: address(dexalotRFQ),
+            taker: address(executor),
+            makerAmount: executor.gasTopupAmount(),
+            takerAmount: 0
+        });
+        bytes memory encodedSwap = abi.encode(order, bytes("signature"));
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(dexalotRFQ), IOmniVaultExecutor.ContractAccess.NATIVE_AND_ERC20);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-GTSN-01");
+        executor.topupGas(encodedSwap);
+    }
+
+    function test_Initialize_RevertIf_AlreadyInitialized() public {
+        // The contract is already initialized in setUp()
+        vm.expectRevert(); // OpenZeppelin's Initializable custom error
+        executor.initialize(ADMIN, omniTrader);
+    }
+
+    function testFuzz_Fallback_RevertIf_RandomSignature(bytes4 randomSig, bytes memory randomData) public {
+        // Assume the random signature is not our whitelisted one
+        vm.assume(randomSig != TargetMock.setValue.selector);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-FSNW-01");
+
+        // Pack the random signature and data to simulate a generic unwhitelisted call
+        (bool success, ) = address(executor).call(abi.encodePacked(randomSig, randomData));
+    }
+
+    function testFuzz_TopupGas_RevertIf_TooSoon(uint256 timePassed) public {
+        // Assume less than 7 days have passed
+        vm.assume(timePassed < 7 days);
+
+        // First topup to initialize `prevGasTopupTs`
+        vm.warp(block.timestamp + 7 days + 1);
+
+        // Fund executor so the empty swap succeeds
+        vm.deal(address(executor), executor.gasTopupAmount());
+
+        vm.prank(omniTrader);
+        executor.topupGas(new bytes(0));
+
+        // Warp forward by an invalid amount of time
+        vm.warp(block.timestamp + timePassed);
+
+        vm.prank(omniTrader);
+        vm.expectRevert("VE-TETG-01");
+        executor.topupGas(new bytes(0));
+    }
+
+    function test_TopupGas_EmptySwap_RevertIf_InsufficientBalance() public {
+        vm.warp(block.timestamp + 7 days + 1);
+
+        // Ensure contract has 0 native balance but gasTopupAmount requires > 0
+        assertEq(address(executor).balance, 0);
+        assertGt(executor.gasTopupAmount(), 0);
+
+        vm.prank(omniTrader);
+        // Reverts inside _withdrawNativeToBot due to failed call
+        vm.expectRevert("VE-FNGT-01");
+        executor.topupGas(new bytes(0));
+    }
+
+    function testFuzz_SendNative_RevertIf_InsufficientBalance(uint256 balance, uint256 sendAmount) public {
+        // Setup an explicit out-of-funds scenario
+        vm.assume(balance < sendAmount);
+        vm.assume(sendAmount > 0);
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(target), IOmniVaultExecutor.ContractAccess.NATIVE);
+
+        // Give the executor an insufficient balance
+        vm.deal(address(executor), balance);
+
+        vm.prank(omniTrader);
+        // The internal call will fail, bubbling up a generic revert or OutOfFunds
+        vm.expectRevert();
+        executor.sendNative(payable(address(target)), sendAmount);
+    }
+
+    function testFuzz_ApproveToken_MaxAndZero(uint256 amount) public {
+        // Restrict fuzzer to edge case token amounts: 0 and type(uint256).max
+        vm.assume(amount == 0 || amount == type(uint256).max);
+
+        vm.prank(ADMIN);
+        executor.setTrustedContract(address(target), IOmniVaultExecutor.ContractAccess.ERC20);
+
+        vm.prank(omniTrader);
+        executor.approveToken(address(token), address(target), amount);
+
+        assertEq(token.allowance(address(executor), address(target)), amount);
+    }
+
+    function testFuzz_Receive_RevertIf_NotPayableContract(uint256 amount) public {
+        // Verify that sending ether from the executor to a non-payable target via fallback routing fails
+        vm.assume(amount > 0 && amount <= 1 ether);
+
+        // Note: TargetMock has a receive() function, so we'll use a blank dummy contract
+        address nonPayableTarget = address(new MockToken("NON", "NON", 18));
+
+        vm.startPrank(ADMIN);
+        executor.setTrustedContract(nonPayableTarget, IOmniVaultExecutor.ContractAccess.NATIVE);
+        // Whitelisting standard transfer selector as a proxy
+        executor.setWhitelistedFunction(IERC20.transfer.selector, nonPayableTarget);
+        vm.stopPrank();
+
+        vm.deal(address(executor), amount);
+
+        bytes memory callData = abi.encodeWithSelector(IERC20.transfer.selector, address(this), 0);
+
+        vm.prank(omniTrader);
+        // Inner call will fail because we attached `value` to a non-payable target
+        vm.expectRevert();
+        (bool success, ) = address(executor).call{value: amount}(callData);
     }
 }

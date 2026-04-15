@@ -347,6 +347,7 @@
     "VM-IVSH-01": "OmniVaultManager: invalid state hash of prices and vault state",
     "VM-VSNP-01": "OmniVaultManager: vault status not paused",
     "VM-PBFS-01": "OmniVaultManager: pending batch in finalized status",
+    "VM-DTID-01": "OmniVaultManager: duplicate token ids not allowed",
 
     "VS-SAZ-01": "OmniVaultShare: set address to zero",
     "VS-OOV-01": "OmniVaultShare: only OmniVault can mint or burn shares",
