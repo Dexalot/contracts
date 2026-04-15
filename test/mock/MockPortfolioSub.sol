@@ -48,6 +48,12 @@ contract MockPortfolioSub {
         emit Transfer(msg.sender, to, symbol, amount);
     }
 
+    function withdrawNative(address to, uint256 amount) external {
+        to.call{value: amount}("");
+    }
+
+    function depositNative() external payable {}
+
     // This contract has NO receive() or fallback() function,
     // so any attempt to send Ether to it via .call will return success = false.
 }

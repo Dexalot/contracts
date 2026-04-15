@@ -114,7 +114,7 @@ contract OmniVaultManagerTest is Test {
     function test_Initialize_SetsCorrectRoles() public {
         assertTrue(manager.hasRole(manager.DEFAULT_ADMIN_ROLE(), ADMIN));
         assertTrue(manager.hasRole(manager.SETTLER_ROLE(), SETTLER));
-        assertEq(manager.VERSION(), bytes32("1.1.0"));
+        assertEq(manager.VERSION(), bytes32("1.2.3"));
     }
 
     function test_Initialize_RevertIf_ZeroAdmin() public {
@@ -579,6 +579,35 @@ contract OmniVaultManagerTest is Test {
         manager.updateVaultDetails(0, newDetails);
     }
 
+    function test_UpdateVaultDetails_RevertIf_PrevBatchFinalized() public {
+        uint32[] memory chainIds = new uint32[](1);
+        chainIds[0] = 2;
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 1;
+
+        IOmniVaultManager.VaultDetails memory newDetails = IOmniVaultManager.VaultDetails({
+            name: "Updated Vault",
+            proposer: proposer,
+            omniTrader: address(0x0004),
+            status: IOmniVaultManager.VaultStatus.ACTIVE,
+            executor: address(0x0005),
+            shareToken: address(shareToken),
+            dexalotRFQ: address(0x0006),
+            chainIds: chainIds,
+            tokens: tokens
+        });
+
+        test_RequestDeposit_Success();
+        _finalizeBatch();
+
+        vm.startPrank(ADMIN);
+        manager.pauseVault(0);
+
+        vm.expectRevert("VM-PBFS-01");
+        manager.updateVaultDetails(0, newDetails);
+        vm.stopPrank();
+    }
+
     function test_RegisterVault_RevertIf_VaultIdMismatch() public {
         uint16[] memory tokenIds = new uint16[](1);
         tokenIds[0] = 0;
@@ -682,6 +711,19 @@ contract OmniVaultManagerTest is Test {
 
         vm.prank(proposer);
         vm.expectRevert("VM-VSAC-01");
+        manager.requestDeposit(0, tokens, amounts);
+    }
+
+    function test_RequestDeposit_RevertIf_DuplicateTokens() public {
+        uint16[] memory tokens = new uint16[](2);
+        tokens[0] = 0;
+        tokens[1] = 0; // duplicate
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 100;
+        amounts[1] = 200;
+
+        vm.prank(proposer);
+        vm.expectRevert("VM-DTID-01");
         manager.requestDeposit(0, tokens, amounts);
     }
 
@@ -1169,5 +1211,287 @@ contract OmniVaultManagerTest is Test {
 
         vm.expectRevert("VM-RCNP-01");
         manager.unwindBatch(deposits, withdrawals);
+    }
+
+    function testFuzz_FinalizeBatch_RevertIf_PricesLengthMismatch(uint8 randomLength) public {
+        vm.assume(randomLength != manager.tokenIndex()); // Manager currently has 2 tokens (0 and 1)
+
+        uint256[] memory badPrices = new uint256[](randomLength);
+        IOmniVaultManager.VaultState[] memory vaults = new IOmniVaultManager.VaultState[](0);
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-IVAL-01");
+        manager.finalizeBatch(badPrices, vaults);
+    }
+
+    function test_FinalizeBatch_RevertIf_CalledTwiceBeforeSettle() public {
+        _finalizeBatch(); // First finalize succeeds
+
+        // Attempting to finalize again while the current batch is in FINALIZED status
+        uint256[] memory prices = new uint256[](2);
+        IOmniVaultManager.VaultState[] memory vaults = new IOmniVaultManager.VaultState[](0);
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-PBNS-01"); //Prev batch state = finalized, not settled
+        manager.finalizeBatch(prices, vaults);
+    }
+
+    function test_FinalizeBatch_Settle_EmptyBatch_Success() public {
+        // No deposits or withdrawals made
+        uint256[] memory prices = new uint256[](2);
+        prices[0] = 1e18;
+        prices[1] = 1e18;
+        IOmniVaultManager.VaultState[] memory vaults = new IOmniVaultManager.VaultState[](0);
+
+        vm.prank(SETTLER);
+        manager.finalizeBatch(prices, vaults);
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        vm.prank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+
+        // Assert batch moved to SETTLED
+        (, IOmniVaultManager.BatchStatus status, , , ) = manager.completedBatches(1);
+        assertEq(uint256(status), uint256(IOmniVaultManager.BatchStatus.SETTLED));
+    }
+
+    function testFuzz_BulkSettleState_RevertIf_PricesTampered(uint256 tamperedPrice) public {
+        vm.assume(tamperedPrice != 1e17); // 1e17 is the legitimate price set in _finalizeBatch()
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        (uint256[] memory originalPrices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        // Settler attempts to cheat by altering the price during settlement
+        uint256[] memory tamperedPrices = new uint256[](2);
+        tamperedPrices[0] = tamperedPrice;
+        tamperedPrices[1] = originalPrices[1];
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-IVSH-01"); // Invalid State Hash
+        manager.bulkSettleState(tamperedPrices, vaults, deposits, withdrawals);
+    }
+
+    function testFuzz_BulkSettleState_RevertIf_VaultsTampered(uint256 tamperedBalance) public {
+        vm.assume(tamperedBalance != 10_000); // 10_000 is the legitimate balance set in _finalizeBatch()
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory originalVaults) = _finalizeBatch();
+
+        // Settler attempts to cheat by altering the vault balance during settlement
+        originalVaults[0].balances[0] = tamperedBalance;
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-IVSH-01"); // Invalid State Hash
+        manager.bulkSettleState(prices, originalVaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_RevertIf_DepositMissing() public {
+        // Create 2 distinct deposits
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 0;
+        uint256[] memory amounts1 = new uint256[](1);
+        amounts1[0] = 100;
+        uint256[] memory amounts2 = new uint256[](1);
+        amounts2[0] = 200;
+
+        vm.startPrank(proposer);
+        bytes32 req1 = manager.requestDeposit(0, tokens, amounts1);
+        bytes32 req2 = manager.requestDeposit(0, tokens, amounts2); // req2 will be omitted
+        vm.stopPrank();
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        // Omit the second deposit
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](1);
+        deposits[0] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req1,
+            tokenIds: tokens,
+            amounts: amounts1,
+            process: true
+        });
+
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-DHMR-01"); // Deposit Hash Mismatch Revert
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_RevertIf_DepositOrderSwapped() public {
+        // Create 2 distinct deposits
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 0;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
+
+        vm.startPrank(proposer);
+        bytes32 req1 = manager.requestDeposit(0, tokens, amounts);
+        bytes32 req2 = manager.requestDeposit(0, tokens, amounts);
+        vm.stopPrank();
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        // Provide them in the wrong order
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](2);
+        deposits[0] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req2,
+            tokenIds: tokens,
+            amounts: amounts,
+            process: true
+        });
+        deposits[1] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req1,
+            tokenIds: tokens,
+            amounts: amounts,
+            process: true
+        });
+
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-DHMR-01"); // Strict FIFO ordering enforced by rolling hash
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_RevertIf_WithdrawalMissing() public {
+        // Create 2 distinct withdrawals
+        vm.startPrank(proposer);
+        shareToken.approve(address(manager), 20);
+        bytes32 wReq1 = manager.requestWithdrawal(0, 10);
+        bytes32 wReq2 = manager.requestWithdrawal(0, 10); // wReq2 will be omitted
+        vm.stopPrank();
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReq1, process: true});
+
+        vm.prank(SETTLER);
+        vm.expectRevert("VM-WHMR-01"); // Withdrawal Hash Mismatch
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_PartialProcess_RefundsCorrectly() public {
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 0;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = 100;
+
+        vm.startPrank(proposer);
+        bytes32 req1 = manager.requestDeposit(0, tokens, amounts);
+        bytes32 req2 = manager.requestDeposit(0, tokens, amounts);
+        vm.stopPrank();
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](2);
+        // Request 1 is accepted
+        deposits[0] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req1,
+            tokenIds: tokens,
+            amounts: amounts,
+            process: true
+        });
+        // Request 2 is rejected/refunded
+        deposits[1] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req2,
+            tokenIds: tokens,
+            amounts: amounts,
+            process: false
+        });
+
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        // We expect a DEPOSIT_FAILED event emitted for req2
+        vm.expectEmit(true, false, false, false);
+        emit IOmniVaultManager.TransferRequestUpdate(
+            req2,
+            1,
+            proposer,
+            IOmniVaultManager.RequestStatus.DEPOSIT_FAILED,
+            tokens,
+            amounts
+        );
+
+        vm.prank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+    }
+
+    function test_BulkSettleState_WithdrawalProcessFalse_ReturnsShares() public {
+        uint208 withdrawAmount = 10;
+
+        vm.startPrank(proposer);
+        uint256 initialShares = shareToken.balanceOf(proposer);
+        shareToken.approve(address(manager), withdrawAmount);
+        bytes32 wReq = manager.requestWithdrawal(0, withdrawAmount);
+        vm.stopPrank();
+
+        // User balance should have decreased due to the transfer to the manager
+        assertEq(shareToken.balanceOf(proposer), initialShares - withdrawAmount);
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](1);
+
+        // Mark process = false to trigger refund logic
+        withdrawals[0] = IOmniVaultManager.WithdrawalFufillment({withdrawalRequestId: wReq, process: false});
+
+        vm.prank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+
+        // Shares should be fully refunded to the proposer
+        assertEq(shareToken.balanceOf(proposer), initialShares);
+    }
+
+    function test_BulkSettleState_RevertIf_AlreadySettled() public {
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](0);
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        vm.startPrank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals); // First settle
+
+        // Attempt to settle the same batch again
+        vm.expectRevert("VM-BSNF-01"); // Batch Status Not Finalized
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
+        vm.stopPrank();
+    }
+
+    function testFuzz_Settle_SharesCalculation_PrecisionLoss(uint256 tinyAmount) public {
+        // Test edge case where deposit amount is so small it results in 0 USD value / 0 shares
+        vm.assume(tinyAmount > 0 && tinyAmount < 10);
+
+        uint16[] memory tokens = new uint16[](1);
+        tokens[0] = 0;
+        uint256[] memory amounts = new uint256[](1);
+        amounts[0] = tinyAmount;
+
+        vm.startPrank(proposer);
+        bytes32 req = manager.requestDeposit(0, tokens, amounts);
+        vm.stopPrank();
+
+        (uint256[] memory prices, IOmniVaultManager.VaultState[] memory vaults) = _finalizeBatch();
+
+        IOmniVaultManager.DepositFufillment[] memory deposits = new IOmniVaultManager.DepositFufillment[](1);
+        deposits[0] = IOmniVaultManager.DepositFufillment({
+            depositRequestId: req,
+            tokenIds: tokens,
+            amounts: amounts,
+            process: true
+        });
+        IOmniVaultManager.WithdrawalFufillment[] memory withdrawals = new IOmniVaultManager.WithdrawalFufillment[](0);
+
+        // We expect this to execute safely, rounding the minted shares down to 0 without panicking
+        vm.prank(SETTLER);
+        manager.bulkSettleState(prices, vaults, deposits, withdrawals);
     }
 }
